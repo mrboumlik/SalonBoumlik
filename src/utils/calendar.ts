@@ -50,6 +50,33 @@ ${SALON_INFO.address.fr}
 Salam, merci de me confirmer la disponibilité et de m'envoyer le devis personnalisé pour cette formule. بارك الله فيك !`;
 }
 
+export function createOwnerWhatsAppAlertMessage(appointment: AppointmentBooking): string {
+  const serviceList = appointment.services.map((s, idx) => `  ${idx + 1}. ${s.name.fr} (${s.name.ar})`).join('\n');
+  return `*💈 NOTIFICATION SALON BOUMLIK - ALERTE NOUVEAU RDV 💈*
+_Suivi automatique pour Hassan (Fondateur - 0635392503)_
+
+*📋 TICKET :* #${appointment.ticketNumber}
+*✂️ BARBIER ASSIGNÉ :* ${appointment.barberName}
+
+*👤 CLIENT :*
+• *Nom :* ${appointment.clientName || 'Client'}
+• *Tél :* ${appointment.clientPhone || 'Non spécifié'}
+• *Email :* ${appointment.clientEmail || 'Non spécifié'}
+
+*📅 DATE & CRÉNEAU :*
+• ${appointment.date} à ${appointment.timeSlot}
+• *Boisson :* ${getDrinkLabel(appointment.drinkPreference)}
+
+*💈 FORMULE SÉLECTIONNÉE :*
+${serviceList}
+• Durée : ~${appointment.totalDurationMinutes} min
+• Règle Sans Attente (+10 DH)
+
+${appointment.notes ? `*📝 NOTES CLIENT :*\n${appointment.notes}\n` : ''}
+---
+Alerte transmise pour que Hassan suive personnellement chaque demande client au Salon Boumlik.`;
+}
+
 export function createOwnerEmailNotificationUrl(appointment: AppointmentBooking): string {
   const serviceNames = appointment.services.map(s => s.name.fr).join(', ');
   const subject = `[RDV SALON BOUMLIK] Ticket #${appointment.ticketNumber} - ${appointment.clientName || 'Client'}`;

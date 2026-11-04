@@ -1,4 +1,7 @@
 import { BarberService, BarberStaff, CustomerReview, GalleryItem } from '../types';
+import hassanAvatarImg from '../assets/images/regenerated_image_1793764006136.png';
+import anouarAvatarImg from '../assets/images/regenerated_image_1793764011049.jpg';
+import lahcenAvatarImg from '../assets/images/regenerated_image_1793764007431.jpg';
 
 export const SALON_INFO = {
   name: {
@@ -20,10 +23,10 @@ export const SALON_INFO = {
     amz: 'ⵉⵎⵓⵙⵙⵓⵜⵏ ⵉ ⵉⵔⴳⴰⵣⵏ ⵖⴰⵙ • ⵜⴰⵔⵓⴷⴰⵏⵜ',
   },
   owner: {
-    fr: 'Hassan Boumlik',
-    ar: 'حسن بومليك',
-    en: 'Hassan Boumlik',
-    amz: 'ⵃⴰⵙⴰⵏ ⴱⵓⵎⵍⵉⴽ',
+    fr: 'Hassan Ait Boumlik',
+    ar: 'حسان أيت بومليك',
+    en: 'Hassan Ait Boumlik',
+    amz: 'ⵃⴰⵙⴰⵏ ⴰⵢⵜ ⴱⵓⵎⵍⵉⴽ',
   },
   email: 'MrBoumlik@gmail.com',
   phone: '0635392503',
@@ -70,7 +73,7 @@ export const SALON_INFO = {
     instagramHandle: '@SalonBoumlik',
     facebook: 'https://facebook.com/salonboumlik',
     facebookHandle: 'SalonBoumlik',
-    googleReviewUrl: 'https://g.page/r/SalonBoumlik/review',
+    googleReviewUrl: 'https://g.page/r/CZWdoYsTiwy_EAE/review',
   },
 
   googleMapsDirectionsUrl: 'https://www.google.com/maps/dir/?api=1&destination=Rue+Bir+Anzarane,+Taroudant,+Morocco',
@@ -87,15 +90,15 @@ export const SALON_INFO = {
   ],
 };
 
-// 4 Team Members - Authentic biographies and specific credentials
+// 4 Team Members - Authentic biographies, exact contact numbers & personal Instagrams
 export const TEAM_MEMBERS: BarberStaff[] = [
   {
     id: 'hassan',
     name: {
-      fr: 'Hassan Boumlik',
-      ar: 'حسن بومليك',
-      en: 'Hassan Boumlik',
-      amz: 'ⵃⴰⵙⴰⵏ ⴱⵓⵎⵍⵉⴽ',
+      fr: 'Hassan Ait Boumlik',
+      ar: 'حسان أيت بومليك',
+      en: 'Hassan Ait Boumlik',
+      amz: 'ⵃⴰⵙⴰⵏ ⴰⵢⵜ ⴱⵓⵎⵍⵉⴽ',
     },
     isOwner: true,
     role: {
@@ -124,16 +127,18 @@ export const TEAM_MEMBERS: BarberStaff[] = [
     },
     phone: '0635392503',
     whatsappNumber: '212635392503',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+    instagram: 'https://www.instagram.com/h.a.boumlik',
+    instagramHandle: '@h.a.boumlik',
+    avatar: hassanAvatarImg,
     rating: 5.0,
   },
   {
     id: 'anouar-arif',
     name: {
       fr: 'Anouar Arif',
-      ar: 'أنوار عريف',
+      ar: 'أنور',
       en: 'Anouar Arif',
-      amz: 'ⴰⵏⵡⴰⵔ ⵄⴰⵔⵉⴼ',
+      amz: 'ⴰⵏⵡⴰⵔ',
     },
     role: {
       fr: 'Styliste & Spécialiste Dégradés',
@@ -159,9 +164,11 @@ export const TEAM_MEMBERS: BarberStaff[] = [
       en: 'High school student who gained extensive practical experience across multiple barbershops. Raised in a renowned barbering family (his father and two elder brothers are established barbers). Highly skilled in modern styles and precision skin fades.',
       amz: 'ⴰⵏⵍⵎⴰⴷ ⴳ ⵓⵙⵉⵏⴰⵏ, ⵉⵙⵙⵏ ⵉ ⵜⵡⵓⵔⵉ ⴳ ⴽⵉⴳⴰⵏ ⵏ ⵉⵙⴰⵍⵓⵏⵏ, ⵉⵍⵓⵍ ⴳ ⵜⵡⴰⵛⵓⵍⵜ ⵏ ⵉⵎⴽⵕⴰⴹⵏ (ⴱⴰⴱⴰⵙ ⴷ ⵙⵉⵏ ⴰⵢⵜⵎⴰⵙ ⵉⵎⵇⵇⵔⴰⵏⵏ ⴷ ⵉⵎⴽⵕⴰⴹⵏ). ⵉⵙⵙⵏ ⵉ ⵓⵙⵖⵍⵉ ⵏ ⵓⵣⵣⴰⵔ ⴷ ⵜⵉⴽⵔⴹⵉⵡⵉⵏ ⵜⵉⵜⵔⴰⵔⵉⵏ.',
     },
-    phone: '0635392503',
-    whatsappNumber: '212635392503',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+    phone: '+212 627-147592',
+    whatsappNumber: '212627147592',
+    instagram: 'https://www.instagram.com/anouar_the_barber',
+    instagramHandle: '@anouar_the_barber',
+    avatar: anouarAvatarImg,
     rating: 4.9,
   },
   {
@@ -196,9 +203,11 @@ export const TEAM_MEMBERS: BarberStaff[] = [
       en: 'Over 2 years of solid practical experience, combined with exceptional soft skills, customer care, and precision styling.',
       amz: 'ⵓⴳⴳⴰⵔ ⵏ 2 ⵏ ⵉⵙⴳⴳⵯⴰⵙⵏ ⵏ ⵜⵡⵓⵔⵉ ⵜⴰⵎⴰⴷⴷⵓⴷⵜ, ⵉⵟⵟⴼ ⴰⵎⵙⴰⵡⴰⵍ ⵉⵖⵓⴷⴰⵏ ⴷ ⵓⵙⵏⵓⴱⴳ ⵏ ⵉⵎⵣⴷⴰⵖ, ⴷ ⵜⴽⵔⴹⴰ ⵉⴼⵓⵍⴽⵉⵏ.',
     },
-    phone: '0635392503',
-    whatsappNumber: '212635392503',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80',
+    phone: '+212 645-990472',
+    whatsappNumber: '212645990472',
+    instagram: 'https://www.instagram.com/04.lhsen_lhanze',
+    instagramHandle: '@04.lhsen_lhanze',
+    avatar: lahcenAvatarImg,
     rating: 4.9,
   },
   {
@@ -233,8 +242,10 @@ export const TEAM_MEMBERS: BarberStaff[] = [
       en: 'Young, highly ambitious barber, constantly improving his skills, delivering excellent modern cuts and treatments.',
       amz: 'ⴰⵎⴽⵕⴰⴹ ⴰⵄⵔⵔⵉⵎ ⵉⵟⵟⴼⵏ ⵜⴰⵡⴰⵔⴳⵉⵜ ⵉⵎⵇⵇⵓⵔⵏ, ⴰⵔ ⵉⵙⵙⵎⵖⵓⵔ ⵜⵉⵎⵓⵣⴰⵢⵉⵏ ⵏⵏⵙ, ⵉⵙⴽⴰⵔ ⵜⵉⴽⵔⴹⵉⵡⵉⵏ ⵜⵉⵜⵔⴰⵔⵉⵏ ⴷ ⵓⵙⵉⵔⵉⴷ ⵏ ⵓⴷⵎ.',
     },
-    phone: '0635392503',
-    whatsappNumber: '212635392503',
+    phone: '+212 710-405117',
+    whatsappNumber: '212710405117',
+    instagram: 'https://www.instagram.com/qurdenybarber',
+    instagramHandle: '@qurdenybarber',
     avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=400&q=80',
     rating: 4.9,
   },
@@ -753,6 +764,13 @@ export const UI_TRANSLATIONS = {
     reviewsTitle: 'Avis Vérifiés',
     leaveReviewBtn: 'Partager Votre Expérience',
     notifyOwnerBtn: 'Aviser Si Hassan (Propriétaire)',
+    galleryInstagramBannerTitle: 'Suivez-nous sur Instagram pour découvrir nos dernières réalisations et coupes quotidiennes',
+    galleryInstagramBannerBtn: 'Suivre @salonboumlik sur Instagram',
+    barberDirectPhoneLabel: 'Numéro direct',
+    barberPersonalIgLabel: 'Instagram personnel',
+    salonOfficialIgLabel: 'Instagram officiel du salon',
+    sendToBarberWhatsApp: 'Envoyer la réservation au barbier sur WhatsApp',
+    sendToOwnerWhatsApp: 'Notifier Hassan (Propriétaire - 0635392503)',
     footerRights: 'Tous droits réservés. Salon Boumlik Taroudant.',
   },
   ar: {
@@ -825,6 +843,13 @@ export const UI_TRANSLATIONS = {
     reviewsTitle: 'تقييمات وآراء الزبائن',
     leaveReviewBtn: 'شاركنا رأيك في الصالون',
     notifyOwnerBtn: 'إشعار سي حسن (المالك)',
+    galleryInstagramBannerTitle: 'تابعنا على إنستغرام لمشاهدة أحدث الإبداعات والقصات اليومية',
+    galleryInstagramBannerBtn: 'متابعة الحساب الرسمي @salonboumlik',
+    barberDirectPhoneLabel: 'الهاتف المباشر',
+    barberPersonalIgLabel: 'إنستغرام الشخصي',
+    salonOfficialIgLabel: 'حساب الصالون الرسمي',
+    sendToBarberWhatsApp: 'إرسال الحجز للحلاق المختار عبر الواتساب',
+    sendToOwnerWhatsApp: 'إشعار سي حسن (المالك - 0635392503)',
     footerRights: 'جميع الحقوق محفوظة. صالون بومليك تارودانت.',
   },
   en: {
@@ -897,6 +922,13 @@ export const UI_TRANSLATIONS = {
     reviewsTitle: 'Verified Client Reviews',
     leaveReviewBtn: 'Share Your Experience',
     notifyOwnerBtn: 'Notify Hassan (Owner)',
+    galleryInstagramBannerTitle: 'Follow us on Instagram to see our latest master cuts and daily creations',
+    galleryInstagramBannerBtn: 'Follow @salonboumlik on Instagram',
+    barberDirectPhoneLabel: 'Direct Phone',
+    barberPersonalIgLabel: 'Personal Instagram',
+    salonOfficialIgLabel: 'Official Salon Instagram',
+    sendToBarberWhatsApp: 'Send Booking to Barber on WhatsApp',
+    sendToOwnerWhatsApp: 'Notify Hassan (Owner - 0635392503)',
     footerRights: 'All rights reserved. Salon Boumlik Taroudant.',
   },
   amz: {
@@ -928,7 +960,7 @@ export const UI_TRANSLATIONS = {
     formClientPhone: 'ⵓⵟⵟⵓⵏ ⵏ ⵓⵜⵉⵍⵉⴼⵓⵏ',
     formClientEmail: 'ⵉⵎⵉⵢⵍ',
     formDate: 'ⴰⵙⴰⴽⵓⴷ ⵏ ⵓⵎⴰⴳⴰⵔ',
-    formTime: 'ⴰⴽⵓⴷ ⵉⵜⵜⵓⵙⵜⴰⵢⵏ',
+    formTime: 'ⴰⴽود ⵉⵜⵜⵓⵙⵜⴰⵢⵏ',
     formBarberChoice: 'ⵙⵜⵢ ⴰⵎⴽⵕⴰⴹ ⵏⵏⴽ',
     selectBarberPlaceholder: '-- ⵙⵜⵢ ⴰⵎⴽⵕⴰⴹ ⴳ ⵜⵔⴰⴱⴱⵓⵜ --',
     barberRequiredAlert: 'ⵉⵇⵇⴰⵏ ⴷ ⴰⴷ ⵜⵙⵜⵉⴷ ⴰⵎⴽⵕⴰⴹ ⵏⵏⴽ.',
@@ -969,6 +1001,13 @@ export const UI_TRANSLATIONS = {
     reviewsTitle: 'ⵜⴰⵏⵏⴰⵢⵉⵏ ⵏ ⵉⵎⵣⴷⴰⵖ',
     leaveReviewBtn: 'ⵎⵍ ⴰⵖ ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ',
     notifyOwnerBtn: 'ⴰⵣⵏ ⵉ ⵃⴰⵙⴰⵏ (ⴰⵎⵙⴱⴷⴰⴷ)',
+    galleryInstagramBannerTitle: 'ⴹⴼⵕ ⴰⵖ ⴳ ⵉⵏⵙⵜⴰⴳⵔⴰⵎ ⵉ ⵜⵉⵡⵓⵔⵉⵡⵉⵏ ⴷ ⵜⵉⴽⵔⴹⵉⵡⵉⵏ ⵜⵉⵎⴰⵢⵏⵓⵜⵉⵏ',
+    galleryInstagramBannerBtn: 'ⴹⴼⵕ @salonboumlik',
+    barberDirectPhoneLabel: 'ⵓⵟⵟⵓⵏ ⵓⵙⵔⵉⴷ',
+    barberPersonalIgLabel: 'ⵉⵏⵙⵜⴰⴳⵔⴰⵎ ⵓⴷⵎⴰⵡⴰⵏ',
+    salonOfficialIgLabel: 'ⵉⵏⵙⵜⴰⴳⵔⴰⵎ ⴰⵎⴰⴷⴷⵓⴷ ⵏ ⵙⴰⵍⵓⵏ',
+    sendToBarberWhatsApp: 'ⴰⵣⵏ ⵉ ⵓⵎⴽⵕⴰⴹ ⴳ ⵡⴰⵜⵙⴰⴱ',
+    sendToOwnerWhatsApp: 'ⴰⵣⵏ ⵉ ⵃⴰⵙⴰⵏ (ⴰⵎⵙⴱⴷⴰⴷ - 0635392503)',
     footerRights: 'ⵉⵣⵔⴼⴰⵏ ⵎⴰⵕⵕⴰ ⵟⵟⴼⵏ. ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ ⵜⴰⵔⵓⴷⴰⵏⵜ.',
   },
 };

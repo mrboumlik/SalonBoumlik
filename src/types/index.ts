@@ -67,6 +67,8 @@ export interface BarberStaff {
   };
   phone?: string;
   whatsappNumber?: string;
+  instagram?: string;
+  instagramHandle?: string;
   avatar: string;
   rating: number;
   isOwner?: boolean;

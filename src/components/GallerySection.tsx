@@ -8,9 +8,11 @@ import {
   CheckCircle2, 
   Eye, 
   Scissors, 
-  ShieldCheck 
+  ShieldCheck,
+  Instagram,
+  ExternalLink
 } from 'lucide-react';
-import { INITIAL_GALLERY, TEAM_MEMBERS } from '../data/barbershopData';
+import { INITIAL_GALLERY, TEAM_MEMBERS, SALON_INFO } from '../data/barbershopData';
 import { GalleryItem } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -34,7 +36,7 @@ export const GallerySection: React.FC = () => {
   // New photo form states
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState<'fades' | 'beards' | 'skincare' | 'vip'>('fades');
-  const [newBarber, setNewBarber] = useState('Hassan Boumlik');
+  const [newBarber, setNewBarber] = useState('Salon Boumlik');
   const [newImageUrl, setNewImageUrl] = useState('');
   const [successToast, setSuccessToast] = useState(false);
 
@@ -104,7 +106,7 @@ export const GallerySection: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
           <div className="space-y-3 max-w-2xl text-center md:text-left">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-xs font-bold text-amber-300">
               <Camera className="w-3.5 h-3.5 text-amber-400" />
@@ -140,6 +142,37 @@ export const GallerySection: React.FC = () => {
           </div>
         </div>
 
+        {/* High-Converting Official Instagram Banner */}
+        <div className="mb-8 p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-zinc-900 via-zinc-900/90 to-zinc-950 border border-amber-500/30 shadow-2xl relative overflow-hidden group">
+          <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-pink-500/10 blur-[60px] rounded-full pointer-events-none" />
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 relative z-10">
+            <div className="flex items-center gap-3.5 text-center sm:text-left">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-rose-500/20 flex-shrink-0">
+                <Instagram className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-xs sm:text-sm font-bold text-white leading-snug">
+                  {t.galleryInstagramBannerTitle}
+                </p>
+                <span className="text-[11px] text-amber-400 font-semibold mt-0.5 inline-block">
+                  @SalonBoumlik • Taroudant
+                </span>
+              </div>
+            </div>
+
+            <a
+              href="https://www.instagram.com/salonboumlik"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-rose-400 to-pink-500 text-zinc-950 hover:brightness-110 font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-500/20 active:scale-95 transition-all flex-shrink-0 cursor-pointer"
+            >
+              <Instagram className="w-4 h-4 text-zinc-950" />
+              <span>{t.galleryInstagramBannerBtn}</span>
+              <ExternalLink className="w-3.5 h-3.5 text-zinc-950" />
+            </a>
+          </div>
+        </div>
+
         {/* Category Pills (Horizontal scrolling on small screens) */}
         <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-8 no-scrollbar scroll-smooth">
           {categories.map((cat) => (
@@ -157,7 +190,7 @@ export const GallerySection: React.FC = () => {
           ))}
         </div>
 
-        {/* Gallery Grid */}
+        {/* Gallery Grid (Names overlay removed for clean premium aesthetic) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredItems.map((item) => {
             const localizedTitle = item.title[lang] || item.title.fr;
@@ -178,13 +211,8 @@ export const GallerySection: React.FC = () => {
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-80 group-hover:opacity-90 transition-opacity" />
 
-                  {/* Top Bar on Image: Barber tag & Like button */}
-                  <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
-                    <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-zinc-950/80 backdrop-blur-md text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                      <Scissors className="w-3 h-3 text-amber-400" />
-                      <span>{item.barberName}</span>
-                    </span>
-
+                  {/* Top Bar on Image: Clean like button only without name overlays */}
+                  <div className="absolute top-3 right-3 flex items-center justify-end">
                     <button
                       onClick={(e) => handleLike(item.id, e)}
                       className="px-2.5 py-1 rounded-full bg-zinc-950/80 backdrop-blur-md text-rose-400 hover:text-rose-300 border border-zinc-800 flex items-center gap-1 text-[11px] font-bold transition-transform active:scale-90"
@@ -246,7 +274,7 @@ export const GallerySection: React.FC = () => {
             <div className="p-5 sm:p-6 bg-zinc-900 flex flex-wrap items-center justify-between gap-4">
               <div>
                 <span className="text-xs text-amber-400 font-bold uppercase tracking-wider">
-                  {selectedPhoto.barberName}
+                  Salon Boumlik • {selectedPhoto.category === 'fades' ? 'Dégradé' : selectedPhoto.category === 'beards' ? 'Barbe' : selectedPhoto.category === 'skincare' ? 'Soin Visage' : 'VIP'}
                 </span>
                 <h3 className="text-lg font-black text-white">
                   {selectedPhoto.title[lang] || selectedPhoto.title.fr}

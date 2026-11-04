@@ -693,23 +693,28 @@ export const ReviewsSection: React.FC = () => {
             <h4 className="text-base font-bold text-white">{ui.posterTitle}</h4>
             <p className="text-xs text-zinc-400">{ui.posterSubtitle}</p>
 
-            <div className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl">
+            <div className="rounded-2xl overflow-hidden border border-amber-500/30 shadow-2xl bg-white p-4">
               <img
-                src={SALON_INFO.media.googleReviewPoster}
+                src={SALON_INFO.media.qrGoogleReview || SALON_INFO.media.googleReviewPoster}
                 alt="Please rate your experience on Google Salon Boumlik"
-                className="w-full h-auto object-contain"
+                className="w-full h-auto object-contain max-w-[260px] mx-auto"
               />
             </div>
 
-            <div className="pt-2">
+            <div className="space-y-2 pt-2">
               <a
                 href={SALON_INFO.social.googleReviewUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-block py-2.5 px-5 rounded-xl bg-amber-400 text-zinc-950 font-bold text-xs shadow-md"
+                className="w-full py-3 px-5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:brightness-105 text-zinc-950 font-black text-xs shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
-                {ui.openGoogleBtn}
+                <Star className="w-4 h-4 fill-zinc-950" />
+                <span>{ui.openGoogleBtn} (5 ★)</span>
               </a>
+
+              <p className="text-[11px] text-zinc-400 font-mono" dir="ltr">
+                https://g.page/r/CZWdoYsTiwy_EAE/review
+              </p>
             </div>
           </div>
         </div>

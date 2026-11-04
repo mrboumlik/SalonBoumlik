@@ -26,6 +26,7 @@ import {
   createGoogleCalendarUrl, 
   createWhatsAppUrl, 
   createFormattedWhatsAppQuoteMessage,
+  createOwnerWhatsAppAlertMessage,
   createOwnerEmailNotificationUrl,
   getDrinkLabel
 } from '../utils/calendar';
@@ -130,6 +131,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       createdAt: new Date().toISOString(),
       status: 'pending_quote',
     };
+
+    // Save appointment locally so no booking is lost
+    try {
+      const storedHistory = JSON.parse(localStorage.getItem('salon_boumlik_appointments_history') || '[]');
+      localStorage.setItem('salon_boumlik_appointments_history', JSON.stringify([newBooking, ...storedHistory.slice(0, 49)]));
+    } catch (e) {
+      console.warn('Could not save booking locally:', e);
+    }
 
     setConfirmedBooking(newBooking);
     onAppointmentBooked(newBooking);
@@ -264,49 +273,97 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
             </div>
 
-            {/* DUAL MESSAGING ACTIONS */}
-            <div className="space-y-3">
-              {/* 1. Direct WhatsApp Message to Barber/Salon */}
-              <a
-                href={createWhatsAppUrl(
-                  SALON_INFO.whatsappNumber,
-                  createFormattedWhatsAppQuoteMessage(confirmedBooking)
-                )}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-105 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 transition-all"
-              >
-                <MessageCircle className="w-5 h-5 fill-white" />
-                <span>
-                  {lang === 'ar'
-                    ? `إرسال الحجز للحلاق عبر الواتساب (${confirmedBooking.barberName})`
-                    : lang === 'amz'
-                    ? `ⴰⵣⵏ ⴳ ⵡⴰⵜⵙⴰⴱ ⵉ ${confirmedBooking.barberName}`
-                    : `Envoyer au barbier sur WhatsApp (${confirmedBooking.barberName})`}
-                </span>
-              </a>
+            {/* DUAL WHATSAPP & OWNER TRACKING NOTIFICATIONS */}
+            {(() => {
+              const activeBarber = TEAM_MEMBERS.find((b) => b.id === confirmedBooking.barberId) || TEAM_MEMBERS[0];
+              const barberWhatsApp = activeBarber.whatsappNumber || SALON_INFO.whatsappNumber;
+              const isHassan = activeBarber.isOwner || activeBarber.id === 'hassan';
 
-              {/* 2. Automated Duplicate Copy to Hassan (Owner) via Email / Alert */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <a
-                  href={createOwnerEmailNotificationUrl(confirmedBooking)}
-                  className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-amber-300 font-bold text-xs flex items-center justify-center gap-2 border border-amber-500/30 transition-colors"
-                >
-                  <Mail className="w-4 h-4 text-amber-400" />
-                  <span>{t.notifyOwnerBtn}</span>
-                </a>
+              return (
+                <div className="space-y-3">
+                  {/* Action 1: Direct WhatsApp to chosen barber */}
+                  <a
+                    href={createWhatsAppUrl(
+                      barberWhatsApp,
+                      createFormattedWhatsAppQuoteMessage(confirmedBooking)
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 hover:brightness-105 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 transition-all"
+                  >
+                    <MessageCircle className="w-5 h-5 fill-white" />
+                    <span>
+                      {isHassan
+                        ? (lang === 'ar'
+                            ? `إرسال الحجز لسي حسان (المالك وخبير الحلاقة) على الواتساب`
+                            : lang === 'amz'
+                            ? `ⴰⵣⵏ ⴳ ⵡⴰⵜⵙⴰⴱ ⵉ ⵃⴰⵙⴰⵏ (0635392503)`
+                            : `Envoyer la réservation à Hassan (Fondateur) sur WhatsApp`)
+                        : (lang === 'ar'
+                            ? `1. إرسال الحجز للحلاق ${confirmedBooking.barberName} على الواتساب`
+                            : lang === 'amz'
+                            ? `1. ⴰⵣⵏ ⴳ ⵡⴰⵜⵙⴰⴱ ⵉ ${confirmedBooking.barberName}`
+                            : `1. Envoyer la réservation à ${confirmedBooking.barberName} sur WhatsApp`)}
+                    </span>
+                  </a>
 
-                <a
-                  href={createGoogleCalendarUrl(confirmedBooking)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-semibold text-xs flex items-center justify-center gap-2 border border-zinc-800 transition-colors"
-                >
-                  <CalendarPlus className="w-4 h-4 text-blue-400" />
-                  <span>Google Calendar</span>
-                </a>
-              </div>
-            </div>
+                  {/* Action 2: Direct Owner (Hassan - 0635392503) Notification & Fallback (Ensures Hassan tracks every single client request) */}
+                  {!isHassan && (
+                    <a
+                      href={createWhatsAppUrl(
+                        SALON_INFO.whatsappNumber,
+                        createOwnerWhatsAppAlertMessage(confirmedBooking)
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-400/20 to-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 border border-amber-500/40 shadow-md transition-all"
+                    >
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span>
+                        {lang === 'ar'
+                          ? `2. إرسال إشعار لسي حسن (المالك - 0635392503) لمتابعة الحجز`
+                          : lang === 'amz'
+                          ? `2. ⴰⵣⵏ ⵜⴰⵏⵏⴰⵢⵜ ⵉ ⵃⴰⵙⴰⵏ (ⴰⵎⵙⴱⴷⴰⴷ - 0635392503)`
+                          : `2. Notifier Hassan (Propriétaire - 0635392503) pour suivi`}
+                      </span>
+                    </a>
+                  )}
+
+                  {/* Action 3: Email Notification Option to MrBoumlik@gmail.com & Google Calendar */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    <a
+                      href={createOwnerEmailNotificationUrl(confirmedBooking)}
+                      className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-amber-300 font-bold text-xs flex items-center justify-center gap-2 border border-amber-500/30 transition-colors"
+                    >
+                      <Mail className="w-4 h-4 text-amber-400" />
+                      <span>{t.notifyOwnerBtn} (Gmail)</span>
+                    </a>
+
+                    <a
+                      href={createGoogleCalendarUrl(confirmedBooking)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-semibold text-xs flex items-center justify-center gap-2 border border-zinc-800 transition-colors"
+                    >
+                      <CalendarPlus className="w-4 h-4 text-blue-400" />
+                      <span>Google Calendar</span>
+                    </a>
+                  </div>
+
+                  {/* Local Storage Saved Confirmation Notice */}
+                  <div className="flex items-center justify-center gap-1.5 text-[11px] text-emerald-400 pt-1">
+                    <Check className="w-3.5 h-3.5" />
+                    <span>
+                      {lang === 'ar'
+                        ? 'تم حفظ تفاصيل التذكرة محلياً في جهازك لضمان عدم ضياع الموعد'
+                        : lang === 'amz'
+                        ? 'ⵜⵜⵓⵃⴹⴰⵏ ⵉⵏⵖⵎⵉⵙⵏ ⴳ ⵓⵎⵙⵙⵓⴷⵙ ⵏⵏⴽ'
+                        : 'Réservation sécurisée et enregistrée localement sur votre appareil'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
 
             <button
               onClick={handleResetAndClose}
