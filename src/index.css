@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: 'Cinzel', serif;
+  --font-sans: 'Plus Jakarta Sans', sans-serif;
+  --font-arabic: 'Amiri', serif;
+  --font-tifinagh: 'Noto Sans Tifinagh', sans-serif;
+}
+
+/* Custom luxury barber styling */
+.font-display {
+  font-family: 'Cinzel', 'Times New Roman', serif;
+}
+.font-body {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.font-arabic {
+  font-family: 'Amiri', 'Traditional Arabic', serif;
+}
+.font-tifinagh {
+  font-family: 'Noto Sans Tifinagh', serif;
+}
+
+/* Gold gradient text & accents */
+.text-gold-gradient {
+  background: linear-gradient(135deg, #FFF0B3 0%, #E6C265 40%, #B88B27 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-gold-metallic {
+  background: linear-gradient(180deg, #FFFFFF 0%, #E6C265 50%, #996F16 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.bg-gold-gradient {
+  background: linear-gradient(135deg, #E6C265 0%, #CFA032 50%, #9E7416 100%);
+}
+
+.bg-gold-gradient-hover:hover {
+  background: linear-gradient(135deg, #F5D37E 0%, #DFB03E 50%, #B3861E 100%);
+}
+
+.border-gold-glow {
+  box-shadow: 0 0 25px -5px rgba(212, 175, 55, 0.15);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: #0B0D11;
+}
+::-webkit-scrollbar-thumb {
+  background: #252830;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #CFA032;
+}
+
+/* Subtle Barber Pole Stripe Animation */
+@keyframes barberPole {
+  0% { background-position: 0 0; }
+  100% { background-position: 40px 0; }
+}
+
+.barber-pole-border {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(212, 175, 55, 0.3) 0,
+    rgba(212, 175, 55, 0.3) 10px,
+    transparent 10px,
+    transparent 20px
+  );
+  background-size: 28px 28px;
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Salon Boumlik - Barbershop Taroudant",
+  "description": "Modern & elegant men's barbershop located on Rue Bir Anzarane in Taroudant, Morocco. Book luxury haircuts, beard grooming, hot towel treatments, and VIP packages.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
