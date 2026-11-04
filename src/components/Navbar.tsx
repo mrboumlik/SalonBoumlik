@@ -16,6 +16,8 @@ import {
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
 import { Language } from '../types';
+import { FlagIcon } from './LanguageFlags';
+import logoImage from '../assets/images/regenerated_image_1793760774705.png';
 
 interface NavbarProps {
   onOpenBooking: () => void;
@@ -56,11 +58,11 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   }, []);
 
-  const languageOptions: { code: Language; label: string; flag: string }[] = [
-    { code: 'fr', label: 'Français', flag: '🇫🇷' },
-    { code: 'ar', label: 'العربية', flag: '🇲ⴰ' },
-    { code: 'en', label: 'English', flag: '🇬🇧' },
-    { code: 'amz', label: 'ⵜⴰⵎⴰⵣⵉⵖⵜ', flag: 'ⵣ' },
+  const languageOptions: { code: Language; label: string }[] = [
+    { code: 'fr', label: 'Français' },
+    { code: 'ar', label: 'العربية' },
+    { code: 'en', label: 'English' },
+    { code: 'amz', label: 'ⵜⴰⵎⴰⵣⵉⵖⵜ' },
   ];
 
   return (
@@ -91,13 +93,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </div>
 
-            {/* Direct phone call */}
+            {/* Direct phone call - RTL safe */}
             <a 
               href={`tel:${SALON_INFO.phone}`} 
-              className="text-amber-400 hover:text-amber-300 flex items-center gap-1 font-bold text-xs transition-colors"
+              className="text-amber-400 hover:text-amber-300 flex items-center gap-1.5 font-bold text-xs transition-colors"
             >
-              <Phone className="w-3 h-3" />
-              <span>{SALON_INFO.displayPhone}</span>
+              <Phone className="w-3 h-3 flex-shrink-0" />
+              <span dir="ltr" className="inline-block font-mono tracking-wider">{SALON_INFO.displayPhone}</span>
             </a>
           </div>
 
@@ -118,7 +120,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <a href="#" className="flex items-center gap-3 group flex-shrink-0">
             <div className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-xl overflow-hidden bg-white/5 border border-amber-500/40 p-1 flex items-center justify-center shadow-lg shadow-amber-500/10 group-hover:border-amber-400 transition-colors">
               <img 
-                src={SALON_INFO.media.logo} 
+                src={logoImage || SALON_INFO.media.logoClean} 
                 alt="Salon Boumlik Official Logo" 
                 className="w-full h-full object-contain filter drop-shadow-sm group-hover:scale-105 transition-transform"
               />
@@ -149,7 +151,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <a href="#services" className="hover:text-amber-400 transition-colors">
               {t.navServices}
             </a>
-            <a href="#amenities" className="hover:text-amber-400 transition-colors flex items-center gap-1.5 text-amber-300/90">
+            <a href="#gallery" className="hover:text-amber-400 transition-colors text-amber-300/90 flex items-center gap-1">
+              <span>{t.navGallery}</span>
+            </a>
+            <a href="#amenities" className="hover:text-amber-400 transition-colors flex items-center gap-1.5 text-zinc-300">
               <Coffee className="w-3.5 h-3.5 text-amber-400" />
               <span>{t.navAmenities}</span>
             </a>
@@ -171,21 +176,21 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Right Action Cluster: Language Switcher + Booking CTA */}
           <div className="flex items-center gap-2 sm:gap-3">
             
-            {/* Multilingual Selector Dropdown */}
+            {/* Multilingual Selector Dropdown with Official SVG Flags */}
             <div className="relative">
               <button
                 onClick={() => setLangDropdownOpen(!langDropdownOpen)}
-                className="px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                className="px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer shadow-sm"
                 title="Choisir la langue / اختر اللغة / Select Language"
               >
-                <Globe className="w-3.5 h-3.5 text-amber-400" />
-                <span className="uppercase">{lang}</span>
+                <FlagIcon lang={lang} className="w-4 h-3 rounded-xs" />
+                <span className="uppercase font-bold">{lang}</span>
                 <span className="text-[10px] text-zinc-400">▼</span>
               </button>
 
               {langDropdownOpen && (
                 <div 
-                  className={`absolute top-full mt-2 w-36 rounded-xl bg-zinc-950 border border-amber-500/40 p-1.5 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 ${
+                  className={`absolute top-full mt-2 w-40 rounded-xl bg-zinc-950 border border-amber-500/40 p-1.5 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 ${
                     isRtl ? 'left-0' : 'right-0'
                   }`}
                 >
@@ -196,14 +201,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                         setLang(opt.code);
                         setLangDropdownOpen(false);
                       }}
-                      className={`w-full px-2.5 py-1.5 rounded-lg text-left text-xs flex items-center justify-between transition-colors ${
+                      className={`w-full px-2.5 py-2 rounded-lg text-left text-xs flex items-center justify-between transition-colors ${
                         lang === opt.code
                           ? 'bg-amber-400 text-zinc-950 font-bold'
                           : 'text-zinc-300 hover:bg-zinc-900 hover:text-white'
                       }`}
                     >
-                      <span className="flex items-center gap-1.5">
-                        <span>{opt.flag}</span>
+                      <span className="flex items-center gap-2">
+                        <FlagIcon lang={opt.code} className="w-4 h-3 rounded-xs" />
                         <span>{opt.label}</span>
                       </span>
                       {lang === opt.code && <span className="text-[10px] font-black">✓</span>}
@@ -257,7 +262,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {mobileMenuOpen && (
           <div className="xl:hidden bg-[#0A0C10] border-b border-zinc-800 px-4 pt-3 pb-6 mt-2 space-y-3 shadow-2xl">
             
-            {/* Multilingual Selector inside mobile menu */}
+            {/* Multilingual Selector inside mobile menu with FlagIcon */}
             <div className="grid grid-cols-4 gap-1.5 p-1 bg-zinc-950 rounded-xl border border-zinc-800 mb-2">
               {languageOptions.map((opt) => (
                 <button
@@ -266,13 +271,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setLang(opt.code);
                     setMobileMenuOpen(false);
                   }}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-bold text-center transition-all ${
+                  className={`py-2 px-1 rounded-lg text-xs font-bold text-center transition-all flex flex-col items-center justify-center gap-1 ${
                     lang === opt.code
                       ? 'bg-amber-400 text-zinc-950 shadow-sm'
-                      : 'text-zinc-400 hover:text-white'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
                   }`}
                 >
-                  {opt.code.toUpperCase()}
+                  <FlagIcon lang={opt.code} className="w-5 h-3.5 rounded-xs" />
+                  <span className="text-[10px] uppercase font-bold">{opt.code}</span>
                 </button>
               ))}
             </div>
@@ -290,9 +296,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               </a>
 
               <a 
-                href="#amenities" 
+                href="#gallery" 
                 onClick={() => setMobileMenuOpen(false)}
                 className="p-2.5 rounded-xl hover:bg-zinc-900 hover:text-amber-400 transition-colors flex items-center justify-between text-amber-300"
+              >
+                <span>{t.navGallery}</span>
+                <span className="text-[10px] text-amber-400 font-mono">Portfolio</span>
+              </a>
+
+              <a 
+                href="#amenities" 
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-2.5 rounded-xl hover:bg-zinc-900 hover:text-amber-400 transition-colors flex items-center justify-between text-zinc-300"
               >
                 <span>{t.navAmenities}</span>
                 <Coffee className="w-4 h-4 text-amber-400" />
@@ -351,7 +366,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   className="py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-center text-xs font-bold text-zinc-200 flex items-center justify-center gap-1.5"
                 >
                   <Phone className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{SALON_INFO.phone}</span>
+                  <span dir="ltr" className="inline-block font-mono">{SALON_INFO.displayPhone}</span>
                 </a>
 
                 <a

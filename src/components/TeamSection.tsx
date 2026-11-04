@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Users, 
   Crown, 
@@ -17,10 +17,15 @@ interface TeamSectionProps {
 
 export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }) => {
   const { lang, t } = useLanguage();
+  const [expandedBioId, setExpandedBioId] = useState<string | null>('hassan');
 
   return (
     <section id="team" className="py-16 md:py-24 bg-[#08090C] relative border-t border-zinc-800/80">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      {/* Background glow */}
+      <div className="absolute top-1/2 left-1/4 w-[450px] h-[350px] bg-amber-500/10 blur-[140px] rounded-full pointer-events-none" />
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto space-y-3 mb-14">
@@ -47,10 +52,11 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
         </div>
 
         {/* 4 Team Members Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
           {TEAM_MEMBERS.map((barber) => {
             const localizedBarberName = barber.name[lang] || barber.name.fr;
             const firstName = localizedBarberName.split(' ')[0];
+            const isBioExpanded = expandedBioId === barber.id;
 
             return (
               <div
@@ -62,10 +68,10 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                 }`}
               >
                 {barber.isOwner && (
-                  <div className="absolute top-4 right-4">
+                  <div className="absolute top-4 right-4 z-10">
                     <span className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-400 to-amber-500 text-zinc-950 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full shadow-md">
                       <Crown className="w-3 h-3 text-zinc-950" />
-                      <span>{lang === 'ar' ? 'المالك' : lang === 'amz' ? 'ⴰⵎⵙⴱⴷⴰⴷ' : 'Owner'}</span>
+                      <span>{lang === 'ar' ? 'المالك' : lang === 'amz' ? 'ⴰⵎⵙⴱⴷⴰⴷ' : 'Fondateur'}</span>
                     </span>
                   </div>
                 )}
@@ -77,6 +83,7 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                       src={barber.avatar}
                       alt={localizedBarberName}
                       className="w-full h-full object-cover"
+                      loading="lazy"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                   </div>
@@ -95,26 +102,50 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                   </div>
 
                   {/* Rating */}
-                  <div className="flex items-center justify-center gap-1 text-amber-400 text-xs mb-4">
+                  <div className="flex items-center justify-center gap-1 text-amber-400 text-xs mb-3">
                     {[...Array(5)].map((_, i) => (
                       <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />
                     ))}
                     <span className="font-bold text-white ml-1">{barber.rating}.0</span>
                   </div>
 
+                  {/* Biography & Credentials Box */}
+                  <div className="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 mb-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-amber-400 uppercase font-black tracking-wider flex items-center gap-1">
+                        <Award className="w-3 h-3" />
+                        <span>{t.barberBioLabel}</span>
+                      </span>
+                    </div>
+
+                    <p className={`text-zinc-300 text-[11px] leading-relaxed transition-all ${isBioExpanded ? '' : 'line-clamp-3'}`}>
+                      {barber.bio[lang] || barber.bio.fr}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => setExpandedBioId(isBioExpanded ? null : barber.id)}
+                      className="text-[10px] font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                    >
+                      {isBioExpanded 
+                        ? (lang === 'ar' ? 'عرض أقل ▲' : 'Moins ▲') 
+                        : (lang === 'ar' ? 'قراءة المزيد ▼' : 'Lire la suite ▼')}
+                    </button>
+                  </div>
+
                   {/* Specialty Box */}
-                  <div className="p-3 rounded-xl bg-zinc-950/80 border border-zinc-800/80 text-xs text-zinc-300 mb-4">
+                  <div className="p-3 rounded-xl bg-zinc-950/70 border border-zinc-800/80 text-xs text-zinc-400 mb-4">
                     <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mb-1">
                       {lang === 'ar' ? 'التخصص' : lang === 'amz' ? 'ⵜⴰⵎⵙⴽⵉⵔⵜ' : lang === 'en' ? 'Specialty' : 'Spécialité'}
                     </div>
-                    <p className="leading-relaxed">
+                    <p className="leading-relaxed text-[11px] text-zinc-300">
                       {barber.specialty[lang] || barber.specialty.fr}
                     </p>
                   </div>
                 </div>
 
                 {/* Action Button: Choose this barber */}
-                <div className="pt-2 border-t border-zinc-800/80">
+                <div className="pt-2 border-t border-zinc-800/80 space-y-2">
                   <button
                     onClick={() => onSelectBarberToBook(barber.id)}
                     className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
@@ -126,7 +157,7 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                     <Scissors className="w-3.5 h-3.5" />
                     <span>
                       {lang === 'ar' 
-                        ? `اختيار ${firstName}` 
+                        ? `حجز موعد مع ${firstName}` 
                         : lang === 'amz' 
                         ? `ⴰⵙⵜⴰⵢ ⵏ ${firstName}` 
                         : lang === 'en' 
@@ -145,3 +176,4 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
     </section>
   );
 };
+

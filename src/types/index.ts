@@ -59,9 +59,32 @@ export interface BarberStaff {
     en: string;
     amz: string;
   };
+  bio: {
+    fr: string;
+    ar: string;
+    en: string;
+    amz: string;
+  };
+  phone?: string;
+  whatsappNumber?: string;
   avatar: string;
   rating: number;
   isOwner?: boolean;
+}
+
+export interface GalleryItem {
+  id: string;
+  title: {
+    fr: string;
+    ar: string;
+    en: string;
+    amz: string;
+  };
+  category: 'fades' | 'beards' | 'skincare' | 'vip';
+  barberName: string;
+  imageUrl: string;
+  date?: string;
+  likes?: number;
 }
 
 export interface CustomerReview {

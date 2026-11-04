@@ -16,35 +16,43 @@ import { useLanguage } from '../context/LanguageContext';
 export const AmenitiesSection: React.FC = () => {
   const { lang, t, isRtl } = useLanguage();
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
+  const [copiedWifi, setCopiedWifi] = useState(false);
+
+  const handleCopyPassword = () => {
+    navigator.clipboard.writeText(SALON_INFO.media.wifiPassword);
+    setCopiedWifi(true);
+    setTimeout(() => setCopiedWifi(false), 2000);
+  };
 
   const amenities = [
     {
       icon: Wifi,
       title: {
-        fr: 'Wi-Fi Fibre Haut Débit Gratuit',
-        ar: 'إنترنت ويفي فائق السرعة مجاناً',
-        en: 'Free High-Speed Fiber Wi-Fi',
-        amz: 'ⵡⴰⵢ-ⴼⴰⵢ ⴼⴰⴱⵓⵕ ⵙ ⵜⵎⵙⴽⵉⵔⵜ',
+        fr: 'Wi-Fi Fibre Dédié aux Clients',
+        ar: 'إنترنت ويفي فائق السرعة للزبائن',
+        en: 'High-Speed Fiber Wi-Fi Lounge',
+        amz: 'ⵡⴰⵢ-ⴼⴰⵢ ⵉⵖⵓⴷⴰⵏ ⵉ ⵉⵎⵣⴷⴰⵖ',
       },
       desc: {
-        fr: 'Connexion instantanée par simple scan du QR code sans mot de passe compliqué pour naviguer en toute tranquillité.',
-        ar: 'اتصال فوري ومجاني بمجرد مسح رمز الاستجابة السريعة بالهاتف دون الحاجة لكلمات سر معقدة.',
-        en: 'Instant and effortless connection by scanning our QR code, allowing smooth browsing while you wait.',
-        amz: 'ⴰⵎⵢⴰⵡⴰⴹ ⵙ ⵡⴰⵢ-ⴼⴰⵢ ⴼⴰⴱⵓⵕ ⵙ ⵓⵙⴽⴰⵏ ⵏ ⴱⴰⵔⴽⵓⴷ ⴱⵍⴰ ⵜⴰⴳⵓⵔⵉ ⵏ ⵓⵣⵔⴰⵢ.',
+        fr: 'Connexion instantanée par simple scan du QR code ou via le mot de passe @SalonBoumlik pour naviguer en toute tranquillité pendant votre attente.',
+        ar: 'اتصال فوري ومباشر بمسح رمز الباركود بالهاتف أو إدخال كلمة السر @SalonBoumlik لتصفح الإنترنت ومتابعة أعمالكم.',
+        en: 'Instant connection by scanning our QR code or entering @SalonBoumlik password for seamless browsing while you wait.',
+        amz: 'ⴰⵎⵢⴰⵡⴰⴹ ⵙ ⵡⴰⵢ-ⴼⴰⵢ ⵙ ⵓⵙⴽⴰⵏ ⵏ ⴱⴰⵔⴽⵓⴷ ⵏⵉⵖ ⵜⴰⴳⵓⵔⵉ @SalonBoumlik.',
       },
       badge: {
-        fr: '100% Gratuit',
-        ar: 'مجاناً للزبائن',
-        en: 'Free for Guests',
-        amz: 'ⴼⴰⴱⵓⵕ',
+        fr: 'Fibre Optique',
+        ar: 'ألياف بصرية',
+        en: 'High-Speed',
+        amz: 'ⵜⴰⵥⴹⵓⵕⵜ',
       },
       action: () => setWifiModalOpen(true),
       actionText: {
-        fr: 'Scanner le QR Wi-Fi',
-        ar: 'مسح باركود الويفي',
-        en: 'Scan Wi-Fi QR',
+        fr: 'Afficher le QR Wi-Fi',
+        ar: 'عرض باركود الويفي',
+        en: 'Display Wi-Fi QR',
         amz: 'ⵙⴽⴰⵏ ⵡⴰⵢ-ⴼⴰⵢ',
       },
+      isWifiCard: true,
     },
     {
       icon: Tv,
@@ -70,16 +78,16 @@ export const AmenitiesSection: React.FC = () => {
     {
       icon: Coffee,
       title: {
-        fr: 'Boissons Chaudes Offertes',
-        ar: 'مشروبات ساخنة مجانية حسب اختيارك',
-        en: 'Complimentary Warm Drinks',
-        amz: 'ⵜⵉⵙⵉⵜ ⵉⵔⵖⴰⵏ ⴼⴰⴱⵓⵕ',
+        fr: 'Boissons Chaudes : Café & Thé',
+        ar: 'ضيافة المشروبات الساخنة (أتاي أو قهوة)',
+        en: 'Warm Drinks Service: Coffee & Tea',
+        amz: 'ⵜⵉⵙⵉⵜ ⵉⵔⵖⴰⵏ : ⵜⴰⴽⴰⴼⵉⵜ ⴷ ⵡⴰⵜⴰⵢ',
       },
       desc: {
-        fr: 'Choisissez votre boisson lors de votre réservation : Café Expresso italien, Thé à la menthe marocain fraîchement infusé, ou rien.',
-        ar: 'اختر مشروبك المفضل أثناء الحجز: قهوة مقطرة، شاي مغربي بالنعناع الأصيل، أو متابعة الخدمة دون مشروب.',
-        en: 'Select your complimentary beverage when booking: Italian Espresso Coffee, authentic Moroccan Mint Tea, or None.',
-        amz: 'ⵙⵜⵢ ⵜⵉⵙⵉⵜ ⵏⵏⴽ ⴳ ⵓⵙⵔⵓⵙ: ⵜⴰⴽⴰⴼⵉⵜ, ⴰⵜⴰⵢ ⵏ ⵍⵎⵖⵔⵉⴱ ⵙ ⵏⵏⵄⵏⴰⵄ, ⵏⵖ ⵡⴰⵍⵓ.',
+        fr: 'Précisez votre préférence lors de votre réservation : Café noir expresso, Thé à la menthe marocain, ou rien pour passer directement.',
+        ar: 'حدد اختيارك ببساطة أثناء الحجز: قهوة مقطرة، أتاي مغربي، أو تحديد خيار والو لبدء الحلاقة مباشرة.',
+        en: 'Specify your drink choice when reserving: Espresso coffee, authentic Moroccan tea, or None to jump straight to grooming.',
+        amz: 'ⵙⵜⵢ ⵜⵉⵙⵉⵜ ⵏⵏⴽ ⴳ ⵓⵙⵔⵓⵙ: ⵜⴰⴽⴰⴼⵉⵜ, ⴰⵜⴰⵢ, ⵏⵖ ⵡⴰⵍⵓ.',
       },
       badge: {
         fr: 'Hospitalité',
@@ -150,7 +158,9 @@ export const AmenitiesSection: React.FC = () => {
             return (
               <div
                 key={idx}
-                className="rounded-3xl p-6 bg-zinc-900/90 border border-zinc-800 hover:border-amber-500/40 transition-all flex flex-col justify-between shadow-xl space-y-4 group"
+                className={`rounded-3xl p-6 bg-zinc-900/90 border transition-all flex flex-col justify-between shadow-xl space-y-4 group ${
+                  item.isWifiCard ? 'border-amber-500/50 ring-1 ring-amber-500/20' : 'border-zinc-800 hover:border-amber-500/40'
+                }`}
               >
                 <div>
                   <div className="flex items-center justify-between mb-4">
@@ -167,9 +177,36 @@ export const AmenitiesSection: React.FC = () => {
                     {item.title[lang] || item.title.fr}
                   </h3>
 
-                  <p className="text-xs text-zinc-400 leading-relaxed">
+                  <p className="text-xs text-zinc-400 leading-relaxed mb-3">
                     {item.desc[lang] || item.desc.fr}
                   </p>
+
+                  {/* Explicit Wi-Fi Credentials Pill */}
+                  {item.isWifiCard && (
+                    <div className="p-3 rounded-2xl bg-zinc-950 border border-amber-500/30 space-y-2 mt-2">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-zinc-400">{t.wifiNetworkTitle} :</span>
+                        <span className="font-mono font-bold text-amber-300">{SALON_INFO.media.wifiSsid}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] border-t border-zinc-800/80 pt-1.5">
+                        <span className="text-zinc-400">{t.wifiPasswordTitle} :</span>
+                        <span className="font-mono font-bold text-white">{SALON_INFO.media.wifiPassword}</span>
+                      </div>
+                      <button
+                        onClick={handleCopyPassword}
+                        className="w-full mt-1 py-1.5 rounded-lg bg-amber-400/15 hover:bg-amber-400/25 border border-amber-400/30 text-amber-300 text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                      >
+                        {copiedWifi ? (
+                          <>
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            <span className="text-emerald-400">{t.copied}</span>
+                          </>
+                        ) : (
+                          <span>{t.copyPassword}</span>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {item.action && (
@@ -188,7 +225,7 @@ export const AmenitiesSection: React.FC = () => {
           })}
         </div>
 
-        {/* Complimentary Drink Highlight Card */}
+        {/* Drink Highlight Card (No "free" mentions, just clear hospitality) */}
         <div className="mt-12 rounded-3xl bg-gradient-to-r from-zinc-900 via-amber-950/20 to-zinc-900 border border-amber-500/30 p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center flex-shrink-0 shadow-lg">
@@ -200,22 +237,22 @@ export const AmenitiesSection: React.FC = () => {
               </h4>
               <p className="text-xs text-zinc-400 max-w-xl">
                 {lang === 'ar'
-                  ? 'اختر بين الشاي المغربي بالنعناع، القهوة، أو إعلامنا بعدم الرغبة في مشروب أثناء حجز موعدك.'
+                  ? 'اختر مشروبك المفضل ببساطة أثناء حجز موعدك: شاي (أتاي فقط)، قهوة، أو بدون مشروب (والو).'
                   : lang === 'amz'
                   ? 'ⵙⵜⵢ ⴳⵔ ⵡⴰⵜⴰⵢ, ⵜⴰⴽⴰⴼⵉⵜ ⵏⵖ ⵡⴰⵍⵓ ⴳ ⵓⴽⵓⴷ ⵏ ⵓⵙⵔⵓⵙ.'
-                  : 'Lors de votre prise de rendez-vous en ligne, indiquez simplement votre préférence : Thé à la menthe, Café expresso, ou rien.'}
+                  : 'Lors de votre réservation en ligne, indiquez simplement votre choix : Thé, Café expresso, ou Rien.'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap justify-center">
-            <span className="px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-bold text-amber-300">
+          <div className="flex items-center gap-2.5 flex-wrap justify-center">
+            <span className="px-3.5 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-bold text-amber-300">
               ☕ {t.drinkCoffee}
             </span>
-            <span className="px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-bold text-emerald-300">
+            <span className="px-3.5 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-bold text-emerald-300">
               🍃 {t.drinkTea}
             </span>
-            <span className="px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-semibold text-zinc-400">
+            <span className="px-3.5 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-semibold text-zinc-400">
               🚫 {t.drinkNone}
             </span>
           </div>
@@ -223,7 +260,7 @@ export const AmenitiesSection: React.FC = () => {
 
       </div>
 
-      {/* Wi-Fi QR Lightbox */}
+      {/* Wi-Fi QR Lightbox with newly uploaded QR asset */}
       {wifiModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150">
           <div className="bg-zinc-950 border border-amber-500/40 rounded-3xl max-w-xs sm:max-w-sm w-full p-6 text-center space-y-4 shadow-2xl relative">
@@ -240,24 +277,45 @@ export const AmenitiesSection: React.FC = () => {
 
             <div>
               <h4 className="text-base font-bold text-white">
-                {lang === 'ar' ? 'واي فاي صالون بومليك' : lang === 'amz' ? 'ⵡⴰⵢ-ⴼⴰⵢ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ' : 'Wi-Fi Gratuit Salon Boumlik'}
+                {lang === 'ar' ? 'واي فاي صالون بومليك' : lang === 'amz' ? 'ⵡⴰⵢ-ⴼⴰⵢ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ' : 'Wi-Fi Salon Boumlik'}
               </h4>
               <p className="text-xs text-zinc-400 mt-1">
                 {lang === 'ar' ? 'امسح الباركود بهاتفك للاتصال الفوري' : lang === 'amz' ? 'ⵙⴽⴰⵏ ⴱⴰⵔⴽⵓⴷ ⵙ ⵓⵜⵉⵍⵉⴼⵓⵏ' : 'Scannez avec votre téléphone pour vous connecter'}
               </p>
             </div>
 
-            <div className="w-56 h-56 mx-auto rounded-2xl overflow-hidden p-3 bg-white shadow-2xl">
+            <div className="w-60 h-60 mx-auto rounded-2xl overflow-hidden p-3 bg-white shadow-2xl flex items-center justify-center">
               <img
                 src={SALON_INFO.media.qrWifi}
-                alt="Free Wi-Fi QR code Salon Boumlik"
+                alt="Wi-Fi QR code Salon Boumlik"
                 className="w-full h-full object-contain"
               />
             </div>
 
-            <p className="text-[11px] text-zinc-500">
-              {lang === 'ar' ? 'إنترنت عالي السرعة متاح لجميع الزبائن' : lang === 'amz' ? 'ⵡⴰⵢ-ⴼⴰⵢ ⵉⵖⵓⴷⴰⵏ ⵉ ⵉⵎⵣⴷⴰⵖ' : 'Haut débit fibre disponible au 2ème étage.'}
-            </p>
+            <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-left text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-zinc-400">{t.wifiNetworkTitle} :</span>
+                <span className="font-mono font-bold text-amber-300">{SALON_INFO.media.wifiSsid}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-400">{t.wifiPasswordTitle} :</span>
+                <span className="font-mono font-bold text-white">{SALON_INFO.media.wifiPassword}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleCopyPassword}
+              className="w-full py-2.5 rounded-xl bg-amber-400 text-zinc-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
+            >
+              {copiedWifi ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{t.copied}</span>
+                </>
+              ) : (
+                <span>{t.copyPassword}</span>
+              )}
+            </button>
           </div>
         </div>
       )}

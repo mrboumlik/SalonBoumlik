@@ -361,19 +361,26 @@ export const ReviewsSection: React.FC = () => {
             <div className="lg:col-span-4 flex items-center justify-center gap-4">
               <div 
                 onClick={() => setIsQrModalOpen(true)}
-                className="group relative rounded-2xl overflow-hidden border border-amber-500/30 bg-zinc-950 p-2 cursor-pointer shadow-lg hover:border-amber-400 transition-colors flex items-center gap-3 w-full max-w-sm"
+                className="group relative rounded-2xl overflow-hidden border border-amber-500/40 bg-zinc-950 p-2.5 cursor-pointer shadow-xl hover:border-amber-400 transition-colors flex items-center gap-3.5 w-full max-w-sm"
               >
-                <div className="w-16 h-16 rounded-xl overflow-hidden bg-white p-1 flex-shrink-0">
+                <div className="w-16 h-16 rounded-xl overflow-hidden bg-white p-1 flex-shrink-0 flex items-center justify-center shadow-md">
                   <img 
-                    src={SALON_INFO.media.googleReviewCard} 
+                    src={SALON_INFO.media.qrGoogleReview || SALON_INFO.media.googleReviewCard} 
                     alt="Google Review QR code" 
                     className="w-full h-full object-contain"
                   />
                 </div>
                 <div className="text-left">
-                  <span className="text-[10px] text-amber-400 uppercase font-black tracking-wider">
-                    {ui.qrCardTag}
-                  </span>
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <img 
+                      src={SALON_INFO.media.googleReviewBadge} 
+                      alt="Google" 
+                      className="w-4 h-4 object-contain"
+                    />
+                    <span className="text-[10px] text-amber-400 uppercase font-black tracking-wider">
+                      {ui.qrCardTag}
+                    </span>
+                  </div>
                   <div className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors">
                     {ui.qrCardTitle}
                   </div>
@@ -385,23 +392,37 @@ export const ReviewsSection: React.FC = () => {
               </div>
             </div>
 
-            {/* Actions: Leave review */}
+            {/* Actions: Direct Google 5-Star CTA + Form button */}
             <div className="lg:col-span-4 flex flex-col items-center lg:items-end justify-center gap-3">
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 to-amber-500 text-zinc-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-400/20 hover:brightness-105 active:scale-95 transition-all cursor-pointer"
+              <a
+                href={SALON_INFO.social.googleReviewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-300 to-amber-500 text-zinc-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-400/20 hover:brightness-105 active:scale-95 transition-all cursor-pointer"
               >
-                <MessageSquarePlus className="w-4 h-4 text-zinc-950" />
-                <span>{t.leaveReviewBtn}</span>
-              </button>
+                <Star className="w-4 h-4 text-zinc-950 fill-zinc-950" />
+                <span>
+                  {lang === 'ar' ? 'تقييم 5 نجوم على خرائط جوجل' : lang === 'amz' ? 'ⵙⴽⵔ 5 ⵉⵜⵔⴰⵏ ⴳ Google' : 'Laisser 5 Étoiles sur Google'}
+                </span>
+              </a>
 
-              <button
-                onClick={() => setIsQrModalOpen(true)}
-                className="text-xs text-zinc-400 hover:text-amber-400 flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <QrCode className="w-3.5 h-3.5" />
-                <span>{ui.viewPosterBtn}</span>
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="text-xs text-zinc-300 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer bg-zinc-800 px-3 py-1.5 rounded-xl border border-zinc-700"
+                >
+                  <MessageSquarePlus className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{t.leaveReviewBtn}</span>
+                </button>
+
+                <button
+                  onClick={() => setIsQrModalOpen(true)}
+                  className="text-xs text-zinc-400 hover:text-amber-400 flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>{ui.viewPosterBtn}</span>
+                </button>
+              </div>
             </div>
 
           </div>

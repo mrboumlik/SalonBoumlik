@@ -3,6 +3,7 @@ import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { ServicesSection } from './components/ServicesSection';
+import { GallerySection } from './components/GallerySection';
 import { AmenitiesSection } from './components/AmenitiesSection';
 import { TeamSection } from './components/TeamSection';
 import { LocationSection } from './components/LocationSection';
@@ -106,19 +107,22 @@ function SalonApp() {
           onProceedToBooking={() => setIsBookingOpen(true)}
         />
 
-        {/* 3. Amenities, Comfort, Wi-Fi & Waiting Lounge */}
+        {/* 3. Showcase Gallery: Our Work / أعمالنا / Nos Réalisations */}
+        <GallerySection />
+
+        {/* 4. Amenities, Comfort, Wi-Fi Credentials & Waiting Lounge */}
         <AmenitiesSection />
 
-        {/* 4. Team Members: Hassan (Owner), Anouar Arif, Lahcen Lhanz, Mounir Qurdeny */}
+        {/* 5. Team Members: Hassan (Owner), Anouar Arif, Lahcen Lhanz, Mounir Qurdeny */}
         <TeamSection onSelectBarberToBook={handleSelectBarberToBook} />
 
-        {/* 5. Exact Location & Google Maps (2nd Floor, above Dental Tech & ITRI Bakery) */}
+        {/* 6. Exact Location & Google Maps (2nd Floor, above Dental Tech & ITRI Bakery) */}
         <LocationSection onOpenBooking={() => setIsBookingOpen(true)} />
 
-        {/* 6. Customer Reviews, Ratings & Google Reviews QR Card */}
+        {/* 7. Customer Reviews, Ratings & Google Reviews QR Card */}
         <ReviewsSection />
 
-        {/* 7. Contact, Social Media & Official QR Codes (WhatsApp, Instagram, Facebook, Wi-Fi) */}
+        {/* 8. Contact, Social Media & Official QR Codes (WhatsApp, Instagram, Facebook, Wi-Fi) */}
         <ContactSection />
       </main>
 
@@ -135,7 +139,7 @@ function SalonApp() {
           className="flex-1 py-2.5 px-3 rounded-xl bg-zinc-900 border border-zinc-800 text-xs font-bold text-zinc-200 flex items-center justify-center gap-1.5"
         >
           <Phone className="w-3.5 h-3.5 text-amber-400" />
-          <span>0635392503</span>
+          <span dir="ltr" className="inline-block font-mono">06 35 39 25 03</span>
         </a>
 
         <button

@@ -26,6 +26,7 @@ import {
   createGoogleCalendarUrl, 
   createWhatsAppUrl, 
   createFormattedWhatsAppQuoteMessage,
+  createOwnerEmailNotificationUrl,
   getDrinkLabel
 } from '../utils/calendar';
 import { useLanguage } from '../context/LanguageContext';
@@ -99,61 +100,33 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     e.preventDefault();
     setValidationError(null);
 
-    // Check mandatory barber selection
-    if (!barberId) {
-      setBarberError(true);
-      return;
-    }
-    setBarberError(false);
+    // If no barber chosen yet, default to Hassan (Owner)
+    const activeBarberId = barberId || TEAM_MEMBERS[0].id;
+    const chosenBarber = TEAM_MEMBERS.find((b) => b.id === activeBarberId) || TEAM_MEMBERS[0];
 
-    if (selectedServices.length === 0) {
-      setValidationError(
-        lang === 'ar'
-          ? 'يرجى تحديد خدمة واحدة على الأقل من القائمة أعلاه.'
-          : lang === 'amz'
-          ? 'ⵉⵇⵇⴰⵏ ⴷ ⴰⴷ ⵜⵙⵜⵉⴷ ⵢⴰⵜ ⵜⴰⵏⴰⴼⵓⵜ.'
-          : lang === 'en'
-          ? 'Please select at least one service from the checklist.'
-          : 'Veuillez sélectionner au moins une prestation dans la liste.'
-      );
-      return;
-    }
+    // Services selection check (default to haircut if none selected)
+    const activeServices = selectedServices.length > 0 ? selectedServices : [SERVICES[0]];
 
-    if (!clientName.trim() || !clientPhone.trim()) {
-      setValidationError(
-        lang === 'ar'
-          ? 'يرجى إدخال اسمك ورقم هاتفك للمتابعة.'
-          : lang === 'amz'
-          ? 'ⵉⵇⵇⴰⵏ ⴷ ⴰⴷ ⵜⴰⵔⴰⴷ ⵉⵙⵎ ⴷ ⵓⵟⵟⵓⵏ ⵏ ⵓⵜⵉⵍⵉⴼⵓⵏ.'
-          : lang === 'en'
-          ? 'Please enter your name and phone number.'
-          : 'Veuillez renseigner votre nom et votre numéro de téléphone.'
-      );
-      return;
-    }
-
-    const chosenBarber = TEAM_MEMBERS.find((b) => b.id === barberId);
-    if (!chosenBarber) {
-      setBarberError(true);
-      return;
-    }
+    const defaultClientName = lang === 'ar' ? 'زبون محترم' : lang === 'amz' ? 'ⴰⵎⵣⴷⴰⵖ' : 'Client';
+    const finalClientName = clientName.trim() || defaultClientName;
+    const finalClientPhone = clientPhone.trim() || '';
 
     const ticketRef = `SB-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const newBooking: AppointmentBooking = {
       id: `booking-${Date.now()}`,
       ticketNumber: ticketRef,
-      services: selectedServices,
+      services: activeServices,
       barberId: chosenBarber.id,
       barberName: chosenBarber.name[lang] || chosenBarber.name.fr,
       drinkPreference,
-      date: selectedDate,
-      timeSlot: selectedTime,
-      clientName: clientName.trim(),
-      clientPhone: clientPhone.trim(),
+      date: selectedDate || todayStr,
+      timeSlot: selectedTime || '14:30',
+      clientName: finalClientName,
+      clientPhone: finalClientPhone,
       clientEmail: clientEmail.trim(),
       notes: notes.trim() || undefined,
-      totalDurationMinutes: totalDuration,
+      totalDurationMinutes: activeServices.reduce((acc, s) => acc + s.durationMinutes, 0),
       createdAt: new Date().toISOString(),
       status: 'pending_quote',
     };
@@ -193,7 +166,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         </button>
 
         {confirmedBooking ? (
-          /* CONFIRMATION & WHATSAPP REDIRECT VIEW */
+          /* CONFIRMATION & DUAL MESSAGING REDIRECT VIEW */
           <div className="space-y-6 text-center py-2 animate-in zoom-in-95 duration-200">
             
             <div className="w-16 h-16 rounded-2xl bg-amber-400/10 border border-amber-400/40 text-amber-400 flex items-center justify-center mx-auto shadow-lg shadow-amber-400/10">
@@ -202,17 +175,17 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
             <div>
               <span className="text-xs font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-                {lang === 'ar' ? 'تم تجهيز طلب الموعد' : lang === 'amz' ? 'ⵉⵎⵓⵙⵙⵓ ⵏ ⵓⵙⵔⵓⵙ ⵉⵙⵎⴷ' : 'Demande Enregistrée'}
+                {lang === 'ar' ? 'تم تسجيل طلب الموعد بنجاح' : lang === 'amz' ? 'ⵉⵎⵓⵙⵙⵓ ⵏ ⵓⵙⵔⵓⵙ ⵉⵙⵎⴷ' : 'Demande Enregistrée'}
               </span>
               <h3 className="text-2xl sm:text-3xl font-extrabold text-white font-display mt-2">
                 {confirmedBooking.clientName}
               </h3>
-              <p className="text-xs sm:text-sm text-zinc-300 mt-1">
+              <p className="text-xs sm:text-sm text-zinc-300 mt-1 max-w-md mx-auto">
                 {lang === 'ar'
-                  ? 'تم إعداد رسالة الواتساب الخاصة بطلبك وتوجيهها للمسؤول (0635392503) للرد بالتسعيرة المناسبة.'
+                  ? 'تم تجهيز تفاصيل الموعد. يمكنك إرسالها مباشرة للحلاق ونسخ الإشعار لسي حسن عبر الواتساب أو الإيميل.'
                   : lang === 'amz'
-                  ? 'ⵜⴰⴱⵔⴰⵜ ⵏ ⵡⴰⵜⵙⴰⴱ ⵜⵍⵍⴰ ⵖⵔ ⵃⴰⵙⴰⵏ (0635392503).'
-                  : 'Votre demande complète a été transmise vers WhatsApp au 0635392503 pour devis.'}
+                  ? 'ⵜⴰⴱⵔⴰⵜ ⵏ ⵡⴰⵜⵙⴰⴱ ⵜⵍⵍⴰ ⵖⵔ ⵓⵎⴽⵕⴰⴹ ⴷ ⵃⴰⵙⴰⵏ.'
+                  : 'Votre demande a été préparée. Envoyez-la directement sur WhatsApp et avisez Hassan.'}
               </p>
             </div>
 
@@ -226,11 +199,17 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="text-[11px] text-zinc-400">Devis WhatsApp</span>
+                  <span className="text-[11px] text-zinc-400">Contact Salon</span>
                   <div className="text-xs font-bold text-emerald-400">
-                    06 35 39 25 03
+                    <span dir="ltr" className="inline-block font-mono">06 35 39 25 03</span>
                   </div>
                 </div>
+              </div>
+
+              {/* VIP Reservation Rule Notice Badge */}
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300 flex items-start gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{t.vipReservationNotice}</span>
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-xs">
@@ -254,14 +233,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </div>
                 <div>
                   <span className="text-zinc-400">
-                    {lang === 'ar' ? 'المشروب المجاني :' : lang === 'amz' ? 'ⵜⵉⵙⵉⵜ :' : 'Boisson offerte :'}
+                    {lang === 'ar' ? 'اختيار المشروب :' : lang === 'amz' ? 'ⵜⵉⵙⵉⵜ :' : 'Boisson :'}
                   </span>
                   <div className="font-semibold text-amber-300 mt-0.5">
                     {confirmedBooking.drinkPreference === 'coffee'
-                      ? (lang === 'ar' ? '☕ قهوة' : lang === 'amz' ? '☕ ⵜⴰⴽⴰⴼⵉⵜ' : '☕ Café Expresso')
+                      ? (lang === 'ar' ? '☕ قهوة' : lang === 'amz' ? '☕ ⵜⴰⴽⴰⴼⵉⵜ' : '☕ Café')
                       : confirmedBooking.drinkPreference === 'tea'
-                      ? (lang === 'ar' ? '🍃 أتاي مغربي' : lang === 'amz' ? '🍃 ⴰⵜⴰⵢ ⵏ ⵍⵎⵖⵔⵉⴱ' : '🍃 Thé à la menthe')
-                      : (lang === 'ar' ? '🚫 لا شيء' : lang === 'amz' ? '🚫 ⵡⴰⵍⵓ' : '🚫 Rien')}
+                      ? (lang === 'ar' ? '🍃 أتاي فقط' : lang === 'amz' ? '🍃 ⴰⵜⴰⵢ' : '🍃 Thé')
+                      : (lang === 'ar' ? '🚫 والو' : lang === 'amz' ? '🚫 ⵡⴰⵍⵓ' : '🚫 Rien')}
                   </div>
                 </div>
               </div>
@@ -285,8 +264,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
             </div>
 
-            {/* Actions: Re-open WhatsApp, Google Cal, Download .ICS */}
+            {/* DUAL MESSAGING ACTIONS */}
             <div className="space-y-3">
+              {/* 1. Direct WhatsApp Message to Barber/Salon */}
               <a
                 href={createWhatsAppUrl(
                   SALON_INFO.whatsappNumber,
@@ -299,32 +279,32 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <MessageCircle className="w-5 h-5 fill-white" />
                 <span>
                   {lang === 'ar'
-                    ? 'فتح المحادثة عبر الواتساب مع حسن (0635392503)'
+                    ? `إرسال الحجز للحلاق عبر الواتساب (${confirmedBooking.barberName})`
                     : lang === 'amz'
-                    ? 'ⴰⵕⵥⵥⵓⵎ ⵏ ⵡⴰⵜⵙⴰⴱ ⴷ ⵃⴰⵙⴰⵏ (0635392503)'
-                    : 'Ouvrir la discussion WhatsApp avec Hassan (0635392503)'}
+                    ? `ⴰⵣⵏ ⴳ ⵡⴰⵜⵙⴰⴱ ⵉ ${confirmedBooking.barberName}`
+                    : `Envoyer au barbier sur WhatsApp (${confirmedBooking.barberName})`}
                 </span>
               </a>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* 2. Automated Duplicate Copy to Hassan (Owner) via Email / Alert */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <a
+                  href={createOwnerEmailNotificationUrl(confirmedBooking)}
+                  className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-amber-300 font-bold text-xs flex items-center justify-center gap-2 border border-amber-500/30 transition-colors"
+                >
+                  <Mail className="w-4 h-4 text-amber-400" />
+                  <span>{t.notifyOwnerBtn}</span>
+                </a>
+
                 <a
                   href={createGoogleCalendarUrl(confirmedBooking)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="py-2.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-xs flex items-center justify-center gap-2 border border-zinc-700 transition-colors"
+                  className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-semibold text-xs flex items-center justify-center gap-2 border border-zinc-800 transition-colors"
                 >
                   <CalendarPlus className="w-4 h-4 text-blue-400" />
                   <span>Google Calendar</span>
                 </a>
-
-                <button
-                  type="button"
-                  onClick={() => downloadIcsFile(confirmedBooking)}
-                  className="py-2.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-xs flex items-center justify-center gap-2 border border-zinc-700 transition-colors cursor-pointer"
-                >
-                  <Download className="w-4 h-4 text-amber-400" />
-                  <span>.ICS</span>
-                </button>
               </div>
             </div>
 
@@ -351,6 +331,19 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </p>
             </div>
 
+            {/* VIP RESERVATION NOTICE (+10 DH RULE) BANNER */}
+            <div className="mb-5 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/40 text-xs text-amber-300 flex items-start gap-2.5 shadow-md">
+              <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <span className="font-black uppercase tracking-wider block text-[11px] text-amber-400">
+                  ⚡ {t.vipReservationBadge}
+                </span>
+                <p className="text-[11px] text-zinc-200 leading-relaxed">
+                  {t.vipReservationNotice}
+                </p>
+              </div>
+            </div>
+
             <form onSubmit={handleSubmitBooking} className="space-y-5">
               
               {/* 1. Services Checklist (Multi-selection) */}
@@ -368,6 +361,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
                   {SERVICES.map((service) => {
                     const isSelected = selectedServices.some((s) => s.id === service.id);
+
                     return (
                       <div
                         key={service.id}
@@ -503,11 +497,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <div>
                   <label className="block text-xs font-bold text-zinc-200 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
                     <Calendar className="w-3.5 h-3.5 text-amber-400" />
-                    <span>4. {t.formDate} *</span>
+                    <span>4. {t.formDate}</span>
                   </label>
                   <input
                     type="date"
-                    required
                     min={todayStr}
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
@@ -518,7 +511,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <div>
                   <label className="block text-xs font-bold text-zinc-200 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-amber-400" />
-                    <span>5. {t.formTime} *</span>
+                    <span>5. {t.formTime}</span>
                   </label>
                   <select
                     value={selectedTime}
@@ -534,24 +527,28 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 </div>
               </div>
 
-              {/* 5. Client Details (Name, Phone Number, Gmail/Email) */}
+              {/* 5. Client Details (Name, Phone Number, Gmail/Email - Smooth Non-Mandatory) */}
               <div className="space-y-3 pt-2 border-t border-zinc-800/80">
-                <label className="block text-xs font-bold text-zinc-200 uppercase tracking-wider">
-                  {lang === 'ar' 
-                    ? '6. بيانات الزبون ومعلومات الاتصال' 
-                    : lang === 'amz' 
-                    ? '6. ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵓⵎⵣⴷⴰⵖ' 
-                    : lang === 'en' 
-                    ? '6. Client Contact Details' 
-                    : '6. Coordonnées du Client'}
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-zinc-200 uppercase tracking-wider">
+                    {lang === 'ar' 
+                      ? '6. بيانات الزبون ومعلومات الاتصال' 
+                      : lang === 'amz' 
+                      ? '6. ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵓⵎⵣⴷⴰⵖ' 
+                      : lang === 'en' 
+                      ? '6. Client Contact Details' 
+                      : '6. Coordonnées du Client'}
+                  </label>
+                  <span className="text-[10px] text-zinc-400">
+                    {lang === 'ar' ? 'سريعة واختيارية' : 'Optionnel / Rapide'}
+                  </span>
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <input
                       type="text"
-                      required
-                      placeholder={`${t.formClientName} *`}
+                      placeholder={t.formClientName}
                       value={clientName}
                       onChange={(e) => {
                         setClientName(e.target.value);
@@ -564,8 +561,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <div>
                     <input
                       type="tel"
-                      required
-                      placeholder={`${t.formClientPhone} *`}
+                      placeholder={t.formClientPhone}
                       value={clientPhone}
                       onChange={(e) => {
                         setClientPhone(e.target.value);
@@ -580,8 +576,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <div>
                     <input
                       type="email"
-                      required
-                      placeholder={`${t.formClientEmail} *`}
+                      placeholder={t.formClientEmail}
                       value={clientEmail}
                       onChange={(e) => setClientEmail(e.target.value)}
                       className="w-full bg-zinc-950 text-xs text-zinc-100 px-3.5 py-2.5 rounded-xl border border-zinc-800 focus:outline-none focus:border-amber-500"

@@ -4,9 +4,9 @@ import { SALON_INFO } from '../data/barbershopData';
 export function getDrinkLabel(pref: 'coffee' | 'tea' | 'none'): string {
   switch (pref) {
     case 'coffee':
-      return 'Café Expresso / قهوة';
+      return 'Café / قهوة';
     case 'tea':
-      return 'Thé à la Menthe Marocain / أتاي';
+      return 'Thé / أتاي فقط';
     case 'none':
       return 'Rien / والو';
   }
@@ -20,32 +20,59 @@ export function createFormattedWhatsAppQuoteMessage(appointment: AppointmentBook
 _More than barber shop • Taroudant_
 
 *👤 INFORMATIONS CLIENT :*
-• *Nom complet :* ${appointment.clientName}
-• *Téléphone :* ${appointment.clientPhone}
+• *Nom :* ${appointment.clientName || 'Non spécifié (Réservation rapide)'}
+• *Téléphone :* ${appointment.clientPhone || 'Non spécifié'}
 • *Email :* ${appointment.clientEmail || 'Non spécifié'}
 
 *✂️ BARBIER CHOISI :*
 • *Barbier :* ${appointment.barberName}
 
-*☕ BOISSON OFFERTE PENDANT L'ATTENTE :*
+*☕ BOISSON PENDANT L'ATTENTE :*
 • *Choix :* ${drink}
 
 *📅 DATE & CRÉNEAU SOUHAITÉS :*
-• *Date :* ${appointment.date}
-• *Heure :* ${appointment.timeSlot}
+• *Date :* ${appointment.date || 'Dès que possible'}
+• *Heure :* ${appointment.timeSlot || 'Créneau libre'}
 
 *💈 PRESTATIONS SÉLECTIONNÉES :*
 ${serviceList}
 • *Durée estimée :* ~${appointment.totalDurationMinutes} min
 
+*⚡ RÈGLE RÉSERVATION AVANCE (SANS ATTENTE) :*
++10 DH de majoration est appliquée sur la coupe de cheveux pour réserver un créneau précis à l'avance et éviter l'attente au salon. Vous me contacterez dès que mon tour approche.
+
 ${appointment.notes ? `*📝 REMARQUES PARTICULIÈRES :*\n${appointment.notes}\n` : ''}
-*📍 LIEU DU RENDEZ-VOUS :*
+*📍 LIEU :*
 ${SALON_INFO.address.fr}
 (Contact Salon: ${SALON_INFO.displayPhone})
 
 ---
-Salam Si Hassan, merci de me confirmer la disponibilité et de m'envoyer le devis / tarif pour cette formule. بارك الله فيك !`;
+Salam, merci de me confirmer la disponibilité et de m'envoyer le devis personnalisé pour cette formule. بارك الله فيك !`;
 }
+
+export function createOwnerEmailNotificationUrl(appointment: AppointmentBooking): string {
+  const serviceNames = appointment.services.map(s => s.name.fr).join(', ');
+  const subject = `[RDV SALON BOUMLIK] Ticket #${appointment.ticketNumber} - ${appointment.clientName || 'Client'}`;
+  const body = `Bonjour Hassan,
+
+Un nouveau rendez-vous a été enregistré sur le site web Salon Boumlik :
+
+• Ticket : #${appointment.ticketNumber}
+• Client : ${appointment.clientName || 'Client (Réservation rapide)'}
+• Téléphone : ${appointment.clientPhone || 'Non spécifié'}
+• Email : ${appointment.clientEmail || 'Non spécifié'}
+• Barbier choisi : ${appointment.barberName}
+• Date & Heure : ${appointment.date} à ${appointment.timeSlot}
+• Boisson : ${getDrinkLabel(appointment.drinkPreference)}
+• Prestations : ${serviceNames}
+• Option Sans Attente : +10 DH applicable sur la coupe
+${appointment.notes ? `• Remarques : ${appointment.notes}\n` : ''}
+
+Consulter et répondre au client sur WhatsApp au 0635392503.`;
+
+  return `mailto:MrBoumlik@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 
 export function createGoogleCalendarUrl(appointment: AppointmentBooking): string {
   const title = encodeURIComponent(`Salon Boumlik - ${appointment.services.map(s => s.name.fr).join(', ')}`);

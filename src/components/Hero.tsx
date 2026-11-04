@@ -17,7 +17,8 @@ import {
 } from 'lucide-react';
 import { SALON_INFO, TEAM_MEMBERS } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
-import heroBrandedBanner from '../assets/images/regenerated_image_1793638372422.png';
+import heroLogoImage from '../assets/images/regenerated_image_1793760774705.png';
+import heroBannerImage from '../assets/images/regenerated_image_1793760775185.png';
 
 interface HeroProps {
   onOpenBooking: () => void;
@@ -105,7 +106,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
               <div className="flex items-center justify-center lg:justify-start gap-4">
                 <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl p-1.5 bg-white/5 border border-amber-500/40 shadow-xl shadow-amber-500/10 flex-shrink-0">
                   <img 
-                    src={SALON_INFO.media.logo} 
+                    src={heroLogoImage} 
                     alt="Salon Boumlik Logo" 
                     className="w-full h-full object-contain filter drop-shadow"
                   />
@@ -140,8 +141,11 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
               <p className="text-zinc-200 pl-6 leading-relaxed">
                 {SALON_INFO.address[lang] || SALON_INFO.address.fr}
               </p>
-              <div className="pl-6 text-[11px] text-zinc-400 flex flex-wrap gap-2 pt-0.5">
-                <span className="text-amber-300 font-bold">📍 0635392503</span>
+              <div className="pl-6 text-[11px] text-zinc-400 flex flex-wrap items-center gap-2 pt-0.5">
+                <span className="text-amber-300 font-bold flex items-center gap-1">
+                  <span>📍</span>
+                  <span dir="ltr" className="inline-block font-mono">06 35 39 25 03</span>
+                </span>
                 <span>•</span>
                 <span>Rue Bir Anzarane • Taroudant</span>
               </div>
@@ -169,19 +173,27 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
                 <span>{t.viewServices}</span>
               </a>
 
-              {/* 3. Direct Phone Call (0635392503) */}
+              {/* 3. Direct Phone Call (0635392503) - RTL Safe */}
               <a
                 href={`tel:${SALON_INFO.phone}`}
                 className="px-5 py-4 rounded-2xl font-bold text-sm sm:text-base text-zinc-300 hover:text-white bg-zinc-950/70 hover:bg-zinc-900 border border-zinc-800 transition-all flex items-center justify-center gap-2"
               >
-                <PhoneCall className="w-4 h-4 text-amber-400" />
-                <span>{SALON_INFO.displayPhone}</span>
+                <PhoneCall className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <span dir="ltr" className="inline-block font-mono tracking-wider">{SALON_INFO.displayPhone}</span>
               </a>
 
             </div>
 
+            {/* VIP Reservation Rule Teaser */}
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-500/10 via-zinc-900 to-zinc-900 border border-amber-500/30 text-xs text-amber-300 flex items-center gap-2.5 max-w-xl mx-auto lg:mx-0">
+              <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <span className="text-[11px] leading-relaxed text-zinc-200">
+                <strong className="text-amber-300">{t.vipReservationBadge} :</strong> {t.vipReservationNotice}
+              </span>
+            </div>
+
             {/* Team Members Mention */}
-            <div className="pt-4 border-t border-zinc-800/60 flex flex-wrap items-center justify-center lg:justify-start gap-3 text-xs text-zinc-400">
+            <div className="pt-2 border-t border-zinc-800/60 flex flex-wrap items-center justify-center lg:justify-start gap-3 text-xs text-zinc-400">
               <span className="font-semibold text-zinc-300">{teamLabel[lang] || teamLabel.fr}</span>
               {TEAM_MEMBERS.map((barber, idx) => (
                 <React.Fragment key={barber.id}>
@@ -195,7 +207,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
 
           </div>
 
-          {/* Right Column: Authentic Poster & Amenities Visual Showcase */}
+          {/* Right Column: Sleek Barbershop Banner & Identity Showcase */}
           <div className="lg:col-span-5 relative">
             <div className="relative mx-auto max-w-md lg:max-w-none">
               
@@ -204,28 +216,29 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
               
               <div className="relative rounded-3xl overflow-hidden bg-zinc-900 border border-amber-500/40 shadow-2xl">
                 
-                {/* Embedded Authentic Salon Boumlik Poster */}
-                <div className="relative w-full overflow-hidden bg-[#0A0D14]">
-                  <img
-                    src={heroBrandedBanner}
-                    alt="Salon Boumlik - More Than Barber Shop"
-                    className="w-full h-auto object-cover filter contrast-[1.03] hover:scale-102 transition-transform duration-500"
-                  />
-                  
-                  {/* Floating Overlay Badge */}
-                  <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
-                    <span className="bg-zinc-950/90 backdrop-blur-md text-amber-300 text-xs font-bold px-3 py-1 rounded-full border border-amber-500/40 flex items-center gap-1.5 shadow-lg">
+                {/* Horizontal Sleek Logo Banner */}
+                <div className="relative w-full overflow-hidden bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 p-6 flex flex-col items-center justify-center border-b border-zinc-800">
+                  <div className="w-full max-w-xs rounded-2xl bg-white p-4 shadow-xl mb-4 border border-zinc-200">
+                    <img
+                      src={heroBannerImage}
+                      alt="Salon Boumlik - More Than Barber Shop"
+                      className="w-full h-auto object-contain filter contrast-[1.05]"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between w-full text-xs pt-1 border-t border-zinc-800/80">
+                    <span className="inline-flex items-center gap-1.5 text-amber-300 font-bold">
                       <Award className="w-3.5 h-3.5 text-amber-400" />
                       <span>{SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}</span>
                     </span>
 
-                    <span className="bg-emerald-500 text-zinc-950 text-xs font-extrabold px-3 py-1 rounded-full shadow-lg font-mono">
+                    <span className="bg-emerald-500 text-zinc-950 text-xs font-black px-2.5 py-0.5 rounded-full shadow-md font-mono" dir="ltr">
                       06 35 39 25 03
                     </span>
                   </div>
                 </div>
 
-                {/* Bottom Interactive Feature Bar: Amenities & Comfort Experience */}
+                {/* Bottom Feature Bar: Amenities & Comfort */}
                 <div className="p-4 sm:p-5 bg-gradient-to-b from-zinc-900 to-zinc-950 space-y-3">
                   <div className="flex items-center justify-between text-xs text-zinc-300">
                     <span className="flex items-center gap-1.5 font-bold text-white">
@@ -233,7 +246,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
                       {amenitiesPreviewTitle[lang] || amenitiesPreviewTitle.fr}
                     </span>
                     <span className="text-amber-400 font-extrabold uppercase text-[11px] bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                      {lang === 'ar' ? 'مجاني للزبائن' : lang === 'amz' ? 'ⴼⴰⴱⵓⵕ' : 'Offert'}
+                      Taroudant
                     </span>
                   </div>
 
