@@ -478,7 +478,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <option value="">{t.selectBarberPlaceholder}</option>
                   {TEAM_MEMBERS.map((barber) => (
                     <option key={barber.id} value={barber.id}>
-                      {barber.name[lang] || barber.name.fr} — ({barber.role[lang] || barber.role.fr})
+                      {barber.name[lang] || barber.name.fr}{barber.role ? ` — (${barber.role[lang] || barber.role.fr})` : ''}
                     </option>
                   ))}
                 </select>

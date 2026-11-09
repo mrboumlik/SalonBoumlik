@@ -124,12 +124,16 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                     <h3 className="text-lg font-bold text-white group-hover:text-amber-300 transition-colors">
                       {localizedBarberName}
                     </h3>
-                    <div className="text-xs font-semibold text-amber-400">
-                      {barber.role[lang] || barber.role.fr}
-                    </div>
-                    <div className="text-[11px] text-zinc-400">
-                      {barber.experience[lang] || barber.experience.fr}
-                    </div>
+                    {barber.isOwner && barber.role && (
+                      <div className="text-xs font-semibold text-amber-400">
+                        {barber.role[lang] || barber.role.fr}
+                      </div>
+                    )}
+                    {barber.isOwner && barber.experience && (
+                      <div className="text-[11px] text-zinc-400">
+                        {barber.experience[lang] || barber.experience.fr}
+                      </div>
+                    )}
                   </div>
 
                   {/* Rating */}
@@ -178,39 +182,43 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                     )}
                   </div>
 
-                  {/* Biography & Credentials Box */}
-                  <div className="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 mb-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-amber-400 uppercase font-black tracking-wider flex items-center gap-1">
-                        <Award className="w-3 h-3" />
-                        <span>{t.barberBioLabel}</span>
-                      </span>
+                  {/* Biography & Credentials Box - ONLY for Hassan */}
+                  {barber.isOwner && barber.bio && (
+                    <div className="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 mb-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-amber-400 uppercase font-black tracking-wider flex items-center gap-1">
+                          <Award className="w-3 h-3" />
+                          <span>{t.barberBioLabel}</span>
+                        </span>
+                      </div>
+
+                      <p className={`text-zinc-300 text-[11px] leading-relaxed transition-all ${isBioExpanded ? '' : 'line-clamp-3'}`}>
+                        {barber.bio[lang] || barber.bio.fr}
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() => setExpandedBioId(isBioExpanded ? null : barber.id)}
+                        className="text-[10px] font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                      >
+                        {isBioExpanded 
+                          ? (lang === 'ar' ? 'عرض أقل ▲' : 'Moins ▲') 
+                          : (lang === 'ar' ? 'قراءة المزيد ▼' : 'Lire la suite ▼')}
+                      </button>
                     </div>
+                  )}
 
-                    <p className={`text-zinc-300 text-[11px] leading-relaxed transition-all ${isBioExpanded ? '' : 'line-clamp-3'}`}>
-                      {barber.bio[lang] || barber.bio.fr}
-                    </p>
-
-                    <button
-                      type="button"
-                      onClick={() => setExpandedBioId(isBioExpanded ? null : barber.id)}
-                      className="text-[10px] font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
-                    >
-                      {isBioExpanded 
-                        ? (lang === 'ar' ? 'عرض أقل ▲' : 'Moins ▲') 
-                        : (lang === 'ar' ? 'قراءة المزيد ▼' : 'Lire la suite ▼')}
-                    </button>
-                  </div>
-
-                  {/* Specialty Box */}
-                  <div className="p-3 rounded-xl bg-zinc-950/70 border border-zinc-800/80 text-xs text-zinc-400 mb-4">
-                    <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mb-1">
-                      {lang === 'ar' ? 'التخصص' : lang === 'amz' ? 'ⵜⴰⵎⵙⴽⵉⵔⵜ' : lang === 'en' ? 'Specialty' : 'Spécialité'}
+                  {/* Specialty Box - ONLY for Hassan */}
+                  {barber.isOwner && barber.specialty && (
+                    <div className="p-3 rounded-xl bg-zinc-950/70 border border-zinc-800/80 text-xs text-zinc-400 mb-4">
+                      <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mb-1">
+                        {lang === 'ar' ? 'التخصص' : lang === 'amz' ? 'ⵜⴰⵎⵙⴽⵉⵔⵜ' : lang === 'en' ? 'Specialty' : 'Spécialité'}
+                      </div>
+                      <p className="leading-relaxed text-[11px] text-zinc-300">
+                        {barber.specialty[lang] || barber.specialty.fr}
+                      </p>
                     </div>
-                    <p className="leading-relaxed text-[11px] text-zinc-300">
-                      {barber.specialty[lang] || barber.specialty.fr}
-                    </p>
-                  </div>
+                  )}
                 </div>
 
                 {/* Action Buttons: Choose this barber & Direct WhatsApp */}

@@ -15,7 +15,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [lang, setLangState] = useState<Language>(() => {
     try {
       const saved = localStorage.getItem('salon_boumlik_lang') as Language;
-      if (saved && (saved === 'fr' || saved === 'ar' || saved === 'en' || saved === 'amz')) {
+      if (saved && (saved === 'fr' || saved === 'ar' || saved === 'en' || saved === 'amz' || saved === 'es')) {
         return saved;
       }
     } catch {

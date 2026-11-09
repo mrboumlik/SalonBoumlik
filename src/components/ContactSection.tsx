@@ -269,12 +269,21 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
 
               {/* Exact location summary */}
               <div className="space-y-2 pt-2 text-xs text-zinc-300">
-                <div className="flex items-start gap-2.5">
-                  <MapPin className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    {SALON_INFO.address[lang] || SALON_INFO.address.fr}
+                <a
+                  href={SALON_INFO.googleMapsDirectionsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-start gap-2.5 p-3 rounded-xl bg-zinc-950/80 border border-zinc-800 hover:border-amber-500/50 hover:text-white transition-all group"
+                >
+                  <MapPin className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
+                  <div className="flex-1">
+                    <span>{SALON_INFO.address[lang] || SALON_INFO.address.fr}</span>
+                    <span className="mt-1 flex items-center gap-1 text-[11px] text-blue-400 font-bold">
+                      <span>{lang === 'ar' ? 'فتح في خرائط Google' : 'Ouvrir dans Google Maps'}</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </span>
                   </div>
-                </div>
+                </a>
               </div>
             </div>
           </div>

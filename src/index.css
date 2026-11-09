@@ -62,19 +62,84 @@
   background: #CFA032;
 }
 
-/* Subtle Barber Pole Stripe Animation */
+/* Themes Definition */
+html.theme-gold body {
+  background-color: #07080B;
+}
+
+html.theme-charcoal body {
+  background-color: #101217;
+}
+
+html.theme-light body {
+  background-color: #F8F9FA;
+  color: #18181B;
+}
+
+html.theme-light .bg-black {
+  background-color: #F8F9FA !important;
+}
+
+html.theme-light .bg-zinc-950,
+html.theme-light .bg-\[\#090A0E\],
+html.theme-light .bg-\[\#0D0F14\],
+html.theme-light .bg-\[\#050609\] {
+  background-color: #FFFFFF !important;
+}
+
+html.theme-light .bg-zinc-900,
+html.theme-light .bg-\[\#12141B\],
+html.theme-light .bg-\[\#181B23\] {
+  background-color: #F1F3F5 !important;
+}
+
+html.theme-light .border-zinc-800,
+html.theme-light .border-zinc-900 {
+  border-color: #E2E8F0 !important;
+}
+
+html.theme-light .text-white {
+  color: #0F172A !important;
+}
+
+html.theme-light .text-zinc-300,
+html.theme-light .text-zinc-400 {
+  color: #475569 !important;
+}
+
+/* Subtle Barber Pole Stripe Animation in Classic Red, White & Blue */
 @keyframes barberPole {
   0% { background-position: 0 0; }
-  100% { background-position: 40px 0; }
+  100% { background-position: 56px 0; }
+}
+
+.barber-pole-stripe {
+  background: repeating-linear-gradient(
+    -45deg,
+    #dc2626 0px,
+    #dc2626 14px,
+    #ffffff 14px,
+    #ffffff 28px,
+    #2563eb 28px,
+    #2563eb 42px,
+    #ffffff 42px,
+    #ffffff 56px
+  );
+  background-size: 56px 56px;
+  animation: barberPole 2.5s linear infinite;
 }
 
 .barber-pole-border {
   background: repeating-linear-gradient(
     -45deg,
-    rgba(212, 175, 55, 0.3) 0,
-    rgba(212, 175, 55, 0.3) 10px,
-    transparent 10px,
-    transparent 20px
+    rgba(220, 38, 38, 0.4) 0px,
+    rgba(220, 38, 38, 0.4) 8px,
+    rgba(255, 255, 255, 0.4) 8px,
+    rgba(255, 255, 255, 0.4) 16px,
+    rgba(37, 99, 235, 0.4) 16px,
+    rgba(37, 99, 235, 0.4) 24px,
+    rgba(255, 255, 255, 0.4) 24px,
+    rgba(255, 255, 255, 0.4) 32px
   );
-  background-size: 28px 28px;
+  background-size: 32px 32px;
 }

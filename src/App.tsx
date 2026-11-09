@@ -1,191 +1,225 @@
 import React, { useState, useEffect } from 'react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { ServicesSection } from './components/ServicesSection';
-import { GallerySection } from './components/GallerySection';
-import { AmenitiesSection } from './components/AmenitiesSection';
-import { TeamSection } from './components/TeamSection';
-import { LocationSection } from './components/LocationSection';
+import { BookingSection } from './components/BookingSection';
 import { ReviewsSection } from './components/ReviewsSection';
 import { ContactSection } from './components/ContactSection';
 import { Footer } from './components/Footer';
-import { BookingModal } from './components/BookingModal';
-import { MyAppointmentsModal } from './components/MyAppointmentsModal';
-import { BarberService, AppointmentBooking } from './types';
-import { SERVICES, SALON_INFO } from './data/barbershopData';
-import { Phone, MessageCircle } from 'lucide-react';
+import { DrawerMenu } from './components/DrawerMenu';
+import { TrackBookingModal } from './components/TrackBookingModal';
+import { AdminDashboard } from './components/AdminDashboard';
+import { calculateCartPricing } from './utils/pricingEngine';
+import { HairColorConfig, AppointmentBooking } from './types';
+import { Phone, MessageCircle, Ticket } from 'lucide-react';
+import { SALON_INFO } from './data/barbershopData';
 
-function SalonApp() {
+function SalonBoumlikApp() {
   const { lang, t, isRtl } = useLanguage();
-  const [isBookingOpen, setIsBookingOpen] = useState(false);
-  const [isMyAppointmentsOpen, setIsMyAppointmentsOpen] = useState(false);
-  
-  // Selected services state for interactive checklist
-  const [selectedServices, setSelectedServices] = useState<BarberService[]>([
-    SERVICES[0], // Haircut
-    SERVICES[1], // Beard Trim & Styling
-  ]);
 
+  // Modals & Panels
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isTrackBookingOpen, setIsTrackBookingOpen] = useState(false);
+  const [trackSearchInitial, setTrackSearchInitial] = useState('');
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
+
+  // Live Cart State for Services
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>(['haircut', 'beard']);
+  const [colorConfig, setColorConfig] = useState<HairColorConfig>({
+    tone: 'grey_white',
+    coverage: 'full',
+  });
+  const [proteinPrice, setProteinPrice] = useState<number>(200);
+
+  // Barber state for Booking
   const [selectedBarberId, setSelectedBarberId] = useState<string>('hassan');
 
-  // Stored appointments
-  const [appointments, setAppointments] = useState<AppointmentBooking[]>(() => {
-    try {
-      const stored = localStorage.getItem('salon_boumlik_appointments_v2');
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return [];
+  // Dynamic Pricing Calculation
+  const pricingResult = calculateCartPricing({
+    selectedIds: selectedServiceIds,
+    colorConfig,
+    proteinPrice,
+    lang,
   });
 
+  // Check URL hash for admin route (/admin or #admin)
   useEffect(() => {
-    try {
-      localStorage.setItem('salon_boumlik_appointments_v2', JSON.stringify(appointments));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [appointments]);
-
-  const handleToggleService = (service: BarberService) => {
-    const exists = selectedServices.some((s) => s.id === service.id);
-    if (exists) {
-      if (selectedServices.length > 1) {
-        setSelectedServices(selectedServices.filter((s) => s.id !== service.id));
+    const handleHash = () => {
+      const path = window.location.hash.toLowerCase() || window.location.pathname.toLowerCase();
+      if (path.includes('admin')) {
+        setIsAdminOpen(true);
       }
-    } else {
-      setSelectedServices([...selectedServices, service]);
+    };
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  const handleToggleServiceId = (id: string) => {
+    setSelectedServiceIds((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((item) => item !== id);
+      } else {
+        return [...prev, id];
+      }
+    });
+  };
+
+  const handleScrollToBooking = () => {
+    const el = document.getElementById('booking');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
-  const handleSelectBarberToBook = (barberId: string) => {
-    setSelectedBarberId(barberId);
-    setIsBookingOpen(true);
-  };
-
-  const handleAppointmentBooked = (newBooking: AppointmentBooking) => {
-    setAppointments((prev) => [newBooking, ...prev]);
-  };
-
-  const handleCancelAppointment = (id: string) => {
-    const confirmText = lang === 'ar' 
-      ? 'هل ترغب في حذف هذا الموعد؟' 
-      : lang === 'amz' 
-      ? 'ⵉⵙ ⵜⵔⵉⴷ ⴰⴷ ⵜⴽⴽⵙⴷ ⴰⵙⵔⵓⵙ ⴰⴷ?' 
-      : lang === 'en' 
-      ? 'Do you want to delete this appointment request?' 
-      : 'Voulez-vous supprimer cette demande ?';
-    if (window.confirm(confirmText)) {
-      setAppointments((prev) => prev.filter((a) => a.id !== id));
-    }
+  const handleOpenTrackWithTicket = (ticket: string) => {
+    setTrackSearchInitial(ticket);
+    setIsTrackBookingOpen(true);
   };
 
   return (
-    <div className={`min-h-screen bg-[#08090C] text-zinc-100 flex flex-col font-body selection:bg-amber-500/30 selection:text-amber-200 ${
-      isRtl ? 'font-arabic' : ''
-    }`}>
-      
-      {/* Sticky Luxury Header */}
+    <div
+      className={`min-h-screen bg-black text-zinc-100 flex flex-col font-body selection:bg-red-600/30 selection:text-white overflow-x-hidden ${
+        isRtl ? 'font-arabic' : ''
+      }`}
+    >
+      {/* 1. Sticky Navigation Header */}
       <Navbar
-        onOpenBooking={() => setIsBookingOpen(true)}
-        onOpenMyAppointments={() => setIsMyAppointmentsOpen(true)}
-        savedAppointmentsCount={appointments.length}
+        onOpenBooking={handleScrollToBooking}
+        onOpenTrackBooking={() => {
+          setTrackSearchInitial('');
+          setIsTrackBookingOpen(true);
+        }}
+        onOpenDrawerMenu={() => setIsDrawerOpen(true)}
+        onOpenAdmin={() => setIsAdminOpen(true)}
       />
 
-      {/* Main Content */}
+      {/* 2. Main Content: ONLY Hero, Services & Live Cart, Booking Form, Google Reviews, Contact */}
       <main className="flex-1">
-        {/* 1. Hero & Branding with Slogan, Poster, Men's Services Only */}
-        <Hero onOpenBooking={() => setIsBookingOpen(true)} />
-
-        {/* 2. Dynamic Interactive Menu & Services (NO Fixed Prices, Multi-Selection) */}
-        <ServicesSection
-          selectedServices={selectedServices}
-          onToggleService={handleToggleService}
-          onProceedToBooking={() => setIsBookingOpen(true)}
+        {/* Hero Section */}
+        <Hero
+          onOpenBooking={handleScrollToBooking}
+          onOpenTrackBooking={() => {
+            setTrackSearchInitial('');
+            setIsTrackBookingOpen(true);
+          }}
         />
 
-        {/* 3. Showcase Gallery: Our Work / أعمالنا / Nos Réalisations */}
-        <GallerySection />
+        {/* Services & Live Cart Section */}
+        <ServicesSection
+          selectedIds={selectedServiceIds}
+          onToggleServiceId={handleToggleServiceId}
+          colorConfig={colorConfig}
+          onChangeColorConfig={setColorConfig}
+          proteinPrice={proteinPrice}
+          onChangeProteinPrice={setProteinPrice}
+          pricingResult={pricingResult}
+          onProceedToBooking={handleScrollToBooking}
+        />
 
-        {/* 4. Amenities, Comfort, Wi-Fi Credentials & Waiting Lounge */}
-        <AmenitiesSection />
+        {/* Inline Booking Form Section */}
+        <BookingSection
+          pricingResult={pricingResult}
+          selectedBarberId={selectedBarberId}
+          onSelectBarberId={setSelectedBarberId}
+          selectedServiceIds={selectedServiceIds}
+          onToggleServiceId={handleToggleServiceId}
+          onOpenTrackBooking={handleOpenTrackWithTicket}
+        />
 
-        {/* 5. Team Members: Hassan (Owner), Anouar Arif, Lahcen Lhanz, Mounir Qurdeny */}
-        <TeamSection onSelectBarberToBook={handleSelectBarberToBook} />
-
-        {/* 6. Exact Location & Google Maps (2nd Floor, above Dental Tech & ITRI Bakery) */}
-        <LocationSection onOpenBooking={() => setIsBookingOpen(true)} />
-
-        {/* 7. Customer Reviews, Ratings & Google Reviews QR Card */}
+        {/* Google Reviews 5.0 Widget Section */}
         <ReviewsSection />
 
-        {/* 8. Contact, Social Media & Official QR Codes (WhatsApp, Instagram, Facebook, Wi-Fi) */}
+        {/* Contact & Socials Section */}
         <ContactSection />
       </main>
 
-      {/* Footer */}
-      <Footer onOpenBooking={() => setIsBookingOpen(true)} />
+      {/* 3. Footer */}
+      <Footer
+        onOpenBooking={handleScrollToBooking}
+        onOpenTrackBooking={() => {
+          setTrackSearchInitial('');
+          setIsTrackBookingOpen(true);
+        }}
+        onOpenAdmin={() => setIsAdminOpen(true)}
+      />
 
-      {/* Floating Mobile Action Bar */}
+      {/* 4. Slide-Out Hamburger Drawer Menu (Team Bios, Gallery, Wi-Fi, Location) */}
+      <DrawerMenu
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        onOpenAdmin={() => {
+          setIsDrawerOpen(false);
+          setIsAdminOpen(true);
+        }}
+        onSelectBarberForBooking={(barberId) => {
+          setSelectedBarberId(barberId);
+          handleScrollToBooking();
+        }}
+      />
+
+      {/* 5. Real-Time Track Booking Modal */}
+      <TrackBookingModal
+        isOpen={isTrackBookingOpen}
+        onClose={() => setIsTrackBookingOpen(false)}
+        initialSearch={trackSearchInitial}
+      />
+
+      {/* 6. Hidden Admin Dashboard (Protected by PIN) */}
+      <AdminDashboard
+        isOpen={isAdminOpen}
+        onClose={() => {
+          setIsAdminOpen(false);
+          if (window.location.hash.includes('admin')) {
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+        }}
+      />
+
+      {/* 7. Floating Mobile Quick Action Bar */}
       <aside 
         aria-label="Actions rapides" 
-        className="sm:hidden fixed bottom-3 left-3 right-3 z-40 bg-zinc-950/95 backdrop-blur-md p-2 rounded-2xl border border-amber-500/30 shadow-2xl flex items-center justify-between gap-2"
+        className="sm:hidden fixed bottom-3 left-3 right-3 z-40 bg-black/95 backdrop-blur-md p-2 rounded-2xl border border-zinc-800 shadow-2xl flex items-center justify-between gap-2"
       >
         <a
           href={`tel:${SALON_INFO.phone}`}
-          className="flex-1 py-2.5 px-3 rounded-xl bg-zinc-900 border border-zinc-800 text-xs font-bold text-zinc-200 flex items-center justify-center gap-1.5"
+          className="flex-1 py-2.5 px-3 rounded-xl bg-zinc-900 border border-zinc-800 text-xs font-bold text-white flex items-center justify-center gap-1.5"
         >
-          <Phone className="w-3.5 h-3.5 text-amber-400" />
+          <Phone className="w-3.5 h-3.5 text-red-500" />
           <span dir="ltr" className="inline-block font-mono">06 35 39 25 03</span>
         </a>
 
         <button
-          onClick={() => setIsBookingOpen(true)}
-          className="flex-[1.8] py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 text-zinc-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-400/20 active:scale-95 transition-transform"
+          onClick={() => {
+            setTrackSearchInitial('');
+            setIsTrackBookingOpen(true);
+          }}
+          className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-blue-400 hover:text-white"
+          title="Suivre ma réservation"
         >
-          <MessageCircle className="w-4 h-4 fill-zinc-950" />
-          <span>
-            {lang === 'ar' 
-              ? 'طلب السعر والحجز' 
-              : lang === 'amz' 
-              ? 'ⴰⵙⵔⵓⵙ ⴳ ⵡⴰⵜⵙⴰⴱ' 
-              : lang === 'en' 
-              ? 'WhatsApp Quote' 
-              : 'Devis sur WhatsApp'}
-          </span>
+          <Ticket className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={handleScrollToBooking}
+          className="flex-[1.5] py-2.5 px-3 rounded-xl bg-red-600 active:scale-95 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-red-600/30 transition-transform"
+        >
+          <MessageCircle className="w-4 h-4 fill-white" />
+          <span>{lang === 'ar' ? 'حجز موعد' : 'Réserver'}</span>
         </button>
       </aside>
-
-      {/* Booking & WhatsApp Quote Modal */}
-      <BookingModal
-        isOpen={isBookingOpen}
-        onClose={() => setIsBookingOpen(false)}
-        selectedServices={selectedServices}
-        onToggleService={handleToggleService}
-        selectedBarberId={selectedBarberId}
-        onAppointmentBooked={handleAppointmentBooked}
-      />
-
-      {/* My Appointments / Saved Quotes Modal */}
-      <MyAppointmentsModal
-        isOpen={isMyAppointmentsOpen}
-        onClose={() => setIsMyAppointmentsOpen(false)}
-        appointments={appointments}
-        onCancelAppointment={handleCancelAppointment}
-        onOpenBooking={() => setIsBookingOpen(true)}
-      />
-
     </div>
   );
 }
 
 export default function App() {
   return (
-    <LanguageProvider>
-      <SalonApp />
-    </LanguageProvider>
+    <ThemeProvider>
+      <LanguageProvider>
+        <SalonBoumlikApp />
+      </LanguageProvider>
+    </ThemeProvider>
   );
 }

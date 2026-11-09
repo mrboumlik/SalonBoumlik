@@ -2,43 +2,46 @@ import React, { useState, useEffect } from 'react';
 import { 
   MapPin, 
   Phone, 
-  Calendar, 
-  Clock, 
   Menu, 
   X, 
-  Sparkles,
-  BookmarkCheck,
-  Globe,
-  Coffee,
-  Shield,
-  MessageCircle
+  Ticket, 
+  Globe, 
+  Shield, 
+  Scissors,
+  CheckCircle2,
+  Lock
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
-import { Language } from '../types';
+import { useTheme } from '../context/ThemeContext';
+import { Language, AppTheme } from '../types';
 import { FlagIcon } from './LanguageFlags';
+import { Palette, Sun, Moon, Sparkles } from 'lucide-react';
 import logoImage from '../assets/images/regenerated_image_1793760774705.png';
 
 interface NavbarProps {
   onOpenBooking: () => void;
-  onOpenMyAppointments: () => void;
-  savedAppointmentsCount: number;
+  onOpenTrackBooking: () => void;
+  onOpenDrawerMenu: () => void;
+  onOpenAdmin: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   onOpenBooking,
-  onOpenMyAppointments,
-  savedAppointmentsCount,
+  onOpenTrackBooking,
+  onOpenDrawerMenu,
+  onOpenAdmin,
 }) => {
   const { lang, setLang, t, isRtl } = useLanguage();
+  const { theme, setTheme, toggleTheme, themeConfig } = useTheme();
   const [isScrolled, setIsScrolled] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isOpenNow, setIsOpenNow] = useState(true);
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
+  const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
+  const [isOpenNow, setIsOpenNow] = useState(true);
 
   useEffect(() => {
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 25);
+      setIsScrolled(window.scrollY > 20);
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
@@ -59,46 +62,50 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, []);
 
   const languageOptions: { code: Language; label: string }[] = [
-    { code: 'fr', label: 'Français' },
     { code: 'ar', label: 'العربية' },
+    { code: 'fr', label: 'Français' },
     { code: 'en', label: 'English' },
     { code: 'amz', label: 'ⵜⴰⵎⴰⵣⵉⵖⵜ' },
+    { code: 'es', label: 'Español' },
   ];
 
   return (
     <>
-      {/* Top micro bar with location info, men's only badge, and contact */}
-      <div className="bg-[#050608] border-b border-zinc-800/80 text-xs py-1.5 px-4 text-zinc-400">
+      {/* Barber pole top stripe */}
+      <div className="h-1 w-full bg-gradient-to-r from-red-600 via-white to-blue-600 z-50 fixed top-0 inset-x-0" />
+
+      {/* Top micro bar */}
+      <div className="mt-1 bg-black border-b border-zinc-900 text-xs py-1.5 px-4 text-zinc-400">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
           
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Men's Services Only Badge */}
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-[11px] tracking-wide">
-              <Shield className="w-3 h-3 text-amber-400" />
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-950/40 border border-red-500/30 text-red-300 font-bold text-[11px] tracking-wide">
+              <Shield className="w-3 h-3 text-red-400" />
               <span>{t.mensOnly}</span>
             </span>
 
             <span className="hidden md:inline-flex items-center gap-1.5 text-zinc-400 text-[11px]">
-              <MapPin className="w-3.5 h-3.5 text-amber-500" />
+              <MapPin className="w-3.5 h-3.5 text-blue-400" />
               <span className="truncate max-w-xs">{SALON_INFO.shortAddress[lang] || SALON_INFO.shortAddress.fr}</span>
             </span>
           </div>
 
           <div className="flex items-center gap-3">
             {/* Live opening badge */}
-            <div className="flex items-center gap-1.5 bg-zinc-900/90 px-2.5 py-0.5 rounded-full border border-zinc-800">
+            <div className="flex items-center gap-1.5 bg-zinc-900 px-2.5 py-0.5 rounded-full border border-zinc-800">
               <span className={`w-2 h-2 rounded-full ${isOpenNow ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
               <span className="text-[11px] font-semibold text-zinc-300">
                 {isOpenNow ? t.openStatus : t.closedStatus}
               </span>
             </div>
 
-            {/* Direct phone call - RTL safe */}
+            {/* Direct phone call */}
             <a 
               href={`tel:${SALON_INFO.phone}`} 
-              className="text-amber-400 hover:text-amber-300 flex items-center gap-1.5 font-bold text-xs transition-colors"
+              className="text-white hover:text-red-400 flex items-center gap-1.5 font-bold text-xs transition-colors"
             >
-              <Phone className="w-3 h-3 flex-shrink-0" />
+              <Phone className="w-3 h-3 text-red-500 flex-shrink-0" />
               <span dir="ltr" className="inline-block font-mono tracking-wider">{SALON_INFO.displayPhone}</span>
             </a>
           </div>
@@ -110,15 +117,15 @@ export const Navbar: React.FC<NavbarProps> = ({
       <header 
         className={`sticky top-0 z-40 transition-all duration-300 ${
           isScrolled 
-            ? 'bg-[#08090C]/96 backdrop-blur-md shadow-2xl border-b border-amber-500/30 py-2.5' 
-            : 'bg-[#08090C]/85 backdrop-blur-sm py-3.5 border-b border-zinc-800/60'
+            ? 'bg-black/95 backdrop-blur-md shadow-2xl border-b border-zinc-800 py-2.5' 
+            : 'bg-black/85 backdrop-blur-sm py-3 border-b border-zinc-800/80'
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
           
-          {/* Logo & Brand Identity */}
+          {/* Logo & Brand Name */}
           <a href="#" className="flex items-center gap-3 group flex-shrink-0">
-            <div className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-xl overflow-hidden bg-white/5 border border-amber-500/40 p-1 flex items-center justify-center shadow-lg shadow-amber-500/10 group-hover:border-amber-400 transition-colors">
+            <div className="relative w-10 h-10 sm:w-11 sm:h-11 rounded-xl overflow-hidden bg-zinc-900 border border-zinc-700 p-0.5 flex items-center justify-center shadow-lg group-hover:border-red-500 transition-colors">
               <img 
                 src={logoImage || SALON_INFO.media.logoClean} 
                 alt="Salon Boumlik Official Logo" 
@@ -127,72 +134,50 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <span className="font-display text-lg sm:text-xl font-black tracking-wider text-white">
-                  {lang === 'amz' ? (
-                    <span>ⵙⴰⵍⵓⵏ <span className="text-gold-gradient">ⴱⵓⵎⵍⵉⴽ</span></span>
-                  ) : lang === 'ar' ? (
-                    <span>صالون <span className="text-gold-gradient">بومليك</span></span>
-                  ) : (
-                    <span>SALON <span className="text-gold-gradient">BOUMLIK</span></span>
-                  )}
+                  SALON <span className="text-red-500">BOU</span><span className="text-blue-500">MLIK</span>
                 </span>
               </div>
-              <p className="text-[11px] text-amber-400/90 font-medium tracking-wide flex items-center gap-1.5">
-                <span className="italic font-serif">"{SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}"</span>
-                <span className="text-zinc-600 hidden sm:inline">•</span>
-                <span className="text-zinc-400 hidden sm:inline text-[10px]">{SALON_INFO.city[lang] || SALON_INFO.city.fr}</span>
+              <p className="text-[10px] sm:text-[11px] text-zinc-400 font-medium">
+                {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
               </p>
             </div>
           </a>
 
-          {/* Desktop Navigation Links */}
-          <nav className="hidden xl:flex items-center gap-6 text-xs sm:text-sm font-semibold text-zinc-300">
-            <a href="#services" className="hover:text-amber-400 transition-colors">
-              {t.navServices}
+          {/* Center Navigation Links (Homepage ONLY displays these sections) */}
+          <nav className="hidden md:flex items-center gap-6 text-xs font-bold uppercase tracking-wider text-zinc-400">
+            <a href="#services" className="hover:text-white transition-colors">
+              {lang === 'ar' ? 'الخدمات والأسعار' : 'Prestations & Tarifs'}
             </a>
-            <a href="#gallery" className="hover:text-amber-400 transition-colors text-amber-300/90 flex items-center gap-1">
-              <span>{t.navGallery}</span>
+            <a href="#booking" className="hover:text-white transition-colors">
+              {lang === 'ar' ? 'حجز موعد' : 'Réservation'}
             </a>
-            <a href="#amenities" className="hover:text-amber-400 transition-colors flex items-center gap-1.5 text-zinc-300">
-              <Coffee className="w-3.5 h-3.5 text-amber-400" />
-              <span>{t.navAmenities}</span>
+            <a href="#reviews" className="hover:text-white transition-colors">
+              {lang === 'ar' ? 'آراء الزبناء' : 'Avis Google 5.0'}
             </a>
-            <a href="#team" className="hover:text-amber-400 transition-colors">
-              {t.navTeam}
-            </a>
-            <a href="#location" className="hover:text-amber-400 transition-colors">
-              {t.navLocation}
-            </a>
-            <a href="#reviews" className="hover:text-amber-400 transition-colors flex items-center gap-1">
-              <span>{t.navReviews}</span>
-              <span className="bg-amber-500/20 text-amber-300 text-[10px] px-1.5 py-0.2 rounded-full font-bold">5.0 ★</span>
-            </a>
-            <a href="#contact" className="hover:text-amber-400 transition-colors">
-              {t.navContact}
+            <a href="#contact" className="hover:text-white transition-colors">
+              {lang === 'ar' ? 'اتصل بنا' : 'Contact'}
             </a>
           </nav>
 
-          {/* Right Action Cluster: Language Switcher + Booking CTA */}
+          {/* Right Actions: Language Switcher, Track Booking, Book CTA & Hamburger Menu */}
           <div className="flex items-center gap-2 sm:gap-3">
             
-            {/* Multilingual Selector Dropdown with Official SVG Flags */}
+            {/* 5-Language Switcher Dropdown */}
             <div className="relative">
               <button
                 onClick={() => setLangDropdownOpen(!langDropdownOpen)}
-                className="px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer shadow-sm"
-                title="Choisir la langue / اختر اللغة / Select Language"
+                className="flex items-center gap-1.5 py-1.5 px-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold transition-colors"
+                aria-label="Changer de langue"
               >
-                <FlagIcon lang={lang} className="w-4 h-3 rounded-xs" />
-                <span className="uppercase font-bold">{lang}</span>
-                <span className="text-[10px] text-zinc-400">▼</span>
+                <FlagIcon lang={lang} className="w-4 h-4 rounded-full" />
+                <span className="hidden sm:inline uppercase text-[11px]">{lang}</span>
               </button>
 
               {langDropdownOpen && (
                 <div 
-                  className={`absolute top-full mt-2 w-40 rounded-xl bg-zinc-950 border border-amber-500/40 p-1.5 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 ${
-                    isRtl ? 'left-0' : 'right-0'
-                  }`}
+                  className={`absolute top-full mt-2 ${isRtl ? 'left-0' : 'right-0'} w-36 bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl py-1 z-50`}
                 >
                   {languageOptions.map((opt) => (
                     <button
@@ -201,189 +186,134 @@ export const Navbar: React.FC<NavbarProps> = ({
                         setLang(opt.code);
                         setLangDropdownOpen(false);
                       }}
-                      className={`w-full px-2.5 py-2 rounded-lg text-left text-xs flex items-center justify-between transition-colors ${
-                        lang === opt.code
-                          ? 'bg-amber-400 text-zinc-950 font-bold'
-                          : 'text-zinc-300 hover:bg-zinc-900 hover:text-white'
+                      className={`w-full px-3 py-2 text-left flex items-center justify-between text-xs hover:bg-zinc-900 transition-colors ${
+                        lang === opt.code ? 'text-red-400 font-bold bg-zinc-900/60' : 'text-zinc-300'
                       }`}
                     >
-                      <span className="flex items-center gap-2">
-                        <FlagIcon lang={opt.code} className="w-4 h-3 rounded-xs" />
+                      <div className="flex items-center gap-2">
+                        <FlagIcon lang={opt.code} className="w-3.5 h-3.5 rounded-full" />
                         <span>{opt.label}</span>
-                      </span>
-                      {lang === opt.code && <span className="text-[10px] font-black">✓</span>}
+                      </div>
+                      {lang === opt.code && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
                     </button>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* My Appointments saved counter */}
-            {savedAppointmentsCount > 0 && (
+            {/* Theme Customizer Switcher */}
+            <div className="relative">
               <button
-                onClick={onOpenMyAppointments}
-                className="hidden sm:flex relative p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-700/80 transition-all items-center gap-1 text-xs font-semibold cursor-pointer"
-                title="Voir mes réservations"
+                onClick={() => setThemeDropdownOpen(!themeDropdownOpen)}
+                className="p-1.5 px-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                title="Changer de thème"
+                aria-label="Changer de thème"
               >
-                <BookmarkCheck className="w-4 h-4 text-amber-400" />
-                <span className="bg-amber-400 text-zinc-950 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">
-                  {savedAppointmentsCount}
+                <span>{themeConfig.icon}</span>
+                <span className="hidden xl:inline text-[11px] text-zinc-400">
+                  {themeConfig.name[lang] || themeConfig.name.fr}
                 </span>
               </button>
-            )}
 
-            {/* Primary Action Button (WhatsApp Booking / Custom Quote) */}
+              {themeDropdownOpen && (
+                <div 
+                  className={`absolute top-full mt-2 ${isRtl ? 'left-0' : 'right-0'} w-44 bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl py-1 z-50`}
+                >
+                  <button
+                    onClick={() => {
+                      setTheme('luxury_gold');
+                      setThemeDropdownOpen(false);
+                    }}
+                    className={`w-full px-3 py-2 text-left flex items-center justify-between text-xs hover:bg-zinc-900 transition-colors ${
+                      theme === 'luxury_gold' ? 'text-amber-400 font-bold bg-zinc-900/60' : 'text-zinc-300'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span>✨</span>
+                      <span>{lang === 'ar' ? 'ذهبي فاخر' : 'Luxury Gold'}</span>
+                    </span>
+                    {theme === 'luxury_gold' && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setTheme('charcoal');
+                      setThemeDropdownOpen(false);
+                    }}
+                    className={`w-full px-3 py-2 text-left flex items-center justify-between text-xs hover:bg-zinc-900 transition-colors ${
+                      theme === 'charcoal' ? 'text-blue-400 font-bold bg-zinc-900/60' : 'text-zinc-300'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span>💈</span>
+                      <span>{lang === 'ar' ? 'رمادي فحمي' : 'Charcoal'}</span>
+                    </span>
+                    {theme === 'charcoal' && <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setTheme('minimal_light');
+                      setThemeDropdownOpen(false);
+                    }}
+                    className={`w-full px-3 py-2 text-left flex items-center justify-between text-xs hover:bg-zinc-900 transition-colors ${
+                      theme === 'minimal_light' ? 'text-zinc-100 font-bold bg-zinc-900/60' : 'text-zinc-300'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span>☀️</span>
+                      <span>{lang === 'ar' ? 'أبيض نقي' : 'Light Mode'}</span>
+                    </span>
+                    {theme === 'minimal_light' && <span className="w-1.5 h-1.5 rounded-full bg-zinc-300" />}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Track Booking Button */}
             <button
-              onClick={onOpenBooking}
-              className="relative group overflow-hidden px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl font-extrabold text-xs sm:text-sm text-zinc-950 bg-gradient-to-r from-amber-400 via-amber-300 to-amber-500 hover:brightness-110 shadow-lg shadow-amber-500/25 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+              onClick={onOpenTrackBooking}
+              className="py-1.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+              title="Suivi de réservation"
             >
-              <MessageCircle className="w-4 h-4 text-zinc-950 fill-zinc-950" />
-              <span className="hidden sm:inline">{t.bookAppointment}</span>
-              <span className="sm:hidden">
-                {lang === 'ar' ? 'حجز' : lang === 'amz' ? 'ⴰⵙⵔⵓⵙ' : lang === 'en' ? 'Book' : 'Réserver'}
+              <Ticket className="w-3.5 h-3.5 text-blue-400" />
+              <span className="hidden sm:inline">
+                {lang === 'ar' ? 'تتبع التذكرة' : 'Suivi Ticket'}
               </span>
-              <Sparkles className="w-3.5 h-3.5 text-zinc-950 opacity-80 group-hover:rotate-12 transition-transform" />
             </button>
 
-            {/* Mobile Hamburger toggle */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="xl:hidden p-2 rounded-xl bg-zinc-900 text-zinc-300 hover:text-white border border-zinc-800"
-              aria-label="Menu"
+            {/* Book Now Button */}
+            <a
+              href="#booking"
+              onClick={(e) => {
+                // If user clicks, scroll smoothly to #booking or trigger modal
+                const el = document.getElementById('booking');
+                if (el) {
+                  e.preventDefault();
+                  el.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                  onOpenBooking();
+                }
+              }}
+              className="py-1.5 px-3.5 sm:px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-red-600/20 active:scale-95 transition-all"
             >
-              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              <Scissors className="w-3.5 h-3.5" />
+              <span>{lang === 'ar' ? 'احجز الآن' : 'Réserver'}</span>
+            </a>
+
+            {/* Hamburger Menu Button (Opens DrawerMenu for Team, Gallery, Wi-Fi, Location) */}
+            <button
+              onClick={onOpenDrawerMenu}
+              className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition-colors"
+              aria-label="Menu complet (Équipe, Galerie, Wi-Fi)"
+              title="Menu complet"
+            >
+              <Menu className="w-5 h-5 text-red-500" />
             </button>
 
           </div>
 
         </div>
-
-        {/* Mobile Dropdown Menu */}
-        {mobileMenuOpen && (
-          <div className="xl:hidden bg-[#0A0C10] border-b border-zinc-800 px-4 pt-3 pb-6 mt-2 space-y-3 shadow-2xl">
-            
-            {/* Multilingual Selector inside mobile menu with FlagIcon */}
-            <div className="grid grid-cols-4 gap-1.5 p-1 bg-zinc-950 rounded-xl border border-zinc-800 mb-2">
-              {languageOptions.map((opt) => (
-                <button
-                  key={opt.code}
-                  onClick={() => {
-                    setLang(opt.code);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`py-2 px-1 rounded-lg text-xs font-bold text-center transition-all flex flex-col items-center justify-center gap-1 ${
-                    lang === opt.code
-                      ? 'bg-amber-400 text-zinc-950 shadow-sm'
-                      : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
-                  }`}
-                >
-                  <FlagIcon lang={opt.code} className="w-5 h-3.5 rounded-xs" />
-                  <span className="text-[10px] uppercase font-bold">{opt.code}</span>
-                </button>
-              ))}
-            </div>
-
-            <nav className="flex flex-col space-y-1.5 text-sm font-semibold text-zinc-300">
-              <a 
-                href="#services" 
-                onClick={() => setMobileMenuOpen(false)}
-                className="p-2.5 rounded-xl hover:bg-zinc-900 hover:text-amber-400 transition-colors flex items-center justify-between"
-              >
-                <span>{t.navServices}</span>
-                <span className="text-[10px] text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded font-bold">
-                  {lang === 'ar' ? 'طلب السعر' : lang === 'amz' ? 'ⴰⵜⵉⴳ' : 'Sur Devis'}
-                </span>
-              </a>
-
-              <a 
-                href="#gallery" 
-                onClick={() => setMobileMenuOpen(false)}
-                className="p-2.5 rounded-xl hover:bg-zinc-900 hover:text-amber-400 transition-colors flex items-center justify-between text-amber-300"
-              >
-                <span>{t.navGallery}</span>
-                <span className="text-[10px] text-amber-400 font-mono">Portfolio</span>
-              </a>
-
-              <a 
-                href="#amenities" 
-                onClick={() => setMobileMenuOpen(false)}
-                className="p-2.5 rounded-xl hover:bg-zinc-900 hover:text-amber-400 transition-colors flex items-center justify-between text-zinc-300"
-              >
-                <span>{t.navAmenities}</span>
-                <Coffee className="w-4 h-4 text-amber-400" />
-              </a>
-
-              <a 
-                href="#team" 
-                onClick={() => setMobileMenuOpen(false)}
-                className="p-2.5 rounded-xl hover:bg-zinc-900 hover:text-amber-400 transition-colors"
-              >
-                {t.navTeam}
-              </a>
-
-              <a 
-                href="#location" 
-                onClick={() => setMobileMenuOpen(false)}
-                className="p-2.5 rounded-xl hover:bg-zinc-900 hover:text-amber-400 transition-colors flex items-center justify-between"
-              >
-                <span>{t.navLocation}</span>
-                <MapPin className="w-4 h-4 text-amber-400" />
-              </a>
-
-              <a 
-                href="#reviews" 
-                onClick={() => setMobileMenuOpen(false)}
-                className="p-2.5 rounded-xl hover:bg-zinc-900 hover:text-amber-400 transition-colors flex items-center justify-between"
-              >
-                <span>{t.navReviews}</span>
-                <span className="text-amber-400 text-xs font-bold">5.0 ★</span>
-              </a>
-
-              <a 
-                href="#contact" 
-                onClick={() => setMobileMenuOpen(false)}
-                className="p-2.5 rounded-xl hover:bg-zinc-900 hover:text-amber-400 transition-colors"
-              >
-                {t.navContact}
-              </a>
-            </nav>
-
-            <div className="pt-2 border-t border-zinc-800 space-y-2">
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  onOpenBooking();
-                }}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 text-zinc-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-400/25"
-              >
-                <MessageCircle className="w-4 h-4 fill-zinc-950" />
-                <span>{t.bookAppointment}</span>
-              </button>
-
-              <div className="grid grid-cols-2 gap-2">
-                <a
-                  href={`tel:${SALON_INFO.phone}`}
-                  className="py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-center text-xs font-bold text-zinc-200 flex items-center justify-center gap-1.5"
-                >
-                  <Phone className="w-3.5 h-3.5 text-amber-400" />
-                  <span dir="ltr" className="inline-block font-mono">{SALON_INFO.displayPhone}</span>
-                </a>
-
-                <a
-                  href={`https://wa.me/${SALON_INFO.whatsappNumber}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="py-2.5 rounded-xl bg-emerald-950/70 border border-emerald-800/80 text-center text-xs font-bold text-emerald-300 flex items-center justify-center gap-1.5"
-                >
-                  <MessageCircle className="w-3.5 h-3.5" />
-                  <span>WhatsApp</span>
-                </a>
-              </div>
-            </div>
-
-          </div>
-        )}
-
       </header>
     </>
   );

@@ -169,16 +169,16 @@ export const AmenitiesSection: React.FC = () => {
                     </div>
 
                     <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300">
-                      {item.badge[lang] || item.badge.fr}
+                      {(item.badge as any)[lang] || item.badge.fr}
                     </span>
                   </div>
 
                   <h3 className="text-base font-bold text-white mb-2 group-hover:text-amber-300 transition-colors">
-                    {item.title[lang] || item.title.fr}
+                    {(item.title as any)[lang] || item.title.fr}
                   </h3>
 
                   <p className="text-xs text-zinc-400 leading-relaxed mb-3">
-                    {item.desc[lang] || item.desc.fr}
+                    {(item.desc as any)[lang] || item.desc.fr}
                   </p>
 
                   {/* Explicit Wi-Fi Credentials Pill */}
@@ -216,7 +216,7 @@ export const AmenitiesSection: React.FC = () => {
                       className="w-full py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-zinc-700"
                     >
                       <QrCode className="w-3.5 h-3.5 text-amber-400" />
-                      <span>{item.actionText ? (item.actionText[lang] || item.actionText.fr) : 'QR Code'}</span>
+                      <span>{item.actionText ? ((item.actionText as any)[lang] || item.actionText.fr) : 'QR Code'}</span>
                     </button>
                   </div>
                 )}

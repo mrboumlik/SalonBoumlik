@@ -100,5 +100,18 @@ export const FlagIcon: React.FC<{ lang: Language; className?: string }> = ({ lan
           </g>
         </svg>
       );
+
+    case 'es':
+      // Flag of Spain (Red, Yellow, Red horizontal stripes with 1:2:1 proportion)
+      return (
+        <svg 
+          viewBox="0 0 750 500" 
+          className={`inline-block rounded-xs shadow-xs object-cover flex-shrink-0 ${className}`}
+          aria-label="Bandera de España"
+        >
+          <rect width="750" height="500" fill="#AA151B" />
+          <rect width="750" height="250" y="125" fill="#F1BF00" />
+        </svg>
+      );
   }
 };

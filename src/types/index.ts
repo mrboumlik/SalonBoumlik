@@ -1,6 +1,10 @@
-export type Language = 'fr' | 'ar' | 'en' | 'amz';
+export type Language = 'fr' | 'ar' | 'en' | 'amz' | 'es';
+
+export type AppTheme = 'luxury_gold' | 'charcoal' | 'minimal_light';
 
 export type DrinkPreference = 'coffee' | 'tea' | 'none';
+
+export type BookingStatus = 'pending' | 'pending_quote' | 'confirmed' | 'rescheduled' | 'rejected';
 
 export interface BarberService {
   id: string;
@@ -9,13 +13,16 @@ export interface BarberService {
     ar: string;
     en: string;
     amz: string;
+    es?: string;
   };
-  category: 'haircut' | 'beard' | 'wash' | 'protein' | 'relaxing' | 'facial';
+  category: 'haircut' | 'beard' | 'wash' | 'protein' | 'relaxing' | 'facial' | 'color';
+  basePrice?: number;
   description: {
     fr: string;
     ar: string;
     en: string;
     amz: string;
+    es?: string;
   };
   durationMinutes: number;
   popular?: boolean;
@@ -24,12 +31,14 @@ export interface BarberService {
     ar: string[];
     en: string[];
     amz: string[];
+    es?: string[];
   };
   badge?: {
     fr: string;
     ar: string;
     en: string;
     amz: string;
+    es?: string;
   };
 }
 
@@ -40,30 +49,35 @@ export interface BarberStaff {
     ar: string;
     en: string;
     amz: string;
+    es?: string;
   };
-  role: {
+  role?: {
     fr: string;
     ar: string;
     en: string;
     amz: string;
+    es?: string;
   };
-  experience: {
+  experience?: {
     fr: string;
     ar: string;
     en: string;
     amz: string;
+    es?: string;
   };
-  specialty: {
+  specialty?: {
     fr: string;
     ar: string;
     en: string;
     amz: string;
+    es?: string;
   };
-  bio: {
+  bio?: {
     fr: string;
     ar: string;
     en: string;
     amz: string;
+    es?: string;
   };
   phone?: string;
   whatsappNumber?: string;
@@ -81,6 +95,7 @@ export interface GalleryItem {
     ar: string;
     en: string;
     amz: string;
+    es?: string;
   };
   category: 'fades' | 'beards' | 'skincare' | 'vip';
   barberName: string;
@@ -126,22 +141,55 @@ export interface CustomerReview {
   verified?: boolean;
 }
 
+export interface HairColorConfig {
+  tone: 'grey_white' | 'brown_blonde' | 'blue_red';
+  coverage: 'full' | 'highlights';
+}
+
+export interface SelectedCartItem {
+  serviceId: string;
+  name: string;
+  category: string;
+  originalPrice: number;
+  finalPrice: number;
+  discountApplied?: string;
+  colorConfig?: HairColorConfig;
+  proteinOption?: string;
+}
+
+export interface PricingEngineResult {
+  items: SelectedCartItem[];
+  originalSubtotal: number;
+  finalTotal: number;
+  totalSavings: number;
+  comboApplied?: string;
+  overridesApplied: string[];
+  discountsBreakdown: { title: string; savedMAD: number }[];
+}
+
 export interface AppointmentBooking {
   id: string;
-  ticketNumber: string;
+  ticketNumber: string; // e.g. #SB-1024
   services: BarberService[];
+  cartItemsSummary?: SelectedCartItem[];
   barberId: string;
   barberName: string;
-  drinkPreference: DrinkPreference;
   date: string; // YYYY-MM-DD
   timeSlot: string;
   clientName: string;
   clientPhone: string;
-  clientEmail: string;
+  clientEmail?: string;
   notes?: string;
-  totalDurationMinutes: number;
+  originalTotalMAD?: number;
+  finalTotalMAD?: number;
+  totalSavingsMAD?: number;
+  bookingMethod?: 'site' | 'whatsapp';
+  drinkPreference?: DrinkPreference;
+  totalDurationMinutes?: number;
+  status: BookingStatus;
+  rescheduledTo?: { date: string; time: string };
+  adminNotes?: string;
   createdAt: string;
-  status: 'pending_quote' | 'confirmed' | 'cancelled';
 }
 
 export interface ContactMessage {

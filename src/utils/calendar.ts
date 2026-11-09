@@ -1,13 +1,14 @@
 import { AppointmentBooking } from '../types';
 import { SALON_INFO } from '../data/barbershopData';
 
-export function getDrinkLabel(pref: 'coffee' | 'tea' | 'none'): string {
+export function getDrinkLabel(pref?: 'coffee' | 'tea' | 'none'): string {
   switch (pref) {
     case 'coffee':
       return 'Café / قهوة';
     case 'tea':
       return 'Thé / أتاي فقط';
     case 'none':
+    default:
       return 'Rien / والو';
   }
 }
@@ -119,7 +120,8 @@ export function createGoogleCalendarUrl(appointment: AppointmentBooking): string
   const dateObj = new Date(appointment.date);
   dateObj.setHours(hours, minutes, 0);
 
-  const endDateObj = new Date(dateObj.getTime() + appointment.totalDurationMinutes * 60000);
+  const duration = appointment.totalDurationMinutes || 45;
+  const endDateObj = new Date(dateObj.getTime() + duration * 60000);
 
   const formatIsoForGCal = (d: Date) => {
     return d.toISOString().replace(/-|:|\.\d\d\d/g, '');
@@ -134,7 +136,8 @@ export function downloadIcsFile(appointment: AppointmentBooking) {
   const [hours, minutes] = appointment.timeSlot.split(':').map(Number);
   const start = new Date(appointment.date);
   start.setHours(hours, minutes, 0);
-  const end = new Date(start.getTime() + appointment.totalDurationMinutes * 60000);
+  const duration = appointment.totalDurationMinutes || 45;
+  const end = new Date(start.getTime() + duration * 60000);
 
   const pad = (n: number) => (n < 10 ? '0' + n : n.toString());
   const formatICSDate = (d: Date) => {
