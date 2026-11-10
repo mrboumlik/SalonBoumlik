@@ -64,47 +64,76 @@
 
 /* Themes Definition */
 html.theme-gold body {
-  background-color: #07080B;
+  background-color: #050507;
+  color: #F4F4F5;
 }
 
 html.theme-charcoal body {
-  background-color: #101217;
+  background-color: #0E1015;
+  color: #F4F4F5;
 }
 
 html.theme-light body {
-  background-color: #F8F9FA;
-  color: #18181B;
+  background-color: #FFFFFF;
+  color: #090A0E;
 }
 
 html.theme-light .bg-black {
-  background-color: #F8F9FA !important;
+  background-color: #FFFFFF !important;
 }
 
 html.theme-light .bg-zinc-950,
 html.theme-light .bg-\[\#090A0E\],
 html.theme-light .bg-\[\#0D0F14\],
+html.theme-light .bg-\[\#0E1015\],
 html.theme-light .bg-\[\#050609\] {
   background-color: #FFFFFF !important;
+  color: #0F172A !important;
 }
 
 html.theme-light .bg-zinc-900,
 html.theme-light .bg-\[\#12141B\],
 html.theme-light .bg-\[\#181B23\] {
-  background-color: #F1F3F5 !important;
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
 }
 
 html.theme-light .border-zinc-800,
-html.theme-light .border-zinc-900 {
+html.theme-light .border-zinc-900,
+html.theme-light .border-zinc-700 {
   border-color: #E2E8F0 !important;
 }
 
 html.theme-light .text-white {
-  color: #0F172A !important;
+  color: #090A0E !important;
 }
 
+html.theme-light .text-zinc-200,
 html.theme-light .text-zinc-300,
 html.theme-light .text-zinc-400 {
   color: #475569 !important;
+}
+
+html.theme-light .text-zinc-500 {
+  color: #64748B !important;
+}
+
+html.theme-light input,
+html.theme-light select {
+  background-color: #FFFFFF !important;
+  color: #090A0E !important;
+  border-color: #CBD5E1 !important;
+}
+
+/* Barber Pole Accents */
+.accent-barber-red {
+  color: #DC2626;
+}
+.accent-barber-blue {
+  color: #2563EB;
+}
+.accent-gold {
+  color: #EAB308;
 }
 
 /* Subtle Barber Pole Stripe Animation in Classic Red, White & Blue */

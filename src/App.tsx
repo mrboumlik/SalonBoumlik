@@ -81,10 +81,22 @@ function SalonBoumlikApp() {
 
   return (
     <div
-      className={`min-h-screen bg-black text-zinc-100 flex flex-col font-body selection:bg-red-600/30 selection:text-white overflow-x-hidden ${
+      className={`min-h-screen bg-black text-zinc-100 flex flex-col font-body selection:bg-red-600/30 selection:text-white overflow-x-hidden relative ${
         isRtl ? 'font-arabic' : ''
       }`}
     >
+      {/* Global Brand Watermark (Fixed, Non-intrusive, Pointer-events-none) */}
+      <div 
+        aria-hidden="true" 
+        className="fixed inset-0 pointer-events-none z-0 flex items-center justify-center overflow-hidden select-none"
+      >
+        <img
+          src={SALON_INFO.media.logoClean}
+          alt=""
+          className="w-[500px] sm:w-[700px] lg:w-[880px] max-w-none opacity-[0.03] filter grayscale contrast-125 dark:invert pointer-events-none"
+        />
+      </div>
+
       {/* 1. Sticky Navigation Header */}
       <Navbar
         onOpenBooking={handleScrollToBooking}

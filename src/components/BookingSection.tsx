@@ -18,7 +18,10 @@ import {
   CheckSquare,
   Square,
   Pencil,
-  PhoneCall
+  PhoneCall,
+  Mail,
+  ShieldCheck,
+  ArrowRight
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useLanguage } from '../context/LanguageContext';
@@ -51,6 +54,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
   // Form fields
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
+  const [clientEmail, setClientEmail] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [timeSlot, setTimeSlot] = useState('16:00');
   const [notes, setNotes] = useState('');
@@ -92,7 +96,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       setFormError(
         lang === 'ar' ? 'يرجى إدخال رقم هاتف مغربي صحيح (مثال: 06...)' :
         lang === 'amz' ? 'ⵙⵙⴽⵛⵎ ⵓⵟⵟⵓⵏ ⵏ ⵜⵉⵍⵉⴼⵓⵏ ⵉⵖⵓⴷⴰⵏ' :
-        'Numéro de téléphone marocain invalide (ex: 06...)'
+        'Numéro de téléphone marocain valide requis (ex: 06...)'
       );
       return false;
     }
@@ -100,7 +104,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       setFormError(
         lang === 'ar' ? 'يرجى اختيار خدمة واحدة على الأقل من القائمة أدناه' :
         lang === 'amz' ? 'ⴼⵔⵏ ⵎⵇⵇⴰⵔ ⴷ ⵢⴰⵜ ⵜⵡⵓⵔⵉ' :
-        'Veuillez sélectionner au moins un soin dans la liste ci-dessous.'
+        'Veuillez sélectionner au moins un soin dans la liste.'
       );
       return false;
     }
@@ -108,8 +112,8 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
     return true;
   };
 
-  // 1. Confirm on Site Handler
-  const handleConfirmOnSite = (e: React.FormEvent) => {
+  // Single Primary Submit Action: Confirm Booking & Get Ticket (Routes to Database first)
+  const handleConfirmBooking = (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
 
@@ -122,6 +126,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       timeSlot,
       clientName: clientName.trim(),
       clientPhone: clientPhone.trim(),
+      clientEmail: clientEmail.trim() || undefined,
       notes: [
         notes.trim(),
         includeWaitingSkip ? (lang === 'ar' ? 'خدمة تفادي الانتظار (+10 دراهم)' : 'Service Coupe-File (+10 MAD)') : ''
@@ -135,10 +140,10 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
 
     try {
       confetti({
-        particleCount: 75,
-        spread: 85,
+        particleCount: 80,
+        spread: 90,
         origin: { y: 0.6 },
-        colors: ['#eab308', '#ef4444', '#ffffff', '#2563eb'],
+        colors: ['#eab308', '#dc2626', '#ffffff', '#2563eb'],
       });
     } catch {
       // ignore
@@ -146,62 +151,6 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
 
     setCreatedBooking(newBooking);
     if (onBookingConfirmed) onBookingConfirmed(newBooking);
-  };
-
-  // 2. Book via WhatsApp Handler
-  const handleBookViaWhatsApp = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validateForm()) return;
-
-    const servicesListText = pricingResult.items
-      .map((i) => `• ${i.name} (${i.finalPrice} MAD)`)
-      .join('\n');
-
-    const msg = [
-      `💈 *RÉSERVATION & DEVIS SALON BOUMLIK* 💈`,
-      `👤 *Client:* ${clientName.trim()}`,
-      `📱 *Téléphone:* ${clientPhone.trim()}`,
-      `✂️ *Barbier choisi:* ${barberNameLocalized}`,
-      `📅 *Date:* ${date}`,
-      `⏰ *Heure:* ${timeSlot}`,
-      `-----------------------`,
-      `📋 *Services sélectionnés:*`,
-      servicesListText,
-      includeWaitingSkip ? `⚡ *Service Coupe-File (Anti-attente):* +10 MAD` : '',
-      `-----------------------`,
-      pricingResult.totalSavings > 0 ? `🎁 *Économie réalisée:* -${pricingResult.totalSavings} MAD` : '',
-      `💰 *Total à payer:* *${grandTotal} MAD*`,
-      notes.trim() ? `📝 *Note:* ${notes.trim()}` : '',
-      `\n📍 Salon Boumlik, 2ème Étage, Rue Bir Anzarane, Taroudant`,
-      `📞 Contact direct: 06 35 39 25 03`,
-    ]
-      .filter(Boolean)
-      .join('\n');
-
-    const booking = createNewBooking({
-      services: [],
-      cartItemsSummary: pricingResult.items,
-      barberId: selectedBarber.id,
-      barberName: barberNameLocalized,
-      date,
-      timeSlot,
-      clientName: clientName.trim(),
-      clientPhone: clientPhone.trim(),
-      notes: [
-        notes.trim(),
-        includeWaitingSkip ? (lang === 'ar' ? 'خدمة تفادي الانتظار (+10 دراهم)' : 'Service Coupe-File (+10 MAD)') : ''
-      ].filter(Boolean).join(' | '),
-      originalTotalMAD: pricingResult.originalSubtotal + waitingSkipFee,
-      finalTotalMAD: grandTotal,
-      totalSavingsMAD: pricingResult.totalSavings,
-      bookingMethod: 'whatsapp',
-      status: 'pending',
-    });
-
-    if (onBookingConfirmed) onBookingConfirmed(booking);
-
-    const waUrl = `https://wa.me/${SALON_INFO.whatsappNumber}?text=${encodeURIComponent(msg)}`;
-    window.open(waUrl, '_blank');
   };
 
   const handleCopyTicket = (ticket: string) => {
@@ -220,11 +169,11 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       es: 'Solicitud de Cita y Presupuesto',
     }[lang] || 'طلب موعد وتسعيرة',
     subtitle: {
-      ar: 'حدد الخدمات المطلوبة واختر الحلاق المفضل، سيقوم فريق الصالون بمراجعة طلبك وتأكيد حجزك فوراً.',
-      fr: 'Choisissez vos prestations et votre barbier attitré. L’équipe confirme votre créneau directement.',
-      en: 'Select your grooming services and preferred barber. The team confirms your chair instantly.',
+      ar: 'حدد الخدمات المطلوبة واختر الحلاق المفضل، سيتم تسجيل حجزك فوراً واستخراج تذكرتك الإلكترونية.',
+      fr: 'Choisissez vos prestations et votre barbier attitré. Votre réservation est enregistrée instantanément.',
+      en: 'Select your grooming services and preferred barber. Your booking is logged and ticket issued instantly.',
       amz: 'ⴼⵔⵏ ⵜⵉⵡⵓⵔⵉⵡⵉⵏ ⴷ ⵓⵎⴽⵔⴰⴹ ⵏⵏⴽ. ⵔⴰⴷ ⵏⵙⵙⴷⵓ ⴰⵙⵔⵓⵙ ⵏⵏⴽ ⵙ ⵜⵉⵣⵣⵍⴰ.',
-      es: 'Elige tus servicios y tu barbero preferido. Confirmamos tu cita de inmediato.',
+      es: 'Elige tus servicios y tu barbero preferido. Tu reserva se registrará de inmediato.',
     }[lang] || 'حدد الخدمات المطلوبة واختر الحلاق المفضل.',
     waitingTitle: {
       ar: 'خدمة تفادي الانتظار (+10 دراهم)',
@@ -261,20 +210,13 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       amz: '3. ⴰⵙⴰⴽⵓⴷ ⴷ ⵓⴽⵓⴷ ⴷ ⵉⵏⵖⵎⵉⵙⵏ',
       es: '3. Fecha, hora y contacto',
     }[lang] || '3. تاريخ الموعد',
-    btnWhatsApp: {
-      ar: 'إرسال تفاصيل الحجز عبر واتساب',
-      fr: 'Envoyer la demande via WhatsApp',
-      en: 'Send Booking via WhatsApp',
-      amz: 'ⴰⵣⵏ ⴰⵙⵔⵓⵙ ⴳ ⵡⴰⵜⵙⴰⴱ',
-      es: 'Enviar reserva por WhatsApp',
-    }[lang] || 'إرسال عبر واتساب',
-    btnSite: {
-      ar: 'تأكيد الحجز مباشرة في الموقع والحصول على التذكرة',
-      fr: 'Confirmer sur le site et obtenir le ticket',
-      en: 'Confirm on Site & Get Ticket',
-      amz: 'ⵙⵙⴷⵓ ⴳ ⵓⵙⵉⵜ ⴷ ⵜⵉⴽⵉ',
-      es: 'Confirmar en la web y obtener ticket',
-    }[lang] || 'تأكيد الحجز على الموقع',
+    btnSubmit: {
+      ar: 'تأكيد الحجز واستخراج التذكرة',
+      fr: 'Confirmer la Réservation & Obtenir mon Ticket',
+      en: 'Confirm Booking & Get Ticket',
+      amz: 'ⵙⵙⴷⵓ ⴰⵙⵔⵓⵙ ⴷ ⵜⵉⴽⵉ',
+      es: 'Confirmar Reserva y Obtener Ticket',
+    }[lang] || 'تأكيد الحجز واستخراج التذكرة',
     roleOwner: {
       ar: 'المالك وخبير الحلاقة',
       fr: 'Propriétaire & Maître Barbier',
@@ -295,22 +237,22 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
   return (
     <section id="booking" className="py-10 sm:py-16 bg-[#090A0E] text-white relative border-b border-zinc-800">
       
-      {/* Background ambient lighting */}
-      <div className="absolute top-1/4 right-1/4 w-[400px] h-[300px] bg-amber-500/5 blur-[140px] rounded-full pointer-events-none" />
-      <div className="absolute bottom-1/4 left-1/4 w-[400px] h-[300px] bg-red-600/5 blur-[140px] rounded-full pointer-events-none" />
+      {/* Background ambient lighting in Barber Red and Blue */}
+      <div className="absolute top-1/4 right-1/4 w-[400px] h-[300px] bg-red-600/5 blur-[140px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-1/4 left-1/4 w-[400px] h-[300px] bg-blue-600/5 blur-[140px] rounded-full pointer-events-none" />
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 relative z-10">
         
-        {/* Main Card Shell */}
+        {/* Main Card Shell with subtle gold border accent */}
         <div className="rounded-3xl bg-[#0D0F14] border border-amber-500/30 p-5 sm:p-8 shadow-2xl space-y-7">
           
           {/* Header */}
           <div className="text-center space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold mb-1">
-              <Ticket className="w-3.5 h-3.5" />
-              <span>{lang === 'ar' ? 'حجز فوري مباشر • صالون بومليك' : 'Réservation Directe Sans Inscription'}</span>
+              <Ticket className="w-3.5 h-3.5 text-amber-400" />
+              <span>{lang === 'ar' ? 'حجز فوري ومباشر • صالون بومليك' : 'Réservation Directe Sans Inscription'}</span>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight font-display">
               {ui.title}
             </h2>
             <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed max-w-xl mx-auto">
@@ -318,12 +260,12 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
             </p>
           </div>
 
-          {/* Priority Waiting Skip Box (Gold callout as shown in screenshot) */}
+          {/* Priority Waiting Skip Box (Gold callout as specified) */}
           <div 
             onClick={() => setIncludeWaitingSkip(!includeWaitingSkip)}
             className={`p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer select-none ${
               includeWaitingSkip 
-                ? 'bg-gradient-to-r from-amber-950/40 via-amber-900/20 to-amber-950/40 border-amber-500/60 shadow-lg shadow-amber-500/10' 
+                ? 'bg-gradient-to-r from-amber-950/40 via-amber-900/25 to-amber-950/40 border-amber-500/60 shadow-lg shadow-amber-500/10' 
                 : 'bg-zinc-900/60 border-zinc-800 hover:border-zinc-700'
             }`}
           >
@@ -337,7 +279,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                     <span>⚡</span>
                     <span>{ui.waitingTitle}</span>
                   </h3>
-                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${includeWaitingSkip ? 'bg-amber-500 text-black' : 'bg-zinc-800 text-zinc-400'}`}>
+                  <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${includeWaitingSkip ? 'bg-amber-500 text-black' : 'bg-zinc-800 text-zinc-400'}`}>
                     {includeWaitingSkip ? (lang === 'ar' ? 'مفعّلة' : 'Active') : (lang === 'ar' ? 'معطّلة' : 'Désactivée')}
                   </span>
                 </div>
@@ -355,7 +297,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
             </div>
           )}
 
-          {/* STEP 1: Select Services (Compact rows matching screenshot) */}
+          {/* STEP 1: Select Services (Compact rows) */}
           <div className="space-y-3">
             <div className="flex items-center justify-between text-xs font-bold text-zinc-200">
               <span className="flex items-center gap-1.5">
@@ -426,7 +368,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
               <Pencil className="w-3.5 h-3.5 text-zinc-500" />
             </div>
 
-            {/* 2x2 Grid of Barber Pills */}
+            {/* 2x2 Grid of Barber Pills (Including Mounir querdeny with styled avatar) */}
             <div className="grid grid-cols-2 gap-2.5">
               {TEAM_MEMBERS.map((barber) => {
                 const isSelected = selectedBarberId === barber.id;
@@ -437,7 +379,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                     key={barber.id}
                     type="button"
                     onClick={() => onSelectBarberId(barber.id)}
-                    className={`p-2.5 sm:p-3 rounded-2xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
+                    className={`p-2.5 sm:p-3 rounded-2xl border text-left flex items-center gap-3 transition-all cursor-pointer group ${
                       isSelected
                         ? 'bg-amber-500/10 border-amber-500 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500'
                         : 'bg-[#12141B] border-zinc-800 hover:border-zinc-700'
@@ -446,7 +388,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                     <img 
                       src={barber.avatar} 
                       alt={bName} 
-                      className="w-10 h-10 sm:w-11 sm:h-11 rounded-full object-cover bg-zinc-800 flex-shrink-0 ring-2 ring-zinc-700/80"
+                      className="w-10 h-10 sm:w-11 sm:h-11 rounded-full object-cover object-center bg-zinc-800 flex-shrink-0 ring-2 ring-zinc-700/80 group-hover:ring-amber-500/50 transition-all shadow"
                     />
                     <div className="min-w-0 flex-1">
                       <span className="font-bold text-white text-xs sm:text-sm block truncate">
@@ -462,7 +404,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
             </div>
           </div>
 
-          {/* STEP 3: Date, Time & Client Info (Drink step removed completely as requested) */}
+          {/* STEP 3: Date, Time & Client Info (With Optional Email) */}
           <div className="space-y-4 pt-2">
             <label className="block text-xs font-bold text-zinc-200 flex items-center gap-1.5">
               <Calendar className="w-4 h-4 text-amber-400" />
@@ -502,7 +444,8 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Client Coordinates: Name, WhatsApp Phone, and Optional Email */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-[11px] text-zinc-400 mb-1 flex items-center gap-1">
                   <User className="w-3 h-3 text-zinc-400" />
@@ -531,6 +474,21 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                   placeholder="06 35 39 25 03"
                   required
                   className="w-full bg-[#12141B] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-white font-mono placeholder-zinc-600 focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-zinc-400 mb-1 flex items-center gap-1">
+                  <Mail className="w-3 h-3 text-blue-400" />
+                  <span>{lang === 'ar' ? 'الإيميل (اختياري)' : 'Email (Optionnel)'}</span>
+                </label>
+                <input
+                  type="email"
+                  dir="ltr"
+                  value={clientEmail}
+                  onChange={(e) => setClientEmail(e.target.value)}
+                  placeholder="nom@exemple.com"
+                  className="w-full bg-[#12141B] border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500"
                 />
               </div>
             </div>
@@ -590,26 +548,15 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
             </div>
           </div>
 
-          {/* DUAL ACTION BUTTONS (WhatsApp + Site Ticket) */}
-          <div className="space-y-3 pt-2">
-            {/* Primary Action 1: Book via WhatsApp */}
+          {/* ONLY ONE PRIMARY SUBMIT BUTTON: Confirm Booking & Get Ticket (Routes to Database first) */}
+          <div className="pt-2">
             <button
               type="button"
-              onClick={handleBookViaWhatsApp}
-              className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:scale-[0.99] text-white font-black text-sm flex items-center justify-center gap-2.5 shadow-xl shadow-emerald-600/25 transition-all cursor-pointer"
+              onClick={handleConfirmBooking}
+              className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-black font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-xl shadow-amber-500/25 active:scale-[0.99] transition-all cursor-pointer"
             >
-              <MessageCircle className="w-5 h-5" />
-              <span>{ui.btnWhatsApp}</span>
-            </button>
-
-            {/* Primary Action 2: Confirm on Site (Ticket Generation) */}
-            <button
-              type="button"
-              onClick={handleConfirmOnSite}
-              className="w-full py-3.5 px-6 rounded-2xl bg-[#181B23] hover:bg-[#202430] border border-zinc-700/80 active:scale-[0.99] text-zinc-200 hover:text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
-            >
-              <Ticket className="w-4 h-4 text-amber-400" />
-              <span>{ui.btnSite}</span>
+              <Ticket className="w-5 h-5 text-black" />
+              <span>{ui.btnSubmit}</span>
             </button>
           </div>
 
@@ -617,10 +564,10 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
 
       </div>
 
-      {/* CONFIRMED TICKET MODAL WITH DIRECT CONTACT BUTTONS */}
+      {/* CONFIRMED TICKET MODAL WITH PROMINENT RECOMMENDATION & DIRECT CONTACT BUTTONS */}
       {createdBooking && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-          <div className="bg-[#0E1015] border border-amber-500/40 rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl space-y-5 text-center animate-in fade-in duration-300 max-h-[90vh] overflow-y-auto">
+          <div className="bg-[#0E1015] border border-amber-500/40 rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl space-y-5 text-center animate-in fade-in duration-300 max-h-[92vh] overflow-y-auto">
             
             <div className="w-14 h-14 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
               <CheckCircle2 className="w-8 h-8" />
@@ -628,13 +575,13 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
 
             <div className="space-y-1">
               <span className="text-xs uppercase tracking-wider font-bold text-amber-400">
-                {lang === 'ar' ? 'تم تسجيل حجزك بنجاح' : 'Réservation Enregistrée !'}
+                {lang === 'ar' ? 'تم تسجيل حجزك بنجاح في النظام' : 'Réservation Enregistrée !'}
               </span>
               <h3 className="text-2xl font-black text-white font-display">
                 {createdBooking.ticketNumber}
               </h3>
               <p className="text-xs text-zinc-400">
-                {lang === 'ar' ? 'احتفظ برقم التذكرة لتتبع الموعد مباشرة' : 'Conservez votre numéro de ticket pour le suivi.'}
+                {lang === 'ar' ? 'تم حفظ طلبك في قاعدة بيانات الصالون' : 'Votre billet a été généré et enregistré avec succès.'}
               </p>
             </div>
 
@@ -657,44 +604,55 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
               </div>
             </div>
 
-            {/* Direct Contact Action Buttons (Requirement #4 & #2) */}
-            <div className="space-y-2 pt-1 border-t border-zinc-800/80">
-              <span className="text-[11px] font-semibold text-zinc-400 block text-center">
-                {lang === 'ar' ? 'تواصل مباشر بخصوص التذكرة:' : 'Contact direct concernant ce ticket :'}
-              </span>
+            {/* PROMINENT RECOMMENDATION NOTE (Requirement #2) */}
+            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/40 via-amber-900/30 to-amber-950/40 border border-amber-500/50 text-center space-y-1 shadow-sm">
+              <div className="flex items-center justify-center gap-1.5 text-amber-400 font-bold text-xs sm:text-sm">
+                <Sparkles className="w-4 h-4 text-amber-400 animate-pulse flex-shrink-0" />
+                <span>
+                  {lang === 'ar' ? 'تأكيد فوري وسريع' : 'Confirmation Rapide Recommandée'}
+                </span>
+              </div>
+              <p className="text-[11px] sm:text-xs text-amber-200/95 leading-relaxed font-semibold">
+                {lang === 'ar' 
+                  ? 'للحصول على تأكيد ورد سريع، يُنصح بالتواصل معنا الآن عبر الواتساب أو الاتصال.' 
+                  : 'Pour une confirmation immédiate et un traitement prioritaire, nous vous recommandons vivement de nous contacter dès maintenant par WhatsApp ou par téléphone.'}
+              </p>
+            </div>
 
-              {/* 1. Contact Selected Barber */}
+            {/* Direct Contact Buttons (Barber & Hassan) */}
+            <div className="space-y-2">
+              {/* 1. Direct WhatsApp to Chosen Barber */}
               <a
                 href={`https://wa.me/${chosenBarberWa}?text=${encodeURIComponent(
-                  `Salam ${createdBooking.barberName}, je vous contacte concernant mon ticket de réservation ${createdBooking.ticketNumber} au Salon Boumlik pour le ${createdBooking.date} à ${createdBooking.timeSlot}.`
+                  `Salam ${createdBooking.barberName}, je viens d'enregistrer ma réservation sous le ticket ${createdBooking.ticketNumber} au Salon Boumlik pour le ${createdBooking.date} à ${createdBooking.timeSlot}. Pouvez-vous me confirmer le créneau ? Merci !`
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-md shadow-emerald-600/20"
+                className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 transition-all cursor-pointer"
               >
-                <MessageCircle className="w-4 h-4" />
+                <MessageCircle className="w-4 h-4 fill-white flex-shrink-0" />
                 <span>
-                  {lang === 'ar' ? `مراسلة الحلاق (${createdBooking.barberName})` : `Contacter ${createdBooking.barberName}`}
+                  {lang === 'ar' ? `مراسلة الحلاق عبر الواتساب (${createdBooking.barberName})` : `WhatsApp avec le Barbier (${createdBooking.barberName})`}
                 </span>
               </a>
 
-              {/* 2. Contact Salon Owner (Hassan) */}
+              {/* 2. Direct Contact to Salon Owner Hassan */}
               <div className="grid grid-cols-2 gap-2">
                 <a
                   href={`https://wa.me/212635392503?text=${encodeURIComponent(
-                    `Salam Si Hassan, je vous contacte au sujet de ma réservation ${createdBooking.ticketNumber} au Salon Boumlik (Taroudant).`
+                    `Salam Si Hassan, je viens d'enregistrer le ticket ${createdBooking.ticketNumber} au Salon Boumlik pour le ${createdBooking.date} à ${createdBooking.timeSlot}.`
                   )}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                  className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>{lang === 'ar' ? 'واتساب حسن' : 'WhatsApp Hassan'}</span>
+                  <span>{lang === 'ar' ? 'واتساب الإدارة (حسن)' : 'WhatsApp Hassan'}</span>
                 </a>
 
                 <a
                   href="tel:0635392503"
-                  className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                  className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <PhoneCall className="w-3.5 h-3.5 text-blue-400" />
                   <span>06 35 39 25 03</span>
