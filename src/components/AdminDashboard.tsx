@@ -18,71 +18,153 @@ import {
   TrendingUp,
   Scissors,
   Check,
-  RotateCcw
+  RotateCcw,
+  Save,
+  ShieldCheck,
+  Users
 } from 'lucide-react';
 import { 
   getAllBookings, 
   updateBookingStatus, 
+  updateBookingAdminNote,
   deleteBooking 
 } from '../utils/bookingStore';
 import { AppointmentBooking, BookingStatus } from '../types';
-import { SALON_INFO } from '../data/barbershopData';
+import { SALON_INFO, TEAM_MEMBERS } from '../data/barbershopData';
 
 interface AdminDashboardProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+interface StaffSession {
+  barberId: 'all' | 'hassan' | 'anouar-arif' | 'lahcen-lhanz' | 'mounir-querdeny';
+  name: string;
+  role: 'master' | 'barber';
+  title: string;
+}
+
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose }) => {
   const [pinInput, setPinInput] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [session, setSession] = useState<StaffSession | null>(null);
   const [pinError, setPinError] = useState(false);
   const [bookings, setBookings] = useState<AppointmentBooking[]>([]);
+  
+  // Filters
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [masterBarberFilter, setMasterBarberFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   
   // Reschedule dialog state
   const [reschedulingBooking, setReschedulingBooking] = useState<AppointmentBooking | null>(null);
   const [newDate, setNewDate] = useState('');
   const [newTime, setNewTime] = useState('17:00');
-  const [adminNote, setAdminNote] = useState('');
+  const [rescheduleNote, setRescheduleNote] = useState('');
 
-  const VALID_PINS = ['1980', '0635392503', '1234'];
+  // Per-booking client note state
+  const [notesState, setNotesState] = useState<Record<string, string>>({});
+  const [savedNoteId, setSavedNoteId] = useState<string | null>(null);
 
   const reloadBookings = () => {
-    setBookings(getAllBookings());
+    const all = getAllBookings();
+    setBookings(all);
+    const initialNotes: Record<string, string> = {};
+    all.forEach((b) => {
+      initialNotes[b.id] = b.adminNotes || '';
+    });
+    setNotesState(initialNotes);
   };
 
   useEffect(() => {
-    if (isOpen && isAuthenticated) {
+    if (isOpen && session) {
       reloadBookings();
     }
-  }, [isOpen, isAuthenticated]);
+  }, [isOpen, session]);
 
   useEffect(() => {
     const handleUpdate = () => {
-      if (isAuthenticated) reloadBookings();
+      if (session) reloadBookings();
     };
     window.addEventListener('salon_bookings_updated', handleUpdate);
     return () => window.removeEventListener('salon_bookings_updated', handleUpdate);
-  }, [isAuthenticated]);
+  }, [session]);
 
   if (!isOpen) return null;
 
+  // RBAC Authentication
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (VALID_PINS.includes(pinInput.trim())) {
-      setIsAuthenticated(true);
+    const cleanPin = pinInput.trim();
+
+    // 1. Hassan (Master Admin): PINs 1994 OR 0635392503
+    if (cleanPin === '1994' || cleanPin === '0635392503' || cleanPin === '212635392503') {
+      setSession({
+        barberId: 'all',
+        name: 'Hassan ait boumlik',
+        role: 'master',
+        title: 'Master Admin / المؤسس وخبير الحلاقة',
+      });
       setPinError(false);
-      reloadBookings();
-    } else {
-      setPinError(true);
       setPinInput('');
+      reloadBookings();
+      return;
     }
+
+    // 2. Anouar (Barber): PIN 1234
+    if (cleanPin === '1234') {
+      setSession({
+        barberId: 'anouar-arif',
+        name: 'Anouar arif',
+        role: 'barber',
+        title: 'Barbier / حلاق',
+      });
+      setPinError(false);
+      setPinInput('');
+      reloadBookings();
+      return;
+    }
+
+    // 3. Lahcen (Barber): PIN 5678
+    if (cleanPin === '5678') {
+      setSession({
+        barberId: 'lahcen-lhanz',
+        name: 'Lahcen lhanz',
+        role: 'barber',
+        title: 'Barbier / حلاق',
+      });
+      setPinError(false);
+      setPinInput('');
+      reloadBookings();
+      return;
+    }
+
+    // 4. Mounir (Barber): PIN 1111
+    if (cleanPin === '1111') {
+      setSession({
+        barberId: 'mounir-querdeny',
+        name: 'Mounir querdeny',
+        role: 'barber',
+        title: 'Barbier / حلاق',
+      });
+      setPinError(false);
+      setPinInput('');
+      reloadBookings();
+      return;
+    }
+
+    // Invalid PIN
+    setPinError(true);
+    setPinInput('');
+  };
+
+  const handleLogout = () => {
+    setSession(null);
+    setPinInput('');
+    setPinError(false);
   };
 
   const handleConfirm = (id: string) => {
-    updateBookingStatus(id, 'confirmed', 'Confirmé par Hassan. Votre créneau est réservé.');
+    updateBookingStatus(id, 'confirmed', `Confirmé par ${session?.name || 'le salon'}. Votre créneau est réservé.`);
     reloadBookings();
   };
 
@@ -98,7 +180,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
     setReschedulingBooking(booking);
     setNewDate(booking.date);
     setNewTime(booking.timeSlot);
-    setAdminNote('Décalé pour vous éviter l’attente.');
+    setRescheduleNote('Décalé pour vous éviter l’attente au salon.');
   };
 
   const handleSaveReschedule = (e: React.FormEvent) => {
@@ -108,7 +190,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
     updateBookingStatus(
       reschedulingBooking.id,
       'rescheduled',
-      adminNote,
+      rescheduleNote,
       { date: newDate, time: newTime }
     );
     setReschedulingBooking(null);
@@ -122,377 +204,544 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
     }
   };
 
-  // Filtered list
-  const filteredBookings = bookings.filter((b) => {
-    const matchesStatus = statusFilter === 'all' || b.status === statusFilter;
-    const matchesSearch =
-      b.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.clientPhone.includes(searchQuery) ||
-      b.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.barberName.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesStatus && matchesSearch;
+  const handleSaveClientNote = (bookingId: string) => {
+    const note = notesState[bookingId] || '';
+    updateBookingAdminNote(bookingId, note);
+    setSavedNoteId(bookingId);
+    setTimeout(() => setSavedNoteId(null), 2500);
+    reloadBookings();
+  };
+
+  const formatClientWhatsAppPhone = (phone: string) => {
+    const digits = phone.replace(/\D/g, '');
+    if (digits.startsWith('212')) return digits;
+    if (digits.startsWith('0')) return `212${digits.slice(1)}`;
+    return `212${digits}`;
+  };
+
+  // RBAC Filtering:
+  // - Barbers see ONLY bookings assigned to their barberId
+  // - Master (Hassan) sees ALL bookings, with optional filter by barber
+  const visibleBookings = bookings.filter((b) => {
+    if (!session) return false;
+
+    // Barber view constraint
+    if (session.role === 'barber') {
+      const isAssigned = b.barberId === session.barberId || 
+        b.barberName.toLowerCase().includes(session.name.toLowerCase().split(' ')[0]);
+      if (!isAssigned) return false;
+    } else if (session.role === 'master') {
+      // Hassan's optional barber filter
+      if (masterBarberFilter !== 'all') {
+        const matches = b.barberId === masterBarberFilter || 
+          b.barberName.toLowerCase().includes(masterBarberFilter.toLowerCase().split('-')[0]);
+        if (!matches) return false;
+      }
+    }
+
+    // Status filter
+    if (statusFilter !== 'all' && b.status !== statusFilter) {
+      return false;
+    }
+
+    // Search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const match = b.clientName.toLowerCase().includes(q) ||
+        b.clientPhone.includes(q) ||
+        b.ticketNumber.toLowerCase().includes(q) ||
+        b.barberName.toLowerCase().includes(q);
+      if (!match) return false;
+    }
+
+    return true;
   });
 
-  // Stats
-  const totalCount = bookings.length;
-  const pendingCount = bookings.filter((b) => b.status === 'pending').length;
-  const confirmedCount = bookings.filter((b) => b.status === 'confirmed').length;
-  const totalRevenue = bookings
+  // Stats calculation
+  const totalCount = visibleBookings.length;
+  const pendingCount = visibleBookings.filter((b) => b.status === 'pending').length;
+  const confirmedCount = visibleBookings.filter((b) => b.status === 'confirmed').length;
+  const totalRevenue = visibleBookings
     .filter((b) => b.status === 'confirmed')
     .reduce((sum, b) => sum + (b.finalTotalMAD || 0), 0);
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-      <div className="relative w-full max-w-4xl bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl flex flex-col my-6 max-h-[90vh] overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md">
+      <div className="relative w-full max-w-5xl bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl flex flex-col my-6 max-h-[92vh] overflow-hidden">
         
         {/* Barber Pole Top Line */}
         <div className="h-1.5 w-full bg-gradient-to-r from-red-600 via-white to-blue-600" />
 
         {/* Header */}
-        <div className="p-5 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/60">
+        <div className="p-4 sm:p-5 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/70">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-600/10 border border-red-500/30 flex items-center justify-center text-red-500 font-black">
+            <div className="w-10 h-10 rounded-xl bg-red-600/10 border border-red-500/30 flex items-center justify-center text-red-500 font-black flex-shrink-0">
               <Scissors className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-black text-white">
-                  ESPACE ADMIN • SALON BOUMLIK
+                <h2 className="text-base sm:text-lg font-black text-white font-display">
+                  ESPACE GESTION • SALON BOUMLIK
                 </h2>
-                {isAuthenticated && (
-                  <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1">
-                    <Check className="w-3 h-3" /> Connecté (Hassan)
+                {session && (
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
+                    session.role === 'master' 
+                      ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' 
+                      : 'bg-blue-500/15 border-blue-500/40 text-blue-300'
+                  }`}>
+                    <ShieldCheck className="w-3 h-3" />
+                    <span>{session.name} ({session.role === 'master' ? 'Master Admin' : 'Barbier'})</span>
                   </span>
                 )}
               </div>
               <p className="text-xs text-zinc-400">
-                Gestion des tickets, confirmation des créneaux & synchronisation directe
+                {session?.role === 'master' 
+                  ? 'Gestion globale des réservations & notes clients en temps réel' 
+                  : `Tableau de bord personnel : rendez-vous assignés à ${session?.name || 'vous'}`}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {isAuthenticated && (
+            {session && (
               <button
-                onClick={() => setIsAuthenticated(false)}
-                className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition-colors"
-                title="Verrouiller"
+                onClick={handleLogout}
+                className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition-colors cursor-pointer"
+                title="Déconnexion"
               >
                 Déconnexion
               </button>
             )}
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* PIN Security Screen */}
-        {!isAuthenticated ? (
+        {/* SECURE PIN SCREEN (CRITICAL: No PIN in placeholder, type password) */}
+        {!session ? (
           <div className="p-8 sm:p-12 text-center max-w-md mx-auto space-y-6">
-            <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 mx-auto flex items-center justify-center text-red-500 shadow-xl">
+            <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 mx-auto flex items-center justify-center text-amber-400 shadow-xl">
               <Lock className="w-8 h-8" />
             </div>
 
-            <div>
-              <h3 className="text-lg font-bold text-white">Code PIN Administrateur</h3>
-              <p className="text-xs text-zinc-400 mt-1">
-                Réservé à l'équipe du Salon Boumlik (Hassan). Entrez votre code à 4 chiffres (ou téléphone).
+            <div className="space-y-1">
+              <h3 className="text-xl font-bold text-white">Espace Staff & Direction</h3>
+              <p className="text-xs text-zinc-400">
+                Accès sécurisé pour l'équipe du Salon Boumlik. Veuillez entrer votre code confidentiel.
               </p>
             </div>
 
             <form onSubmit={handlePinSubmit} className="space-y-4">
-              <input
-                type="password"
-                maxLength={10}
-                value={pinInput}
-                onChange={(e) => {
-                  setPinInput(e.target.value);
-                  setPinError(false);
-                }}
-                placeholder="Ex: 1980 ou 0635392503"
-                className="w-full text-center text-xl font-mono tracking-widest bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-red-500"
-                autoFocus
-              />
+              <div>
+                <input
+                  type="password"
+                  value={pinInput}
+                  onChange={(e) => {
+                    setPinInput(e.target.value);
+                    setPinError(false);
+                  }}
+                  placeholder="Enter 4-digit PIN"
+                  className="w-full text-center text-xl font-mono tracking-widest bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500"
+                  autoFocus
+                  required
+                />
+              </div>
 
               {pinError && (
-                <p className="text-xs text-red-400 font-medium">
-                  Code PIN invalide. Réessayez avec 1980 ou le numéro du salon.
-                </p>
+                <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/40 text-red-300 text-xs flex items-center justify-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                  <span>Code PIN invalide. Veuillez réessayer.</span>
+                </div>
               )}
 
               <button
                 type="submit"
-                className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-sm transition-colors shadow-lg shadow-red-600/20"
+                className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-sm transition-colors shadow-lg shadow-amber-500/20 cursor-pointer"
               >
-                Accéder au Panneau d'Administration
+                Connexion au Tableau de Bord
               </button>
             </form>
           </div>
         ) : (
-          /* Authenticated Dashboard View */
-          <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+          /* AUTHENTICATED STAFF DASHBOARD */
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+            
             {/* KPI Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800">
-                <span className="text-[10px] text-zinc-400 uppercase font-bold">Total Réservations</span>
-                <p className="text-xl font-black text-white font-mono mt-0.5">{totalCount}</p>
+                <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block">
+                  Total Billets
+                </span>
+                <span className="text-2xl font-black text-white font-mono">{totalCount}</span>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30">
-                <span className="text-[10px] text-amber-400 uppercase font-bold">En Attente (Validation)</span>
-                <p className="text-xl font-black text-amber-300 font-mono mt-0.5">{pendingCount}</p>
+              <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800">
+                <span className="text-[10px] text-amber-400 uppercase font-bold tracking-wider block">
+                  En Attente
+                </span>
+                <span className="text-2xl font-black text-amber-400 font-mono">{pendingCount}</span>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30">
-                <span className="text-[10px] text-emerald-400 uppercase font-bold">Confirmés</span>
-                <p className="text-xl font-black text-emerald-300 font-mono mt-0.5">{confirmedCount}</p>
+              <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800">
+                <span className="text-[10px] text-emerald-400 uppercase font-bold tracking-wider block">
+                  Confirmés
+                </span>
+                <span className="text-2xl font-black text-emerald-400 font-mono">{confirmedCount}</span>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-blue-950/20 border border-blue-500/30">
-                <span className="text-[10px] text-blue-400 uppercase font-bold">Recette Confirmée</span>
-                <p className="text-xl font-black text-blue-300 font-mono mt-0.5">{totalRevenue} MAD</p>
+              <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800">
+                <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block">
+                  Chiffre Confirmé
+                </span>
+                <span className="text-2xl font-black text-white font-mono">{totalRevenue} MAD</span>
               </div>
             </div>
 
-            {/* Filter & Search Bar */}
-            <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-zinc-900/60 p-3 rounded-xl border border-zinc-800">
-              {/* Filter Tabs */}
-              <div className="flex items-center gap-1 overflow-x-auto text-xs font-bold scrollbar-none">
-                {['all', 'pending', 'confirmed', 'rescheduled', 'rejected'].map((st) => (
-                  <button
-                    key={st}
-                    onClick={() => setStatusFilter(st)}
-                    className={`px-3 py-1.5 rounded-lg capitalize transition-colors ${
-                      statusFilter === st
-                        ? 'bg-zinc-800 text-white border border-zinc-700'
-                        : 'text-zinc-400 hover:text-zinc-200'
-                    }`}
-                  >
-                    {st === 'all' ? 'Toutes' : st}
-                  </button>
-                ))}
+            {/* Filter Toolbar */}
+            <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-3">
+              <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+                
+                {/* Search */}
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Recherche client, ticket, téléphone..."
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                {/* Status Filter Buttons */}
+                <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
+                  {['all', 'pending', 'confirmed', 'rescheduled', 'rejected'].map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => setStatusFilter(st)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
+                        statusFilter === st
+                          ? 'bg-amber-500 text-black shadow'
+                          : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {st === 'all' && 'Tous'}
+                      {st === 'pending' && 'En Attente'}
+                      {st === 'confirmed' && 'Confirmés'}
+                      {st === 'rescheduled' && 'Replanifiés'}
+                      {st === 'rejected' && 'Refusés'}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Search */}
-              <div className="relative min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Nom, tél, #SB..."
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-red-500"
-                />
-              </div>
+              {/* Master Admin Only: Barber Filter Tabs */}
+              {session.role === 'master' && (
+                <div className="pt-2 border-t border-zinc-800 flex items-center gap-2 overflow-x-auto text-xs">
+                  <span className="text-zinc-400 font-semibold text-[11px] flex items-center gap-1 flex-shrink-0">
+                    <Users className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Filtrer par Barbier :</span>
+                  </span>
+
+                  <button
+                    onClick={() => setMasterBarberFilter('all')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                      masterBarberFilter === 'all'
+                        ? 'bg-zinc-200 text-black'
+                        : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
+                    }`}
+                  >
+                    Tous les Barbiers ({bookings.length})
+                  </button>
+
+                  {TEAM_MEMBERS.map((b) => {
+                    const count = bookings.filter(
+                      (item) => item.barberId === b.id || item.barberName.toLowerCase().includes(b.name.fr.toLowerCase().split(' ')[0])
+                    ).length;
+
+                    return (
+                      <button
+                        key={b.id}
+                        onClick={() => setMasterBarberFilter(b.id)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          masterBarberFilter === b.id
+                            ? 'bg-amber-500 text-black shadow'
+                            : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
+                        }`}
+                      >
+                        <span className="truncate">{b.name.fr.split(' ')[0]}</span>
+                        <span className="opacity-75 font-mono">({count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Bookings List */}
-            <div className="space-y-3">
-              {filteredBookings.length === 0 ? (
-                <div className="p-8 text-center text-zinc-500 text-xs">
-                  Aucune réservation trouvée dans cette catégorie.
-                </div>
-              ) : (
-                filteredBookings.map((b) => (
-                  <div
-                    key={b.id}
-                    className="p-4 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-zinc-700 transition-all space-y-3"
-                  >
-                    {/* Top Row: Ticket & Status & Time */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 pb-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-base font-black text-white">{b.ticketNumber}</span>
-                        <span className="text-xs text-zinc-400 font-mono">📅 {b.date} • ⏰ {b.timeSlot}</span>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-red-400">
-                          Barbier: {b.barberName}
-                        </span>
-                      </div>
+            {visibleBookings.length === 0 ? (
+              <div className="text-center py-12 text-zinc-500 text-xs">
+                Aucune réservation ne correspond à vos critères.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {visibleBookings.map((booking) => {
+                  const clientPhoneClean = formatClientWhatsAppPhone(booking.clientPhone);
+                  const isNoteSaved = savedNoteId === booking.id;
 
-                      {/* Status badge */}
-                      <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full capitalize ${
-                        b.status === 'confirmed'
-                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                          : b.status === 'rescheduled'
-                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                          : b.status === 'rejected'
-                          ? 'bg-red-500/15 text-red-400 border border-red-500/30'
-                          : 'bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse'
-                      }`}>
-                        {b.status}
-                      </span>
-                    </div>
+                  return (
+                    <div
+                      key={booking.id}
+                      className="p-4 sm:p-5 rounded-2xl bg-zinc-900/70 border border-zinc-800 hover:border-zinc-700/80 transition-all space-y-4 shadow-lg"
+                    >
+                      {/* Top Bar: Ticket #, Date & Time, Status */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono text-base font-black text-white bg-black/60 px-2.5 py-1 rounded-lg border border-zinc-800">
+                            {booking.ticketNumber}
+                          </span>
+                          <span className="text-xs text-zinc-400 font-mono">
+                            📅 {booking.date} • ⏰ {booking.timeSlot}
+                          </span>
+                          <span className="text-xs font-bold text-amber-400">
+                            ✂️ {booking.barberName}
+                          </span>
+                        </div>
 
-                    {/* Client & Price Details */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <div>
-                        <div className="font-bold text-white text-sm">{b.clientName}</div>
-                        <div className="flex items-center gap-3 mt-1">
-                          <a
-                            href={`tel:${b.clientPhone}`}
-                            className="text-zinc-300 hover:text-white flex items-center gap-1 font-mono text-[11px]"
-                          >
-                            <Phone className="w-3 h-3 text-emerald-400" />
-                            {b.clientPhone}
-                          </a>
-                          <a
-                            href={`https://wa.me/${b.clientPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
-                              `Bonjour ${b.clientName}, ici Hassan du Salon Boumlik concernant votre réservation ${b.ticketNumber}.`
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 text-[11px] font-semibold"
-                          >
-                            <MessageCircle className="w-3 h-3" /> WhatsApp
-                          </a>
+                        {/* Status Badge */}
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${
+                            booking.status === 'confirmed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' :
+                            booking.status === 'pending' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' :
+                            booking.status === 'rescheduled' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' :
+                            'bg-red-500/20 text-red-400 border border-red-500/40'
+                          }`}>
+                            {booking.status}
+                          </span>
                         </div>
                       </div>
 
-                      <div className="text-right">
-                        <div className="text-base font-black text-red-500 font-mono">
-                          {b.finalTotalMAD ?? 0} MAD
-                        </div>
-                        {(b.totalSavingsMAD || 0) > 0 && (
-                          <div className="text-[10px] text-emerald-400 font-medium">
-                            Économie client: {b.totalSavingsMAD} MAD
+                      {/* Client Info with DIRECT WHATSAPP BUTTON (Requirement #4) */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="p-3 rounded-xl bg-black/40 border border-zinc-800/80 space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-zinc-400">Client :</span>
+                            <span className="font-bold text-white text-sm">{booking.clientName}</span>
                           </div>
-                        )}
+
+                          <div className="flex items-center justify-between pt-1 border-t border-zinc-800/80">
+                            <span className="text-zinc-400">Téléphone :</span>
+                            <div className="flex items-center gap-2">
+                              <span dir="ltr" className="font-mono text-zinc-200">{booking.clientPhone}</span>
+                              
+                              {/* Direct WhatsApp Client Button */}
+                              <a
+                                href={`https://wa.me/${clientPhoneClean}?text=${encodeURIComponent(
+                                  `Salam ${booking.clientName}, ici ${session.name} de Salon Boumlik concernant votre réservation ${booking.ticketNumber} prévue le ${booking.date} à ${booking.timeSlot}.`
+                                )}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition-colors shadow-sm"
+                                title="Contacter directement sur WhatsApp sans enregistrer le numéro"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                <span>WhatsApp Client</span>
+                              </a>
+                            </div>
+                          </div>
+
+                          {booking.notes && (
+                            <div className="pt-1 text-[11px] text-zinc-400">
+                              <span className="text-zinc-500 font-semibold">Note client : </span>
+                              <span>{booking.notes}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Services & Total */}
+                        <div className="p-3 rounded-xl bg-black/40 border border-zinc-800/80 space-y-1.5 text-xs">
+                          <div className="text-zinc-400 font-semibold text-[11px]">Services demandés :</div>
+                          <div className="space-y-0.5">
+                            {(booking.cartItemsSummary || []).map((itm, i) => (
+                              <div key={i} className="flex justify-between text-zinc-300 text-[11px]">
+                                <span>• {itm.name}</span>
+                                <span className="font-mono font-bold text-white">{itm.finalPrice} MAD</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="pt-1.5 border-t border-zinc-800 flex justify-between font-bold">
+                            <span className="text-zinc-300">Total à encaisser :</span>
+                            <span className="text-amber-400 font-mono text-sm">{booking.finalTotalMAD} MAD</span>
+                          </div>
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Prestations summary */}
-                    <div className="bg-black/40 p-2 rounded-lg border border-zinc-800/80 text-[11px] text-zinc-300 flex flex-wrap gap-2">
-                      {(b.cartItemsSummary || []).map((item, i) => (
-                        <span key={i} className="bg-zinc-800 px-2 py-0.5 rounded text-zinc-200">
-                          {item.name} ({item.finalPrice} MAD)
-                        </span>
-                      ))}
-                    </div>
+                      {/* CLIENT STATUS NOTE (UNIVERSAL TICKET MANAGEMENT - Requirement #4) */}
+                      <div className="p-3 rounded-xl bg-[#12141B] border border-zinc-800 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <label className="font-bold text-zinc-300 flex items-center gap-1.5">
+                            <MessageCircle className="w-3.5 h-3.5 text-amber-400" />
+                            <span>ملاحظة للزبون / Note pour le Suivi Client :</span>
+                          </label>
+                          <span className="text-[10px] text-zinc-500">
+                            (Visible par le client sur sa page de suivi)
+                          </span>
+                        </div>
 
-                    {/* Admin notes if any */}
-                    {b.adminNotes && (
-                      <p className="text-[11px] text-zinc-400 italic bg-zinc-950 p-2 rounded border border-zinc-800">
-                        Note: {b.adminNotes}
-                      </p>
-                    )}
-
-                    {/* Action buttons */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/80">
-                      <div className="flex items-center gap-2">
-                        {b.status !== 'confirmed' && (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={notesState[booking.id] ?? ''}
+                            onChange={(e) => setNotesState({ ...notesState, [booking.id]: e.target.value })}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleSaveClientNote(booking.id);
+                              }
+                            }}
+                            placeholder="Ex: Fauteuil réservé, merci d'arriver 5 minutes à l'avance..."
+                            className="flex-1 bg-black/60 border border-zinc-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+                          />
                           <button
-                            onClick={() => handleConfirm(b.id)}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 transition-colors"
+                            type="button"
+                            onClick={() => handleSaveClientNote(booking.id)}
+                            className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                              isNoteSaved
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700'
+                            }`}
                           >
-                            <Check className="w-3.5 h-3.5" /> Confirmer
+                            {isNoteSaved ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Enregistré !</span>
+                              </>
+                            ) : (
+                              <>
+                                <Save className="w-3.5 h-3.5" />
+                                <span>Enregistrer</span>
+                              </>
+                            )}
                           </button>
-                        )}
+                        </div>
+                      </div>
+
+                      {/* Action Triggers */}
+                      <div className="pt-2 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          {booking.status !== 'confirmed' && (
+                            <button
+                              onClick={() => handleConfirm(booking.id)}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Confirmer</span>
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => handleOpenReschedule(booking)}
+                            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Clock3 className="w-3.5 h-3.5" />
+                            <span>Décaler Horaire</span>
+                          </button>
+
+                          {booking.status !== 'rejected' && (
+                            <button
+                              onClick={() => handleReject(booking.id)}
+                              className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-red-950 text-zinc-400 hover:text-red-400 text-xs font-semibold transition-colors cursor-pointer"
+                            >
+                              Refuser
+                            </button>
+                          )}
+                        </div>
 
                         <button
-                          onClick={() => handleOpenReschedule(b)}
-                          className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1 transition-colors"
+                          onClick={() => handleDelete(booking.id)}
+                          className="p-1.5 text-zinc-500 hover:text-red-400 transition-colors cursor-pointer"
+                          title="Supprimer la réservation"
                         >
-                          <Clock3 className="w-3.5 h-3.5" /> Décaler créneau
+                          <Trash2 className="w-4 h-4" />
                         </button>
-
-                        {b.status !== 'rejected' && (
-                          <button
-                            onClick={() => handleReject(b.id)}
-                            className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-red-600/30 text-zinc-300 hover:text-red-300 text-xs font-semibold transition-colors"
-                          >
-                            Refuser
-                          </button>
-                        )}
                       </div>
 
-                      <button
-                        onClick={() => handleDelete(b.id)}
-                        className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors"
-                        title="Supprimer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Reschedule Modal Pop-over */}
-        {reschedulingBooking && (
-          <div className="absolute inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-20">
-            <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 max-w-md w-full space-y-4 shadow-2xl">
-              <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
-                <h3 className="font-bold text-white text-sm">
-                  Décaler le rendez-vous {reschedulingBooking.ticketNumber}
-                </h3>
-                <button
-                  onClick={() => setReschedulingBooking(null)}
-                  className="text-zinc-400 hover:text-white"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                  );
+                })}
               </div>
+            )}
 
-              <form onSubmit={handleSaveReschedule} className="space-y-3 text-xs">
-                <div>
-                  <label className="text-zinc-300 block mb-1 font-semibold">Nouvelle Date</label>
-                  <input
-                    type="date"
-                    value={newDate}
-                    onChange={(e) => setNewDate(e.target.value)}
-                    required
-                    className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2 text-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-zinc-300 block mb-1 font-semibold">Nouvel Horaire</label>
-                  <input
-                    type="time"
-                    value={newTime}
-                    onChange={(e) => setNewTime(e.target.value)}
-                    required
-                    className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2 text-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-zinc-300 block mb-1 font-semibold">Message pour le client (visible sur son suivi)</label>
-                  <input
-                    type="text"
-                    value={adminNote}
-                    onChange={(e) => setAdminNote(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2 text-white"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setReschedulingBooking(null)}
-                    className="px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold"
-                  >
-                    Enregistrer et Notifier
-                  </button>
-                </div>
-              </form>
-            </div>
           </div>
         )}
 
       </div>
+
+      {/* Reschedule Dialog Modal */}
+      {reschedulingBooking && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="font-bold text-white text-base">
+              Proposer un Nouvel Horaire pour {reschedulingBooking.clientName}
+            </h3>
+            
+            <form onSubmit={handleSaveReschedule} className="space-y-3">
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Nouvelle Date :</label>
+                <input
+                  type="date"
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                  required
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Nouvelle Heure :</label>
+                <input
+                  type="time"
+                  value={newTime}
+                  onChange={(e) => setNewTime(e.target.value)}
+                  required
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Message d'explication au client :</label>
+                <input
+                  type="text"
+                  value={rescheduleNote}
+                  onChange={(e) => setRescheduleNote(e.target.value)}
+                  placeholder="Ex: Décalé de 30 min..."
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReschedulingBooking(null)}
+                  className="px-3 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold"
+                >
+                  Mettre à jour & Notifier
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

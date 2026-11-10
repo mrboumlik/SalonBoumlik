@@ -291,11 +291,19 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     <p className="font-mono text-sm font-bold text-white">
                       📅 {booking.rescheduledTo.date} • ⏰ {booking.rescheduledTo.time}
                     </p>
-                    {booking.adminNotes && (
-                      <p className="text-[11px] text-blue-300/80 italic mt-1">
-                        "{booking.adminNotes}"
-                      </p>
-                    )}
+                  </div>
+                )}
+
+                {/* Staff Note from Dashboard (Visible to Client) */}
+                {booking.adminNotes && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-200 space-y-1">
+                    <div className="font-bold flex items-center gap-1.5 text-amber-300 text-[11px]">
+                      <MessageCircle className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{lang === 'ar' ? 'ملاحظة خاصة من الحلاق:' : 'Message de confirmation du Barbier :'}</span>
+                    </div>
+                    <p className="text-xs text-zinc-200 font-medium leading-relaxed italic">
+                      "{booking.adminNotes}"
+                    </p>
                   </div>
                 )}
 

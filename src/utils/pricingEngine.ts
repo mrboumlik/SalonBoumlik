@@ -148,15 +148,15 @@ export const BASE_SERVICES: ServiceDefinition[] = [
   {
     id: 'protein',
     name: {
-      fr: 'Soin Protéine / Kératine',
-      ar: 'بروتين الشعر',
-      en: 'Protein / Keratin Treatment',
-      amz: 'ⴰⴱⵔⵓⵜⵉⵏ',
-      es: 'Proteína',
+      fr: 'Protéine ou Kératine',
+      ar: 'بروتين أو كيراتين',
+      en: 'Protein or Keratin Treatment',
+      amz: 'ⴰⴱⵔⵓⵜⵉⵏ ⵏⵖ ⴽⵉⵔⴰⵜⵉⵏ',
+      es: 'Proteína o Queratina',
     },
     category: 'protein',
     basePrice: 200,
-    durationMinutes: 60,
+    durationMinutes: 90,
     popular: true,
     description: {
       fr: 'Infusion de kératine et protéines naturelles brésiliennes sans formol.',
@@ -250,15 +250,15 @@ export const BASE_SERVICES: ServiceDefinition[] = [
   {
     id: 'hair-color',
     name: {
-      fr: 'Coloration Cheveux',
-      ar: 'صباغة الشعر',
-      en: 'Hair Color & Bleach',
-      amz: 'ⴰⴽⵍⵓ ⵏ ⵓⵣⵣⴰⵔ',
-      es: 'Coloración de pelo',
+      fr: 'Coloration / Teinture aux Couleurs',
+      ar: 'صباغة بالألوان',
+      en: 'Color Dyeing',
+      amz: 'ⴰⴽⵍⵓ ⵙ ⵉⴽⵯⵍⴰⵏ',
+      es: 'Coloración y Tintes',
     },
     category: 'color',
     basePrice: 150, // default tone grey/white
-    durationMinutes: 45,
+    durationMinutes: 100,
     description: {
       fr: 'Gris/Blanc (150 DH), Bleu/Rouge (100 DH), Marron/Blond (50 DH) - Cheveux complets ou mèches.',
       ar: 'رمادي/أبيض (150 درهم)، أزرق/أحمر (100 درهم)، بني/أشقر (50 درهم) - شعر كامل أو ميش.',

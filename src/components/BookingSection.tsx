@@ -14,17 +14,17 @@ import {
   ChevronDown,
   Printer,
   Zap,
-  Coffee,
   Check,
   CheckSquare,
   Square,
-  Pencil
+  Pencil,
+  PhoneCall
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useLanguage } from '../context/LanguageContext';
 import { TEAM_MEMBERS, SALON_INFO } from '../data/barbershopData';
 import { createNewBooking } from '../utils/bookingStore';
-import { PricingEngineResult, AppointmentBooking, DrinkPreference } from '../types';
+import { PricingEngineResult, AppointmentBooking } from '../types';
 import { BASE_SERVICES } from '../utils/pricingEngine';
 
 interface BookingSectionProps {
@@ -54,7 +54,6 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [timeSlot, setTimeSlot] = useState('16:00');
   const [notes, setNotes] = useState('');
-  const [drinkPreference, setDrinkPreference] = useState<DrinkPreference>('tea');
   const [includeWaitingSkip, setIncludeWaitingSkip] = useState<boolean>(true);
 
   // Ticket modal state
@@ -109,16 +108,6 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
     return true;
   };
 
-  const getDrinkName = (drink: DrinkPreference) => {
-    if (drink === 'coffee') {
-      return lang === 'ar' ? '☕ قهوة' : lang === 'amz' ? '☕ ⵇⴰⵀⵡⴰ' : '☕ Café';
-    }
-    if (drink === 'tea') {
-      return lang === 'ar' ? '🌿 أتاي فقط' : lang === 'amz' ? '🌿 ⴰⵜⴰⵢ ⵖⴰⵙ' : '🌿 Thé Marocain';
-    }
-    return lang === 'ar' ? 'بدون' : lang === 'amz' ? 'ⵓⵔ ⵔⵉⵖ' : 'Rien / Aucun';
-  };
-
   // 1. Confirm on Site Handler
   const handleConfirmOnSite = (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,7 +122,6 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       timeSlot,
       clientName: clientName.trim(),
       clientPhone: clientPhone.trim(),
-      drinkPreference,
       notes: [
         notes.trim(),
         includeWaitingSkip ? (lang === 'ar' ? 'خدمة تفادي الانتظار (+10 دراهم)' : 'Service Coupe-File (+10 MAD)') : ''
@@ -147,8 +135,8 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
 
     try {
       confetti({
-        particleCount: 70,
-        spread: 80,
+        particleCount: 75,
+        spread: 85,
         origin: { y: 0.6 },
         colors: ['#eab308', '#ef4444', '#ffffff', '#2563eb'],
       });
@@ -174,7 +162,6 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       `👤 *Client:* ${clientName.trim()}`,
       `📱 *Téléphone:* ${clientPhone.trim()}`,
       `✂️ *Barbier choisi:* ${barberNameLocalized}`,
-      `☕ *Boisson offerte:* ${getDrinkName(drinkPreference)}`,
       `📅 *Date:* ${date}`,
       `⏰ *Heure:* ${timeSlot}`,
       `-----------------------`,
@@ -200,7 +187,6 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       timeSlot,
       clientName: clientName.trim(),
       clientPhone: clientPhone.trim(),
-      drinkPreference,
       notes: [
         notes.trim(),
         includeWaitingSkip ? (lang === 'ar' ? 'خدمة تفادي الانتظار (+10 دراهم)' : 'Service Coupe-File (+10 MAD)') : ''
@@ -227,19 +213,19 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
   // Localized UI Texts
   const ui = {
     title: {
-      ar: 'طلب موعد وتسعيرة واتساب',
-      fr: 'Demande de Rendez-vous & Devis WhatsApp',
-      en: 'Appointment Request & WhatsApp Quote',
-      amz: 'ⴰⵙⵓⵜⵔ ⵏ ⵓⵙⵔⵓⵙ ⴷ ⵡⴰⵜⵉⴳ ⴳ ⵡⴰⵜⵙⴰⴱ',
-      es: 'Solicitud de Cita y Presupuesto WhatsApp',
-    }[lang] || 'طلب موعد وتسعيرة واتساب',
+      ar: 'طلب موعد وتسعيرة',
+      fr: 'Demande de Rendez-vous & Devis',
+      en: 'Appointment Request & Pricing',
+      amz: 'ⴰⵙⵓⵜⵔ ⵏ ⵓⵙⵔⵓⵙ ⴷ ⵡⴰⵜⵉⴳ',
+      es: 'Solicitud de Cita y Presupuesto',
+    }[lang] || 'طلب موعد وتسعيرة',
     subtitle: {
-      ar: 'حدد الخدمات المطلوبة واختر الحلاق المفضل ومشروبك، سيقوم حسن بمراجعة طلبك وإرسال التذكرة مباشرة عبر الواتساب.',
-      fr: 'Choisissez vos prestations, votre barbier attitré et votre boisson. Hassan valide votre demande et vous transmet votre ticket directement.',
-      en: 'Select your services, preferred barber, and complimentary drink. Hassan reviews your request and sends your confirmation directly.',
-      amz: 'ⴼⵔⵏ ⵜⵉⵡⵓⵔⵉⵡⵉⵏ ⴷ ⵓⵎⴽⵔⴰⴹ ⵏⵏⴽ ⴷ ⵓⵙⵙⵡⵉ. ⵃⴰⵙⴰⵏ ⵔⴰⴷ ⵉⵙⵙⴷⵓ ⴰⵙⵔⵓⵙ ⵏⵏⴽ.',
-      es: 'Elige tus servicios, barbero preferido y bebida. Hassan revisará tu solicitud y enviará tu ticket directamente.',
-    }[lang] || 'حدد الخدمات المطلوبة واختر الحلاق المفضل ومشروبك.',
+      ar: 'حدد الخدمات المطلوبة واختر الحلاق المفضل، سيقوم فريق الصالون بمراجعة طلبك وتأكيد حجزك فوراً.',
+      fr: 'Choisissez vos prestations et votre barbier attitré. L’équipe confirme votre créneau directement.',
+      en: 'Select your grooming services and preferred barber. The team confirms your chair instantly.',
+      amz: 'ⴼⵔⵏ ⵜⵉⵡⵓⵔⵉⵡⵉⵏ ⴷ ⵓⵎⴽⵔⴰⴹ ⵏⵏⴽ. ⵔⴰⴷ ⵏⵙⵙⴷⵓ ⴰⵙⵔⵓⵙ ⵏⵏⴽ ⵙ ⵜⵉⵣⵣⵍⴰ.',
+      es: 'Elige tus servicios y tu barbero preferido. Confirmamos tu cita de inmediato.',
+    }[lang] || 'حدد الخدمات المطلوبة واختر الحلاق المفضل.',
     waitingTitle: {
       ar: 'خدمة تفادي الانتظار (+10 دراهم)',
       fr: 'Service Coupe-File / Anti-attente (+10 MAD)',
@@ -269,19 +255,12 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       es: '2. Elige tu barbero preferido *',
     }[lang] || '2. اختر الحلاق المفضل *',
     step3: {
-      ar: '3. اختيار المشروب أثناء الانتظار',
-      fr: '3. Boisson offerte pendant votre visite',
-      en: '3. Complimentary drink during your visit',
-      amz: '3. ⴰⵙⵜⴰⵢ ⵏ ⵓⵙⵙⵡⵉ ⴼⴰⴱⵓⵕ',
-      es: '3. Bebida de cortesía durante la espera',
-    }[lang] || '3. اختيار المشروب أثناء الانتظار',
-    step4: {
-      ar: '4. تاريخ الموعد والتوقيت والمعلومات',
-      fr: '4. Date, horaire & coordonnées',
-      en: '4. Date, time slot & details',
-      amz: '4. ⴰⵙⴰⴽⵓⴷ ⴷ ⵓⴽⵓⴷ ⴷ ⵉⵏⵖⵎⵉⵙⵏ',
-      es: '4. Fecha, hora y contacto',
-    }[lang] || '4. تاريخ الموعد',
+      ar: '3. تاريخ الموعد والتوقيت والمعلومات',
+      fr: '3. Date, horaire & coordonnées',
+      en: '3. Date, time slot & details',
+      amz: '3. ⴰⵙⴰⴽⵓⴷ ⴷ ⵓⴽⵓⴷ ⴷ ⵉⵏⵖⵎⵉⵙⵏ',
+      es: '3. Fecha, hora y contacto',
+    }[lang] || '3. تاريخ الموعد',
     btnWhatsApp: {
       ar: 'إرسال تفاصيل الحجز عبر واتساب',
       fr: 'Envoyer la demande via WhatsApp',
@@ -303,17 +282,18 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       amz: 'ⴰⵎⵙⴱⴷⴰⴷ',
       es: 'Propietario y Maestro Barbero',
     }[lang] || 'المالك',
-    roleBarber: {
-      ar: 'حلاق محترف',
-      fr: 'Barbier Professionnel',
-      en: 'Pro Barber',
-      amz: 'ⴰⵎⴽⵔⴰⴹ',
-      es: 'Barbero Pro',
-    }[lang] || 'حلاق',
   };
 
+  // Find barber contact for modal buttons
+  const createdBarber = createdBooking 
+    ? (TEAM_MEMBERS.find((b) => b.id === createdBooking.barberId) || TEAM_MEMBERS[0])
+    : selectedBarber;
+
+  const chosenBarberPhone = createdBarber.phone || '0635392503';
+  const chosenBarberWa = createdBarber.whatsappNumber || '212635392503';
+
   return (
-    <section id="booking" className="py-12 sm:py-20 bg-[#090A0E] text-white relative border-b border-zinc-800">
+    <section id="booking" className="py-10 sm:py-16 bg-[#090A0E] text-white relative border-b border-zinc-800">
       
       {/* Background ambient lighting */}
       <div className="absolute top-1/4 right-1/4 w-[400px] h-[300px] bg-amber-500/5 blur-[140px] rounded-full pointer-events-none" />
@@ -321,11 +301,15 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 relative z-10">
         
-        {/* Main Card Shell - Perfectly matching screenshot styling */}
+        {/* Main Card Shell */}
         <div className="rounded-3xl bg-[#0D0F14] border border-amber-500/30 p-5 sm:p-8 shadow-2xl space-y-7">
           
           {/* Header */}
           <div className="text-center space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold mb-1">
+              <Ticket className="w-3.5 h-3.5" />
+              <span>{lang === 'ar' ? 'حجز فوري مباشر • صالون بومليك' : 'Réservation Directe Sans Inscription'}</span>
+            </div>
             <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
               {ui.title}
             </h2>
@@ -442,7 +426,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
               <Pencil className="w-3.5 h-3.5 text-zinc-500" />
             </div>
 
-            {/* 2x2 Grid of Barber Pills (Exactly as shown in screenshot) */}
+            {/* 2x2 Grid of Barber Pills */}
             <div className="grid grid-cols-2 gap-2.5">
               {TEAM_MEMBERS.map((barber) => {
                 const isSelected = selectedBarberId === barber.id;
@@ -478,60 +462,11 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
             </div>
           </div>
 
-          {/* STEP 3: Drink Preference (3 horizontal buttons) */}
-          <div className="space-y-2.5 pt-2">
-            <label className="block text-xs font-bold text-zinc-200 flex items-center gap-1.5">
-              <Coffee className="w-4 h-4 text-amber-400" />
-              <span>{ui.step3}</span>
-            </label>
-
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setDrinkPreference('tea')}
-                className={`py-2.5 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  drinkPreference === 'tea'
-                    ? 'bg-amber-500/15 border-amber-500 text-amber-300 ring-1 ring-amber-500'
-                    : 'bg-[#12141B] border-zinc-800 text-zinc-300 hover:border-zinc-700'
-                }`}
-              >
-                <span>🌿</span>
-                <span>{lang === 'ar' ? 'أتاي فقط' : lang === 'amz' ? 'ⴰⵜⴰⵢ ⵖⴰⵙ' : 'Thé'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDrinkPreference('coffee')}
-                className={`py-2.5 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  drinkPreference === 'coffee'
-                    ? 'bg-amber-500/15 border-amber-500 text-amber-300 ring-1 ring-amber-500'
-                    : 'bg-[#12141B] border-zinc-800 text-zinc-300 hover:border-zinc-700'
-                }`}
-              >
-                <span>☕</span>
-                <span>{lang === 'ar' ? 'قهوة' : lang === 'amz' ? 'ⵇⴰⵀⵡⴰ' : 'Café'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDrinkPreference('none')}
-                className={`py-2.5 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  drinkPreference === 'none'
-                    ? 'bg-amber-500/15 border-amber-500 text-amber-300 ring-1 ring-amber-500'
-                    : 'bg-[#12141B] border-zinc-800 text-zinc-300 hover:border-zinc-700'
-                }`}
-              >
-                <span>🚫</span>
-                <span>{lang === 'ar' ? 'بدون' : lang === 'amz' ? 'ⵓⵔ ⵔⵉⵖ' : 'Rien'}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* STEP 4: Date, Time & Client Info (strictly Name & Phone, NO email) */}
+          {/* STEP 3: Date, Time & Client Info (Drink step removed completely as requested) */}
           <div className="space-y-4 pt-2">
             <label className="block text-xs font-bold text-zinc-200 flex items-center gap-1.5">
               <Calendar className="w-4 h-4 text-amber-400" />
-              <span>{ui.step4}</span>
+              <span>{ui.step3}</span>
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -657,7 +592,6 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
 
           {/* DUAL ACTION BUTTONS (WhatsApp + Site Ticket) */}
           <div className="space-y-3 pt-2">
-            
             {/* Primary Action 1: Book via WhatsApp */}
             <button
               type="button"
@@ -677,20 +611,19 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
               <Ticket className="w-4 h-4 text-amber-400" />
               <span>{ui.btnSite}</span>
             </button>
-
           </div>
 
         </div>
 
       </div>
 
-      {/* CONFIRMED TICKET MODAL */}
+      {/* CONFIRMED TICKET MODAL WITH DIRECT CONTACT BUTTONS */}
       {createdBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="bg-[#0E1015] border border-amber-500/40 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-6 text-center animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+          <div className="bg-[#0E1015] border border-amber-500/40 rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl space-y-5 text-center animate-in fade-in duration-300 max-h-[90vh] overflow-y-auto">
             
-            <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
-              <CheckCircle2 className="w-9 h-9" />
+            <div className="w-14 h-14 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
+              <CheckCircle2 className="w-8 h-8" />
             </div>
 
             <div className="space-y-1">
@@ -701,7 +634,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                 {createdBooking.ticketNumber}
               </h3>
               <p className="text-xs text-zinc-400">
-                {lang === 'ar' ? 'احتفظ برقم التذكرة أو تتبعه مباشرة' : 'Conservez votre numéro de ticket.'}
+                {lang === 'ar' ? 'احتفظ برقم التذكرة لتتبع الموعد مباشرة' : 'Conservez votre numéro de ticket pour le suivi.'}
               </p>
             </div>
 
@@ -724,11 +657,57 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
               </div>
             </div>
 
-            <div className="space-y-2.5">
+            {/* Direct Contact Action Buttons (Requirement #4 & #2) */}
+            <div className="space-y-2 pt-1 border-t border-zinc-800/80">
+              <span className="text-[11px] font-semibold text-zinc-400 block text-center">
+                {lang === 'ar' ? 'تواصل مباشر بخصوص التذكرة:' : 'Contact direct concernant ce ticket :'}
+              </span>
+
+              {/* 1. Contact Selected Barber */}
+              <a
+                href={`https://wa.me/${chosenBarberWa}?text=${encodeURIComponent(
+                  `Salam ${createdBooking.barberName}, je vous contacte concernant mon ticket de réservation ${createdBooking.ticketNumber} au Salon Boumlik pour le ${createdBooking.date} à ${createdBooking.timeSlot}.`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-md shadow-emerald-600/20"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>
+                  {lang === 'ar' ? `مراسلة الحلاق (${createdBooking.barberName})` : `Contacter ${createdBooking.barberName}`}
+                </span>
+              </a>
+
+              {/* 2. Contact Salon Owner (Hassan) */}
+              <div className="grid grid-cols-2 gap-2">
+                <a
+                  href={`https://wa.me/212635392503?text=${encodeURIComponent(
+                    `Salam Si Hassan, je vous contacte au sujet de ma réservation ${createdBooking.ticketNumber} au Salon Boumlik (Taroudant).`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{lang === 'ar' ? 'واتساب حسن' : 'WhatsApp Hassan'}</span>
+                </a>
+
+                <a
+                  href="tel:0635392503"
+                  className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <PhoneCall className="w-3.5 h-3.5 text-blue-400" />
+                  <span>06 35 39 25 03</span>
+                </a>
+              </div>
+            </div>
+
+            {/* Ticket Management Actions */}
+            <div className="space-y-2 pt-2 border-t border-zinc-800/80">
               <button
                 type="button"
                 onClick={() => handleCopyTicket(createdBooking.ticketNumber)}
-                className="w-full py-3 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                className="w-full py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
               >
                 <Copy className="w-4 h-4 text-amber-400" />
                 <span>{copiedTicket ? (lang === 'ar' ? 'تم النسخ!' : 'Copié !') : (lang === 'ar' ? 'نسخ رقم التذكرة' : 'Copier le Ticket')}</span>
@@ -742,7 +721,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                     setCreatedBooking(null);
                     onOpenTrackBooking(tNum);
                   }}
-                  className="w-full py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
                 >
                   <Ticket className="w-4 h-4" />
                   <span>{lang === 'ar' ? 'تتبع تذكرتي الآن' : 'Suivre mon statut'}</span>
@@ -752,7 +731,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
               <button
                 type="button"
                 onClick={() => setCreatedBooking(null)}
-                className="w-full py-2.5 text-xs text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                className="w-full py-2 text-xs text-zinc-400 hover:text-white transition-colors cursor-pointer"
               >
                 {lang === 'ar' ? 'إغلاق النافذة' : 'Fermer'}
               </button>

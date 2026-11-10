@@ -98,7 +98,7 @@ function SalonBoumlikApp() {
 
       {/* 2. Main Content: ONLY Hero, Services & Live Cart, Booking Form, Google Reviews, Contact */}
       <main className="flex-1">
-        {/* Hero Section */}
+        {/* 1. Hero Section */}
         <Hero
           onOpenBooking={handleScrollToBooking}
           onOpenTrackBooking={() => {
@@ -107,7 +107,17 @@ function SalonBoumlikApp() {
           }}
         />
 
-        {/* Services & Live Cart Section */}
+        {/* 2. Priority Above-The-Fold: Direct Booking Form */}
+        <BookingSection
+          pricingResult={pricingResult}
+          selectedBarberId={selectedBarberId}
+          onSelectBarberId={setSelectedBarberId}
+          selectedServiceIds={selectedServiceIds}
+          onToggleServiceId={handleToggleServiceId}
+          onOpenTrackBooking={handleOpenTrackWithTicket}
+        />
+
+        {/* 3. Detailed Services & Live Cart Explorer */}
         <ServicesSection
           selectedIds={selectedServiceIds}
           onToggleServiceId={handleToggleServiceId}
@@ -117,16 +127,6 @@ function SalonBoumlikApp() {
           onChangeProteinPrice={setProteinPrice}
           pricingResult={pricingResult}
           onProceedToBooking={handleScrollToBooking}
-        />
-
-        {/* Inline Booking Form Section */}
-        <BookingSection
-          pricingResult={pricingResult}
-          selectedBarberId={selectedBarberId}
-          onSelectBarberId={setSelectedBarberId}
-          selectedServiceIds={selectedServiceIds}
-          onToggleServiceId={handleToggleServiceId}
-          onOpenTrackBooking={handleOpenTrackWithTicket}
         />
 
         {/* Google Reviews 5.0 Widget Section */}

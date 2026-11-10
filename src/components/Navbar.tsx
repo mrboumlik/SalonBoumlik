@@ -147,11 +147,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Center Navigation Links (Homepage ONLY displays these sections) */}
           <nav className="hidden md:flex items-center gap-6 text-xs font-bold uppercase tracking-wider text-zinc-400">
+            <a href="#booking" className="hover:text-amber-400 transition-colors font-black">
+              {lang === 'ar' ? 'طلب موعد' : 'Réservation'}
+            </a>
             <a href="#services" className="hover:text-white transition-colors">
               {lang === 'ar' ? 'الخدمات والأسعار' : 'Prestations & Tarifs'}
-            </a>
-            <a href="#booking" className="hover:text-white transition-colors">
-              {lang === 'ar' ? 'حجز موعد' : 'Réservation'}
             </a>
             <a href="#reviews" className="hover:text-white transition-colors">
               {lang === 'ar' ? 'آراء الزبناء' : 'Avis Google 5.0'}

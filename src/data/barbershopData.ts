@@ -287,14 +287,14 @@ export const SERVICES: BarberService[] = [
   {
     id: 'protein-treatment',
     name: {
-      fr: 'Soin Protéine Réparateur',
-      ar: 'البروتين',
-      en: 'Protein Treatment',
-      amz: 'ⴰⵙⵓⵊⵊⵉ ⵙ ⵓⴱⵔⵓⵜⵉⵏ',
+      fr: 'Protéine ou Kératine',
+      ar: 'بروتين أو كيراتين',
+      en: 'Protein or Keratin Treatment',
+      amz: 'ⴰⴱⵔⵓⵜⵉⵏ ⵏⵖ ⴽⵉⵔⴰⵜⵉⵏ',
     },
     category: 'protein',
     popular: true,
-    durationMinutes: 60,
+    durationMinutes: 90,
     badge: {
       fr: 'Réparation Profonde',
       ar: 'علاج عميق للشعر',

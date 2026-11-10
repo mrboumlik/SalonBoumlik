@@ -217,6 +217,22 @@ export function updateBookingStatus(
   return found;
 }
 
+export function updateBookingAdminNote(id: string, note: string): AppointmentBooking | null {
+  const all = getAllBookings();
+  let found: AppointmentBooking | null = null;
+  const updated = all.map((b) => {
+    if (b.id === id) {
+      found = { ...b, adminNotes: note };
+      return found;
+    }
+    return b;
+  });
+  if (found) {
+    saveAllBookings(updated);
+  }
+  return found;
+}
+
 export function deleteBooking(id: string): boolean {
   const all = getAllBookings();
   const filtered = all.filter((b) => b.id !== id);
