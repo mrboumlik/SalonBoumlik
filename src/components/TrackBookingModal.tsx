@@ -18,7 +18,13 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
-import { getBookingByTicket, getBookingsByPhone, getAllBookings } from '../utils/bookingStore';
+import { 
+  getBookingByTicket, 
+  getBookingsByPhone, 
+  getAllBookings,
+  clientRescheduleResponse,
+  cancelClientBooking
+} from '../utils/bookingStore';
 import { AppointmentBooking, BookingStatus } from '../types';
 import { SALON_INFO } from '../data/barbershopData';
 
@@ -112,6 +118,31 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     setTimeout(() => setCopiedTicket(null), 2000);
   };
 
+  const handleClientRescheduleDecision = (bookingId: string, accepted: boolean) => {
+    clientRescheduleResponse(bookingId, accepted);
+    if (searchTerm) {
+      performSearch(searchTerm);
+    } else {
+      const all = getAllBookings();
+      setFoundBookings(all.slice(0, 5));
+    }
+  };
+
+  const handleClientCancel = (booking: AppointmentBooking) => {
+    const confirmMsg = lang === 'ar'
+      ? 'هل أنت متأكد من رغبتك في إلغاء هذا الموعد وتحرير الوقت لزبون آخر؟'
+      : 'Êtes-vous sûr de vouloir annuler ce rendez-vous ?';
+    if (window.confirm(confirmMsg)) {
+      cancelClientBooking(booking.id, 'قام الزبون بإلغاء الموعد عبر صفحة التتبع.');
+      if (searchTerm) {
+        performSearch(searchTerm);
+      } else {
+        const all = getAllBookings();
+        setFoundBookings(all.slice(0, 5));
+      }
+    }
+  };
+
   const getStatusBadge = (status: BookingStatus) => {
     switch (status) {
       case 'confirmed':
@@ -119,16 +150,25 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-xs">
             <CheckCircle2 className="w-3.5 h-3.5" />
             <span>
-              {lang === 'ar' ? 'تم تأكيد الحجز من الصالون' : lang === 'es' ? 'Reserva confirmada' : 'Rendez-vous Confirmé'}
+              {lang === 'ar' ? 'تم تأكيد وقبول الموعد' : lang === 'es' ? 'Reserva confirmada' : 'Rendez-vous Confirmé'}
             </span>
           </div>
         );
       case 'rescheduled':
         return (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-400 font-bold text-xs">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-400 font-bold text-xs animate-pulse">
             <Clock3 className="w-3.5 h-3.5" />
             <span>
-              {lang === 'ar' ? 'تم تعديل الموعد (مرفق بالأسفل)' : lang === 'es' ? 'Cita reprogramada' : 'Hora Réaménagée'}
+              {lang === 'ar' ? 'اقتراح توقيت جديد (بانتظار موافقتك)' : lang === 'es' ? 'Nuevo horario propuesto' : 'Hora Réaménagée (En attente)'}
+            </span>
+          </div>
+        );
+      case 'cancelled':
+        return (
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-400 font-bold text-xs">
+            <XCircle className="w-3.5 h-3.5 text-zinc-500" />
+            <span>
+              {lang === 'ar' ? 'موعد ملغى وتم تحرير الكرسي' : lang === 'es' ? 'Cita cancelada' : 'Rendez-vous Annulé'}
             </span>
           </div>
         );
@@ -137,7 +177,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 font-bold text-xs">
             <XCircle className="w-3.5 h-3.5" />
             <span>
-              {lang === 'ar' ? 'الموعد غير متاح / ملغى' : lang === 'es' ? 'Cita cancelada/no disponible' : 'Demande Annulée / Indisponible'}
+              {lang === 'ar' ? 'الموعد غير متاح' : lang === 'es' ? 'Cita cancelada/no disponible' : 'Demande Non Disponible'}
             </span>
           </div>
         );
@@ -285,16 +325,49 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   {getStatusBadge(booking.status)}
                 </div>
 
-                {/* Reschedule alert banner if applicable */}
+                {/* Reschedule alert banner with explicit Client Acceptance / Rejection */}
                 {booking.status === 'rescheduled' && booking.rescheduledTo && (
-                  <div className="p-3 bg-blue-950/40 border border-blue-500/40 rounded-xl text-xs text-blue-200 space-y-1">
-                    <div className="font-bold flex items-center gap-1.5 text-blue-300">
-                      <Clock3 className="w-4 h-4" />
-                      <span>{lang === 'ar' ? 'تعديل التوقيت المقترح من الحلاق:' : 'Nouvel Horaire Proposé :'}</span>
+                  <div className="p-4 bg-blue-950/50 border border-blue-500/50 rounded-xl text-xs space-y-3">
+                    <div className="flex items-start gap-2">
+                      <Clock3 className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <span className="font-bold text-blue-300 block text-xs">
+                          {lang === 'ar' 
+                            ? '🔔 اقترح الحلاق توقيتاً جديداً لموعدك:' 
+                            : lang === 'es'
+                            ? '🔔 El barbero ha propuesto un nuevo horario:'
+                            : '🔔 Le barbier propose un nouvel horaire :'}
+                        </span>
+                        <p className="font-mono text-sm font-black text-amber-300 mt-1">
+                          📅 {booking.rescheduledTo.date} • ⏰ {booking.rescheduledTo.time}
+                        </p>
+                        <p className="text-[11px] text-zinc-300 mt-1">
+                          {lang === 'ar'
+                            ? 'يرجى قبول التوقيت الجديد لتأكيد الموعد وقفل المقعد، أو الرفض لتحرير الكرسي.'
+                            : lang === 'es'
+                            ? 'Por favor acepte el nuevo horario para confirmar la cita o rechace para liberar el turno.'
+                            : 'Veuillez accepter le nouvel horaire pour confirmer le créneau ou refuser pour libérer la place.'}
+                        </p>
+                      </div>
                     </div>
-                    <p className="font-mono text-sm font-bold text-white">
-                      📅 {booking.rescheduledTo.date} • ⏰ {booking.rescheduledTo.time}
-                    </p>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        onClick={() => handleClientRescheduleDecision(booking.id, true)}
+                        className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950 transition-all cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{lang === 'ar' ? 'قبول الوقت الجديد' : lang === 'es' ? 'Aceptar nuevo horario' : 'Accepter l\'horaire'}</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleClientRescheduleDecision(booking.id, false)}
+                        className="w-full py-2 px-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-red-950 transition-all cursor-pointer"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>{lang === 'ar' ? 'رفض وإلغاء الموعد' : lang === 'es' ? 'Rechazar y cancelar' : 'Refuser & Annuler'}</span>
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -373,8 +446,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   </div>
                 </div>
 
-                {/* Direct Help Button */}
-                <div className="pt-1 flex items-center justify-between text-xs">
+                {/* Direct Help Button & Client-Side Cancellation Action */}
+                <div className="pt-2 border-t border-zinc-800/60 flex flex-wrap items-center justify-between gap-2 text-xs">
                   <a
                     href={`https://wa.me/${SALON_INFO.whatsappNumber}?text=${encodeURIComponent(
                       `Salam Salon Boumlik, je souhaite avoir des détails sur ma réservation ${booking.ticketNumber}`
@@ -387,9 +460,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     <span>{lang === 'ar' ? 'تواصل معنا واتساب حول التذكرة' : 'Contacter le Salon par WhatsApp'}</span>
                   </a>
 
-                  <span className="text-[10px] text-zinc-400">
-                    Rue Bir Anzarane, Taroudant
-                  </span>
+                  {booking.status !== 'cancelled' && booking.status !== 'rejected' && (
+                    <button
+                      onClick={() => handleClientCancel(booking)}
+                      className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-red-950/60 border border-zinc-700 hover:border-red-600/50 text-zinc-300 hover:text-red-400 text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <XCircle className="w-3.5 h-3.5 text-red-500" />
+                      <span>{lang === 'ar' ? 'إلغاء الموعد وتحرير الوقت' : lang === 'es' ? 'Cancelar cita' : 'Annuler le rendez-vous'}</span>
+                    </button>
+                  )}
                 </div>
               </div>
             ))

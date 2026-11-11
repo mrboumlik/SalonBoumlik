@@ -217,6 +217,64 @@ export function updateBookingStatus(
   return found;
 }
 
+export function clientRescheduleResponse(
+  id: string,
+  accepted: boolean
+): AppointmentBooking | null {
+  const all = getAllBookings();
+  let found: AppointmentBooking | null = null;
+
+  const updated = all.map((b) => {
+    if (b.id === id) {
+      if (accepted && b.rescheduledTo) {
+        found = {
+          ...b,
+          date: b.rescheduledTo.date,
+          timeSlot: b.rescheduledTo.time,
+          status: 'confirmed',
+          rescheduledTo: undefined,
+          adminNotes: (b.adminNotes ? `${b.adminNotes} | ` : '') + 'تم قبول التوقيت الجديد من الزبون بنجاح.',
+        };
+      } else {
+        found = {
+          ...b,
+          status: 'cancelled',
+          adminNotes: (b.adminNotes ? `${b.adminNotes} | ` : '') + 'تم رفض التوقيت المقترح وإلغاء الموعد من الزبون.',
+        };
+      }
+      return found;
+    }
+    return b;
+  });
+
+  if (found) {
+    saveAllBookings(updated);
+  }
+  return found;
+}
+
+export function cancelClientBooking(id: string, reason?: string): AppointmentBooking | null {
+  const all = getAllBookings();
+  let found: AppointmentBooking | null = null;
+
+  const updated = all.map((b) => {
+    if (b.id === id) {
+      found = {
+        ...b,
+        status: 'cancelled',
+        adminNotes: (b.adminNotes ? `${b.adminNotes} | ` : '') + (reason || 'ألغى الزبون الموعد عبر تذكرته الإلكترونية.'),
+      };
+      return found;
+    }
+    return b;
+  });
+
+  if (found) {
+    saveAllBookings(updated);
+  }
+  return found;
+}
+
 export function updateBookingAdminNote(id: string, note: string): AppointmentBooking | null {
   const all = getAllBookings();
   let found: AppointmentBooking | null = null;

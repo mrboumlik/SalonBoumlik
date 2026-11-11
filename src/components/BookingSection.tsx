@@ -158,6 +158,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       clientName: clientName.trim(),
       clientPhone: clientPhone.trim(),
       clientEmail: clientEmail.trim() || undefined,
+      clientLanguage: lang,
       notes: [
         notes.trim(),
         includeWaitingSkip ? (lang === 'ar' ? 'خدمة تفادي الانتظار (+10 دراهم)' : 'Service Coupe-File (+10 MAD)') : ''

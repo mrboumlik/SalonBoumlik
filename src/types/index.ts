@@ -4,7 +4,7 @@ export type AppTheme = 'luxury_gold' | 'charcoal' | 'minimal_light';
 
 export type DrinkPreference = 'coffee' | 'tea' | 'none';
 
-export type BookingStatus = 'pending' | 'pending_quote' | 'confirmed' | 'rescheduled' | 'rejected';
+export type BookingStatus = 'pending' | 'pending_quote' | 'confirmed' | 'rescheduled' | 'rejected' | 'cancelled';
 
 export interface BarberService {
   id: string;
@@ -191,6 +191,7 @@ export interface AppointmentBooking {
   totalDurationMinutes?: number;
   status: BookingStatus;
   rescheduledTo?: { date: string; time: string };
+  clientLanguage?: Language;
   adminNotes?: string;
   createdAt: string;
 }

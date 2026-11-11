@@ -311,6 +311,92 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
     return `212${digits}`;
   };
 
+  // Helper to build automated multilingual WhatsApp pre-filled message
+  const createClientWhatsAppMessage = (booking: AppointmentBooking) => {
+    const clientLang = booking.clientLanguage || 'ar';
+    const servicesList = (booking.cartItemsSummary || []).map((s) => s.name).join(' + ') || 'خدمات الحلاقة';
+    const barber = booking.barberName;
+    const total = booking.finalTotalMAD ?? 0;
+
+    let statusText = '';
+    if (booking.status === 'confirmed') {
+      statusText = clientLang === 'ar' ? 'تم تأكيد وقبول الموعد ✅' :
+                   clientLang === 'amz' ? 'ⵉⵜⵜⵓⵙⵙⴷⴰ ⵓⵙⵔⵓⵙ ✅' :
+                   clientLang === 'es' ? 'Cita confirmada ✅' :
+                   clientLang === 'en' ? 'Appointment Confirmed ✅' :
+                   'Rendez-vous Confirmé ✅';
+    } else if (booking.status === 'rescheduled' && booking.rescheduledTo) {
+      statusText = clientLang === 'ar' ? `تم اقتراح موعد جديد: 📅 ${booking.rescheduledTo.date} الساعة ⏰ ${booking.rescheduledTo.time}` :
+                   clientLang === 'es' ? `Nuevo horario propuesto: 📅 ${booking.rescheduledTo.date} a las ⏰ ${booking.rescheduledTo.time}` :
+                   clientLang === 'en' ? `New time proposed: 📅 ${booking.rescheduledTo.date} at ⏰ ${booking.rescheduledTo.time}` :
+                   `Nouvel horaire proposé : 📅 ${booking.rescheduledTo.date} à ⏰ ${booking.rescheduledTo.time}`;
+    } else if (booking.status === 'cancelled') {
+      statusText = clientLang === 'ar' ? 'تم إلغاء الموعد' :
+                   clientLang === 'es' ? 'Cita cancelada' :
+                   clientLang === 'en' ? 'Appointment Cancelled' :
+                   'Rendez-vous Annulé';
+    } else if (booking.status === 'rejected') {
+      statusText = clientLang === 'ar' ? 'نعتذر، الموعد غير متاح' :
+                   clientLang === 'es' ? 'Horario no disponible' :
+                   clientLang === 'en' ? 'Time slot unavailable' :
+                   'Créneau indisponible';
+    } else {
+      statusText = clientLang === 'ar' ? 'الطلب قيد المراجعة' :
+                   clientLang === 'es' ? 'Pendiente de confirmación' :
+                   clientLang === 'en' ? 'Pending Confirmation' :
+                   'En attente de validation';
+    }
+
+    if (clientLang === 'ar') {
+      return `مرحباً ${booking.clientName}، معك صالون بومليك (تارودانت).
+تذكرتك رقم: #${booking.ticketNumber.replace('#', '')}
+الحلاق: ${barber}
+الموعد: 📅 ${booking.date} • ⏰ ${booking.timeSlot}
+الخدمات: ${servicesList}
+المجموع: ${total} MAD
+الحالة الحالية: ${statusText}`;
+    }
+
+    if (clientLang === 'amz') {
+      return `Azul ${booking.clientName}, Salon Boumlik Taroudant.
+Tiki #${booking.ticketNumber.replace('#', '')}
+Amkrad: ${barber}
+Asakud: 📅 ${booking.date} • ⏰ ${booking.timeSlot}
+Tiwwuriwin: ${servicesList}
+Atig: ${total} MAD
+Addad: ${statusText}`;
+    }
+
+    if (clientLang === 'en') {
+      return `Hello ${booking.clientName}, this is Salon Boumlik (Taroudant).
+Ticket #${booking.ticketNumber.replace('#', '')}
+Barber: ${barber}
+Date & Time: 📅 ${booking.date} • ⏰ ${booking.timeSlot}
+Services: ${servicesList}
+Total Price: ${total} MAD
+Current Status: ${statusText}`;
+    }
+
+    if (clientLang === 'es') {
+      return `Hola ${booking.clientName}, te escribimos desde Salon Boumlik (Taroudant).
+Ticket: #${booking.ticketNumber.replace('#', '')}
+Barbero: ${barber}
+Fecha y hora: 📅 ${booking.date} • ⏰ ${booking.timeSlot}
+Servicios: ${servicesList}
+Total: ${total} MAD
+Estado: ${statusText}`;
+    }
+
+    // Default French
+    return `Bonjour ${booking.clientName}, ici Salon Boumlik (Taroudant).
+Ticket : #${booking.ticketNumber.replace('#', '')}
+Barbier : ${barber}
+Rendez-vous : 📅 ${booking.date} • ⏰ ${booking.timeSlot}
+Prestations : ${servicesList}
+Total : ${total} MAD
+Statut actuel : ${statusText}`;
+  };
+
   // Helper to find barber color
   const getBarberColor = (booking: AppointmentBooking) => {
     if (booking.barberColor) return booking.barberColor;
@@ -784,15 +870,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
                             <div className="flex items-center gap-2">
                               <span dir="ltr" className="font-mono text-zinc-200">{booking.clientPhone}</span>
                               
-                              {/* Direct WhatsApp Client Button */}
+                              {/* Direct WhatsApp Client Button (Dynamic Multilingual Format) */}
                               <a
                                 href={`https://wa.me/${clientPhoneClean}?text=${encodeURIComponent(
-                                  `Salam ${booking.clientName}, ici ${session.name} de Salon Boumlik concernant votre réservation ${booking.ticketNumber} prévue le ${booking.date} à ${booking.timeSlot}.`
+                                  createClientWhatsAppMessage(booking)
                                 )}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition-colors shadow-xs"
-                                title="Contacter directement sur WhatsApp"
+                                title="Contacter directement sur WhatsApp avec récapitulatif complet"
                               >
                                 <MessageCircle className="w-3.5 h-3.5" />
                                 <span>WhatsApp Client</span>
