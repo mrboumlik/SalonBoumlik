@@ -11,6 +11,7 @@ import { Footer } from './components/Footer';
 import { DrawerMenu } from './components/DrawerMenu';
 import { TrackBookingModal } from './components/TrackBookingModal';
 import { AdminDashboard } from './components/AdminDashboard';
+import { ToastContainer } from './components/ToastContainer';
 import { calculateCartPricing } from './utils/pricingEngine';
 import { HairColorConfig, AppointmentBooking } from './types';
 import { Phone, MessageCircle, Ticket } from 'lucide-react';
@@ -96,6 +97,9 @@ function SalonBoumlikApp() {
           className="w-[500px] sm:w-[700px] lg:w-[880px] max-w-none opacity-[0.03] filter grayscale contrast-125 dark:invert pointer-events-none"
         />
       </div>
+
+      {/* Global In-App Toast Alert Container */}
+      <ToastContainer />
 
       {/* 1. Sticky Navigation Header */}
       <Navbar

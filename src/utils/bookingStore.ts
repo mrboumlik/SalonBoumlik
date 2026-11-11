@@ -1,6 +1,10 @@
-import { AppointmentBooking, BookingStatus, SelectedCartItem, BarberService } from '../types';
+import { AppointmentBooking, BookingStatus } from '../types';
 
-const STORAGE_KEY = 'salon_boumlik_all_bookings_v3';
+// Standardized storage keys
+export const STORAGE_KEY = 'salon_boumlik_all_bookings_v3';
+
+// In-memory cache for ultra-fast, sync access across all components
+let memoryCache: AppointmentBooking[] | null = null;
 
 // Initial realistic demo bookings for Taroudant Salon Boumlik
 const SEED_BOOKINGS: AppointmentBooking[] = [
@@ -126,33 +130,78 @@ const SEED_BOOKINGS: AppointmentBooking[] = [
 ];
 
 export function getAllBookings(): AppointmentBooking[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_BOOKINGS));
-      return SEED_BOOKINGS;
-    }
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error('Error reading bookings:', err);
-    return SEED_BOOKINGS;
+  if (memoryCache && memoryCache.length > 0) {
+    return memoryCache;
   }
+
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          memoryCache = parsed;
+          return memoryCache;
+        }
+      }
+      // Initialize with seed bookings if empty
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_BOOKINGS));
+      memoryCache = SEED_BOOKINGS;
+      return memoryCache;
+    }
+  } catch (err) {
+    console.error('Error reading bookings from localStorage:', err);
+  }
+
+  memoryCache = SEED_BOOKINGS;
+  return memoryCache;
 }
 
 export function saveAllBookings(bookings: AppointmentBooking[]): void {
+  memoryCache = bookings;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(bookings));
-    window.dispatchEvent(new CustomEvent('salon_bookings_updated', { detail: { count: bookings.length } }));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(bookings));
+      // Dispatch custom event for intra-tab instant update
+      window.dispatchEvent(
+        new CustomEvent('salon_bookings_updated', {
+          detail: { count: bookings.length, timestamp: Date.now() },
+        })
+      );
+    }
   } catch (err) {
-    console.error('Error saving bookings:', err);
+    console.error('Error saving bookings to localStorage:', err);
   }
 }
 
+/**
+ * Normalizes ticket numbers (e.g., "#SB-7328", "SB-7328", "7328", "sb-7328")
+ */
+function cleanTicketString(ticket: string): string {
+  return ticket.trim().replace(/^#+/, '').replace(/^SB-?/i, '').trim().toUpperCase();
+}
+
 export function getBookingByTicket(ticket: string): AppointmentBooking | undefined {
-  const clean = ticket.trim().toUpperCase();
-  const formatted = clean.startsWith('#') ? clean : `#${clean}`;
+  if (!ticket) return undefined;
+  const rawClean = ticket.trim().toUpperCase();
+  const digitsOrCode = cleanTicketString(ticket);
   const all = getAllBookings();
-  return all.find((b) => b.ticketNumber.toUpperCase() === formatted || b.ticketNumber.replace('#', '').toUpperCase() === clean);
+
+  return all.find((b) => {
+    const bRaw = b.ticketNumber.toUpperCase();
+    const bClean = cleanTicketString(b.ticketNumber);
+
+    if (bRaw === rawClean || bRaw === `#${rawClean}` || bRaw.replace('#', '') === rawClean) {
+      return true;
+    }
+    if (digitsOrCode && bClean === digitsOrCode) {
+      return true;
+    }
+    if (digitsOrCode.length >= 3 && (bRaw.includes(digitsOrCode) || b.id.includes(digitsOrCode))) {
+      return true;
+    }
+    return false;
+  });
 }
 
 export function getBookingsByPhone(rawPhone: string): AppointmentBooking[] {
@@ -184,7 +233,7 @@ export function createNewBooking(
     createdAt: new Date().toISOString(),
   };
 
-  const updated = [newBooking, ...all];
+  const updated = [newBooking, ...all.filter((b) => b.id !== newBooking.id)];
   saveAllBookings(updated);
   return newBooking;
 }

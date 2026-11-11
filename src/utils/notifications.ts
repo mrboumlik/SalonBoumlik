@@ -184,9 +184,8 @@ export function sendDualAlert(
           body: bodyText,
           icon: '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
           badge: '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
-          vibrate: [200, 100, 200],
           data: options?.data,
-        }).catch(() => {
+        } as NotificationOptions).catch(() => {
           fallbackNotification(title, bodyText);
         });
       }).catch(() => {

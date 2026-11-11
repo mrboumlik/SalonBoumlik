@@ -28,10 +28,19 @@ import {
   Sparkles,
   Camera,
   RefreshCw,
-  Sliders
+  Sliders,
+  Bell,
+  BellOff,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { requestWebNotificationPermission, sendWebNotification } from '../utils/notifications';
+import { 
+  requestWebNotificationPermission, 
+  sendWebNotification,
+  sendDualAlert,
+  playNotificationSound 
+} from '../utils/notifications';
 import { 
   getAllBookings, 
   updateBookingStatus, 
@@ -53,12 +62,58 @@ interface StaffSession {
   title: string;
 }
 
+const ADMIN_SESSION_STORAGE_KEY = 'salon_boumlik_admin_session_v1';
+const ADMIN_NOTIFS_ENABLED_KEY = 'salon_boumlik_admin_notifs_enabled';
+
+interface StoredAdminSession {
+  session: StaffSession;
+  expiresAt: number; // timestamp
+}
+
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose }) => {
   const [pinInput, setPinInput] = useState('');
-  const [session, setSession] = useState<StaffSession | null>(null);
+  
+  // Initialize session from localStorage with 7-day expiration check
+  const [session, setSession] = useState<StaffSession | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const raw = localStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
+        if (raw) {
+          const stored: StoredAdminSession = JSON.parse(raw);
+          if (stored && stored.expiresAt > Date.now()) {
+            return stored.session;
+          } else {
+            localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading admin session:', e);
+    }
+    return null;
+  });
+
   const [pinError, setPinError] = useState(false);
   const [bookings, setBookings] = useState<AppointmentBooking[]>([]);
   
+  // Notification toggle state: stored in localStorage
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        return localStorage.getItem(ADMIN_NOTIFS_ENABLED_KEY) === 'true';
+      }
+    } catch {
+      // ignore
+    }
+    return true; // enabled by default for admin awareness
+  });
+
+  // Track known booking IDs to detect new bookings in real time
+  const [knownBookingIds, setKnownBookingIds] = useState<Set<string>>(() => {
+    const initial = getAllBookings();
+    return new Set(initial.map((b) => b.id));
+  });
+
   // Date Views: 'today' or 'archive'
   const [activeTab, setActiveTab] = useState<'today' | 'archive'>('today');
   const [archiveDateFilter, setArchiveDateFilter] = useState<string>('');
@@ -96,19 +151,77 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
     setNotesState(initialNotes);
   };
 
+  // Check for newly created bookings and trigger dual alert
+  const checkAndNotifyNewBookings = (currentList: AppointmentBooking[]) => {
+    if (!notificationsEnabled) return;
+
+    setKnownBookingIds((prevKnown) => {
+      const newItems = currentList.filter((b) => !prevKnown.has(b.id));
+      if (newItems.length > 0) {
+        newItems.forEach((nb) => {
+          // Play audible sound
+          playNotificationSound();
+
+          // Native browser notification
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+            try {
+              new Notification('موعد جديد • صالون بومليك', {
+                body: `حجز جديد #${nb.ticketNumber} للزبون ${nb.clientName} مع ${nb.barberName} (${nb.timeSlot})`,
+                icon: '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
+              });
+            } catch (err) {
+              console.warn('Native notification trigger warning:', err);
+            }
+          }
+
+          // UI Toast alert
+          sendDualAlert(
+            '🔔 موعد جديد في الصالون!',
+            {
+              body: `حجز #${nb.ticketNumber} - الزبون ${nb.clientName} مع ${nb.barberName}`,
+              type: 'info',
+              skipSound: true, // already played above
+            }
+          );
+        });
+
+        // Add newly found IDs to known set
+        const updatedSet = new Set(prevKnown);
+        newItems.forEach((nb) => updatedSet.add(nb.id));
+        return updatedSet;
+      }
+      return prevKnown;
+    });
+  };
+
   useEffect(() => {
     if (isOpen && session) {
       reloadBookings();
     }
   }, [isOpen, session]);
 
+  // Real-time synchronization: listen to storage updates & poll every 3 seconds for new bookings
   useEffect(() => {
     const handleUpdate = () => {
-      if (session) reloadBookings();
+      const current = getAllBookings();
+      setBookings(current);
+      checkAndNotifyNewBookings(current);
     };
+
     window.addEventListener('salon_bookings_updated', handleUpdate);
-    return () => window.removeEventListener('salon_bookings_updated', handleUpdate);
-  }, [session]);
+    const pollInterval = setInterval(() => {
+      if (session) {
+        const current = getAllBookings();
+        setBookings(current);
+        checkAndNotifyNewBookings(current);
+      }
+    }, 3000);
+
+    return () => {
+      window.removeEventListener('salon_bookings_updated', handleUpdate);
+      clearInterval(pollInterval);
+    };
+  }, [session, notificationsEnabled]);
 
   // Handler to open scanner with instant browser native permission request (navigator.mediaDevices.getUserMedia)
   const handleOpenScanner = async () => {
@@ -235,6 +348,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
     }
 
     if (newSession) {
+      // Persist session for 7 days (7 * 24 * 60 * 60 * 1000 ms)
+      const stored: StoredAdminSession = {
+        session: newSession,
+        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      };
+      try {
+        localStorage.setItem(ADMIN_SESSION_STORAGE_KEY, JSON.stringify(stored));
+      } catch (e) {
+        console.warn('Error saving admin session:', e);
+      }
+
       setSession(newSession);
       setPinError(false);
       setPinInput('');
@@ -257,9 +381,55 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
   };
 
   const handleLogout = () => {
+    try {
+      localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
     setSession(null);
     setPinInput('');
     setPinError(false);
+  };
+
+  // Toggle Notifications with explicit permission request and test chime
+  const handleToggleNotifications = async () => {
+    if (!notificationsEnabled) {
+      // Turning ON: Request permission explicitly
+      const perm = await requestWebNotificationPermission();
+      setNotificationsEnabled(true);
+      try {
+        localStorage.setItem(ADMIN_NOTIFS_ENABLED_KEY, 'true');
+      } catch {}
+
+      // Play test sound and alert to confirm activation
+      playNotificationSound();
+      if (perm === 'granted') {
+        try {
+          new Notification('الإشعارات الصوتية مفعلة ✅', {
+            body: 'ستصلك تنبيهات صوتية ورسائل فورية عند تسجيل أي زبون لحجز جديد.',
+            icon: '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
+          });
+        } catch (e) {
+          console.warn('Test notification note:', e);
+        }
+      }
+      sendDualAlert('تفعيل الإشعارات بنجاح', {
+        body: 'تم تفعيل التنبيهات الصوتية والمنبثقة للحجوزات الجديدة.',
+        type: 'success',
+        skipSound: true,
+      });
+    } else {
+      // Turning OFF
+      setNotificationsEnabled(false);
+      try {
+        localStorage.setItem(ADMIN_NOTIFS_ENABLED_KEY, 'false');
+      } catch {}
+      sendDualAlert('تم إيقاف الإشعارات مؤقتاً', {
+        body: 'تم كتم التنبيهات التلقائية.',
+        type: 'warning',
+        skipSound: true,
+      });
+    }
   };
 
   const handleConfirm = (id: string) => {
@@ -595,15 +765,40 @@ Statut actuel : ${statusText}`;
                 </button>
               </div>
 
-              {/* QR Scanner Tool */}
-              <button
-                type="button"
-                onClick={handleOpenScanner}
-                className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-colors cursor-pointer"
-              >
-                <Camera className="w-4 h-4" />
-                <span>ماسح التذاكر (QR Scanner)</span>
-              </button>
+              {/* Notification Alert Toggle & QR Scanner Tool */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleToggleNotifications}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer shadow-sm ${
+                    notificationsEnabled
+                      ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-600/30'
+                      : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-white'
+                  }`}
+                  title="تفعيل أو كتم التنبيهات الصوتية والمنبثقة عند وصول حجز جديد"
+                >
+                  {notificationsEnabled ? (
+                    <>
+                      <Volume2 className="w-4 h-4 text-emerald-400 animate-pulse" />
+                      <span>تفعيل الإشعارات الصوتية والمنبثقة (مفعّل ✓)</span>
+                    </>
+                  ) : (
+                    <>
+                      <VolumeX className="w-4 h-4 text-zinc-400" />
+                      <span>تفعيل الإشعارات الصوتية والمنبثقة (معطّل)</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenScanner}
+                  className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-colors cursor-pointer"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>ماسح التذاكر (QR Scanner)</span>
+                </button>
+              </div>
             </div>
 
             {scannedTicketNotice && (
@@ -795,10 +990,24 @@ Statut actuel : ${statusText}`;
 
             {/* Bookings List */}
             {visibleBookings.length === 0 ? (
-              <div className="text-center py-12 text-zinc-500 text-xs">
-                {activeTab === 'today'
-                  ? 'لا توجد أي حجوزات مسجلة لهذا اليوم.'
-                  : 'لا توجد أي تذاكر مطابقة في الأرشيف.'}
+              <div className="text-center py-12 px-4 rounded-2xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
+                <CalendarDays className="w-8 h-8 text-zinc-600 mx-auto" />
+                <p className="text-zinc-400 text-xs font-medium">
+                  {activeTab === 'today'
+                    ? `لا توجد أي حجوزات مبرمجة بالضبط لتاريخ اليوم (${todayStr}).`
+                    : 'لا توجد أي تذاكر مطابقة في الأرشيف أو البحث.'}
+                </p>
+                {activeTab === 'today' && bookings.length > 0 && (
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('archive')}
+                      className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      عرض جميع الحجوزات بالأرشيف ({bookings.length} حجز)
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-4">

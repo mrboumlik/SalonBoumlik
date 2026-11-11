@@ -60,32 +60,40 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
   const performSearch = (query: string) => {
     const q = query.trim();
     if (!q) {
-      setFoundBookings([]);
+      const all = getAllBookings();
+      setFoundBookings(all.slice(0, 5));
       setHasSearched(false);
       return;
     }
 
     setHasSearched(true);
-    // Check if query is ticket-like or phone-like
+    // 1. Exact or clean ticket match
     const byTicket = getBookingByTicket(q);
     if (byTicket) {
       setFoundBookings([byTicket]);
       return;
     }
 
+    // 2. Phone match
     const byPhone = getBookingsByPhone(q);
     if (byPhone.length > 0) {
       setFoundBookings(byPhone);
       return;
     }
 
-    // Try name or loose match
+    // 3. Loose search by ticket, name, barber, or notes
     const all = getAllBookings();
-    const loose = all.filter(
-      (b) =>
+    const cleanQ = q.toLowerCase().replace(/^#+/, '').replace(/^sb-?/i, '');
+    const loose = all.filter((b) => {
+      const tNorm = b.ticketNumber.toLowerCase().replace(/^#+/, '').replace(/^sb-?/i, '');
+      return (
+        tNorm.includes(cleanQ) ||
+        b.ticketNumber.toLowerCase().includes(q.toLowerCase()) ||
         b.clientName.toLowerCase().includes(q.toLowerCase()) ||
-        b.ticketNumber.toLowerCase().includes(q.toLowerCase())
-    );
+        b.clientPhone.includes(q) ||
+        b.barberName.toLowerCase().includes(q.toLowerCase())
+      );
+    });
     setFoundBookings(loose);
   };
 
