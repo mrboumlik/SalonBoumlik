@@ -15,8 +15,11 @@ import {
   MessageCircle,
   Copy,
   Scissors,
-  RefreshCw
+  RefreshCw,
+  Camera,
+  Bell
 } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 import { useLanguage } from '../context/LanguageContext';
 import { 
   getBookingByTicket, 
@@ -25,6 +28,10 @@ import {
   clientRescheduleResponse,
   cancelClientBooking
 } from '../utils/bookingStore';
+import { 
+  requestWebNotificationPermission, 
+  sendDualAlert 
+} from '../utils/notifications';
 import { AppointmentBooking, BookingStatus } from '../types';
 import { SALON_INFO } from '../data/barbershopData';
 
@@ -44,6 +51,11 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
   const [foundBookings, setFoundBookings] = useState<AppointmentBooking[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [copiedTicket, setCopiedTicket] = useState<string | null>(null);
+
+  // Client QR Scanner state
+  const [isClientScannerOpen, setIsClientScannerOpen] = useState(false);
+  const [clientScannerError, setClientScannerError] = useState<string | null>(null);
+  const [notifStatus, setNotifStatus] = useState<NotificationPermission>('default');
 
   const performSearch = (query: string) => {
     const q = query.trim();
@@ -110,6 +122,102 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     return () => window.removeEventListener('salon_bookings_updated', handleUpdate);
   }, [searchTerm]);
 
+  // Notification permission check on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotifStatus(Notification.permission);
+    }
+  }, [isOpen]);
+
+  const handleEnableNotifications = async () => {
+    const perm = await requestWebNotificationPermission();
+    setNotifStatus(perm);
+    if (perm === 'granted') {
+      sendDualAlert(
+        lang === 'ar' ? 'تم تفعيل الإشعارات بنجاح • صالون بومليك' : 'Notifications Activées • Salon Boumlik',
+        {
+          body: lang === 'ar' 
+            ? 'ستصلك تنبيهات صوتية فورية بأي تحديث بخصوص موعدك وتجهيز الكرسي.'
+            : 'Vous recevrez des alertes sonores pour les mises à jour de votre créneau.',
+          type: 'success',
+        }
+      );
+    }
+  };
+
+  const handleOpenClientScanner = async () => {
+    setClientScannerError(null);
+    setIsClientScannerOpen(true);
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+        });
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (err: any) {
+        console.warn('Camera permission check note:', err);
+      }
+    }
+  };
+
+  // Client QR Scanner lifecycle using html5-qrcode strictly with facingMode: "environment"
+  useEffect(() => {
+    if (!isClientScannerOpen) return;
+
+    let html5Qr: Html5Qrcode | null = null;
+    let isStopped = false;
+
+    const timer = setTimeout(async () => {
+      try {
+        const container = document.getElementById('client-qr-reader-container');
+        if (!container) return;
+
+        html5Qr = new Html5Qrcode('client-qr-reader-container');
+
+        const config = {
+          fps: 10,
+          qrbox: { width: 240, height: 240 },
+          aspectRatio: 1.0,
+        };
+
+        await html5Qr.start(
+          { facingMode: 'environment' },
+          config,
+          (decodedText) => {
+            if (isStopped) return;
+            isStopped = true;
+            let ticket = decodedText.trim();
+            if (decodedText.includes('track=')) {
+              ticket = decodeURIComponent(decodedText.split('track=')[1].split('&')[0]).trim();
+            }
+            setSearchTerm(ticket);
+            performSearch(ticket);
+            if (html5Qr && html5Qr.isScanning) {
+              html5Qr.stop().then(() => html5Qr?.clear()).catch(console.error);
+            }
+            setIsClientScannerOpen(false);
+          },
+          () => {
+            // frame scanning noise, ignore
+          }
+        );
+      } catch (err: any) {
+        console.error('Html5Qrcode client scanner error:', err);
+        setClientScannerError(
+          err?.message || (lang === 'ar' ? 'تعذر فتح الكاميرا. يرجى السماح بالإذن في المتصفح.' : 'Impossible d’accéder à la caméra.')
+        );
+      }
+    }, 250);
+
+    return () => {
+      isStopped = true;
+      clearTimeout(timer);
+      if (html5Qr && html5Qr.isScanning) {
+        html5Qr.stop().then(() => html5Qr?.clear()).catch(console.error);
+      }
+    };
+  }, [isClientScannerOpen, lang]);
+
   if (!isOpen) return null;
 
   const handleCopy = (ticket: string) => {
@@ -120,6 +228,24 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
   const handleClientRescheduleDecision = (bookingId: string, accepted: boolean) => {
     clientRescheduleResponse(bookingId, accepted);
+    if (accepted) {
+      sendDualAlert(
+        lang === 'ar' ? 'تم قبول الموعد الجديد وقفل الكرسي ✅' : 'Nouvel horaire accepté ✅',
+        {
+          body: lang === 'ar' ? 'تم تأكيد موعدك بالتوقيت الجديد بنجاح في صالون بومليك.' : 'Votre créneau est confirmé avec succès.',
+          type: 'success',
+        }
+      );
+    } else {
+      sendDualAlert(
+        lang === 'ar' ? 'تم رفض الموعد وتحرير الوقت' : 'Rendez-vous annulé',
+        {
+          body: lang === 'ar' ? 'تم إلغاء الموعد وتحرير الكرسي لزبائن آخرين.' : 'Le créneau a été libéré.',
+          type: 'warning',
+        }
+      );
+    }
+
     if (searchTerm) {
       performSearch(searchTerm);
     } else {
@@ -258,14 +384,14 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           </button>
         </div>
 
-        {/* Search Bar */}
+        {/* Search Bar & Client-Side QR Scanner Button */}
         <div className="p-6 pb-2">
           <form 
             onSubmit={(e) => {
               e.preventDefault();
               performSearch(searchTerm);
             }}
-            className="flex gap-2"
+            className="flex flex-col sm:flex-row gap-2"
           >
             <div className="relative flex-1">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
@@ -277,14 +403,79 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                 className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-red-500"
               />
             </div>
-            <button
-              type="submit"
-              className="px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl transition-colors shadow-md flex items-center gap-1.5"
-            >
-              <span>{ui.searchBtn}</span>
-            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleOpenClientScanner}
+                className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-blue-300 hover:text-white font-bold text-xs rounded-xl border border-zinc-700 transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                title="Scanner le QR code du ticket"
+              >
+                <Camera className="w-4 h-4 text-blue-400" />
+                <span>{lang === 'ar' ? 'مسح رمز التذكرة' : lang === 'es' ? 'Escanear QR' : 'Scanner QR'}</span>
+              </button>
+
+              <button
+                type="submit"
+                className="flex-1 sm:flex-initial px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl transition-colors shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span>{ui.searchBtn}</span>
+              </button>
+            </div>
           </form>
+
+          {/* Quick Notification Permission Bell Button for Client */}
+          <div className="mt-2.5 flex items-center justify-between px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-[11px]">
+            <span className="text-zinc-400 flex items-center gap-1.5">
+              <Bell className="w-3.5 h-3.5 text-amber-400" />
+              <span>{lang === 'ar' ? 'تفعيل رنين وإشعارات الموعد في المتصفح' : 'Alertes sonores & notifications'}</span>
+            </span>
+            <button
+              type="button"
+              onClick={handleEnableNotifications}
+              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <Bell className="w-3 h-3 text-amber-400" />
+              <span>{notifStatus === 'granted' ? (lang === 'ar' ? 'الإشعارات مفعلة ✓' : 'Activé ✓') : (lang === 'ar' ? '🔔 تفعيل الإشعارات' : '🔔 Activer')}</span>
+            </button>
+          </div>
         </div>
+
+        {/* Client QR Scanner Modal Dialog (Strictly facingMode: environment) */}
+        {isClientScannerOpen && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/90">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 max-w-sm w-full space-y-4 text-center">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
+                <div className="flex items-center gap-1.5 text-white font-bold text-sm">
+                  <Camera className="w-4 h-4 text-blue-400" />
+                  <span>{lang === 'ar' ? 'مسح رمز التذكرة بالكاميرا' : 'Scanner le ticket QR'}</span>
+                </div>
+
+                <button 
+                  onClick={() => setIsClientScannerOpen(false)}
+                  className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {clientScannerError && (
+                <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs">
+                  {clientScannerError}
+                </div>
+              )}
+
+              <div 
+                id="client-qr-reader-container" 
+                className="w-full rounded-xl overflow-hidden bg-black min-h-[260px] border border-zinc-800" 
+              />
+
+              <div className="text-[11px] text-zinc-400">
+                <span>{lang === 'ar' ? 'قم بتوجيه الكاميرا الخلفية نحو رمز الـ QR للتذكرة' : 'Visez le QR code avec votre caméra arrière'}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Results List */}
         <div className="p-6 pt-3 space-y-4 max-h-[60vh] overflow-y-auto">
