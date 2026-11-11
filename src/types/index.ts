@@ -86,6 +86,8 @@ export interface BarberStaff {
   avatar: string;
   rating: number;
   isOwner?: boolean;
+  themeColor?: string; // e.g. '#D97706' (Hassan Gold), '#2563EB' (Anouar Blue), '#059669' (Lahcen Emerald), '#7C3AED' (Mounir Purple)
+  colorName?: string;
 }
 
 export interface GalleryItem {
@@ -174,6 +176,7 @@ export interface AppointmentBooking {
   cartItemsSummary?: SelectedCartItem[];
   barberId: string;
   barberName: string;
+  barberColor?: string; // hex color e.g. #D97706, #2563EB, #059669, #7C3AED
   date: string; // YYYY-MM-DD
   timeSlot: string;
   clientName: string;

@@ -66,7 +66,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {
       // ignore
     }
-    return 'luxury_gold';
+    return 'minimal_light';
   });
 
   const setTheme = (newTheme: AppTheme) => {

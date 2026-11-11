@@ -262,6 +262,10 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                 {/* Top card bar: Ticket & Status */}
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">
                   <div className="flex items-center gap-2">
+                    <span 
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: booking.barberColor || '#D97706' }}
+                    />
                     <span className="font-mono text-base font-black text-white tracking-wider">
                       {booking.ticketNumber}
                     </span>

@@ -142,6 +142,8 @@ export const TEAM_MEMBERS: BarberStaff[] = [
     instagramHandle: '@h.a.boumlik',
     avatar: hassanAvatarImg,
     rating: 5.0,
+    themeColor: '#D97706', // Dark Gold
+    colorName: 'Gold',
   },
   {
     id: 'anouar-arif',
@@ -158,6 +160,8 @@ export const TEAM_MEMBERS: BarberStaff[] = [
     instagramHandle: '@anouar_the_barber',
     avatar: anouarAvatarImg,
     rating: 5.0,
+    themeColor: '#2563EB', // Vibrant Blue
+    colorName: 'Blue',
   },
   {
     id: 'lahcen-lhanz',
@@ -174,6 +178,8 @@ export const TEAM_MEMBERS: BarberStaff[] = [
     instagramHandle: '@04.lhsen_lhanze',
     avatar: lahcenAvatarImg,
     rating: 5.0,
+    themeColor: '#059669', // Emerald Green
+    colorName: 'Emerald',
   },
   {
     id: 'mounir-querdeny',
@@ -190,6 +196,8 @@ export const TEAM_MEMBERS: BarberStaff[] = [
     instagramHandle: '@qurdenybarber',
     avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=400&q=80',
     rating: 5.0,
+    themeColor: '#7C3AED', // Royal Purple
+    colorName: 'Purple',
   },
 ];
 
