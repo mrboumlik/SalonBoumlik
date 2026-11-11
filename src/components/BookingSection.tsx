@@ -205,72 +205,9 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
     setTimeout(() => setCopiedTicket(false), 2000);
   };
 
-  // Download Ticket as PNG Image using html2canvas (waits for QR code and all images)
-  const handleDownloadTicket = async () => {
-    if (!ticketCardRef.current || !createdBooking) return;
-    setIsDownloading(true);
-
-    try {
-      // Small pause to guarantee DOM and QR code image have fully painted
-      await new Promise((resolve) => setTimeout(resolve, 150));
-
-      // Wait for any images inside the ticket card to finish loading
-      const images = Array.from(ticketCardRef.current.querySelectorAll('img'));
-      await Promise.all(
-        images.map((img) => {
-          if (img.complete) return Promise.resolve();
-          return new Promise((resolve) => {
-            img.onload = () => resolve(true);
-            img.onerror = () => resolve(false);
-          });
-        })
-      );
-
-      const canvas = await html2canvas(ticketCardRef.current, {
-        scale: 2,
-        backgroundColor: '#0E1015',
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        onclone: (clonedDoc) => {
-          // Ensure cloned ticket node is visible and crisp
-          const clonedCard = clonedDoc.querySelector('[data-ticket-card="true"]') as HTMLElement;
-          if (clonedCard) {
-            clonedCard.style.maxWidth = '450px';
-            clonedCard.style.margin = '0 auto';
-          }
-        },
-      });
-
-      // Generate PNG blob / data URL and download
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          const dataUrl = canvas.toDataURL('image/png');
-          const link = document.createElement('a');
-          link.download = `Ticket-SalonBoumlik-${createdBooking.ticketNumber}.png`;
-          link.href = dataUrl;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          return;
-        }
-
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.download = `Ticket-SalonBoumlik-${createdBooking.ticketNumber}.png`;
-        link.href = url;
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(() => {
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-        }, 1000);
-      }, 'image/png');
-    } catch (err) {
-      console.error('Failed to export ticket image:', err);
-    } finally {
-      setIsDownloading(false);
-    }
+  // Save / Print Ticket via Native window.print() (Clean PDF / Paper Print)
+  const handlePrintTicket = () => {
+    window.print();
   };
 
   // Localized UI Texts
@@ -716,10 +653,11 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md">
           <div className="bg-[#0E1015] border border-amber-500/40 rounded-3xl p-5 sm:p-6 max-w-sm sm:max-w-md w-full shadow-2xl space-y-4 text-center animate-in fade-in duration-300 max-h-[92vh] overflow-y-auto text-white">
             
-            {/* The Actual Downloadable Ticket Card (captured via html2canvas) */}
+            {/* The Actual Downloadable/Printable Ticket Card */}
             <div 
               ref={ticketCardRef}
               data-ticket-card="true"
+              data-printable-ticket="true"
               className="p-5 rounded-3xl bg-[#12141B] border-2 shadow-2xl space-y-4 text-left relative overflow-hidden"
               style={{
                 borderColor: activeBarberColor,
@@ -809,18 +747,19 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
               </p>
             </div>
 
-            {/* Download Ticket Image Button */}
+            {/* Save / Print Ticket Button (Triggers window.print() for PDF or Paper saving) */}
             <button
               type="button"
-              onClick={handleDownloadTicket}
-              disabled={isDownloading}
-              className="w-full py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs flex items-center justify-center gap-2 border border-zinc-700 transition-colors cursor-pointer"
+              onClick={handlePrintTicket}
+              className="w-full py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs sm:text-sm flex items-center justify-center gap-2 border border-amber-400 shadow-lg shadow-amber-500/20 transition-all cursor-pointer no-print active:scale-[0.99]"
             >
-              <Download className="w-4 h-4 text-amber-400" />
+              <Printer className="w-4 h-4 text-black" />
               <span>
-                {isDownloading 
-                  ? (lang === 'ar' ? 'جارٍ تحميل الصورة...' : 'Génération de l’image...') 
-                  : (lang === 'ar' ? 'تحميل التذكرة كصورة (PNG)' : 'Télécharger le Ticket (Image)')}
+                {lang === 'ar' 
+                  ? 'حفظ / طباعة التذكرة (PDF أو ورق)' 
+                  : lang === 'es' 
+                  ? 'Guardar / Imprimir Ticket' 
+                  : 'Enregistrer / Imprimer le Ticket'}
               </span>
             </button>
 

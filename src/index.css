@@ -172,3 +172,43 @@ html.theme-light select {
   );
   background-size: 32px 32px;
 }
+
+/* Strict Clean @media print rules for Saving/Printing Ticket as PDF */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  [data-printable-ticket="true"],
+  [data-printable-ticket="true"] * {
+    visibility: visible;
+  }
+
+  [data-printable-ticket="true"] {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 90% !important;
+    max-width: 480px !important;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    border: 2px solid #D97706 !important;
+    background: #12141B !important;
+    color: #FFFFFF !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Hide print buttons and extra dialogs */
+  .no-print,
+  button,
+  header,
+  footer,
+  aside,
+  nav {
+    display: none !important;
+  }
+}
+

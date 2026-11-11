@@ -17,7 +17,8 @@ import {
   Scissors,
   RefreshCw,
   Camera,
-  Bell
+  Bell,
+  Upload
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useLanguage } from '../context/LanguageContext';
@@ -165,6 +166,42 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
       } catch (err: any) {
         console.warn('Camera permission check note:', err);
       }
+    }
+  };
+
+  // Decode uploaded QR code image using Html5Qrcode.scanFile
+  const handleQrImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      // Create off-screen scanner instance for file decoding
+      const html5Qr = new Html5Qrcode('qr-temp-scanner-hidden');
+      const decodedText = await html5Qr.scanFile(file, true);
+      
+      let ticket = decodedText.trim();
+      if (decodedText.includes('track=')) {
+        ticket = decodeURIComponent(decodedText.split('track=')[1].split('&')[0]).trim();
+      }
+
+      setSearchTerm(ticket);
+      performSearch(ticket);
+      sendDualAlert(
+        lang === 'ar' ? 'تم مسح صورة الـ QR بنجاح!' : 'QR Code analysé avec succès !',
+        {
+          body: `${lang === 'ar' ? 'تم استخراج التذكرة:' : 'Ticket:'} ${ticket}`,
+          type: 'success',
+        }
+      );
+    } catch (err: any) {
+      console.error('Error scanning uploaded QR image:', err);
+      const errMsg = lang === 'ar'
+        ? 'لم يتم العثور على رمز QR صالح في الصورة المرفوعة. تأكد من وضوح الصورة.'
+        : 'Impossible de lire le code QR sur cette image. Veuillez réessayer.';
+      alert(errMsg);
+    } finally {
+      // Reset input value so same file can be chosen again if needed
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -412,17 +449,34 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Camera Scanner Button */}
               <button
                 type="button"
                 onClick={handleOpenClientScanner}
                 className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-blue-300 hover:text-white font-bold text-xs rounded-xl border border-zinc-700 transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                title="Scanner le QR code du ticket"
+                title="Scanner le QR code du ticket avec la caméra"
               >
                 <Camera className="w-4 h-4 text-blue-400" />
-                <span>{lang === 'ar' ? 'مسح رمز التذكرة' : lang === 'es' ? 'Escanear QR' : 'Scanner QR'}</span>
+                <span>{lang === 'ar' ? 'مسح الكاميرا' : lang === 'es' ? 'Cámara QR' : 'Scanner Caméra'}</span>
               </button>
 
+              {/* Upload QR Image File Button */}
+              <label 
+                className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-amber-300 hover:text-white font-bold text-xs rounded-xl border border-zinc-700 transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                title="Charger une image ou capture d'écran du QR code"
+              >
+                <Upload className="w-4 h-4 text-amber-400" />
+                <span>{lang === 'ar' ? 'تحميل صورة QR' : lang === 'es' ? 'Subir imagen QR' : 'Uploader Image QR'}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleQrImageUpload}
+                  className="hidden"
+                />
+              </label>
+
+              {/* Submit Search Button */}
               <button
                 type="submit"
                 className="flex-1 sm:flex-initial px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl transition-colors shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
@@ -431,6 +485,9 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
               </button>
             </div>
           </form>
+
+          {/* Hidden container for off-screen QR file scanning */}
+          <div id="qr-temp-scanner-hidden" className="hidden" aria-hidden="true" />
 
           {/* Quick Notification Permission Bell Button for Client */}
           <div className="mt-2.5 flex items-center justify-between px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-[11px]">

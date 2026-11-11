@@ -1,7 +1,8 @@
 import { AppointmentBooking, BookingStatus } from '../types';
 
-// Standardized storage keys
-export const STORAGE_KEY = 'salon_boumlik_all_bookings_v3';
+// Standardized unified storage key as mandated by user request
+export const STORAGE_KEY = 'salon_boumlik_data';
+const LEGACY_STORAGE_KEY = 'salon_boumlik_all_bookings_v3';
 
 // In-memory cache for ultra-fast, sync access across all components
 let memoryCache: AppointmentBooking[] | null = null;
@@ -136,16 +137,19 @@ export function getAllBookings(): AppointmentBooking[] {
 
   try {
     if (typeof window !== 'undefined') {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
           memoryCache = parsed;
+          // Ensure unified key is populated
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
           return memoryCache;
         }
       }
       // Initialize with seed bookings if empty
       localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_BOOKINGS));
+      localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(SEED_BOOKINGS));
       memoryCache = SEED_BOOKINGS;
       return memoryCache;
     }
@@ -161,7 +165,9 @@ export function saveAllBookings(bookings: AppointmentBooking[]): void {
   memoryCache = bookings;
   try {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(bookings));
+      const serialized = JSON.stringify(bookings);
+      localStorage.setItem(STORAGE_KEY, serialized);
+      localStorage.setItem(LEGACY_STORAGE_KEY, serialized);
       // Dispatch custom event for intra-tab instant update
       window.dispatchEvent(
         new CustomEvent('salon_bookings_updated', {
