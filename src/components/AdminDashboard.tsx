@@ -26,9 +26,12 @@ import {
   Archive,
   CalendarDays,
   Sparkles,
-  Camera
+  Camera,
+  RefreshCw,
+  Sliders
 } from 'lucide-react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
+import { requestWebNotificationPermission, sendWebNotification } from '../utils/notifications';
 import { 
   getAllBookings, 
   updateBookingStatus, 
@@ -65,8 +68,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
   const [masterBarberFilter, setMasterBarberFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   
-  // QR Scanner Modal
+  // QR Scanner Modal & Camera Controls
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState<'environment' | 'user'>('environment');
+  const [scannerCameraError, setScannerCameraError] = useState<string | null>(null);
   const [scannedTicketNotice, setScannedTicketNotice] = useState<string | null>(null);
 
   // Reschedule dialog state
@@ -105,53 +110,86 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
     return () => window.removeEventListener('salon_bookings_updated', handleUpdate);
   }, [session]);
 
-  // QR Scanner initialization when scanner modal opens
+  // Handler to open scanner with instant browser native permission request (navigator.mediaDevices.getUserMedia)
+  const handleOpenScanner = async () => {
+    setScannerCameraError(null);
+    setIsScannerOpen(true);
+
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: cameraFacingMode },
+        });
+        // Immediately stop temporary test tracks after obtaining permission
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (err: any) {
+        console.warn('Initial camera permission request warning:', err);
+      }
+    }
+  };
+
+  // Switch between Rear (environment) and Front (user) camera
+  const handleToggleCamera = () => {
+    setCameraFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
+  };
+
+  // QR Scanner initialization using Html5Qrcode with forced rear/environment camera by default
   useEffect(() => {
     if (!isScannerOpen) return;
 
-    let scanner: Html5QrcodeScanner | null = null;
-    const timer = setTimeout(() => {
-      try {
-        scanner = new Html5QrcodeScanner(
-          'qr-reader-container',
-          { fps: 10, qrbox: { width: 250, height: 250 } },
-          false
-        );
+    let html5Qr: Html5Qrcode | null = null;
+    let isStopped = false;
 
-        scanner.render(
+    const timer = setTimeout(async () => {
+      try {
+        const container = document.getElementById('qr-reader-container');
+        if (!container) return;
+
+        html5Qr = new Html5Qrcode('qr-reader-container');
+
+        const config = {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+        };
+
+        await html5Qr.start(
+          { facingMode: cameraFacingMode },
+          config,
           (decodedText) => {
-            // Check if URL or raw ticket
+            if (isStopped) return;
+            isStopped = true;
             let ticket = decodedText;
             if (decodedText.includes('track=')) {
               ticket = decodeURIComponent(decodedText.split('track=')[1].split('&')[0]);
             }
             setSearchQuery(ticket.trim());
             setScannedTicketNotice(`Ticket scanné : ${ticket.trim()}`);
-            if (scanner) {
-              scanner.clear().catch(console.error);
+            if (html5Qr && html5Qr.isScanning) {
+              html5Qr.stop().then(() => html5Qr?.clear()).catch(console.error);
             }
             setIsScannerOpen(false);
           },
-          (error) => {
-            // ignore scan frame errors
+          (errorMessage) => {
+            // scanning frame noise, ignore
           }
         );
-      } catch (e) {
-        console.error('Failed to init QR scanner', e);
+      } catch (err: any) {
+        console.error('Html5Qrcode scanner failed to start:', err);
+        setScannerCameraError(
+          err?.message || 'Impossible d’accéder à la caméra. Vérifiez les autorisations de votre navigateur.'
+        );
       }
-    }, 300);
+    }, 250);
 
     return () => {
+      isStopped = true;
       clearTimeout(timer);
-      if (scanner) {
-        try {
-          scanner.clear().catch(console.error);
-        } catch {
-          // ignore
-        }
+      if (html5Qr && html5Qr.isScanning) {
+        html5Qr.stop().then(() => html5Qr?.clear()).catch(console.error);
       }
     };
-  }, [isScannerOpen]);
+  }, [isScannerOpen, cameraFacingMode]);
 
   if (!isOpen) return null;
 
@@ -160,59 +198,56 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
     e.preventDefault();
     const cleanPin = pinInput.trim();
 
+    let newSession: StaffSession | null = null;
+
     // 1. Hassan (Master Admin): PINs 1994 OR 0635392503
     if (cleanPin === '1994' || cleanPin === '0635392503' || cleanPin === '212635392503') {
-      setSession({
+      newSession = {
         barberId: 'all',
         name: 'Hassan ait boumlik',
         role: 'master',
         title: 'Master Admin / المؤسس وخبير الحلاقة',
-      });
-      setPinError(false);
-      setPinInput('');
-      reloadBookings();
-      return;
-    }
-
-    // 2. Anouar (Barber): PIN 1234
-    if (cleanPin === '1234') {
-      setSession({
+      };
+    } else if (cleanPin === '1234') {
+      // 2. Anouar (Barber): PIN 1234
+      newSession = {
         barberId: 'anouar-arif',
         name: 'Anouar arif',
         role: 'barber',
         title: 'Barbier / حلاق',
-      });
-      setPinError(false);
-      setPinInput('');
-      reloadBookings();
-      return;
-    }
-
-    // 3. Lahcen (Barber): PIN 5678
-    if (cleanPin === '5678') {
-      setSession({
+      };
+    } else if (cleanPin === '5678') {
+      // 3. Lahcen (Barber): PIN 5678
+      newSession = {
         barberId: 'lahcen-lhanz',
         name: 'Lahcen lhanz',
         role: 'barber',
         title: 'Barbier / حلاق',
-      });
-      setPinError(false);
-      setPinInput('');
-      reloadBookings();
-      return;
-    }
-
-    // 4. Mounir (Barber): PIN 1111
-    if (cleanPin === '1111') {
-      setSession({
+      };
+    } else if (cleanPin === '1111') {
+      // 4. Mounir (Barber): PIN 1111
+      newSession = {
         barberId: 'mounir-querdeny',
         name: 'Mounir querdeny',
         role: 'barber',
         title: 'Barbier / حلاق',
-      });
+      };
+    }
+
+    if (newSession) {
+      setSession(newSession);
       setPinError(false);
       setPinInput('');
       reloadBookings();
+
+      // Trigger Web Notification permission prompt immediately upon successfully logging into /#admin
+      requestWebNotificationPermission().then((permission) => {
+        if (permission === 'granted') {
+          sendWebNotification('لوحة التحكم نشطة • صالون بومليك', {
+            body: `مرحباً ${newSession?.name}، تم تفعيل الإشعارات الفورية للحجوزات الجديدة والتحديثات.`,
+          });
+        }
+      });
       return;
     }
 
@@ -477,7 +512,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
               {/* QR Scanner Tool */}
               <button
                 type="button"
-                onClick={() => setIsScannerOpen(true)}
+                onClick={handleOpenScanner}
                 className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-colors cursor-pointer"
               >
                 <Camera className="w-4 h-4" />
@@ -887,28 +922,56 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
 
       </div>
 
-      {/* QR Code Scanner Dialog Modal */}
+      {/* QR Code Scanner Dialog Modal (Forced Rear/Environment by default, with camera switcher) */}
       {isScannerOpen && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85">
           <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 max-w-sm w-full space-y-4 text-center">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
-              <h3 className="font-bold text-white text-sm flex items-center gap-1.5">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
+              <div className="flex items-center gap-1.5 text-white font-bold text-sm">
                 <Camera className="w-4 h-4 text-blue-400" />
-                <span>مسح تذكرة الزبون بالكاميرا</span>
-              </h3>
-              <button 
-                onClick={() => setIsScannerOpen(false)}
-                className="text-zinc-400 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
+                <span>مسح تذكرة الزبون</span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {/* Switch Camera Button (Toggles between environment and user) */}
+                <button
+                  type="button"
+                  onClick={handleToggleCamera}
+                  className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-blue-300 hover:text-white text-xs font-semibold flex items-center gap-1 border border-zinc-700 transition-colors cursor-pointer"
+                  title="Changer de caméra (Arrière / Avant)"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{cameraFacingMode === 'environment' ? 'كاميرا خلفية 🔄' : 'كاميرا أمامية 🔄'}</span>
+                </button>
+
+                <button 
+                  onClick={() => setIsScannerOpen(false)}
+                  className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            <div id="qr-reader-container" className="w-full rounded-xl overflow-hidden bg-black min-h-[260px]" />
+            {/* Error banner if browser denied or camera unavailable */}
+            {scannerCameraError && (
+              <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs">
+                {scannerCameraError}
+              </div>
+            )}
 
-            <p className="text-[11px] text-zinc-400">
-              وجّه الكاميرا نحو باركود تذكرة الزبون لتحميل بيانات حجزه فوراً في لوحة التحكم.
-            </p>
+            <div id="qr-reader-container" className="w-full rounded-xl overflow-hidden bg-black min-h-[260px] border border-zinc-800" />
+
+            <div className="flex items-center justify-between text-[11px] text-zinc-400">
+              <span>الوضع الافتراضي: الكاميرا الخلفية (Rear)</span>
+              <button
+                type="button"
+                onClick={handleToggleCamera}
+                className="text-blue-400 hover:underline font-bold"
+              >
+                تبديل الكاميرا
+              </button>
+            </div>
           </div>
         </div>
       )}

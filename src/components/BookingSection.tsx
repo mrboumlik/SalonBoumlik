@@ -34,6 +34,8 @@ import { createNewBooking } from '../utils/bookingStore';
 import { PricingEngineResult, AppointmentBooking } from '../types';
 import { BASE_SERVICES } from '../utils/pricingEngine';
 
+import { requestWebNotificationPermission, sendWebNotification } from '../utils/notifications';
+
 interface BookingSectionProps {
   pricingResult: PricingEngineResult;
   selectedBarberId: string;
@@ -180,6 +182,20 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
 
     setCreatedBooking(newBooking);
     if (onBookingConfirmed) onBookingConfirmed(newBooking);
+
+    // Request Web Notification permission for clients immediately AFTER digital ticket is generated
+    requestWebNotificationPermission().then((permission) => {
+      if (permission === 'granted') {
+        sendWebNotification(
+          lang === 'ar' ? 'تم تسجيل تذكرتك بنجاح • صالون بومليك' : 'Réservation Confirmée • Salon Boumlik',
+          {
+            body: lang === 'ar'
+              ? `تذكرتك: ${newBooking.ticketNumber} مع ${newBooking.barberName} بتاريخ ${newBooking.date} الساعة ${newBooking.timeSlot}`
+              : `Billet ${newBooking.ticketNumber} avec ${newBooking.barberName} le ${newBooking.date} à ${newBooking.timeSlot}`,
+          }
+        );
+      }
+    });
   };
 
   const handleCopyTicket = (ticket: string) => {
@@ -188,21 +204,67 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
     setTimeout(() => setCopiedTicket(false), 2000);
   };
 
-  // Download Ticket as PNG Image using html2canvas
+  // Download Ticket as PNG Image using html2canvas (waits for QR code and all images)
   const handleDownloadTicket = async () => {
     if (!ticketCardRef.current || !createdBooking) return;
     setIsDownloading(true);
+
     try {
+      // Small pause to guarantee DOM and QR code image have fully painted
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Wait for any images inside the ticket card to finish loading
+      const images = Array.from(ticketCardRef.current.querySelectorAll('img'));
+      await Promise.all(
+        images.map((img) => {
+          if (img.complete) return Promise.resolve();
+          return new Promise((resolve) => {
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(false);
+          });
+        })
+      );
+
       const canvas = await html2canvas(ticketCardRef.current, {
         scale: 2,
         backgroundColor: '#0E1015',
         useCORS: true,
+        allowTaint: true,
+        logging: false,
+        onclone: (clonedDoc) => {
+          // Ensure cloned ticket node is visible and crisp
+          const clonedCard = clonedDoc.querySelector('[data-ticket-card="true"]') as HTMLElement;
+          if (clonedCard) {
+            clonedCard.style.maxWidth = '450px';
+            clonedCard.style.margin = '0 auto';
+          }
+        },
       });
-      const dataUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.download = `Ticket-SalonBoumlik-${createdBooking.ticketNumber}.png`;
-      link.href = dataUrl;
-      link.click();
+
+      // Generate PNG blob / data URL and download
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          const dataUrl = canvas.toDataURL('image/png');
+          const link = document.createElement('a');
+          link.download = `Ticket-SalonBoumlik-${createdBooking.ticketNumber}.png`;
+          link.href = dataUrl;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          return;
+        }
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = `Ticket-SalonBoumlik-${createdBooking.ticketNumber}.png`;
+        link.href = url;
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }, 1000);
+      }, 'image/png');
     } catch (err) {
       console.error('Failed to export ticket image:', err);
     } finally {
@@ -656,6 +718,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
             {/* The Actual Downloadable Ticket Card (captured via html2canvas) */}
             <div 
               ref={ticketCardRef}
+              data-ticket-card="true"
               className="p-5 rounded-3xl bg-[#12141B] border-2 shadow-2xl space-y-4 text-left relative overflow-hidden"
               style={{
                 borderColor: activeBarberColor,
