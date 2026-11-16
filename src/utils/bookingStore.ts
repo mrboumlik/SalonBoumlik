@@ -1,182 +1,207 @@
+import {
+  collection,
+  deleteDoc,
+  deleteField,
+  doc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
 import { AppointmentBooking, BookingStatus } from '../types';
+import { db, handleFirestoreError, OperationType } from './firebase';
 
-// Standardized unified storage key as mandated by user request
-export const STORAGE_KEY = 'salon_boumlik_data';
-const LEGACY_STORAGE_KEY = 'salon_boumlik_all_bookings_v3';
+const BOOKINGS_COLLECTION = 'bookings';
 
-// In-memory cache for ultra-fast, sync access across all components
-let memoryCache: AppointmentBooking[] | null = null;
+// Live in-memory cache kept in sync by Firestore onSnapshot
+let memoryCache: AppointmentBooking[] = [];
+let hasHydratedFromFirestore = false;
 
-// Initial realistic demo bookings for Taroudant Salon Boumlik
-const SEED_BOOKINGS: AppointmentBooking[] = [
-  {
-    id: 'booking-seed-1',
-    ticketNumber: '#SB-1021',
-    services: [],
-    cartItemsSummary: [
-      {
-        serviceId: 'haircut',
-        name: 'Coupe de Cheveux',
-        category: 'haircut',
-        originalPrice: 25,
-        finalPrice: 20,
-        discountApplied: 'Combo Coupe + Barbe',
-      },
-      {
-        serviceId: 'beard',
-        name: 'Taille & Traçage Barbe',
-        category: 'beard',
-        originalPrice: 15,
-        finalPrice: 15,
-      },
-      {
-        serviceId: 'wash',
-        name: 'Lavage & Shampoing',
-        category: 'wash',
-        originalPrice: 10,
-        finalPrice: 5,
-        discountApplied: '5 DH avec coupe',
-      },
-    ],
-    barberId: 'hassan',
-    barberName: 'Hassan ait boumlik',
-    date: new Date().toISOString().split('T')[0],
-    timeSlot: '16:00',
-    clientName: 'Yassine El Amrani',
-    clientPhone: '0661234567',
-    notes: 'Dégradé américain à blanc avec serviette chaude.',
-    originalTotalMAD: 50,
-    finalTotalMAD: 40,
-    totalSavingsMAD: 10,
-    bookingMethod: 'site',
-    status: 'confirmed',
-    adminNotes: 'Confirmé par Hassan. Chaise #1 prête à 16:00.',
-    createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
-  },
-  {
-    id: 'booking-seed-2',
-    ticketNumber: '#SB-1022',
-    services: [],
-    cartItemsSummary: [
-      {
-        serviceId: 'haircut',
-        name: 'Coupe de Cheveux',
-        category: 'haircut',
-        originalPrice: 25,
-        finalPrice: 0,
-        discountApplied: 'GRATUIT avec Protéine (0 DH)',
-      },
-      {
-        serviceId: 'protein',
-        name: 'Soin Protéine / Kératine',
-        category: 'protein',
-        originalPrice: 200,
-        finalPrice: 200,
-        proteinOption: '200 MAD',
-      },
-    ],
-    barberId: 'mounir-querdeny',
-    barberName: 'Mounir querdeny',
-    date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-    timeSlot: '17:30',
-    clientName: 'Karim Bennani',
-    clientPhone: '0678901234',
-    notes: 'Soin kératine brésilien et coupe moderne.',
-    originalTotalMAD: 225,
-    finalTotalMAD: 200,
-    totalSavingsMAD: 25,
-    bookingMethod: 'site',
-    status: 'pending',
-    createdAt: new Date(Date.now() - 3600000 * 1).toISOString(),
-  },
-  {
-    id: 'booking-seed-3',
-    ticketNumber: '#SB-1023',
-    services: [],
-    cartItemsSummary: [
-      {
-        serviceId: 'haircut',
-        name: 'Coupe de Cheveux',
-        category: 'haircut',
-        originalPrice: 25,
-        finalPrice: 25,
-      },
-      {
-        serviceId: 'face-scrub',
-        name: 'Gommage & Peeling Visage',
-        category: 'facial',
-        originalPrice: 40,
-        finalPrice: 40,
-      },
-    ],
-    barberId: 'anouar-arif',
-    barberName: 'Anouar arif',
-    date: new Date().toISOString().split('T')[0],
-    timeSlot: '18:15',
-    clientName: 'Amine Tazi',
-    clientPhone: '0654321098',
-    notes: 'Nettoyage vapeur visage + dégradé taper.',
-    originalTotalMAD: 65,
-    finalTotalMAD: 65,
-    totalSavingsMAD: 0,
-    bookingMethod: 'site',
-    status: 'rescheduled',
-    rescheduledTo: {
-      date: new Date().toISOString().split('T')[0],
-      time: '19:00',
-    },
-    adminNotes: 'Créneau décalé de 45 min pour éviter l’attente.',
-    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-  },
-];
+type BookingsListener = {
+  onData: (bookings: AppointmentBooking[]) => void;
+  onError?: (error: unknown) => void;
+};
 
-export function getAllBookings(): AppointmentBooking[] {
-  if (memoryCache && memoryCache.length > 0) {
-    return memoryCache;
+const listeners = new Set<BookingsListener>();
+let activeUnsubscribe: (() => void) | null = null;
+
+/**
+ * Recursively strips `undefined` values so Firestore rejects zero writes due to undefined properties.
+ */
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => item !== undefined)
+      .map((item) => stripUndefinedDeep(item)) as unknown as T;
   }
-
-  try {
-    if (typeof window !== 'undefined') {
-      const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          memoryCache = parsed;
-          // Ensure unified key is populated
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
-          return memoryCache;
-        }
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) {
+        result[k] = stripUndefinedDeep(v);
       }
-      // Initialize with seed bookings if empty
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_BOOKINGS));
-      localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(SEED_BOOKINGS));
-      memoryCache = SEED_BOOKINGS;
-      return memoryCache;
     }
-  } catch (err) {
-    console.error('Error reading bookings from localStorage:', err);
+    return result as T;
+  }
+  return value;
+}
+
+function buildSanitizedBooking(booking: AppointmentBooking): Record<string, unknown> {
+  const cleanId = booking.id.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 128);
+  const sanitized: Record<string, unknown> = {
+    id: cleanId,
+    ticketNumber: String(booking.ticketNumber || '#SB-1000').slice(0, 32),
+    barberId: String(booking.barberId || 'hassan').slice(0, 64),
+    barberName: String(booking.barberName || 'Hassan ait boumlik').slice(0, 100),
+    date: String(booking.date || new Date().toISOString().split('T')[0]).slice(0, 20),
+    timeSlot: String(booking.timeSlot || '16:00').slice(0, 16),
+    clientName: String(booking.clientName || 'Client').slice(0, 120),
+    clientPhone: String(booking.clientPhone || '0000000000').slice(0, 40),
+    status: booking.status || 'pending',
+    createdAt: String(booking.createdAt || new Date().toISOString()).slice(0, 64),
+    services: Array.isArray(booking.services) ? stripUndefinedDeep(booking.services.slice(0, 20)) : [],
+  };
+
+  if (booking.barberColor) sanitized.barberColor = String(booking.barberColor).slice(0, 20);
+  if (booking.clientEmail && booking.clientEmail.trim()) {
+    sanitized.clientEmail = booking.clientEmail.trim().slice(0, 120);
+  }
+  if (booking.notes && booking.notes.trim()) {
+    sanitized.notes = booking.notes.trim().slice(0, 500);
+  }
+  if (Array.isArray(booking.cartItemsSummary)) {
+    sanitized.cartItemsSummary = stripUndefinedDeep(booking.cartItemsSummary.slice(0, 20));
+  }
+  if (typeof booking.originalTotalMAD === 'number' && Number.isFinite(booking.originalTotalMAD)) {
+    sanitized.originalTotalMAD = Math.max(0, Math.min(50000, booking.originalTotalMAD));
+  }
+  if (typeof booking.finalTotalMAD === 'number' && Number.isFinite(booking.finalTotalMAD)) {
+    sanitized.finalTotalMAD = Math.max(0, Math.min(50000, booking.finalTotalMAD));
+  }
+  if (typeof booking.totalSavingsMAD === 'number' && Number.isFinite(booking.totalSavingsMAD)) {
+    sanitized.totalSavingsMAD = Math.max(0, Math.min(50000, booking.totalSavingsMAD));
+  }
+  if (booking.bookingMethod === 'site' || booking.bookingMethod === 'whatsapp') {
+    sanitized.bookingMethod = booking.bookingMethod;
+  }
+  if (
+    booking.drinkPreference === 'coffee' ||
+    booking.drinkPreference === 'tea' ||
+    booking.drinkPreference === 'none'
+  ) {
+    sanitized.drinkPreference = booking.drinkPreference;
+  }
+  if (typeof booking.totalDurationMinutes === 'number' && Number.isFinite(booking.totalDurationMinutes)) {
+    sanitized.totalDurationMinutes = Math.max(0, Math.min(1000, booking.totalDurationMinutes));
+  }
+  if (booking.rescheduledTo && booking.rescheduledTo.date && booking.rescheduledTo.time) {
+    sanitized.rescheduledTo = {
+      date: String(booking.rescheduledTo.date).slice(0, 20),
+      time: String(booking.rescheduledTo.time).slice(0, 16),
+    };
+  }
+  if (
+    booking.clientLanguage &&
+    ['fr', 'ar', 'en', 'amz', 'es'].includes(booking.clientLanguage)
+  ) {
+    sanitized.clientLanguage = booking.clientLanguage;
+  }
+  if (booking.adminNotes !== undefined && booking.adminNotes !== '') {
+    sanitized.adminNotes = String(booking.adminNotes).slice(0, 500);
   }
 
-  memoryCache = SEED_BOOKINGS;
+  return sanitized;
+}
+
+function ensureFirestoreListener() {
+  if (activeUnsubscribe) return;
+
+  const q = query(collection(db, BOOKINGS_COLLECTION), orderBy('createdAt', 'desc'));
+  activeUnsubscribe = onSnapshot(
+    q,
+    (snapshot) => {
+      const nextBookings: AppointmentBooking[] = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data() as AppointmentBooking;
+        return {
+          ...data,
+          id: data.id || docSnap.id,
+        };
+      });
+
+      memoryCache = nextBookings;
+      hasHydratedFromFirestore = true;
+
+      listeners.forEach((listener) => {
+        try {
+          listener.onData(nextBookings);
+        } catch (err) {
+          console.error('Error in booking listener callback:', err);
+        }
+      });
+    },
+    (error) => {
+      listeners.forEach((listener) => {
+        if (listener.onError) {
+          listener.onError(error);
+        }
+      });
+      handleFirestoreError(error, OperationType.LIST, BOOKINGS_COLLECTION);
+    }
+  );
+}
+
+/**
+ * Subscribe to real-time Firestore `bookings` updates across all devices.
+ */
+export function subscribeToBookings(
+  onData: (bookings: AppointmentBooking[]) => void,
+  onError?: (error: unknown) => void
+): () => void {
+  const listener: BookingsListener = { onData, onError };
+  listeners.add(listener);
+
+  ensureFirestoreListener();
+
+  if (hasHydratedFromFirestore) {
+    onData(memoryCache);
+  }
+
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0 && activeUnsubscribe) {
+      activeUnsubscribe();
+      activeUnsubscribe = null;
+      hasHydratedFromFirestore = false;
+    }
+  };
+}
+
+/**
+ * Returns the latest Firestore-synchronized bookings cached in memory.
+ */
+export function getAllBookings(): AppointmentBooking[] {
   return memoryCache;
 }
 
-export function saveAllBookings(bookings: AppointmentBooking[]): void {
-  memoryCache = bookings;
+/**
+ * Explicitly fetches all bookings from Firestore once (helpful before a stream hydrates).
+ */
+export async function fetchAllBookingsOnce(): Promise<AppointmentBooking[]> {
   try {
-    if (typeof window !== 'undefined') {
-      const serialized = JSON.stringify(bookings);
-      localStorage.setItem(STORAGE_KEY, serialized);
-      localStorage.setItem(LEGACY_STORAGE_KEY, serialized);
-      // Dispatch custom event for intra-tab instant update
-      window.dispatchEvent(
-        new CustomEvent('salon_bookings_updated', {
-          detail: { count: bookings.length, timestamp: Date.now() },
-        })
-      );
-    }
-  } catch (err) {
-    console.error('Error saving bookings to localStorage:', err);
+    const q = query(collection(db, BOOKINGS_COLLECTION), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    const items = snap.docs.map((d) => ({
+      ...(d.data() as AppointmentBooking),
+      id: d.id,
+    }));
+    memoryCache = items;
+    hasHydratedFromFirestore = true;
+    return items;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, BOOKINGS_COLLECTION);
   }
 }
 
@@ -187,13 +212,15 @@ function cleanTicketString(ticket: string): string {
   return ticket.trim().replace(/^#+/, '').replace(/^SB-?/i, '').trim().toUpperCase();
 }
 
-export function getBookingByTicket(ticket: string): AppointmentBooking | undefined {
+export function getBookingByTicket(
+  ticket: string,
+  sourceBookings: AppointmentBooking[] = memoryCache
+): AppointmentBooking | undefined {
   if (!ticket) return undefined;
   const rawClean = ticket.trim().toUpperCase();
   const digitsOrCode = cleanTicketString(ticket);
-  const all = getAllBookings();
 
-  return all.find((b) => {
+  return sourceBookings.find((b) => {
     const bRaw = b.ticketNumber.toUpperCase();
     const bClean = cleanTicketString(b.ticketNumber);
 
@@ -210,148 +237,229 @@ export function getBookingByTicket(ticket: string): AppointmentBooking | undefin
   });
 }
 
-export function getBookingsByPhone(rawPhone: string): AppointmentBooking[] {
+export function getBookingsByPhone(
+  rawPhone: string,
+  sourceBookings: AppointmentBooking[] = memoryCache
+): AppointmentBooking[] {
   const digits = rawPhone.replace(/\D/g, '');
   if (!digits) return [];
-  const all = getAllBookings();
-  return all.filter((b) => {
+  return sourceBookings.filter((b) => {
     const bDigits = b.clientPhone.replace(/\D/g, '');
     return bDigits.includes(digits) || digits.includes(bDigits);
   });
 }
 
-export function createNewBooking(
+/**
+ * Writes a new booking directly to Cloud Firestore (`bookings/{id}`).
+ */
+export async function createNewBooking(
   bookingData: Omit<AppointmentBooking, 'id' | 'ticketNumber' | 'createdAt' | 'status'> & {
     id?: string;
     ticketNumber?: string;
     status?: BookingStatus;
   }
-): AppointmentBooking {
-  const all = getAllBookings();
+): Promise<AppointmentBooking> {
   const nextNum = Math.floor(1000 + Math.random() * 9000);
   const ticketNumber = bookingData.ticketNumber || `#SB-${nextNum}`;
+  const id =
+    bookingData.id || `booking-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
   const newBooking: AppointmentBooking = {
     ...bookingData,
-    id: bookingData.id || `booking-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    id,
     ticketNumber,
     status: bookingData.status || 'pending',
     createdAt: new Date().toISOString(),
   };
 
-  const updated = [newBooking, ...all.filter((b) => b.id !== newBooking.id)];
-  saveAllBookings(updated);
-  return newBooking;
+  const path = `${BOOKINGS_COLLECTION}/${id}`;
+  try {
+    const payload = buildSanitizedBooking(newBooking);
+    await setDoc(doc(db, BOOKINGS_COLLECTION, id), payload);
+    memoryCache = [newBooking, ...memoryCache.filter((b) => b.id !== id)];
+    return newBooking;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
 }
 
-export function updateBookingStatus(
+/**
+ * Updates booking status (and optional adminNotes / rescheduledTo) directly in Cloud Firestore.
+ */
+export async function updateBookingStatus(
   id: string,
   newStatus: BookingStatus,
   adminNotes?: string,
   rescheduledTo?: { date: string; time: string }
-): AppointmentBooking | null {
-  const all = getAllBookings();
-  let found: AppointmentBooking | null = null;
-
-  const updated = all.map((b) => {
-    if (b.id === id) {
-      found = {
-        ...b,
-        status: newStatus,
-        adminNotes: adminNotes !== undefined ? adminNotes : b.adminNotes,
-        rescheduledTo: rescheduledTo !== undefined ? rescheduledTo : b.rescheduledTo,
-      };
-      return found;
+): Promise<AppointmentBooking | null> {
+  const path = `${BOOKINGS_COLLECTION}/${id}`;
+  try {
+    const updatePayload: Record<string, unknown> = {
+      status: newStatus,
+    };
+    if (adminNotes !== undefined) {
+      updatePayload.adminNotes = String(adminNotes).slice(0, 500);
     }
-    return b;
-  });
+    if (rescheduledTo !== undefined) {
+      updatePayload.rescheduledTo = {
+        date: String(rescheduledTo.date).slice(0, 20),
+        time: String(rescheduledTo.time).slice(0, 16),
+      };
+    }
 
-  if (found) {
-    saveAllBookings(updated);
+    await updateDoc(doc(db, BOOKINGS_COLLECTION, id), updatePayload);
+
+    const existing = memoryCache.find((b) => b.id === id);
+    if (!existing) return null;
+    const updatedBooking: AppointmentBooking = {
+      ...existing,
+      status: newStatus,
+      adminNotes: adminNotes !== undefined ? adminNotes : existing.adminNotes,
+      rescheduledTo: rescheduledTo !== undefined ? rescheduledTo : existing.rescheduledTo,
+    };
+    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    return updatedBooking;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
-  return found;
 }
 
-export function clientRescheduleResponse(
+/**
+ * Handles Client Acceptance or Rejection of a Proposed Rescheduled Time in Cloud Firestore.
+ */
+export async function clientRescheduleResponse(
   id: string,
   accepted: boolean
-): AppointmentBooking | null {
-  const all = getAllBookings();
-  let found: AppointmentBooking | null = null;
-
-  const updated = all.map((b) => {
-    if (b.id === id) {
-      if (accepted && b.rescheduledTo) {
-        found = {
-          ...b,
-          date: b.rescheduledTo.date,
-          timeSlot: b.rescheduledTo.time,
-          status: 'confirmed',
-          rescheduledTo: undefined,
-          adminNotes: (b.adminNotes ? `${b.adminNotes} | ` : '') + 'تم قبول التوقيت الجديد من الزبون بنجاح.',
-        };
-      } else {
-        found = {
-          ...b,
-          status: 'cancelled',
-          adminNotes: (b.adminNotes ? `${b.adminNotes} | ` : '') + 'تم رفض التوقيت المقترح وإلغاء الموعد من الزبون.',
-        };
-      }
-      return found;
+): Promise<AppointmentBooking | null> {
+  const path = `${BOOKINGS_COLLECTION}/${id}`;
+  try {
+    let existing = memoryCache.find((b) => b.id === id);
+    if (!existing) {
+      const snap = await getDoc(doc(db, BOOKINGS_COLLECTION, id));
+      if (!snap.exists()) return null;
+      existing = snap.data() as AppointmentBooking;
     }
-    return b;
-  });
 
-  if (found) {
-    saveAllBookings(updated);
-  }
-  return found;
-}
+    if (accepted && existing.rescheduledTo) {
+      const nextNotes = (
+        (existing.adminNotes ? `${existing.adminNotes} | ` : '') +
+        'تم قبول التوقيت الجديد من الزبون بنجاح.'
+      ).slice(0, 500);
 
-export function cancelClientBooking(id: string, reason?: string): AppointmentBooking | null {
-  const all = getAllBookings();
-  let found: AppointmentBooking | null = null;
+      await updateDoc(doc(db, BOOKINGS_COLLECTION, id), {
+        date: existing.rescheduledTo.date,
+        timeSlot: existing.rescheduledTo.time,
+        status: 'confirmed',
+        rescheduledTo: deleteField(),
+        adminNotes: nextNotes,
+      });
 
-  const updated = all.map((b) => {
-    if (b.id === id) {
-      found = {
-        ...b,
-        status: 'cancelled',
-        adminNotes: (b.adminNotes ? `${b.adminNotes} | ` : '') + (reason || 'ألغى الزبون الموعد عبر تذكرته الإلكترونية.'),
+      const updatedBooking: AppointmentBooking = {
+        ...existing,
+        date: existing.rescheduledTo.date,
+        timeSlot: existing.rescheduledTo.time,
+        status: 'confirmed',
+        rescheduledTo: undefined,
+        adminNotes: nextNotes,
       };
-      return found;
-    }
-    return b;
-  });
+      memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+      return updatedBooking;
+    } else {
+      const nextNotes = (
+        (existing.adminNotes ? `${existing.adminNotes} | ` : '') +
+        'تم رفض التوقيت المقترح وإلغاء الموعد من الزبون.'
+      ).slice(0, 500);
 
-  if (found) {
-    saveAllBookings(updated);
+      await updateDoc(doc(db, BOOKINGS_COLLECTION, id), {
+        status: 'cancelled',
+        adminNotes: nextNotes,
+      });
+
+      const updatedBooking: AppointmentBooking = {
+        ...existing,
+        status: 'cancelled',
+        adminNotes: nextNotes,
+      };
+      memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+      return updatedBooking;
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
-  return found;
 }
 
-export function updateBookingAdminNote(id: string, note: string): AppointmentBooking | null {
-  const all = getAllBookings();
-  let found: AppointmentBooking | null = null;
-  const updated = all.map((b) => {
-    if (b.id === id) {
-      found = { ...b, adminNotes: note };
-      return found;
+/**
+ * Cancels a booking directly from the client tracking page in Cloud Firestore.
+ */
+export async function cancelClientBooking(
+  id: string,
+  reason?: string
+): Promise<AppointmentBooking | null> {
+  const path = `${BOOKINGS_COLLECTION}/${id}`;
+  try {
+    let existing = memoryCache.find((b) => b.id === id);
+    if (!existing) {
+      const snap = await getDoc(doc(db, BOOKINGS_COLLECTION, id));
+      if (!snap.exists()) return null;
+      existing = snap.data() as AppointmentBooking;
     }
-    return b;
-  });
-  if (found) {
-    saveAllBookings(updated);
+
+    const nextNotes = (
+      (existing.adminNotes ? `${existing.adminNotes} | ` : '') +
+      (reason || 'ألغى الزبون الموعد عبر تذكرته الإلكترونية.')
+    ).slice(0, 500);
+
+    await updateDoc(doc(db, BOOKINGS_COLLECTION, id), {
+      status: 'cancelled',
+      adminNotes: nextNotes,
+    });
+
+    const updatedBooking: AppointmentBooking = {
+      ...existing,
+      status: 'cancelled',
+      adminNotes: nextNotes,
+    };
+    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    return updatedBooking;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
-  return found;
 }
 
-export function deleteBooking(id: string): boolean {
-  const all = getAllBookings();
-  const filtered = all.filter((b) => b.id !== id);
-  if (filtered.length !== all.length) {
-    saveAllBookings(filtered);
+/**
+ * Updates the admin response note for a booking directly in Cloud Firestore.
+ */
+export async function updateBookingAdminNote(
+  id: string,
+  note: string
+): Promise<AppointmentBooking | null> {
+  const path = `${BOOKINGS_COLLECTION}/${id}`;
+  try {
+    const cleanNote = String(note || '').slice(0, 500);
+    await updateDoc(doc(db, BOOKINGS_COLLECTION, id), {
+      adminNotes: cleanNote,
+    });
+
+    const existing = memoryCache.find((b) => b.id === id);
+    if (!existing) return null;
+    const updatedBooking: AppointmentBooking = { ...existing, adminNotes: cleanNote };
+    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    return updatedBooking;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Deletes a booking document from Cloud Firestore.
+ */
+export async function deleteBooking(id: string): Promise<boolean> {
+  const path = `${BOOKINGS_COLLECTION}/${id}`;
+  try {
+    await deleteDoc(doc(db, BOOKINGS_COLLECTION, id));
+    memoryCache = memoryCache.filter((b) => b.id !== id);
     return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
-  return false;
 }

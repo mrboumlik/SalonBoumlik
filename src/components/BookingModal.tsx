@@ -31,6 +31,7 @@ import {
   getDrinkLabel
 } from '../utils/calendar';
 import { useLanguage } from '../context/LanguageContext';
+import { createNewBooking } from '../utils/bookingStore';
 
 interface BookingModalProps {
   isOpen: boolean;
@@ -97,7 +98,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     { id: 'none', label: t.drinkNone, icon: '🚫' },
   ];
 
-  const handleSubmitBooking = (e: React.FormEvent) => {
+  const handleSubmitBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
 
@@ -114,31 +115,23 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
     const ticketRef = `SB-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const newBooking: AppointmentBooking = {
+    const newBooking = await createNewBooking({
       id: `booking-${Date.now()}`,
-      ticketNumber: ticketRef,
+      ticketNumber: `#${ticketRef}`,
       services: activeServices,
       barberId: chosenBarber.id,
       barberName: chosenBarber.name[lang] || chosenBarber.name.fr,
+      barberColor: chosenBarber.themeColor,
       drinkPreference,
       date: selectedDate || todayStr,
       timeSlot: selectedTime || '14:30',
       clientName: finalClientName,
-      clientPhone: finalClientPhone,
-      clientEmail: clientEmail.trim(),
+      clientPhone: finalClientPhone.length >= 6 ? finalClientPhone : '0600000000',
+      clientEmail: clientEmail.trim() || undefined,
       notes: notes.trim() || undefined,
       totalDurationMinutes: activeServices.reduce((acc, s) => acc + s.durationMinutes, 0),
-      createdAt: new Date().toISOString(),
       status: 'pending_quote',
-    };
-
-    // Save appointment locally so no booking is lost
-    try {
-      const storedHistory = JSON.parse(localStorage.getItem('salon_boumlik_appointments_history') || '[]');
-      localStorage.setItem('salon_boumlik_appointments_history', JSON.stringify([newBooking, ...storedHistory.slice(0, 49)]));
-    } catch (e) {
-      console.warn('Could not save booking locally:', e);
-    }
+    });
 
     setConfirmedBooking(newBooking);
     onAppointmentBooked(newBooking);

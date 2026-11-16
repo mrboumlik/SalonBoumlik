@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   Lock, 
@@ -42,7 +42,7 @@ import {
   playNotificationSound 
 } from '../utils/notifications';
 import { 
-  getAllBookings, 
+  subscribeToBookings,
   updateBookingStatus, 
   updateBookingAdminNote,
   deleteBooking 
@@ -108,11 +108,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
     return true; // enabled by default for admin awareness
   });
 
-  // Track known booking IDs to detect new bookings in real time
-  const [knownBookingIds, setKnownBookingIds] = useState<Set<string>>(() => {
-    const initial = getAllBookings();
-    return new Set(initial.map((b) => b.id));
-  });
+  // Track known booking IDs across real-time Firestore snapshot updates
+  const knownBookingIdsRef = useRef<Set<string>>(new Set());
+  const hasLoadedInitialSnapshotRef = useRef<boolean>(false);
+  const notificationsEnabledRef = useRef<boolean>(notificationsEnabled);
+
+  useEffect(() => {
+    notificationsEnabledRef.current = notificationsEnabled;
+  }, [notificationsEnabled]);
 
   // Date Views: 'today' or 'archive'
   const [activeTab, setActiveTab] = useState<'today' | 'archive'>('today');
@@ -141,28 +144,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  const reloadBookings = () => {
-    const all = getAllBookings();
-    setBookings(all);
-    const initialNotes: Record<string, string> = {};
-    all.forEach((b) => {
-      initialNotes[b.id] = b.adminNotes || '';
+  // Check for newly created bookings pushed by Firestore onSnapshot and trigger dual alert
+  const handleSnapshotBookings = (currentList: AppointmentBooking[]) => {
+    setBookings(currentList);
+
+    // Populate initial note values for any unseen bookings without overwriting active edits
+    setNotesState((prev) => {
+      const next = { ...prev };
+      currentList.forEach((b) => {
+        if (next[b.id] === undefined) {
+          next[b.id] = b.adminNotes || '';
+        }
+      });
+      return next;
     });
-    setNotesState(initialNotes);
-  };
 
-  // Check for newly created bookings and trigger dual alert
-  const checkAndNotifyNewBookings = (currentList: AppointmentBooking[]) => {
-    if (!notificationsEnabled) return;
+    if (!hasLoadedInitialSnapshotRef.current) {
+      hasLoadedInitialSnapshotRef.current = true;
+      knownBookingIdsRef.current = new Set(currentList.map((b) => b.id));
+      return;
+    }
 
-    setKnownBookingIds((prevKnown) => {
-      const newItems = currentList.filter((b) => !prevKnown.has(b.id));
-      if (newItems.length > 0) {
+    const prevKnown = knownBookingIdsRef.current;
+    const newItems = currentList.filter((b) => !prevKnown.has(b.id));
+    if (newItems.length > 0) {
+      newItems.forEach((nb) => prevKnown.add(nb.id));
+
+      if (notificationsEnabledRef.current) {
         newItems.forEach((nb) => {
-          // Play audible sound
           playNotificationSound();
 
-          // Native browser notification
           if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
             try {
               new Notification('موعد جديد • صالون بومليك', {
@@ -174,54 +185,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
             }
           }
 
-          // UI Toast alert
           sendDualAlert(
             '🔔 موعد جديد في الصالون!',
             {
               body: `حجز #${nb.ticketNumber} - الزبون ${nb.clientName} مع ${nb.barberName}`,
               type: 'info',
-              skipSound: true, // already played above
+              skipSound: true,
             }
           );
         });
-
-        // Add newly found IDs to known set
-        const updatedSet = new Set(prevKnown);
-        newItems.forEach((nb) => updatedSet.add(nb.id));
-        return updatedSet;
       }
-      return prevKnown;
-    });
+    }
   };
 
+  // Real-time Firestore synchronization via onSnapshot whenever staff session is active
   useEffect(() => {
-    if (isOpen && session) {
-      reloadBookings();
+    if (!session) {
+      hasLoadedInitialSnapshotRef.current = false;
+      knownBookingIdsRef.current = new Set();
+      return;
     }
-  }, [isOpen, session]);
 
-  // Real-time synchronization: listen to storage updates & poll every 3 seconds for new bookings
-  useEffect(() => {
-    const handleUpdate = () => {
-      const current = getAllBookings();
-      setBookings(current);
-      checkAndNotifyNewBookings(current);
-    };
-
-    window.addEventListener('salon_bookings_updated', handleUpdate);
-    const pollInterval = setInterval(() => {
-      if (session) {
-        const current = getAllBookings();
-        setBookings(current);
-        checkAndNotifyNewBookings(current);
+    const unsubscribe = subscribeToBookings(
+      (liveBookings) => {
+        handleSnapshotBookings(liveBookings);
+      },
+      (error) => {
+        console.error('AdminDashboard Firestore stream error:', error);
       }
-    }, 3000);
+    );
 
     return () => {
-      window.removeEventListener('salon_bookings_updated', handleUpdate);
-      clearInterval(pollInterval);
+      unsubscribe();
     };
-  }, [session, notificationsEnabled]);
+  }, [session]);
 
   // Handler to open scanner with instant browser native permission request (navigator.mediaDevices.getUserMedia)
   const handleOpenScanner = async () => {
@@ -362,7 +359,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
       setSession(newSession);
       setPinError(false);
       setPinInput('');
-      reloadBookings();
 
       // Trigger Web Notification permission prompt immediately upon successfully logging into /#admin
       requestWebNotificationPermission().then((permission) => {
@@ -432,16 +428,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
     }
   };
 
-  const handleConfirm = (id: string) => {
-    updateBookingStatus(id, 'confirmed', `Confirmé par ${session?.name || 'le salon'}. Votre créneau est réservé.`);
-    reloadBookings();
+  const handleConfirm = async (id: string) => {
+    try {
+      await updateBookingStatus(
+        id,
+        'confirmed',
+        `Confirmé par ${session?.name || 'le salon'}. Votre créneau est réservé.`
+      );
+    } catch (err) {
+      console.error('Failed to confirm booking:', err);
+      sendDualAlert('خطأ في التحديث', {
+        body: 'تعذر تحديث حالة الموعد في قاعدة البيانات.',
+        type: 'warning',
+      });
+    }
   };
 
-  const handleReject = (id: string) => {
-    const reason = window.prompt('Motif du refus ou créneau complet (optionnel) :', 'Créneau indisponible, veuillez choisir un autre horaire.');
+  const handleReject = async (id: string) => {
+    const reason = window.prompt(
+      'Motif du refus ou créneau complet (optionnel) :',
+      'Créneau indisponible, veuillez choisir un autre horaire.'
+    );
     if (reason !== null) {
-      updateBookingStatus(id, 'rejected', reason || 'Non disponible');
-      reloadBookings();
+      try {
+        await updateBookingStatus(id, 'rejected', reason || 'Non disponible');
+      } catch (err) {
+        console.error('Failed to reject booking:', err);
+        sendDualAlert('خطأ في التحديث', {
+          body: 'تعذر تحديث حالة الموعد في قاعدة البيانات.',
+          type: 'warning',
+        });
+      }
     }
   };
 
@@ -452,26 +469,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
     setRescheduleNote('Décalé pour vous éviter l’attente au salon.');
   };
 
-  const handleSaveReschedule = (e: React.FormEvent) => {
+  const handleSaveReschedule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reschedulingBooking) return;
 
-    updateBookingStatus(
-      reschedulingBooking.id,
-      'rescheduled',
-      rescheduleNote,
-      { date: newDate, time: newTime }
-    );
+    const targetId = reschedulingBooking.id;
     setReschedulingBooking(null);
-    reloadBookings();
+    try {
+      await updateBookingStatus(targetId, 'rescheduled', rescheduleNote, {
+        date: newDate,
+        time: newTime,
+      });
+    } catch (err) {
+      console.error('Failed to reschedule booking:', err);
+      sendDualAlert('خطأ في تعديل الموعد', {
+        body: 'تعذر حفظ التوقيت الجديد في قاعدة البيانات.',
+        type: 'warning',
+      });
+    }
   };
 
-  const handleSaveClientNote = (bookingId: string) => {
+  const handleSaveClientNote = async (bookingId: string) => {
     const note = notesState[bookingId] || '';
-    updateBookingAdminNote(bookingId, note);
-    setSavedNoteId(bookingId);
-    setTimeout(() => setSavedNoteId(null), 2500);
-    reloadBookings();
+    try {
+      await updateBookingAdminNote(bookingId, note);
+      setSavedNoteId(bookingId);
+      setTimeout(() => setSavedNoteId(null), 2500);
+    } catch (err) {
+      console.error('Failed to save admin note:', err);
+      sendDualAlert('خطأ في الحفظ', {
+        body: 'تعذر حفظ الملاحظة للزبون.',
+        type: 'warning',
+      });
+    }
   };
 
   const formatClientWhatsAppPhone = (phone: string) => {

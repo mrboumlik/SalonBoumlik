@@ -72,6 +72,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
   const [copiedTicket, setCopiedTicket] = useState(false);
   const [formError, setFormError] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const ticketCardRef = useRef<HTMLDivElement>(null);
 
@@ -142,61 +143,76 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
     return true;
   };
 
-  // Single Primary Submit Action: Confirm Booking & Get Ticket (Routes to Database first)
-  const handleConfirmBooking = (e: React.FormEvent) => {
+  // Single Primary Submit Action: Confirm Booking & Get Ticket (Routes directly to Cloud Firestore)
+  const handleConfirmBooking = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!validateForm()) return;
 
-    const newBooking = createNewBooking({
-      services: [],
-      cartItemsSummary: pricingResult.items,
-      barberId: selectedBarber.id,
-      barberName: barberNameLocalized,
-      barberColor: selectedBarber.themeColor || '#D97706',
-      date,
-      timeSlot,
-      clientName: clientName.trim(),
-      clientPhone: clientPhone.trim(),
-      clientEmail: clientEmail.trim() || undefined,
-      clientLanguage: lang,
-      notes: [
-        notes.trim(),
-        includeWaitingSkip ? (lang === 'ar' ? 'خدمة تفادي الانتظار (+10 دراهم)' : 'Service Coupe-File (+10 MAD)') : ''
-      ].filter(Boolean).join(' | '),
-      originalTotalMAD: pricingResult.originalSubtotal + waitingSkipFee,
-      finalTotalMAD: grandTotal,
-      totalSavingsMAD: pricingResult.totalSavings,
-      bookingMethod: 'site',
-      status: 'pending',
-    });
+    setIsSubmitting(true);
+    setFormError('');
 
     try {
-      confetti({
-        particleCount: 80,
-        spread: 90,
-        origin: { y: 0.6 },
-        colors: ['#eab308', '#dc2626', '#ffffff', '#2563eb'],
+      const newBooking = await createNewBooking({
+        services: [],
+        cartItemsSummary: pricingResult.items,
+        barberId: selectedBarber.id,
+        barberName: barberNameLocalized,
+        barberColor: selectedBarber.themeColor || '#D97706',
+        date,
+        timeSlot,
+        clientName: clientName.trim(),
+        clientPhone: clientPhone.trim(),
+        clientEmail: clientEmail.trim() || undefined,
+        clientLanguage: lang,
+        notes: [
+          notes.trim(),
+          includeWaitingSkip ? (lang === 'ar' ? 'خدمة تفادي الانتظار (+10 دراهم)' : 'Service Coupe-File (+10 MAD)') : ''
+        ].filter(Boolean).join(' | '),
+        originalTotalMAD: pricingResult.originalSubtotal + waitingSkipFee,
+        finalTotalMAD: grandTotal,
+        totalSavingsMAD: pricingResult.totalSavings,
+        bookingMethod: 'site',
+        status: 'pending',
       });
-    } catch {
-      // ignore
-    }
 
-    setCreatedBooking(newBooking);
-    if (onBookingConfirmed) onBookingConfirmed(newBooking);
-
-    // Request Web Notification permission for clients immediately AFTER digital ticket is generated
-    requestWebNotificationPermission().then((permission) => {
-      if (permission === 'granted') {
-        sendWebNotification(
-          lang === 'ar' ? 'تم تسجيل تذكرتك بنجاح • صالون بومليك' : 'Réservation Confirmée • Salon Boumlik',
-          {
-            body: lang === 'ar'
-              ? `تذكرتك: ${newBooking.ticketNumber} مع ${newBooking.barberName} بتاريخ ${newBooking.date} الساعة ${newBooking.timeSlot}`
-              : `Billet ${newBooking.ticketNumber} avec ${newBooking.barberName} le ${newBooking.date} à ${newBooking.timeSlot}`,
-          }
-        );
+      try {
+        confetti({
+          particleCount: 80,
+          spread: 90,
+          origin: { y: 0.6 },
+          colors: ['#eab308', '#dc2626', '#ffffff', '#2563eb'],
+        });
+      } catch {
+        // ignore
       }
-    });
+
+      setCreatedBooking(newBooking);
+      if (onBookingConfirmed) onBookingConfirmed(newBooking);
+
+      // Request Web Notification permission for clients immediately AFTER digital ticket is generated
+      requestWebNotificationPermission().then((permission) => {
+        if (permission === 'granted') {
+          sendWebNotification(
+            lang === 'ar' ? 'تم تسجيل تذكرتك بنجاح • صالون بومليك' : 'Réservation Confirmée • Salon Boumlik',
+            {
+              body: lang === 'ar'
+                ? `تذكرتك: ${newBooking.ticketNumber} مع ${newBooking.barberName} بتاريخ ${newBooking.date} الساعة ${newBooking.timeSlot}`
+                : `Billet ${newBooking.ticketNumber} avec ${newBooking.barberName} le ${newBooking.date} à ${newBooking.timeSlot}`,
+            }
+          );
+        }
+      });
+    } catch (err) {
+      console.error('Failed to save booking to Firestore:', err);
+      setFormError(
+        lang === 'ar'
+          ? 'تعذر تسجيل الحجز في السحابة حالياً. يرجى المحاولة مرة أخرى.'
+          : 'Impossible d’enregistrer la réservation sur le serveur. Veuillez réessayer.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCopyTicket = (ticket: string) => {
@@ -637,10 +653,15 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
             <button
               type="button"
               onClick={handleConfirmBooking}
-              className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-black font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-xl shadow-amber-500/25 active:scale-[0.99] transition-all cursor-pointer"
+              disabled={isSubmitting}
+              className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 disabled:opacity-60 disabled:cursor-wait text-black font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-xl shadow-amber-500/25 active:scale-[0.99] transition-all cursor-pointer"
             >
               <Ticket className="w-5 h-5 text-black" />
-              <span>{ui.btnSubmit}</span>
+              <span>
+                {isSubmitting
+                  ? (lang === 'ar' ? 'جاري تسجيل الحجز...' : 'Enregistrement en cours...')
+                  : ui.btnSubmit}
+              </span>
             </button>
           </div>
 

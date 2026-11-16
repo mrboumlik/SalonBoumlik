@@ -23,6 +23,7 @@ import {
 import { Html5Qrcode } from 'html5-qrcode';
 import { useLanguage } from '../context/LanguageContext';
 import { 
+  subscribeToBookings,
   getBookingByTicket, 
   getBookingsByPhone, 
   getAllBookings,
@@ -53,39 +54,41 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
   const [hasSearched, setHasSearched] = useState(false);
   const [copiedTicket, setCopiedTicket] = useState<string | null>(null);
 
+  // Live bookings array synced in real time via Firestore onSnapshot
+  const [liveBookings, setLiveBookings] = useState<AppointmentBooking[]>(() => getAllBookings());
+  const [isSyncingFirestore, setIsSyncingFirestore] = useState<boolean>(true);
+
   // Client QR Scanner state
   const [isClientScannerOpen, setIsClientScannerOpen] = useState(false);
   const [clientScannerError, setClientScannerError] = useState<string | null>(null);
   const [notifStatus, setNotifStatus] = useState<NotificationPermission>('default');
 
-  const performSearch = (query: string) => {
+  const performSearch = (query: string, source: AppointmentBooking[] = liveBookings) => {
     const q = query.trim();
     if (!q) {
-      const all = getAllBookings();
-      setFoundBookings(all.slice(0, 5));
+      setFoundBookings(source.slice(0, 5));
       setHasSearched(false);
       return;
     }
 
     setHasSearched(true);
     // 1. Exact or clean ticket match
-    const byTicket = getBookingByTicket(q);
+    const byTicket = getBookingByTicket(q, source);
     if (byTicket) {
       setFoundBookings([byTicket]);
       return;
     }
 
     // 2. Phone match
-    const byPhone = getBookingsByPhone(q);
+    const byPhone = getBookingsByPhone(q, source);
     if (byPhone.length > 0) {
       setFoundBookings(byPhone);
       return;
     }
 
     // 3. Loose search by ticket, name, barber, or notes
-    const all = getAllBookings();
     const cleanQ = q.toLowerCase().replace(/^#+/, '').replace(/^sb-?/i, '');
-    const loose = all.filter((b) => {
+    const loose = source.filter((b) => {
       const tNorm = b.ticketNumber.toLowerCase().replace(/^#+/, '').replace(/^sb-?/i, '');
       return (
         tNorm.includes(cleanQ) ||
@@ -102,34 +105,41 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     if (isOpen) {
       if (initialSearch) {
         setSearchTerm(initialSearch);
-        performSearch(initialSearch);
       } else {
-        // default to recent booking if exists
-        const all = getAllBookings();
-        if (all.length > 0) {
-          setFoundBookings([all[0]]);
-          setHasSearched(false);
-        }
+        setHasSearched(false);
       }
     }
   }, [isOpen, initialSearch]);
 
-  // Real-time synchronization: listen to storage updates
+  // Real-time Firestore synchronization via onSnapshot whenever modal is open
   useEffect(() => {
-    const handleUpdate = () => {
-      if (searchTerm) {
-        performSearch(searchTerm);
-      } else {
-        const all = getAllBookings();
-        if (all.length > 0) {
-          setFoundBookings([all[0]]);
-        }
-      }
-    };
+    if (!isOpen) return;
+    setIsSyncingFirestore(true);
 
-    window.addEventListener('salon_bookings_updated', handleUpdate);
-    return () => window.removeEventListener('salon_bookings_updated', handleUpdate);
-  }, [searchTerm]);
+    const unsubscribe = subscribeToBookings(
+      (snapshotBookings) => {
+        setLiveBookings(snapshotBookings);
+        setIsSyncingFirestore(false);
+      },
+      (error) => {
+        console.error('TrackBookingModal Firestore stream error:', error);
+        setIsSyncingFirestore(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isOpen]);
+
+  // Re-evaluate displayed results whenever live Firestore bookings or searchTerm update
+  useEffect(() => {
+    if (!isOpen) return;
+    if (searchTerm.trim()) {
+      performSearch(searchTerm, liveBookings);
+    } else {
+      setFoundBookings(liveBookings.length > 0 ? [liveBookings[0]] : []);
+      setHasSearched(false);
+    }
+  }, [isOpen, liveBookings, searchTerm]);
 
   // Notification permission check on mount
   useEffect(() => {
@@ -271,45 +281,54 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     setTimeout(() => setCopiedTicket(null), 2000);
   };
 
-  const handleClientRescheduleDecision = (bookingId: string, accepted: boolean) => {
-    clientRescheduleResponse(bookingId, accepted);
-    if (accepted) {
+  const handleClientRescheduleDecision = async (bookingId: string, accepted: boolean) => {
+    try {
+      await clientRescheduleResponse(bookingId, accepted);
+      if (accepted) {
+        sendDualAlert(
+          lang === 'ar' ? 'تم قبول الموعد الجديد وقفل الكرسي ✅' : 'Nouvel horaire accepté ✅',
+          {
+            body: lang === 'ar' ? 'تم تأكيد موعدك بالتوقيت الجديد بنجاح في صالون بومليك.' : 'Votre créneau est confirmé avec succès.',
+            type: 'success',
+          }
+        );
+      } else {
+        sendDualAlert(
+          lang === 'ar' ? 'تم رفض الموعد وتحرير الوقت' : 'Rendez-vous annulé',
+          {
+            body: lang === 'ar' ? 'تم إلغاء الموعد وتحرير الكرسي لزبائن آخرين.' : 'Le créneau a été libéré.',
+            type: 'warning',
+          }
+        );
+      }
+    } catch (err) {
+      console.error('Failed to respond to reschedule:', err);
       sendDualAlert(
-        lang === 'ar' ? 'تم قبول الموعد الجديد وقفل الكرسي ✅' : 'Nouvel horaire accepté ✅',
+        lang === 'ar' ? 'تعذر تحديث الموعد' : 'Erreur de mise à jour',
         {
-          body: lang === 'ar' ? 'تم تأكيد موعدك بالتوقيت الجديد بنجاح في صالون بومليك.' : 'Votre créneau est confirmé avec succès.',
-          type: 'success',
-        }
-      );
-    } else {
-      sendDualAlert(
-        lang === 'ar' ? 'تم رفض الموعد وتحرير الوقت' : 'Rendez-vous annulé',
-        {
-          body: lang === 'ar' ? 'تم إلغاء الموعد وتحرير الكرسي لزبائن آخرين.' : 'Le créneau a été libéré.',
+          body: lang === 'ar' ? 'يرجى المحاولة مرة أخرى.' : 'Veuillez réessayer.',
           type: 'warning',
         }
       );
     }
-
-    if (searchTerm) {
-      performSearch(searchTerm);
-    } else {
-      const all = getAllBookings();
-      setFoundBookings(all.slice(0, 5));
-    }
   };
 
-  const handleClientCancel = (booking: AppointmentBooking) => {
+  const handleClientCancel = async (booking: AppointmentBooking) => {
     const confirmMsg = lang === 'ar'
       ? 'هل أنت متأكد من رغبتك في إلغاء هذا الموعد وتحرير الوقت لزبون آخر؟'
       : 'Êtes-vous sûr de vouloir annuler ce rendez-vous ?';
     if (window.confirm(confirmMsg)) {
-      cancelClientBooking(booking.id, 'قام الزبون بإلغاء الموعد عبر صفحة التتبع.');
-      if (searchTerm) {
-        performSearch(searchTerm);
-      } else {
-        const all = getAllBookings();
-        setFoundBookings(all.slice(0, 5));
+      try {
+        await cancelClientBooking(booking.id, 'قام الزبون بإلغاء الموعد عبر صفحة التتبع.');
+      } catch (err) {
+        console.error('Failed to cancel booking:', err);
+        sendDualAlert(
+          lang === 'ar' ? 'تعذر إلغاء الموعد' : 'Erreur d’annulation',
+          {
+            body: lang === 'ar' ? 'يرجى المحاولة مرة أخرى.' : 'Veuillez réessayer.',
+            type: 'warning',
+          }
+        );
       }
     }
   };
@@ -544,7 +563,12 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
         {/* Results List */}
         <div className="p-6 pt-3 space-y-4 max-h-[60vh] overflow-y-auto">
-          {foundBookings.length === 0 && hasSearched ? (
+          {isSyncingFirestore && foundBookings.length === 0 ? (
+            <div className="text-center py-8 text-zinc-400 text-xs">
+              <RefreshCw className="w-7 h-7 text-amber-400 mx-auto mb-2 animate-spin" />
+              <p>{lang === 'ar' ? 'جاري جلب التذاكر من السحابة...' : 'Synchronisation en cours...'}</p>
+            </div>
+          ) : foundBookings.length === 0 && hasSearched ? (
             <div className="text-center py-8 text-zinc-400 text-xs">
               <AlertCircle className="w-8 h-8 text-amber-500/80 mx-auto mb-2" />
               <p>{ui.noResults}</p>

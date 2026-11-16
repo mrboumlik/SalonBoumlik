@@ -1,0 +1,154 @@
+{
+  "entities": {
+    "Booking": {
+      "title": "Booking",
+      "description": "A barbershop appointment booking and digital ticket at Salon Boumlik",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique booking document identifier",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ticketNumber": {
+          "type": "string",
+          "description": "Human-readable ticket code (e.g., #SB-1024)",
+          "minLength": 3,
+          "maxLength": 32
+        },
+        "barberId": {
+          "type": "string",
+          "description": "Identifier of the assigned barber",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "barberName": {
+          "type": "string",
+          "description": "Display name of the assigned barber",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "barberColor": {
+          "type": "string",
+          "description": "Hex color associated with the barber",
+          "maxLength": 20
+        },
+        "date": {
+          "type": "string",
+          "description": "Appointment date in YYYY-MM-DD format",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "timeSlot": {
+          "type": "string",
+          "description": "Scheduled time slot in HH:MM format",
+          "minLength": 3,
+          "maxLength": 16
+        },
+        "clientName": {
+          "type": "string",
+          "description": "Client full name",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "clientPhone": {
+          "type": "string",
+          "description": "Client phone / WhatsApp number",
+          "minLength": 6,
+          "maxLength": 40
+        },
+        "clientEmail": {
+          "type": "string",
+          "description": "Optional client email address",
+          "maxLength": 120
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional client notes or haircut preferences",
+          "maxLength": 500
+        },
+        "services": {
+          "type": "array",
+          "description": "Legacy service objects array"
+        },
+        "cartItemsSummary": {
+          "type": "array",
+          "description": "Selected service cart items with bundle pricing details"
+        },
+        "originalTotalMAD": {
+          "type": "number",
+          "description": "Subtotal before discounts in MAD"
+        },
+        "finalTotalMAD": {
+          "type": "number",
+          "description": "Final total payable in MAD"
+        },
+        "totalSavingsMAD": {
+          "type": "number",
+          "description": "Discount savings in MAD"
+        },
+        "bookingMethod": {
+          "type": "string",
+          "enum": ["site", "whatsapp"],
+          "description": "Channel used for booking"
+        },
+        "drinkPreference": {
+          "type": "string",
+          "enum": ["coffee", "tea", "none"],
+          "description": "Optional drink preference"
+        },
+        "totalDurationMinutes": {
+          "type": "number",
+          "description": "Estimated service duration in minutes"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "pending_quote", "confirmed", "rescheduled", "rejected", "cancelled"],
+          "description": "Current appointment workflow status"
+        },
+        "rescheduledTo": {
+          "type": "object",
+          "description": "Proposed new date and time when status is rescheduled"
+        },
+        "clientLanguage": {
+          "type": "string",
+          "enum": ["fr", "ar", "en", "amz", "es"],
+          "description": "Client preferred UI language"
+        },
+        "adminNotes": {
+          "type": "string",
+          "description": "Staff/barber response note visible to client",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when booking was created",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "ticketNumber",
+        "barberId",
+        "barberName",
+        "date",
+        "timeSlot",
+        "clientName",
+        "clientPhone",
+        "status",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/bookings/{bookingId}": {
+      "schema": {
+        "$ref": "#/entities/Booking"
+      },
+      "description": "Real-time cloud collection storing all Salon Boumlik client appointments and digital tickets"
+    }
+  }
+}

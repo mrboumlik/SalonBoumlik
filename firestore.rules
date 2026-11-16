@@ -1,0 +1,103 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny all unspecified paths by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Strict schema & size validation blueprint for Booking documents
+    function isValidBooking(data) {
+      return data.keys().hasAll([
+        'id', 'ticketNumber', 'barberId', 'barberName',
+        'date', 'timeSlot', 'clientName', 'clientPhone',
+        'status', 'createdAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'ticketNumber', 'barberId', 'barberName', 'barberColor',
+        'date', 'timeSlot', 'clientName', 'clientPhone', 'clientEmail',
+        'notes', 'services', 'cartItemsSummary', 'originalTotalMAD',
+        'finalTotalMAD', 'totalSavingsMAD', 'bookingMethod',
+        'drinkPreference', 'totalDurationMinutes', 'status',
+        'rescheduledTo', 'clientLanguage', 'adminNotes', 'createdAt'
+      ])
+      && isValidId(data.id)
+      && data.ticketNumber is string && data.ticketNumber.size() >= 3 && data.ticketNumber.size() <= 32
+      && data.barberId is string && data.barberId.size() >= 1 && data.barberId.size() <= 64
+      && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
+      && (!('barberColor' in data) || (data.barberColor is string && data.barberColor.size() <= 20))
+      && data.date is string && data.date.size() >= 8 && data.date.size() <= 20
+      && data.timeSlot is string && data.timeSlot.size() >= 3 && data.timeSlot.size() <= 16
+      && data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 120
+      && data.clientPhone is string && data.clientPhone.size() >= 6 && data.clientPhone.size() <= 40
+      && (!('clientEmail' in data) || (data.clientEmail is string && data.clientEmail.size() <= 120))
+      && (!('notes' in data) || (data.notes is string && data.notes.size() <= 500))
+      && (!('services' in data) || (data.services is list && data.services.size() <= 20))
+      && (!('cartItemsSummary' in data) || (data.cartItemsSummary is list && data.cartItemsSummary.size() <= 20))
+      && (!('originalTotalMAD' in data) || (data.originalTotalMAD is number && data.originalTotalMAD >= 0 && data.originalTotalMAD <= 50000))
+      && (!('finalTotalMAD' in data) || (data.finalTotalMAD is number && data.finalTotalMAD >= 0 && data.finalTotalMAD <= 50000))
+      && (!('totalSavingsMAD' in data) || (data.totalSavingsMAD is number && data.totalSavingsMAD >= 0 && data.totalSavingsMAD <= 50000))
+      && (!('bookingMethod' in data) || data.bookingMethod in ['site', 'whatsapp'])
+      && (!('drinkPreference' in data) || data.drinkPreference in ['coffee', 'tea', 'none'])
+      && (!('totalDurationMinutes' in data) || (data.totalDurationMinutes is number && data.totalDurationMinutes >= 0 && data.totalDurationMinutes <= 1000))
+      && data.status in ['pending', 'pending_quote', 'confirmed', 'rescheduled', 'rejected', 'cancelled']
+      && (!('rescheduledTo' in data) || (
+        data.rescheduledTo is map
+        && data.rescheduledTo.keys().hasAll(['date', 'time'])
+        && data.rescheduledTo.keys().hasOnly(['date', 'time'])
+        && data.rescheduledTo.date is string && data.rescheduledTo.date.size() <= 20
+        && data.rescheduledTo.time is string && data.rescheduledTo.time.size() <= 16
+      ))
+      && (!('clientLanguage' in data) || data.clientLanguage in ['fr', 'ar', 'en', 'amz', 'es'])
+      && (!('adminNotes' in data) || (data.adminNotes is string && data.adminNotes.size() <= 500))
+      && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64;
+    }
+
+    // Connection check document for app boot health validation
+    match /test/connection {
+      allow get: if request.time != null;
+    }
+
+    // Bookings collection: real-time synchronized appointments & tickets
+    match /bookings/{bookingId} {
+      allow get: if isValidId(bookingId) && request.time != null;
+      allow list: if request.time != null;
+
+      // Clients can submit new bookings with initial pending status
+      allow create: if isValidId(bookingId)
+        && isValidBooking(incoming())
+        && incoming().id == bookingId
+        && incoming().status in ['pending', 'pending_quote'];
+
+      // Status, reschedule proposals, dates/times, and admin notes can be updated while keeping core identity immutable
+      allow update: if isValidId(bookingId)
+        && isValidBooking(incoming())
+        && incoming().id == existing().id
+        && incoming().ticketNumber == existing().ticketNumber
+        && incoming().createdAt == existing().createdAt
+        && incoming().barberId == existing().barberId
+        && incoming().clientName == existing().clientName
+        && incoming().clientPhone == existing().clientPhone
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'adminNotes', 'rescheduledTo', 'date', 'timeSlot'
+        ]);
+
+      allow delete: if isValidId(bookingId) && request.time != null;
+    }
+  }
+}
