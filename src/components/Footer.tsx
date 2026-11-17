@@ -9,10 +9,13 @@ import {
   MessageCircle, 
   ShieldCheck,
   Lock,
-  Ticket
+  Ticket,
+  ExternalLink,
+  Star
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
+import { useSalonProfileSettings } from '../utils/salonSettingsStore';
 
 interface FooterProps {
   onOpenBooking: () => void;
@@ -26,6 +29,7 @@ export const Footer: React.FC<FooterProps> = ({
   onOpenAdmin 
 }) => {
   const { lang, t } = useLanguage();
+  const salonSettings = useSalonProfileSettings();
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -144,12 +148,24 @@ export const Footer: React.FC<FooterProps> = ({
               )}
 
               <a
-                href="https://g.page/r/CZWdoYsTiwy_EAE/review"
+                href={salonSettings.googleReviewUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-semibold text-center transition-colors"
+                className="flex items-center justify-center gap-1.5 p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-amber-300 text-xs font-semibold text-center transition-colors"
               >
-                ★ {lang === 'ar' ? 'تقييم 5 نجوم على Google' : 'Laisser un Avis Google'}
+                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                <span>{lang === 'ar' ? 'ملف Google Business & تقييم 5★' : 'Google Business • Laisser un Avis 5★'}</span>
+              </a>
+
+              <a
+                href={salonSettings.googleMapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1.5 p-2.5 rounded-xl bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/30 text-blue-300 text-xs font-bold text-center transition-colors"
+              >
+                <MapPin className="w-3.5 h-3.5 text-blue-400" />
+                <span>{lang === 'ar' ? 'فتح الاتجاهات على Google Maps' : 'Itinéraire Google Maps'}</span>
+                <ExternalLink className="w-3 h-3" />
               </a>
             </div>
           </div>
@@ -163,7 +179,7 @@ export const Footer: React.FC<FooterProps> = ({
               <div className="flex items-start gap-2">
                 <MapPin className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
                 <a 
-                  href={SALON_INFO.googleMapsDirectionsUrl}
+                  href={salonSettings.googleMapsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-blue-400 transition-colors"

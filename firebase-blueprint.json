@@ -64,6 +64,11 @@
           "description": "Optional client email address",
           "maxLength": 120
         },
+        "clientNotes": {
+          "type": "string",
+          "description": "Optional special requests or grooming preferences entered by client",
+          "maxLength": 400
+        },
         "notes": {
           "type": "string",
           "description": "Optional client notes or haircut preferences",
@@ -105,7 +110,7 @@
         },
         "status": {
           "type": "string",
-          "enum": ["pending", "pending_quote", "confirmed", "rescheduled", "rejected", "cancelled"],
+          "enum": ["pending", "pending_quote", "confirmed", "rescheduled", "completed", "no_show", "rejected", "cancelled"],
           "description": "Current appointment workflow status"
         },
         "rescheduledTo": {
@@ -121,6 +126,33 @@
           "type": "string",
           "description": "Staff/barber response note visible to client",
           "maxLength": 500
+        },
+        "cihReceiptName": {
+          "type": "string",
+          "description": "Optional filename of uploaded CIH Bank transfer receipt",
+          "maxLength": 160
+        },
+        "cihReceiptPreview": {
+          "type": "string",
+          "description": "Compressed base64 image preview of CIH transfer receipt (<=200KB)",
+          "maxLength": 200000
+        },
+        "cihReceiptUploadedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when CIH receipt was attached",
+          "maxLength": 64
+        },
+        "loyaltyRewardApplied": {
+          "type": "string",
+          "description": "Optional loyalty reward label applied by admin",
+          "maxLength": 200
+        },
+        "attendanceConfirmedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when admin confirmed client attendance for verified loyalty progress",
+          "maxLength": 64
         },
         "createdAt": {
           "type": "string",
@@ -141,6 +173,313 @@
         "status",
         "createdAt"
       ]
+    },
+    "BarberSchedule": {
+      "title": "BarberSchedule",
+      "description": "Barber shift, off-days, and break configuration",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "barberId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "offWeekdays": {
+          "type": "array",
+          "description": "Weekday indices (0=Sun..6=Sat) when barber is off"
+        },
+        "offDates": {
+          "type": "array",
+          "description": "Specific YYYY-MM-DD dates when barber is unavailable"
+        },
+        "breakSlots": {
+          "type": "array",
+          "description": "Recurring HH:MM slots blocked for breaks"
+        },
+        "dateSlotBlocks": {
+          "type": "array",
+          "description": "Specific YYYY-MM-DD@HH:MM blocked slots"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "barberId",
+        "offWeekdays",
+        "offDates",
+        "breakSlots",
+        "dateSlotBlocks",
+        "updatedAt"
+      ]
+    },
+    "CrmClient": {
+      "title": "CrmClient",
+      "description": "CRM loyalty, VIP status, no-show counter, and blacklist controls per client phone",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "normalizedPhone": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 32
+        },
+        "phoneDisplay": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 40
+        },
+        "clientName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "isVip": {
+          "type": "boolean"
+        },
+        "noShowCount": {
+          "type": "number"
+        },
+        "isBanned": {
+          "type": "boolean"
+        },
+        "banReason": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "freeWashesRedeemed": {
+          "type": "number"
+        },
+        "customDiscountMAD": {
+          "type": "number"
+        },
+        "verifiedVisits": {
+          "type": "number",
+          "description": "Verified attendance count incremented only when admin confirms booking completion"
+        },
+        "rewardNote": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "normalizedPhone",
+        "phoneDisplay",
+        "clientName",
+        "isVip",
+        "noShowCount",
+        "isBanned",
+        "freeWashesRedeemed",
+        "customDiscountMAD",
+        "updatedAt"
+      ]
+    },
+    "WaitlistEntry": {
+      "title": "WaitlistEntry",
+      "description": "Smart waitlist registration when desired slots are fully booked",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "barberId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "barberName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "date": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "preferredTime": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32
+        },
+        "clientName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "clientPhone": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 40
+        },
+        "servicesSummary": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "status": {
+          "type": "string",
+          "enum": ["waiting", "notified", "converted", "cancelled"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "barberId",
+        "barberName",
+        "date",
+        "preferredTime",
+        "clientName",
+        "clientPhone",
+        "servicesSummary",
+        "status",
+        "createdAt"
+      ]
+    },
+    "SalonSettings": {
+      "title": "SalonSettings",
+      "description": "Public Google Maps and Google Business Profile configuration for Salon Boumlik",
+      "type": "object",
+      "properties": {
+        "googleMapsUrl": {
+          "type": "string",
+          "description": "Direct Google Maps navigation URL",
+          "minLength": 10,
+          "maxLength": 500
+        },
+        "googleReviewUrl": {
+          "type": "string",
+          "description": "Direct Google Business Profile review URL",
+          "minLength": 10,
+          "maxLength": 500
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of last settings update",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "googleMapsUrl",
+        "googleReviewUrl",
+        "updatedAt"
+      ]
+    },
+    "ShiftRequest": {
+      "title": "ShiftRequest",
+      "description": "Barber time-off, slot break, or shift-swap request reviewed by the Master Admin",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "barberId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "barberName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "requestType": {
+          "type": "string",
+          "enum": ["day_off", "day_open", "slot_block", "slot_open", "shift_swap"]
+        },
+        "targetDate": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "targetSlots": {
+          "type": "array",
+          "description": "Specific HH:MM slots requested for block or swap (up to 12)"
+        },
+        "swapWithBarberId": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "swapWithBarberName": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "swapDate": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"]
+        },
+        "reviewerNote": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "reviewedBy": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "barberId",
+        "barberName",
+        "requestType",
+        "targetDate",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -149,6 +488,36 @@
         "$ref": "#/entities/Booking"
       },
       "description": "Real-time cloud collection storing all Salon Boumlik client appointments and digital tickets"
+    },
+    "/barber_schedules/{scheduleId}": {
+      "schema": {
+        "$ref": "#/entities/BarberSchedule"
+      },
+      "description": "Barber shift, off-days, and break configuration"
+    },
+    "/crm_clients/{clientId}": {
+      "schema": {
+        "$ref": "#/entities/CrmClient"
+      },
+      "description": "CRM loyalty, VIP flags, no-show strikes, and blacklist profiles"
+    },
+    "/waitlist/{entryId}": {
+      "schema": {
+        "$ref": "#/entities/WaitlistEntry"
+      },
+      "description": "Smart waitlist entries when a day or barber slot is fully booked"
+    },
+    "/settings/{settingId}": {
+      "schema": {
+        "$ref": "#/entities/SalonSettings"
+      },
+      "description": "Shared public salon links including Google Maps and Google Business Profile review URLs"
+    },
+    "/shift_requests/{requestId}": {
+      "schema": {
+        "$ref": "#/entities/ShiftRequest"
+      },
+      "description": "Barber time-off, break-block, and shift-swap requests with Master Admin approval workflow"
     }
   }
 }

@@ -9,14 +9,18 @@ import {
   Shield, 
   Scissors,
   CheckCircle2,
-  Lock
+  Lock,
+  ExternalLink,
+  Star
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
+import { useSalonProfileSettings } from '../utils/salonSettingsStore';
 import { Language, AppTheme } from '../types';
 import { FlagIcon } from './LanguageFlags';
 import { Palette, Sun, Moon, Sparkles } from 'lucide-react';
+import { PWAInstallButton } from './PWAInstallButton';
 import logoImage from '../assets/images/regenerated_image_1793760774705.png';
 
 interface NavbarProps {
@@ -34,6 +38,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { lang, setLang, t, isRtl } = useLanguage();
   const { theme, setTheme, toggleTheme, themeConfig } = useTheme();
+  const salonSettings = useSalonProfileSettings();
   const [isScrolled, setIsScrolled] = useState(false);
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
@@ -85,10 +90,29 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>{t.mensOnly}</span>
             </span>
 
-            <span className="hidden md:inline-flex items-center gap-1.5 text-zinc-400 text-[11px]">
-              <MapPin className="w-3.5 h-3.5 text-blue-400" />
-              <span className="truncate max-w-xs">{SALON_INFO.shortAddress[lang] || SALON_INFO.shortAddress.fr}</span>
-            </span>
+            <a
+              href={salonSettings.googleMapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-950/50 border border-blue-500/30 text-blue-300 hover:text-white hover:border-blue-400 text-[11px] font-semibold transition-colors"
+              title="Google Maps — Salon Boumlik Taroudant"
+            >
+              <MapPin className="w-3 h-3 text-blue-400 flex-shrink-0" />
+              <span className="hidden md:inline truncate max-w-xs">{SALON_INFO.shortAddress[lang] || SALON_INFO.shortAddress.fr}</span>
+              <span className="md:hidden">Google Maps</span>
+              <ExternalLink className="w-2.5 h-2.5 opacity-80" />
+            </a>
+
+            <a
+              href={salonSettings.googleReviewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:text-amber-200 text-[10px] font-bold transition-colors"
+              title="Google Business Profile 5.0"
+            >
+              <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
+              <span>Google 5.0</span>
+            </a>
           </div>
 
           <div className="flex items-center gap-3">
@@ -145,13 +169,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </a>
 
-          {/* Center Navigation Links (Homepage ONLY displays these sections) */}
-          <nav className="hidden md:flex items-center gap-6 text-xs font-bold uppercase tracking-wider text-zinc-400">
+          {/* Center Navigation Links */}
+          <nav className="hidden md:flex items-center gap-5 lg:gap-6 text-xs font-bold uppercase tracking-wider text-zinc-400">
             <a href="#booking" className="hover:text-amber-400 transition-colors font-black">
               {lang === 'ar' ? 'طلب موعد' : 'Réservation'}
             </a>
             <a href="#services" className="hover:text-white transition-colors">
               {lang === 'ar' ? 'الخدمات والأسعار' : 'Prestations & Tarifs'}
+            </a>
+            <a href="#team" className="hover:text-amber-400 transition-colors">
+              {lang === 'ar' ? 'فريق الحلاقين' : lang === 'en' ? 'Barbers' : 'Équipe'}
             </a>
             <a href="#reviews" className="hover:text-white transition-colors">
               {lang === 'ar' ? 'آراء الزبناء' : 'Avis Google 5.0'}
@@ -300,6 +327,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Scissors className="w-3.5 h-3.5" />
               <span>{lang === 'ar' ? 'احجز الآن' : 'Réserver'}</span>
             </a>
+
+            {/* PWA Install Button */}
+            <PWAInstallButton variant="navbar" />
 
             {/* Hamburger Menu Button (Opens DrawerMenu for Team, Gallery, Wi-Fi, Location) */}
             <button

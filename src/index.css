@@ -173,42 +173,71 @@ html.theme-light select {
   background-size: 32px 32px;
 }
 
-/* Strict Clean @media print rules for Saving/Printing Ticket as PDF */
-@media print {
-  body * {
-    visibility: hidden;
+/* Smooth GPU-composited Step Transitions for Multi-Step Booking Wizard */
+@keyframes wizardStepNextLtr {
+  0% {
+    opacity: 0;
+    transform: translate3d(18px, 0, 0);
   }
-  
-  [data-printable-ticket="true"],
-  [data-printable-ticket="true"] * {
-    visibility: visible;
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
   }
+}
 
-  [data-printable-ticket="true"] {
-    position: fixed;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    width: 90% !important;
-    max-width: 480px !important;
-    margin: 0 auto !important;
-    box-shadow: none !important;
-    border: 2px solid #D97706 !important;
-    background: #12141B !important;
-    color: #FFFFFF !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    page-break-inside: avoid !important;
+@keyframes wizardStepPrevLtr {
+  0% {
+    opacity: 0;
+    transform: translate3d(-18px, 0, 0);
   }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
 
-  /* Hide print buttons and extra dialogs */
-  .no-print,
-  button,
-  header,
-  footer,
-  aside,
-  nav {
-    display: none !important;
+@keyframes wizardStepNextRtl {
+  0% {
+    opacity: 0;
+    transform: translate3d(-18px, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes wizardStepPrevRtl {
+  0% {
+    opacity: 0;
+    transform: translate3d(18px, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.wizard-step-next {
+  animation: wizardStepNextLtr 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.wizard-step-prev {
+  animation: wizardStepPrevLtr 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+[dir='rtl'] .wizard-step-next {
+  animation-name: wizardStepNextRtl;
+}
+
+[dir='rtl'] .wizard-step-prev {
+  animation-name: wizardStepPrevRtl;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wizard-step-next,
+  .wizard-step-prev {
+    animation: none;
   }
 }
 

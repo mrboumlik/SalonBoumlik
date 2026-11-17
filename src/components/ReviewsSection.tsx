@@ -14,9 +14,11 @@ import confetti from 'canvas-confetti';
 import { INITIAL_REVIEWS, SERVICES, SALON_INFO } from '../data/barbershopData';
 import { CustomerReview } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { useSalonProfileSettings } from '../utils/salonSettingsStore';
 
 export const ReviewsSection: React.FC = () => {
   const { lang, t } = useLanguage();
+  const salonSettings = useSalonProfileSettings();
   const [reviews, setReviews] = useState<CustomerReview[]>(() => {
     try {
       const stored = localStorage.getItem('salon_boumlik_reviews_v3');
@@ -103,7 +105,7 @@ export const ReviewsSection: React.FC = () => {
     return r.rating === filterRating;
   });
 
-  const GOOGLE_REVIEW_URL = 'https://g.page/r/CZWdoYsTiwy_EAE/review';
+  const GOOGLE_REVIEW_URL = salonSettings.googleReviewUrl;
 
   const ui = {
     badge: {

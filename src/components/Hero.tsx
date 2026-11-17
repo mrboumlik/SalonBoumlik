@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
+import { useSalonProfileSettings } from '../utils/salonSettingsStore';
 import { QuickQrModals } from './QuickQrModals';
 import heroLogoImage from '../assets/images/regenerated_image_1793760774705.png';
 
@@ -24,6 +25,7 @@ interface HeroProps {
 
 export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking }) => {
   const { lang, t, isRtl } = useLanguage();
+  const salonSettings = useSalonProfileSettings();
 
   const heroDescription = {
     fr: "Sanctuaire d'exception exclusivement réservé aux hommes à Taroudant : architecture du cheveu, taille de barbe au coupe-choux, soins du visage et confort absolu dans un salon climatisé.",
@@ -66,7 +68,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
           </div>
 
           <a 
-            href={SALON_INFO.social.googleReviewUrl}
+            href={salonSettings.googleReviewUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-50 dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 text-[11px] text-zinc-700 dark:text-zinc-300 hover:border-amber-500/50 transition-colors shadow-xs"
@@ -139,7 +141,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
               <span>{addressLabel[lang] || addressLabel.fr}</span>
             </div>
             <a
-              href={SALON_INFO.googleMapsDirectionsUrl}
+              href={salonSettings.googleMapsUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline"

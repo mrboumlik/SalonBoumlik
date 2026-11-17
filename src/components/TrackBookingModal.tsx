@@ -18,22 +18,38 @@ import {
   RefreshCw,
   Camera,
   Bell,
-  Upload
+  Upload,
+  Building2,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  FileCheck,
+  History,
+  Award,
+  Star,
+  Gift
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useLanguage } from '../context/LanguageContext';
 import { 
   subscribeToBookings,
-  getBookingByTicket, 
-  getBookingsByPhone, 
   getAllBookings,
+  findBookingsUniversal,
+  normalizeMoroccanPhoneDigits,
   clientRescheduleResponse,
-  cancelClientBooking
+  cancelClientBooking,
+  updateBookingCihReceipt
 } from '../utils/bookingStore';
+import { useCrmClients, getCrmDocId } from '../utils/crmStore';
+import { computeLoyaltyProgress, getVerifiedVisitsCount } from '../utils/loyaltyEngine';
+import { rememberTrackedTicket } from '../utils/clientReminderWatcher';
 import { 
   requestWebNotificationPermission, 
   sendDualAlert 
 } from '../utils/notifications';
+import { buildClientTicketWhatsAppMessage } from '../utils/whatsappAutomation';
+import { CIH_BANK_DETAILS, processCihReceiptFile } from '../utils/cihReceipt';
+import { CihBankLogo } from './CihBankLogo';
 import { AppointmentBooking, BookingStatus } from '../types';
 import { SALON_INFO } from '../data/barbershopData';
 
@@ -57,48 +73,43 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
   // Live bookings array synced in real time via Firestore onSnapshot
   const [liveBookings, setLiveBookings] = useState<AppointmentBooking[]>(() => getAllBookings());
   const [isSyncingFirestore, setIsSyncingFirestore] = useState<boolean>(true);
+  const crmClientsMap = useCrmClients();
 
   // Client QR Scanner state
   const [isClientScannerOpen, setIsClientScannerOpen] = useState(false);
   const [clientScannerError, setClientScannerError] = useState<string | null>(null);
   const [notifStatus, setNotifStatus] = useState<NotificationPermission>('default');
 
+  // Post-booking CIH Payment & Receipt Upload state
+  const [expandedCihId, setExpandedCihId] = useState<string | null>(null);
+  const [copiedCihField, setCopiedCihField] = useState<'holder' | 'account' | null>(null);
+  const [uploadingCihId, setUploadingCihId] = useState<string | null>(null);
+  const [cihUploadError, setCihUploadError] = useState<string | null>(null);
+  const [showLoyaltyHistoryLog, setShowLoyaltyHistoryLog] = useState<boolean>(true);
+  const [showFullHistoryArchive, setShowFullHistoryArchive] = useState<boolean>(true);
+
   const performSearch = (query: string, source: AppointmentBooking[] = liveBookings) => {
-    const q = query.trim();
+    let q = query.trim();
+    if (q.toLowerCase().includes('track=')) {
+      const extracted = q.split(/track=/i)[1]?.split('&')[0] || '';
+      try {
+        q = decodeURIComponent(extracted).trim();
+      } catch {
+        q = extracted.trim();
+      }
+    }
     if (!q) {
-      setFoundBookings(source.slice(0, 5));
+      setFoundBookings(source.length > 0 ? [source[0]] : []);
       setHasSearched(false);
       return;
     }
 
     setHasSearched(true);
-    // 1. Exact or clean ticket match
-    const byTicket = getBookingByTicket(q, source);
-    if (byTicket) {
-      setFoundBookings([byTicket]);
-      return;
+    const matches = findBookingsUniversal(q, source);
+    setFoundBookings(matches);
+    if (matches.length > 0) {
+      rememberTrackedTicket(matches[0].ticketNumber, matches[0].clientPhone);
     }
-
-    // 2. Phone match
-    const byPhone = getBookingsByPhone(q, source);
-    if (byPhone.length > 0) {
-      setFoundBookings(byPhone);
-      return;
-    }
-
-    // 3. Loose search by ticket, name, barber, or notes
-    const cleanQ = q.toLowerCase().replace(/^#+/, '').replace(/^sb-?/i, '');
-    const loose = source.filter((b) => {
-      const tNorm = b.ticketNumber.toLowerCase().replace(/^#+/, '').replace(/^sb-?/i, '');
-      return (
-        tNorm.includes(cleanQ) ||
-        b.ticketNumber.toLowerCase().includes(q.toLowerCase()) ||
-        b.clientName.toLowerCase().includes(q.toLowerCase()) ||
-        b.clientPhone.includes(q) ||
-        b.barberName.toLowerCase().includes(q.toLowerCase())
-      );
-    });
-    setFoundBookings(loose);
   };
 
   useEffect(() => {
@@ -281,6 +292,54 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     setTimeout(() => setCopiedTicket(null), 2000);
   };
 
+  const handleCopyCihDetail = (field: 'holder' | 'account', value: string) => {
+    navigator.clipboard.writeText(value);
+    setCopiedCihField(field);
+    setTimeout(() => setCopiedCihField(null), 2000);
+  };
+
+  const handlePostBookingCihUpload = async (
+    bookingId: string,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setCihUploadError(null);
+    setUploadingCihId(bookingId);
+
+    try {
+      const processed = await processCihReceiptFile(file);
+      await updateBookingCihReceipt(bookingId, processed);
+      sendDualAlert(
+        lang === 'ar' ? 'تم رفع إيصال CIH وحفظه بنجاح ✅' : 'Reçu CIH envoyé avec succès ✅',
+        {
+          body: lang === 'ar'
+            ? 'تم ربط الإيصال بتذكرتك وظهوره مباشرة في لوحة الصالون.'
+            : 'Votre reçu est maintenant visible instantanément par le salon.',
+          type: 'success',
+        }
+      );
+    } catch (err) {
+      console.error('Post-booking CIH receipt upload failed:', err);
+      setCihUploadError(
+        lang === 'ar'
+          ? 'تعذر حفظ الإيصال حالياً. يرجى المحاولة مرة أخرى.'
+          : 'Impossible d’enregistrer le reçu pour le moment.'
+      );
+      sendDualAlert(
+        lang === 'ar' ? 'تعذر رفع الإيصال' : 'Erreur d’envoi du reçu',
+        {
+          body: lang === 'ar' ? 'يرجى التحقق من الاتصال والمحاولة مجدداً.' : 'Veuillez réessayer.',
+          type: 'warning',
+        }
+      );
+    } finally {
+      setUploadingCihId(null);
+      if (e.target) e.target.value = '';
+    }
+  };
+
   const handleClientRescheduleDecision = async (bookingId: string, accepted: boolean) => {
     try {
       await clientRescheduleResponse(bookingId, accepted);
@@ -335,6 +394,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
   const getStatusBadge = (status: BookingStatus) => {
     switch (status) {
+      case 'completed':
+        return (
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-600/20 border border-emerald-400/50 text-emerald-300 font-bold text-xs">
+            <Award className="w-3.5 h-3.5" />
+            <span>
+              {lang === 'ar' ? 'تمت الخدمة بنجاح ✓' : lang === 'es' ? 'Servicio completado ✓' : 'Prestation Terminée ✓'}
+            </span>
+          </div>
+        );
       case 'confirmed':
         return (
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-xs">
@@ -350,6 +418,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
             <Clock3 className="w-3.5 h-3.5" />
             <span>
               {lang === 'ar' ? 'اقتراح توقيت جديد (بانتظار موافقتك)' : lang === 'es' ? 'Nuevo horario propuesto' : 'Hora Réaménagée (En attente)'}
+            </span>
+          </div>
+        );
+      case 'no_show':
+        return (
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/15 border border-orange-500/40 text-orange-300 font-bold text-xs">
+            <AlertCircle className="w-3.5 h-3.5" />
+            <span>
+              {lang === 'ar' ? 'تغيب عن الموعد (No-Show)' : 'Absence (No-Show)'}
             </span>
           </div>
         );
@@ -383,6 +460,63 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
         );
     }
   };
+
+  // CRM Archive calculation for the matched client phone (strictly verified completed visits for Loyalty!)
+  const primaryMatchedBooking = foundBookings[0];
+  const primaryClientDigits = primaryMatchedBooking
+    ? normalizeMoroccanPhoneDigits(primaryMatchedBooking.clientPhone)
+    : '';
+  const crmClientProfile =
+    primaryClientDigits.length >= 4
+      ? crmClientsMap[getCrmDocId(primaryMatchedBooking!.clientPhone)]
+      : undefined;
+  const fullClientCrmHistory =
+    primaryClientDigits.length >= 4
+      ? liveBookings
+          .filter((b) => normalizeMoroccanPhoneDigits(b.clientPhone) === primaryClientDigits)
+          .sort((a, b) =>
+            b.date === a.date
+              ? b.timeSlot.localeCompare(a.timeSlot)
+              : b.date.localeCompare(a.date)
+          )
+      : [];
+
+  // Completed visits ordered oldest->newest for accurate visit numbering (#1, #2, ..., #5, #10...)
+  const completedVisitsChronological = [...fullClientCrmHistory]
+    .filter((b) => b.status === 'completed')
+    .sort((a, b) => {
+      const timeA = a.attendanceConfirmedAt || `${a.date}T${a.timeSlot}:00`;
+      const timeB = b.attendanceConfirmedAt || `${b.date}T${b.timeSlot}:00`;
+      return timeA.localeCompare(timeB);
+    });
+  const loyaltyHistoryEntries = completedVisitsChronological
+    .map((booking, idx) => ({
+      visitNumber: idx + 1,
+      booking,
+    }))
+    .reverse(); // Newest completed visit first for display
+
+  // Fallback CRM match when searched by phone or CRM ID (`c_...`) with 0 booking documents
+  const cleanSearchTrimmed = searchTerm.trim();
+  const searchedCrmFallback =
+    !primaryMatchedBooking && hasSearched && cleanSearchTrimmed
+      ? crmClientsMap[cleanSearchTrimmed] ||
+        crmClientsMap[getCrmDocId(cleanSearchTrimmed)] ||
+        Object.values(crmClientsMap).find((c) => {
+          const searchNorm = normalizeMoroccanPhoneDigits(
+            cleanSearchTrimmed.toLowerCase().startsWith('c_')
+              ? cleanSearchTrimmed.slice(2)
+              : cleanSearchTrimmed
+          );
+          return searchNorm.length >= 6 && c.normalizedPhone === searchNorm;
+        })
+      : undefined;
+
+  const activeCrmProfile = crmClientProfile || searchedCrmFallback;
+  const verifiedVisitsTotal = primaryMatchedBooking
+    ? getVerifiedVisitsCount(fullClientCrmHistory, activeCrmProfile)
+    : activeCrmProfile?.verifiedVisits ?? 0;
+  const loyaltyProgress = computeLoyaltyProgress(verifiedVisitsTotal, lang);
 
   const ui = {
     title: {
@@ -423,7 +557,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+    <div className="fixed inset-0 z-[70] overflow-y-auto flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
       <div className="relative w-full max-w-xl bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col my-8">
         
         {/* Header with barber pole top line */}
@@ -527,7 +661,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
         {/* Client QR Scanner Modal Dialog (Strictly facingMode: environment) */}
         {isClientScannerOpen && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/90">
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/90">
             <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 max-w-sm w-full space-y-4 text-center">
               <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
                 <div className="flex items-center gap-1.5 text-white font-bold text-sm">
@@ -568,13 +702,322 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
               <RefreshCw className="w-7 h-7 text-amber-400 mx-auto mb-2 animate-spin" />
               <p>{lang === 'ar' ? 'جاري جلب التذاكر من السحابة...' : 'Synchronisation en cours...'}</p>
             </div>
+          ) : foundBookings.length === 0 && hasSearched && searchedCrmFallback ? (
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/12 via-zinc-900/95 to-zinc-900 border border-amber-500/35 space-y-3 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-black text-white flex items-center gap-2">
+                    <span>{searchedCrmFallback.clientName}</span>
+                    {searchedCrmFallback.isVip && (
+                      <span className="text-amber-300 text-xs font-bold">· 👑 VIP</span>
+                    )}
+                  </div>
+                  <div dir="ltr" className="text-zinc-400 font-mono mt-0.5">
+                    {searchedCrmFallback.phoneDisplay || searchedCrmFallback.normalizedPhone}
+                  </div>
+                </div>
+                <div className="font-mono font-black text-amber-400 text-base tabular-nums">
+                  {loyaltyProgress.verifiedVisits} / {loyaltyProgress.nextMilestone}
+                </div>
+              </div>
+              <div className="h-2.5 w-full rounded-full bg-black/70 border border-zinc-800 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-500"
+                  style={{ width: `${loyaltyProgress.progressPercent}%` }}
+                />
+              </div>
+              <p className="text-zinc-400">
+                {lang === 'ar'
+                  ? 'تم التعرف على ملف الزبون بنجاح في برنامج الولاء (لا توجد حجوزات نشطة حالياً).'
+                  : 'Profil client reconnu dans le programme de fidélité (aucune réservation active).'}
+              </p>
+            </div>
           ) : foundBookings.length === 0 && hasSearched ? (
             <div className="text-center py-8 text-zinc-400 text-xs">
               <AlertCircle className="w-8 h-8 text-amber-500/80 mx-auto mb-2" />
               <p>{ui.noResults}</p>
             </div>
           ) : (
-            foundBookings.map((booking) => (
+            <>
+              {/* Multi-Tier Verified Loyalty Program Card (5, 10, 15...) */}
+              {primaryMatchedBooking && primaryClientDigits.length >= 4 && (
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/12 via-zinc-900/95 to-zinc-900 border border-amber-500/35 space-y-3.5 shadow-lg">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/35 flex items-center justify-center flex-shrink-0 text-amber-400">
+                        <Award className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+                          <span>
+                            {lang === 'ar'
+                              ? 'برنامج الولاء والمكافآت'
+                              : lang === 'en'
+                              ? 'Loyalty Program'
+                              : lang === 'es'
+                              ? 'Programa de Fidelidad'
+                              : 'Programme de Fidélité'}
+                          </span>
+                          {crmClientProfile?.isVip && (
+                            <span className="text-[11px] font-bold text-amber-300">· 👑 VIP</span>
+                          )}
+                        </h3>
+                        <p className="text-[11px] text-zinc-400 truncate">
+                          {lang === 'ar'
+                            ? `زيارات مؤكدة بالحضور: ${loyaltyProgress.verifiedVisits} · المستوى ${loyaltyProgress.currentTierNumber}`
+                            : lang === 'en'
+                            ? `Verified visits: ${loyaltyProgress.verifiedVisits} · Tier ${loyaltyProgress.currentTierNumber}`
+                            : lang === 'es'
+                            ? `Visitas confirmadas: ${loyaltyProgress.verifiedVisits} · Nivel ${loyaltyProgress.currentTierNumber}`
+                            : `Visites confirmées : ${loyaltyProgress.verifiedVisits} · Palier ${loyaltyProgress.currentTierNumber}`}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-baseline gap-1 font-mono tabular-nums">
+                      <span className="text-lg font-black text-amber-400">
+                        {loyaltyProgress.verifiedVisits}
+                      </span>
+                      <span className="text-xs text-zinc-500 font-bold">
+                        / {loyaltyProgress.nextMilestone}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Dynamic Multi-Tier Milestone Stepper (5 -> 10 -> 15 -> ...) */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {loyaltyProgress.tiers.map((tier) => (
+                      <div
+                        key={tier.targetVisits}
+                        className={`px-2.5 py-1 rounded-xl border text-[10px] font-bold flex items-center gap-1.5 transition-colors ${
+                          tier.unlocked
+                            ? 'bg-emerald-500/15 border-emerald-400/50 text-emerald-300'
+                            : tier.isCurrentTarget
+                            ? 'bg-amber-500/15 border-amber-400/60 text-amber-300'
+                            : 'bg-black/40 border-zinc-800 text-zinc-500'
+                        }`}
+                      >
+                        <span className="font-mono font-black tabular-nums">
+                          {tier.unlocked ? `${tier.targetVisits}/${tier.targetVisits}✓` : `${tier.targetVisits}`}
+                        </span>
+                        <span className="truncate max-w-[140px]">{tier.rewardTitle}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Active 5-Step Bracket Track toward Next Milestone */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono tabular-nums">
+                      <span>
+                        {lang === 'ar'
+                          ? `المرحلة الحالية (${loyaltyProgress.previousMilestone} ← ${loyaltyProgress.nextMilestone})`
+                          : `Palier actuel (${loyaltyProgress.previousMilestone} → ${loyaltyProgress.nextMilestone})`}
+                      </span>
+                      <span className="text-amber-300 font-bold">
+                        {loyaltyProgress.stepsInCurrentBracket} / 5
+                      </span>
+                    </div>
+
+                    <div className="h-2 w-full rounded-full bg-zinc-800 overflow-hidden flex justify-start">
+                      <div
+                        className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-300"
+                        style={{
+                          width: `${
+                            loyaltyProgress.justUnlockedMilestone
+                              ? 100
+                              : Math.min(100, loyaltyProgress.progressPercent)
+                          }%`,
+                        }}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {[1, 2, 3, 4, 5].map((stepOffset) => {
+                        const absoluteVisitNum = loyaltyProgress.previousMilestone + stepOffset;
+                        const activeFilledCount = loyaltyProgress.justUnlockedMilestone
+                          ? 5
+                          : loyaltyProgress.stepsInCurrentBracket;
+                        const isEarned = stepOffset <= activeFilledCount;
+                        const isRewardStep = stepOffset === 5;
+                        const stampNumber = loyaltyProgress.justUnlockedMilestone
+                          ? loyaltyProgress.justUnlockedMilestone - 5 + stepOffset
+                          : absoluteVisitNum;
+
+                        return (
+                          <div
+                            key={stepOffset}
+                            className={`py-1.5 px-1 rounded-xl border text-center flex flex-col items-center justify-center gap-0.5 transition-colors ${
+                              isEarned
+                                ? isRewardStep
+                                  ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-300'
+                                  : 'bg-amber-500/20 border-amber-400/50 text-amber-300'
+                                : 'bg-black/40 border-zinc-800 text-zinc-500'
+                            }`}
+                          >
+                            {isRewardStep ? (
+                              <Gift className={`w-3.5 h-3.5 ${isEarned ? 'text-emerald-400' : 'text-zinc-500'}`} />
+                            ) : isEarned ? (
+                              <Check className="w-3.5 h-3.5 text-amber-400 stroke-[3]" />
+                            ) : (
+                              <Star className="w-3 h-3 text-zinc-600" />
+                            )}
+                            <span className="text-[10px] font-mono font-bold tabular-nums">
+                              #{stampNumber}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Unlocked / Next Milestone Summary & Verification Note */}
+                  <div className="space-y-1.5 pt-2 border-t border-zinc-800/80 text-[11px]">
+                    {loyaltyProgress.justUnlockedMilestone && (
+                      <div className="flex items-center gap-1.5 text-emerald-300 font-bold">
+                        <Gift className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                        <span>
+                          {lang === 'ar'
+                            ? `مبروك! أكملت ${loyaltyProgress.justUnlockedMilestone} زيارات (${loyaltyProgress.justUnlockedRewardTitle}) — هدفك القادم: ${loyaltyProgress.nextMilestone}!`
+                            : lang === 'en'
+                            ? `Congrats! ${loyaltyProgress.justUnlockedMilestone} visits reached (${loyaltyProgress.justUnlockedRewardTitle}) — Next target: ${loyaltyProgress.nextMilestone}!`
+                            : `Félicitations ! ${loyaltyProgress.justUnlockedMilestone} visites atteintes (${loyaltyProgress.justUnlockedRewardTitle}) — Prochain palier : ${loyaltyProgress.nextMilestone} !`}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-zinc-300 font-medium">
+                        {lang === 'ar'
+                          ? `متبقي ${loyaltyProgress.visitsRemaining} ${loyaltyProgress.visitsRemaining === 1 ? 'زيارة مؤكدة واحدة' : 'زيارات مؤكدة'} نحو مكافأة ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`
+                          : lang === 'en'
+                          ? `${loyaltyProgress.visitsRemaining} verified visit(s) away from ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`
+                          : `Plus que ${loyaltyProgress.visitsRemaining} visite(s) confirmée(s) avant le palier ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`}
+                      </span>
+
+                      {(crmClientProfile?.customDiscountMAD ?? 0) > 0 && (
+                        <span className="font-mono font-bold text-amber-300 tabular-nums">
+                          {lang === 'ar'
+                            ? `خصم نشط: -${crmClientProfile?.customDiscountMAD} MAD`
+                            : `Remise active : -${crmClientProfile?.customDiscountMAD} MAD`}
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-[10px] text-zinc-500">
+                      {lang === 'ar'
+                        ? 'ملاحظة: تُحتسب نقاط الولاء تلقائياً فقط عند تأكيد حضورك في الصالون.'
+                        : lang === 'en'
+                        ? 'Note: Points are credited strictly after admin attendance confirmation at the salon.'
+                        : 'Note : Les points sont validés uniquement après confirmation de votre présence au salon.'}
+                    </p>
+                  </div>
+
+                  {crmClientProfile?.rewardNote && (
+                    <div className="text-[11px] text-emerald-300 font-semibold">
+                      {crmClientProfile.rewardNote}
+                    </div>
+                  )}
+
+                  {/* Dedicated Loyalty History Log (Every Confirmed Attended Visit) */}
+                  <div className="pt-2 border-t border-zinc-800/80 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowLoyaltyHistoryLog((prev) => !prev)}
+                      className="w-full flex items-center justify-between gap-2 text-left rtl:text-right cursor-pointer"
+                    >
+                      <span className="text-[11px] font-black text-white flex items-center gap-1.5">
+                        <History className="w-3.5 h-3.5 text-amber-400" />
+                        <span>
+                          {lang === 'ar'
+                            ? `سجل نقاط الولاء والزيارات المؤكدة (${loyaltyHistoryEntries.length})`
+                            : lang === 'en'
+                            ? `Loyalty History (${loyaltyHistoryEntries.length} verified)`
+                            : `Historique de Fidélité (${loyaltyHistoryEntries.length} validées)`}
+                        </span>
+                      </span>
+                      {showLoyaltyHistoryLog ? (
+                        <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
+                      ) : (
+                        <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                      )}
+                    </button>
+
+                    {showLoyaltyHistoryLog && (
+                      loyaltyHistoryEntries.length === 0 ? (
+                        <div className="p-2.5 rounded-xl bg-black/40 border border-zinc-800 text-[11px] text-zinc-400">
+                          {lang === 'ar'
+                            ? 'لا توجد زيارات مكتملة مسجلة بعد. سيظهر كل موعد مؤكد بالحضور هنا مع توقيت التوثيق.'
+                            : lang === 'en'
+                            ? 'No completed visits logged yet. Once your barber confirms attendance, your timestamped history appears here.'
+                            : 'Aucune visite confirmée enregistrée pour le moment. Votre historique horodaté apparaîtra après votre passage.'}
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                          {loyaltyHistoryEntries.map(({ visitNumber, booking: visit }) => {
+                            const isMilestoneVisit = visitNumber % 5 === 0;
+                            const confirmedDateText = visit.attendanceConfirmedAt
+                              ? new Date(visit.attendanceConfirmedAt).toLocaleString(
+                                  lang === 'ar' ? 'ar-MA' : lang === 'en' ? 'en-GB' : 'fr-FR',
+                                  {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: '2-digit',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  }
+                                )
+                              : `${visit.date} • ${visit.timeSlot}`;
+                            const serviceLabels =
+                              (visit.cartItemsSummary || []).map((i) => i.name).join(' + ') ||
+                              'Prestation Salon';
+
+                            return (
+                              <div
+                                key={`loyalty-log-${visit.id}`}
+                                className={`p-2.5 rounded-xl border text-[11px] flex flex-wrap items-center justify-between gap-2 ${
+                                  isMilestoneVisit
+                                    ? 'bg-emerald-950/35 border-emerald-500/45'
+                                    : 'bg-black/45 border-zinc-800/80'
+                                }`}
+                              >
+                                <div className="flex items-start gap-2 min-w-0 flex-1">
+                                  <span
+                                    className={`px-2 py-0.5 rounded-lg font-mono font-black text-[10px] tabular-nums flex-shrink-0 ${
+                                      isMilestoneVisit
+                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50'
+                                        : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                                    }`}
+                                  >
+                                    #{visitNumber}{isMilestoneVisit ? ' 🏆' : ''}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <div className="font-bold text-white truncate">
+                                      {serviceLabels}
+                                    </div>
+                                    <div className="text-[10px] text-zinc-400 flex flex-wrap items-center gap-2 font-mono tabular-nums">
+                                      <span>{visit.ticketNumber}</span>
+                                      <span>•</span>
+                                      <span>{visit.barberName}</span>
+                                      <span>•</span>
+                                      <span dir="ltr">{confirmedDateText}</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <span className="font-mono font-bold text-emerald-400 text-[11px] tabular-nums flex-shrink-0">
+                                  +1 pt · {visit.finalTotalMAD ?? 0} MAD
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {foundBookings.map((booking) => (
               <div
                 key={booking.id}
                 className="p-5 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-4 hover:border-zinc-700 transition-all shadow-lg"
@@ -724,13 +1167,238 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       </span>
                     </div>
                   </div>
+                  {booking.clientNotes && (
+                    <div className="mt-2 pt-2 border-t border-zinc-800 text-[11px] text-amber-200/95 space-y-0.5">
+                      <span className="text-[10px] text-amber-400 font-bold uppercase block">
+                        {lang === 'ar'
+                          ? 'ملاحظات الزبون وتفضيلات الحلاقة:'
+                          : lang === 'en'
+                          ? 'Client Notes & Grooming Preferences:'
+                          : 'Notes Client & Préférences :'}
+                      </span>
+                      <p className="text-zinc-200 leading-relaxed break-words">
+                        {booking.clientNotes}
+                      </p>
+                    </div>
+                  )}
+                  {booking.cihReceiptName && (
+                    <div className="mt-2 pt-2 border-t border-zinc-800 flex items-center justify-between gap-2 text-[11px] text-emerald-300">
+                      <span className="flex items-center gap-1.5 font-semibold">
+                        <Building2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>{lang === 'ar' ? 'إيصال تحويل CIH مرفق:' : 'Reçu virement CIH joint :'}</span>
+                      </span>
+                      <span className="font-mono text-zinc-200 truncate max-w-[160px]">{booking.cihReceiptName}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Post-Booking CIH Payment Info & Receipt Upload (Expandable) */}
+                <div className="rounded-xl bg-black/50 border border-zinc-800 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedCihId((prev) => (prev === booking.id ? null : booking.id))
+                    }
+                    className="w-full p-3 flex items-center justify-between gap-2 text-left rtl:text-right hover:bg-zinc-900/70 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <CihBankLogo className="w-7 h-7" />
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold text-white block truncate">
+                          {lang === 'ar'
+                            ? 'معلومات الأداء البنكي ورفع إيصال CIH'
+                            : lang === 'en'
+                            ? 'CIH Bank Info & Receipt Upload'
+                            : 'Infos Bancaires CIH & Envoi du Reçu'}
+                        </span>
+                        <span className="text-[10px] text-zinc-400 block truncate">
+                          {booking.cihReceiptName
+                            ? (lang === 'ar' ? 'تم إرفاق الإيصال — اضغط للتحديث' : 'Reçu joint — Appuyez pour modifier')
+                            : (lang === 'ar' ? 'اضغط لعرض رقم الحساب أو رفع الإيصال بعد الحجز' : 'Voir le compte CIH ou envoyer votre reçu')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {booking.cihReceiptName && (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold">
+                          ✓
+                        </span>
+                      )}
+                      {expandedCihId === booking.id ? (
+                        <ChevronUp className="w-4 h-4 text-zinc-400" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-zinc-400" />
+                      )}
+                    </div>
+                  </button>
+
+                  {expandedCihId === booking.id && (
+                    <div className="p-3.5 pt-2 border-t border-zinc-800/80 space-y-3 bg-zinc-950/70 text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <CihBankLogo className="w-10 h-10" />
+                        <div>
+                          <div className="font-black text-white text-xs">CIH Bank — Salon Boumlik</div>
+                          <div className="text-[11px] text-emerald-300/90 leading-relaxed">
+                            {lang === 'ar'
+                              ? 'التحويل البنكي CIH (اختياري) - مستحسن لتأكيد الموعد مسبقاً دون الحاجة للتنقل للمحل'
+                              : lang === 'en'
+                              ? 'CIH transfer (optional) — recommended to confirm in advance without visiting the salon.'
+                              : 'Virement CIH (optionnel) — recommandé pour confirmer à l’avance sans vous déplacer au salon.'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Account Holder + Account Number with Copy Buttons */}
+                      <div className="p-3 rounded-xl bg-black/70 border border-zinc-800 space-y-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-zinc-400 font-semibold text-[11px]">Titulaire :</span>
+                          <div className="flex items-center gap-2">
+                            <span dir="ltr" className="font-mono font-black text-white text-xs">
+                              {CIH_BANK_DETAILS.accountHolder}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyCihDetail('holder', CIH_BANK_DETAILS.accountHolder)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer ${
+                                copiedCihField === 'holder'
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+                              }`}
+                            >
+                              {copiedCihField === 'holder' ? (
+                                <>
+                                  <Check className="w-3 h-3" />
+                                  <span>{lang === 'ar' ? 'تم النسخ' : 'Copié'}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" />
+                                  <span>{lang === 'ar' ? 'نسخ' : 'Copy'}</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/80">
+                          <span className="text-zinc-400 font-semibold text-[11px]">
+                            {lang === 'ar' ? 'رقم الحساب :' : 'رقم الحساب / N° Compte :'}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span dir="ltr" className="font-mono font-black text-amber-300 tracking-wider text-xs sm:text-sm">
+                              {CIH_BANK_DETAILS.accountNumber}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyCihDetail('account', CIH_BANK_DETAILS.accountNumber)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer ${
+                                copiedCihField === 'account'
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+                              }`}
+                            >
+                              {copiedCihField === 'account' ? (
+                                <>
+                                  <Check className="w-3 h-3" />
+                                  <span>{lang === 'ar' ? 'تم النسخ' : 'Copié'}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" />
+                                  <span>{lang === 'ar' ? 'نسخ' : 'Copy'}</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {booking.cihReceiptPreview && (
+                        <div className="rounded-xl overflow-hidden border border-emerald-500/30 bg-black p-2 text-center space-y-1.5">
+                          <img
+                            src={booking.cihReceiptPreview}
+                            alt={booking.cihReceiptName || 'CIH Receipt'}
+                            className="max-h-36 mx-auto rounded-lg object-contain"
+                          />
+                          <div className="text-[10px] font-mono text-emerald-300 truncate">
+                            {booking.cihReceiptName}
+                          </div>
+                        </div>
+                      )}
+
+                      {cihUploadError && (
+                        <div className="p-2 rounded-lg bg-red-950/60 border border-red-500/40 text-red-300 text-[11px]">
+                          {cihUploadError}
+                        </div>
+                      )}
+
+                      <label
+                        className={`w-full py-2.5 px-3.5 rounded-xl border border-dashed border-emerald-500/60 text-xs font-bold flex items-center justify-center gap-2 transition-colors ${
+                          uploadingCihId === booking.id
+                            ? 'bg-zinc-900 text-zinc-400 cursor-wait'
+                            : 'bg-emerald-950/30 hover:bg-emerald-950/50 text-emerald-300 cursor-pointer'
+                        }`}
+                      >
+                        {uploadingCihId === booking.id ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+                            <span>{lang === 'ar' ? 'جاري رفع ومزامنة الإيصال...' : 'Envoi vers le salon...'}</span>
+                          </>
+                        ) : booking.cihReceiptName ? (
+                          <>
+                            <FileCheck className="w-4 h-4 text-emerald-400" />
+                            <span>
+                              {lang === 'ar'
+                                ? 'تحديث أو استبدال إيصال CIH (.jpg, .png, .pdf)'
+                                : 'Mettre à jour le reçu CIH (.jpg, .png, .pdf)'}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-emerald-400" />
+                            <span>
+                              {lang === 'ar'
+                                ? 'رفع إيصال التحويل CIH (.jpg, .png, .pdf)'
+                                : 'Envoyer le reçu CIH (.jpg, .png, .pdf)'}
+                            </span>
+                          </>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          disabled={uploadingCihId === booking.id}
+                          onChange={(e) => handlePostBookingCihUpload(booking.id, e)}
+                          className="hidden"
+                        />
+                      </label>
+
+                      <a
+                        href={`https://wa.me/${SALON_INFO.whatsappNumber}?text=${encodeURIComponent(
+                          lang === 'ar'
+                            ? `مرحباً صالون بومليك، هذا إيصال التحويل البنكي عبر CIH لتأكيد تذكرتي ${booking.ticketNumber} (${booking.clientName} - ${booking.date} الساعة ${booking.timeSlot}).`
+                            : `Bonjour Salon Boumlik, voici mon reçu CIH pour confirmer le ticket ${booking.ticketNumber} (${booking.clientName} - ${booking.date} à ${booking.timeSlot}).`
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>
+                          {lang === 'ar'
+                            ? 'أو إرسال الإيصال عبر واتساب الصالون مباشرة'
+                            : 'Ou envoyer le reçu sur WhatsApp'}
+                        </span>
+                      </a>
+                    </div>
+                  )}
                 </div>
 
                 {/* Direct Help Button & Client-Side Cancellation Action */}
                 <div className="pt-2 border-t border-zinc-800/60 flex flex-wrap items-center justify-between gap-2 text-xs">
                   <a
                     href={`https://wa.me/${SALON_INFO.whatsappNumber}?text=${encodeURIComponent(
-                      `Salam Salon Boumlik, je souhaite avoir des détails sur ma réservation ${booking.ticketNumber}`
+                      buildClientTicketWhatsAppMessage(booking, lang)
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -740,7 +1408,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     <span>{lang === 'ar' ? 'تواصل معنا واتساب حول التذكرة' : 'Contacter le Salon par WhatsApp'}</span>
                   </a>
 
-                  {booking.status !== 'cancelled' && booking.status !== 'rejected' && (
+                  {booking.status !== 'cancelled' && booking.status !== 'rejected' && booking.status !== 'completed' && (
                     <button
                       onClick={() => handleClientCancel(booking)}
                       className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-red-950/60 border border-zinc-700 hover:border-red-600/50 text-zinc-300 hover:text-red-400 text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer"
@@ -751,7 +1419,75 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   )}
                 </div>
               </div>
-            ))
+            ))}
+            </>
+          )}
+
+          {/* Full Past Booking History (CRM Archive) & Loyalty Progress Card */}
+          {foundBookings.length > 0 && fullClientCrmHistory.length > 0 && (
+            <div className="p-4 rounded-xl bg-zinc-900/70 border border-amber-500/30 space-y-3 text-xs">
+              <button
+                type="button"
+                onClick={() => setShowFullHistoryArchive((prev) => !prev)}
+                className="w-full flex items-center justify-between gap-2 text-left rtl:text-right cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <History className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <div>
+                    <span className="font-black text-white block">
+                      {lang === 'ar'
+                        ? `سجل الحجوزات السابق والولاء (${fullClientCrmHistory.length})`
+                        : `Historique Complet & Fidélité CRM (${fullClientCrmHistory.length})`}
+                    </span>
+                    <span className="text-[10px] text-zinc-400">
+                      {crmClientProfile?.isVip ? '👑 VIP • ' : ''}
+                      {lang === 'ar'
+                        ? `الزيارات المؤكدة: ${loyaltyProgress.verifiedVisits} (${loyaltyProgress.verifiedVisits}/${loyaltyProgress.nextMilestone})`
+                        : `Visites confirmées : ${loyaltyProgress.verifiedVisits} (${loyaltyProgress.verifiedVisits}/${loyaltyProgress.nextMilestone})`}
+                    </span>
+                  </div>
+                </div>
+                {showFullHistoryArchive ? (
+                  <ChevronUp className="w-4 h-4 text-zinc-400" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-zinc-400" />
+                )}
+              </button>
+
+              {showFullHistoryArchive && (
+                <div className="space-y-2 pt-2 border-t border-zinc-800/80">
+                  {/* Chronological past/other bookings list */}
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                    {fullClientCrmHistory.map((hist) => (
+                      <div
+                        key={`hist-${hist.id}`}
+                        className="p-2.5 rounded-lg bg-black/40 border border-zinc-800/70 flex flex-wrap items-center justify-between gap-2 text-[11px]"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className="w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: hist.barberColor || '#D97706' }}
+                          />
+                          <span className="font-mono font-bold text-white">{hist.ticketNumber}</span>
+                          <span className="text-zinc-400 font-mono">
+                            {hist.date} • {hist.timeSlot}
+                          </span>
+                          <span className="text-zinc-300 truncate">{hist.barberName}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-amber-300">
+                            {hist.finalTotalMAD ?? 0} MAD
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-semibold">
+                            {hist.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

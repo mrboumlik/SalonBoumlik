@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="112" fill="#08090C" />
+  <rect x="24" y="24" width="464" height="464" rx="92" stroke="#D97706" stroke-opacity="0.45" stroke-width="8" />
+  <rect x="136" y="72" width="240" height="14" rx="7" fill="url(#pole)" />
+  <defs>
+    <linearGradient id="pole" x1="136" y1="79" x2="376" y2="79" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DC2626" />
+      <stop offset="0.5" stop-color="#FFFFFF" />
+      <stop offset="1" stop-color="#2563EB" />
+    </linearGradient>
+  </defs>
+  <text x="256" y="274" text-anchor="middle" fill="#FFFFFF" font-family="Georgia, serif" font-weight="900" font-size="148" letter-spacing="4">SB</text>
+  <text x="256" y="346" text-anchor="middle" fill="#F59E0B" font-family="sans-serif" font-weight="800" font-size="38" letter-spacing="8">BOUMLIK</text>
+  <text x="256" y="392" text-anchor="middle" fill="#A1A1AA" font-family="sans-serif" font-weight="600" font-size="22" letter-spacing="4">TAROUDANT</text>
+</svg>

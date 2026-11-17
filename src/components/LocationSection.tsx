@@ -233,13 +233,13 @@ export const LocationSection: React.FC<LocationSectionProps> = ({ onOpenBooking 
                       {lang === 'ar' ? 'أوقات العمل' : lang === 'amz' ? 'ⵉⵎⵉⵔⵏ ⵏ ⵓⵕⵥⵥⵓⵎ' : lang === 'en' ? 'Working Hours' : "Horaires d'Ouverture"}
                     </h3>
                     <p className="text-[11px] text-zinc-400">
-                      {lang === 'ar' ? 'طيلة أيام الأسبوع' : lang === 'amz' ? '7 ⵏ ⵡⵓⵙⵙⴰⵏ' : '7/7'}
+                      {lang === 'ar' ? 'الإثنين عطلة أسبوعية' : lang === 'amz' ? '6 ⵏ ⵡⵓⵙⵙⴰⵏ (ⴰⵢⵏⴰⵙ ⵉⵇⵇⵏ)' : 'Lundi fermé • Mardi - Dimanche'}
                     </p>
                   </div>
                 </div>
 
                 <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
-                  {lang === 'ar' ? 'مفتوح 7/7' : lang === 'amz' ? 'ⵉⵕⵥⵎ 7/7' : lang === 'en' ? 'Open 7/7' : 'Ouvert 7j/7'}
+                  {lang === 'ar' ? 'مفتوح 6/7' : lang === 'amz' ? 'ⵉⵕⵥⵎ 6/7' : lang === 'en' ? 'Open 6/7' : 'Ouvert 6j/7'}
                 </span>
               </div>
 

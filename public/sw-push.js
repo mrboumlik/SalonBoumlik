@@ -1,33 +1,25 @@
-// Service Worker for Salon Boumlik notifications and offline support
-const CACHE_NAME = 'salon-boumlik-v1';
-
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
-});
-
+// Custom Push & Notification Click Handlers imported by the Workbox PWA Service Worker
 self.addEventListener('push', (event) => {
   if (!event.data) return;
   try {
     const data = event.data.json();
     const title = data.title || 'Salon Boumlik';
     const options = {
-      body: data.body || 'Mise à jour de votre réservation',
-      icon: data.icon || '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
-      badge: data.badge || '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
-      data: data.data || {},
+      body: data.body || 'تحديث بخصوص موعدك في صالون بومليك',
+      icon: data.icon || '/pwa-192x192.png',
+      badge: data.badge || '/pwa-192x192.png',
+      data: data.data || { url: '/' },
       vibrate: [200, 100, 200],
+      tag: data.tag || 'salon-boumlik-push',
     };
     event.waitUntil(self.registration.showNotification(title, options));
-  } catch (e) {
+  } catch {
     const text = event.data.text();
     event.waitUntil(
       self.registration.showNotification('Salon Boumlik', {
         body: text,
-        icon: '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
+        icon: '/pwa-192x192.png',
+        badge: '/pwa-192x192.png',
       })
     );
   }
@@ -35,15 +27,21 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const targetUrl =
+    (event.notification.data && event.notification.data.url) || '/';
+
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if (client.url && 'focus' in client) {
+          if (targetUrl !== '/' && 'navigate' in client) {
+            client.navigate(targetUrl).catch(() => {});
+          }
           return client.focus();
         }
       }
       if (self.clients.openWindow) {
-        return self.clients.openWindow('/');
+        return self.clients.openWindow(targetUrl);
       }
     })
   );

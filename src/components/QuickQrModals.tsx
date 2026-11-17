@@ -12,9 +12,11 @@ import {
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
+import { useSalonProfileSettings } from '../utils/salonSettingsStore';
 
 export const QuickQrModals: React.FC = () => {
   const { lang } = useLanguage();
+  const salonSettings = useSalonProfileSettings();
   const [activeModal, setActiveModal] = useState<'instagram' | 'wifi' | 'whatsapp' | 'reviews' | null>(null);
   const [copiedWifi, setCopiedWifi] = useState(false);
 
@@ -242,7 +244,7 @@ export const QuickQrModals: React.FC = () => {
                   {lang === 'ar' ? 'رأيكم يهمنا! اترك تقييم 5 نجوم على خرائط Google' : 'Laissez un avis 5 étoiles pour soutenir le salon !'}
                 </p>
                 <a
-                  href={SALON_INFO.social.googleReviewUrl}
+                  href={salonSettings.googleReviewUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs flex items-center justify-center gap-2 shadow-md transition-colors"

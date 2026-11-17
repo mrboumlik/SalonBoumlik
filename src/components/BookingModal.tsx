@@ -128,12 +128,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       clientName: finalClientName,
       clientPhone: finalClientPhone.length >= 6 ? finalClientPhone : '0600000000',
       clientEmail: clientEmail.trim() || undefined,
+      clientNotes: notes.trim() ? notes.trim().slice(0, 400) : undefined,
       notes: notes.trim() || undefined,
       totalDurationMinutes: activeServices.reduce((acc, s) => acc + s.durationMinutes, 0),
       status: 'pending_quote',
     });
 
     setConfirmedBooking(newBooking);
+    setNotes('');
     onAppointmentBooked(newBooking);
 
     // Launch celebratory confetti
@@ -634,12 +636,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   </div>
 
                   <div>
-                    <input
-                      type="text"
+                    <textarea
+                      rows={2}
+                      maxLength={400}
                       placeholder={t.formNotes}
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      className="w-full bg-zinc-950 text-xs text-zinc-100 px-3.5 py-2.5 rounded-xl border border-zinc-800 focus:outline-none focus:border-amber-500"
+                      className="w-full resize-y bg-zinc-950 text-xs text-zinc-100 px-3.5 py-2.5 rounded-xl border border-zinc-800 focus:outline-none focus:border-amber-500"
                     />
                   </div>
                 </div>

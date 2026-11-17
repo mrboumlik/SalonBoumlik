@@ -18,9 +18,11 @@ import {
 import { SALON_INFO } from '../data/barbershopData';
 import { createGmailComposeUrl, createWhatsAppUrl } from '../utils/calendar';
 import { useLanguage } from '../context/LanguageContext';
+import { useSalonProfileSettings } from '../utils/salonSettingsStore';
 
 export const ContactSection: React.FC = () => {
   const { lang, t } = useLanguage();
+  const salonSettings = useSalonProfileSettings();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -270,7 +272,7 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
               {/* Exact location summary */}
               <div className="space-y-2 pt-2 text-xs text-zinc-300">
                 <a
-                  href={SALON_INFO.googleMapsDirectionsUrl}
+                  href={salonSettings.googleMapsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-start gap-2.5 p-3 rounded-xl bg-zinc-950/80 border border-zinc-800 hover:border-amber-500/50 hover:text-white transition-all group"

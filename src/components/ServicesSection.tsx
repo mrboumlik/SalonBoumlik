@@ -127,6 +127,18 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
     }[lang] || 'Total :',
   };
 
+  const formatDuration = (mins: number) => {
+    if (lang === 'ar') return `${mins} دقيقة`;
+    if (lang === 'amz') return `${mins} ⵜⵓⵙⴷⵉⴷⵜ`;
+    if (lang === 'en') return `${mins} mins`;
+    return `${mins} min`;
+  };
+
+  const totalEstimatedDuration = BASE_SERVICES.filter((s) => selectedIds.includes(s.id)).reduce(
+    (sum, s) => sum + s.durationMinutes,
+    0
+  );
+
   return (
     <section id="services" className="py-16 sm:py-24 bg-black text-white relative">
       {/* Barber Pole subtle border on top */}
@@ -205,22 +217,22 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                   }`}
                 >
                   <div>
-                    {/* Header: Name & Price & Check */}
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                    {/* Header: Name, Estimated Duration & Check */}
+                    <div className="flex items-start justify-between gap-3 mb-2.5">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
                           <h3 className="font-black text-white text-base group-hover:text-red-400 transition-colors">
                             {name}
                           </h3>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800/90 border border-zinc-700/80 text-zinc-200 text-[11px] font-mono font-bold whitespace-nowrap">
+                            <Clock className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                            <span>{formatDuration(service.durationMinutes)}</span>
+                          </span>
                           {service.popular && (
                             <span className="px-1.5 py-0.5 rounded bg-red-600/20 text-red-400 text-[10px] font-bold border border-red-500/30">
                               HOT
                             </span>
                           )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1 text-[11px] text-zinc-400">
-                          <Clock className="w-3 h-3 text-zinc-400" />
-                          <span>~{service.durationMinutes} min</span>
                         </div>
                       </div>
 
@@ -365,9 +377,20 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                   </div>
                   <div>
                     <h3 className="font-black text-white text-base">{ui.cartTitle}</h3>
-                    <span className="text-[11px] text-zinc-400">
-                      {pricingResult.items.length} {lang === 'ar' ? 'خدمة مختارة' : 'soins'}
-                    </span>
+                    <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+                      <span>
+                        {pricingResult.items.length} {lang === 'ar' ? 'خدمة مختارة' : lang === 'en' ? 'selected' : 'soins'}
+                      </span>
+                      {totalEstimatedDuration > 0 && (
+                        <>
+                          <span className="text-zinc-600">•</span>
+                          <span className="inline-flex items-center gap-1 text-amber-400 font-mono font-semibold">
+                            <Clock className="w-3 h-3" />
+                            <span>{formatDuration(totalEstimatedDuration)}</span>
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -399,7 +422,17 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                       className="p-3 rounded-xl bg-zinc-900/70 border border-zinc-800/80 flex items-center justify-between gap-3 text-xs"
                     >
                       <div className="flex-1 min-w-0">
-                        <span className="font-bold text-white block truncate">{item.name}</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-bold text-white truncate">{item.name}</span>
+                          {(() => {
+                            const matched = BASE_SERVICES.find((s) => s.id === item.serviceId);
+                            return matched ? (
+                              <span className="text-[10px] font-mono text-zinc-400 flex-shrink-0">
+                                ({formatDuration(matched.durationMinutes)})
+                              </span>
+                            ) : null;
+                          })()}
+                        </div>
                         {item.discountApplied && (
                           <span className="text-[10px] text-emerald-400 font-medium block truncate">
                             ✓ {item.discountApplied}

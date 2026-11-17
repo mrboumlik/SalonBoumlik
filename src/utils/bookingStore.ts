@@ -69,6 +69,9 @@ function buildSanitizedBooking(booking: AppointmentBooking): Record<string, unkn
   if (booking.clientEmail && booking.clientEmail.trim()) {
     sanitized.clientEmail = booking.clientEmail.trim().slice(0, 120);
   }
+  if (booking.clientNotes && booking.clientNotes.trim()) {
+    sanitized.clientNotes = booking.clientNotes.trim().slice(0, 400);
+  }
   if (booking.notes && booking.notes.trim()) {
     sanitized.notes = booking.notes.trim().slice(0, 500);
   }
@@ -111,6 +114,21 @@ function buildSanitizedBooking(booking: AppointmentBooking): Record<string, unkn
   }
   if (booking.adminNotes !== undefined && booking.adminNotes !== '') {
     sanitized.adminNotes = String(booking.adminNotes).slice(0, 500);
+  }
+  if (booking.cihReceiptName && booking.cihReceiptName.trim()) {
+    sanitized.cihReceiptName = booking.cihReceiptName.trim().slice(0, 160);
+  }
+  if (booking.cihReceiptPreview && booking.cihReceiptPreview.trim()) {
+    sanitized.cihReceiptPreview = booking.cihReceiptPreview.slice(0, 200000);
+  }
+  if (booking.cihReceiptUploadedAt && booking.cihReceiptUploadedAt.trim()) {
+    sanitized.cihReceiptUploadedAt = booking.cihReceiptUploadedAt.trim().slice(0, 64);
+  }
+  if (booking.loyaltyRewardApplied && booking.loyaltyRewardApplied.trim()) {
+    sanitized.loyaltyRewardApplied = booking.loyaltyRewardApplied.trim().slice(0, 200);
+  }
+  if (booking.attendanceConfirmedAt && booking.attendanceConfirmedAt.trim()) {
+    sanitized.attendanceConfirmedAt = booking.attendanceConfirmedAt.trim().slice(0, 64);
   }
 
   return sanitized;
@@ -212,6 +230,21 @@ function cleanTicketString(ticket: string): string {
   return ticket.trim().replace(/^#+/, '').replace(/^SB-?/i, '').trim().toUpperCase();
 }
 
+/**
+ * Normalizes Moroccan phone numbers across "+212...", "212...", "06...", and spaced formats.
+ */
+export function normalizeMoroccanPhoneDigits(rawPhone: string): string {
+  const digits = rawPhone.replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('212') && digits.length >= 12) {
+    return digits.slice(3);
+  }
+  if (digits.startsWith('0') && digits.length >= 10) {
+    return digits.slice(1);
+  }
+  return digits;
+}
+
 export function getBookingByTicket(
   ticket: string,
   sourceBookings: AppointmentBooking[] = memoryCache
@@ -230,7 +263,7 @@ export function getBookingByTicket(
     if (digitsOrCode && bClean === digitsOrCode) {
       return true;
     }
-    if (digitsOrCode.length >= 3 && (bRaw.includes(digitsOrCode) || b.id.includes(digitsOrCode))) {
+    if (digitsOrCode.length >= 3 && digitsOrCode.length <= 6 && (bRaw.includes(digitsOrCode) || b.id.includes(digitsOrCode))) {
       return true;
     }
     return false;
@@ -241,12 +274,93 @@ export function getBookingsByPhone(
   rawPhone: string,
   sourceBookings: AppointmentBooking[] = memoryCache
 ): AppointmentBooking[] {
-  const digits = rawPhone.replace(/\D/g, '');
-  if (!digits) return [];
+  const rawDigits = rawPhone.replace(/\D/g, '');
+  const canonicalDigits = normalizeMoroccanPhoneDigits(rawPhone);
+  if (rawDigits.length < 4 && canonicalDigits.length < 4) return [];
+
   return sourceBookings.filter((b) => {
-    const bDigits = b.clientPhone.replace(/\D/g, '');
-    return bDigits.includes(digits) || digits.includes(bDigits);
+    const bRawDigits = b.clientPhone.replace(/\D/g, '');
+    const bCanonical = normalizeMoroccanPhoneDigits(b.clientPhone);
+    return (
+      (rawDigits.length >= 4 && (bRawDigits.includes(rawDigits) || rawDigits.includes(bRawDigits))) ||
+      (canonicalDigits.length >= 4 && (bCanonical.includes(canonicalDigits) || canonicalDigits.includes(bCanonical)))
+    );
   });
+}
+
+export function matchesUniversalBookingQuery(
+  booking: AppointmentBooking,
+  rawQuery: string
+): boolean {
+  const q = rawQuery.trim();
+  if (!q) return true;
+
+  const qLower = q.toLowerCase();
+  const qUpper = q.toUpperCase();
+  const cleanQTicket = cleanTicketString(q);
+  const bTicketUpper = booking.ticketNumber.toUpperCase();
+  const bTicketClean = cleanTicketString(booking.ticketNumber);
+
+  // 1. Ticket ID matching (#SB-1234, SB-1234, 1234)
+  if (
+    bTicketUpper === qUpper ||
+    bTicketUpper.replace('#', '') === qUpper.replace('#', '') ||
+    bTicketUpper.includes(qUpper) ||
+    (cleanQTicket.length >= 2 && bTicketClean.includes(cleanQTicket))
+  ) {
+    return true;
+  }
+
+  // 2. Normalized Moroccan phone matching (06..., +212..., c_<digits>, spaces ignored)
+  const phoneLookupQuery = qLower.startsWith('c_') ? q.slice(2) : q;
+  const rawDigits = phoneLookupQuery.replace(/\D/g, '');
+  const canonicalDigits = normalizeMoroccanPhoneDigits(phoneLookupQuery);
+  if (rawDigits.length >= 3) {
+    const bRawDigits = booking.clientPhone.replace(/\D/g, '');
+    const bCanonical = normalizeMoroccanPhoneDigits(booking.clientPhone);
+    if (
+      bRawDigits.includes(rawDigits) ||
+      (rawDigits.length >= 9 && rawDigits.includes(bRawDigits)) ||
+      (canonicalDigits.length >= 3 && bCanonical.includes(canonicalDigits))
+    ) {
+      return true;
+    }
+  }
+
+  // 3. Name / Barber / Email text matching
+  return (
+    booking.clientName.toLowerCase().includes(qLower) ||
+    booking.barberName.toLowerCase().includes(qLower) ||
+    (booking.clientEmail ? booking.clientEmail.toLowerCase().includes(qLower) : false)
+  );
+}
+
+export function findBookingsUniversal(
+  rawQuery: string,
+  sourceBookings: AppointmentBooking[] = memoryCache
+): AppointmentBooking[] {
+  const q = rawQuery.trim();
+  if (!q) return sourceBookings;
+
+  const byExactTicket = getBookingByTicket(q, sourceBookings);
+  const byPhone = getBookingsByPhone(q, sourceBookings);
+  const loose = sourceBookings.filter((b) => matchesUniversalBookingQuery(b, q));
+
+  const seen = new Set<string>();
+  const ordered: AppointmentBooking[] = [];
+
+  if (byExactTicket) {
+    seen.add(byExactTicket.id);
+    ordered.push(byExactTicket);
+  }
+  [...byPhone, ...loose].forEach((b) => {
+    if (!seen.has(b.id)) {
+      seen.add(b.id);
+      ordered.push(b);
+    }
+  });
+
+  return ordered;
 }
 
 /**
@@ -316,6 +430,49 @@ export async function updateBookingStatus(
       status: newStatus,
       adminNotes: adminNotes !== undefined ? adminNotes : existing.adminNotes,
       rescheduledTo: rescheduledTo !== undefined ? rescheduledTo : existing.rescheduledTo,
+    };
+    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    return updatedBooking;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Marks a booking as attended/completed with timestamp and optional reward tag in Cloud Firestore.
+ */
+export async function markBookingAttendanceCompleted(
+  id: string,
+  adminNotes?: string,
+  loyaltyRewardApplied?: string
+): Promise<AppointmentBooking | null> {
+  const path = `${BOOKINGS_COLLECTION}/${id}`;
+  try {
+    const confirmedAt = new Date().toISOString().slice(0, 64);
+    const updatePayload: Record<string, unknown> = {
+      status: 'completed' as BookingStatus,
+      attendanceConfirmedAt: confirmedAt,
+    };
+    if (adminNotes !== undefined) {
+      updatePayload.adminNotes = String(adminNotes).slice(0, 500);
+    }
+    if (loyaltyRewardApplied !== undefined && loyaltyRewardApplied.trim()) {
+      updatePayload.loyaltyRewardApplied = loyaltyRewardApplied.trim().slice(0, 200);
+    }
+
+    await updateDoc(doc(db, BOOKINGS_COLLECTION, id), updatePayload);
+
+    const existing = memoryCache.find((b) => b.id === id);
+    if (!existing) return null;
+    const updatedBooking: AppointmentBooking = {
+      ...existing,
+      status: 'completed',
+      attendanceConfirmedAt: confirmedAt,
+      adminNotes: adminNotes !== undefined ? adminNotes : existing.adminNotes,
+      loyaltyRewardApplied:
+        loyaltyRewardApplied !== undefined && loyaltyRewardApplied.trim()
+          ? loyaltyRewardApplied.trim().slice(0, 200)
+          : existing.loyaltyRewardApplied,
     };
     memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
     return updatedBooking;
@@ -443,6 +600,51 @@ export async function updateBookingAdminNote(
     const existing = memoryCache.find((b) => b.id === id);
     if (!existing) return null;
     const updatedBooking: AppointmentBooking = { ...existing, adminNotes: cleanNote };
+    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    return updatedBooking;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Attaches or updates a client's CIH transfer receipt on an existing booking in Cloud Firestore.
+ */
+export async function updateBookingCihReceipt(
+  id: string,
+  receipt: {
+    cihReceiptName: string;
+    cihReceiptPreview?: string;
+    cihReceiptUploadedAt: string;
+  }
+): Promise<AppointmentBooking | null> {
+  const path = `${BOOKINGS_COLLECTION}/${id}`;
+  try {
+    const cleanName = String(receipt.cihReceiptName || '').trim().slice(0, 160);
+    const cleanUploadedAt = String(receipt.cihReceiptUploadedAt || new Date().toISOString())
+      .trim()
+      .slice(0, 64);
+    const cleanPreview =
+      receipt.cihReceiptPreview && receipt.cihReceiptPreview.trim()
+        ? receipt.cihReceiptPreview.slice(0, 200000)
+        : '';
+
+    const updatePayload: Record<string, unknown> = {
+      cihReceiptName: cleanName,
+      cihReceiptUploadedAt: cleanUploadedAt,
+      cihReceiptPreview: cleanPreview ? cleanPreview : deleteField(),
+    };
+
+    await updateDoc(doc(db, BOOKINGS_COLLECTION, id), updatePayload);
+
+    const existing = memoryCache.find((b) => b.id === id);
+    if (!existing) return null;
+    const updatedBooking: AppointmentBooking = {
+      ...existing,
+      cihReceiptName: cleanName,
+      cihReceiptPreview: cleanPreview || undefined,
+      cihReceiptUploadedAt: cleanUploadedAt,
+    };
     memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
     return updatedBooking;
   } catch (error) {

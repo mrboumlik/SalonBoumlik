@@ -19,7 +19,9 @@ import {
 import { TEAM_MEMBERS, SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
+import { useSalonProfileSettings } from '../utils/salonSettingsStore';
 import { BarberStaff } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface DrawerMenuProps {
   isOpen: boolean;
@@ -36,6 +38,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
 }) => {
   const { lang, t, isRtl } = useLanguage();
   const { theme, setTheme } = useTheme();
+  const salonSettings = useSalonProfileSettings();
 
   // Accordion state: null = all collapsed by default, or specific active key
   const [expandedSection, setExpandedSection] = useState<'team' | 'gallery' | 'wifi' | 'location' | null>(null);
@@ -443,7 +446,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 </div>
 
                 <a
-                  href={SALON_INFO.googleMapsDirectionsUrl}
+                  href={salonSettings.googleMapsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-md"
@@ -456,6 +459,11 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
             )}
           </div>
 
+        </div>
+
+        {/* PWA Install Prompt Box in Drawer */}
+        <div className="px-4 py-2 bg-zinc-950/90 border-t border-zinc-800/80">
+          <PWAInstallButton variant="drawer" />
         </div>
 
         {/* Theme Switcher in Drawer */}

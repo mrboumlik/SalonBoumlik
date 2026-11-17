@@ -31,10 +31,12 @@ service cloud.firestore {
       && data.keys().hasOnly([
         'id', 'ticketNumber', 'barberId', 'barberName', 'barberColor',
         'date', 'timeSlot', 'clientName', 'clientPhone', 'clientEmail',
-        'notes', 'services', 'cartItemsSummary', 'originalTotalMAD',
+        'clientNotes', 'notes', 'services', 'cartItemsSummary', 'originalTotalMAD',
         'finalTotalMAD', 'totalSavingsMAD', 'bookingMethod',
         'drinkPreference', 'totalDurationMinutes', 'status',
-        'rescheduledTo', 'clientLanguage', 'adminNotes', 'createdAt'
+        'rescheduledTo', 'clientLanguage', 'adminNotes',
+        'cihReceiptName', 'cihReceiptPreview', 'cihReceiptUploadedAt',
+        'loyaltyRewardApplied', 'attendanceConfirmedAt', 'createdAt'
       ])
       && isValidId(data.id)
       && data.ticketNumber is string && data.ticketNumber.size() >= 3 && data.ticketNumber.size() <= 32
@@ -46,6 +48,7 @@ service cloud.firestore {
       && data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 120
       && data.clientPhone is string && data.clientPhone.size() >= 6 && data.clientPhone.size() <= 40
       && (!('clientEmail' in data) || (data.clientEmail is string && data.clientEmail.size() <= 120))
+      && (!('clientNotes' in data) || (data.clientNotes is string && data.clientNotes.size() <= 400))
       && (!('notes' in data) || (data.notes is string && data.notes.size() <= 500))
       && (!('services' in data) || (data.services is list && data.services.size() <= 20))
       && (!('cartItemsSummary' in data) || (data.cartItemsSummary is list && data.cartItemsSummary.size() <= 20))
@@ -55,7 +58,7 @@ service cloud.firestore {
       && (!('bookingMethod' in data) || data.bookingMethod in ['site', 'whatsapp'])
       && (!('drinkPreference' in data) || data.drinkPreference in ['coffee', 'tea', 'none'])
       && (!('totalDurationMinutes' in data) || (data.totalDurationMinutes is number && data.totalDurationMinutes >= 0 && data.totalDurationMinutes <= 1000))
-      && data.status in ['pending', 'pending_quote', 'confirmed', 'rescheduled', 'rejected', 'cancelled']
+      && data.status in ['pending', 'pending_quote', 'confirmed', 'rescheduled', 'completed', 'no_show', 'rejected', 'cancelled']
       && (!('rescheduledTo' in data) || (
         data.rescheduledTo is map
         && data.rescheduledTo.keys().hasAll(['date', 'time'])
@@ -65,12 +68,194 @@ service cloud.firestore {
       ))
       && (!('clientLanguage' in data) || data.clientLanguage in ['fr', 'ar', 'en', 'amz', 'es'])
       && (!('adminNotes' in data) || (data.adminNotes is string && data.adminNotes.size() <= 500))
+      && (!('cihReceiptName' in data) || (data.cihReceiptName is string && data.cihReceiptName.size() <= 160))
+      && (!('cihReceiptPreview' in data) || (data.cihReceiptPreview is string && data.cihReceiptPreview.size() <= 200000))
+      && (!('cihReceiptUploadedAt' in data) || (data.cihReceiptUploadedAt is string && data.cihReceiptUploadedAt.size() <= 64))
+      && (!('loyaltyRewardApplied' in data) || (data.loyaltyRewardApplied is string && data.loyaltyRewardApplied.size() <= 200))
+      && (!('attendanceConfirmedAt' in data) || (data.attendanceConfirmedAt is string && data.attendanceConfirmedAt.size() <= 64))
       && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64;
+    }
+
+    function isValidSalonSettings(data) {
+      return data.keys().hasAll(['googleMapsUrl', 'googleReviewUrl', 'updatedAt'])
+      && data.keys().hasOnly(['googleMapsUrl', 'googleReviewUrl', 'updatedAt'])
+      && data.googleMapsUrl is string && data.googleMapsUrl.size() >= 10 && data.googleMapsUrl.size() <= 500
+      && data.googleMapsUrl.matches('^https://.*$')
+      && data.googleReviewUrl is string && data.googleReviewUrl.size() >= 10 && data.googleReviewUrl.size() <= 500
+      && data.googleReviewUrl.matches('^https://.*$')
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidBarberSchedule(data) {
+      return data.keys().hasAll([
+        'id', 'barberId', 'offWeekdays', 'offDates',
+        'breakSlots', 'dateSlotBlocks', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'barberId', 'offWeekdays', 'offDates',
+        'breakSlots', 'dateSlotBlocks', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && data.barberId is string && data.barberId.size() >= 1 && data.barberId.size() <= 64
+      && data.offWeekdays is list && data.offWeekdays.size() <= 7
+      && data.offDates is list && data.offDates.size() <= 60
+      && data.breakSlots is list && data.breakSlots.size() <= 20
+      && data.dateSlotBlocks is list && data.dateSlotBlocks.size() <= 100
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidCrmClient(data) {
+      return data.keys().hasAll([
+        'id', 'normalizedPhone', 'phoneDisplay', 'clientName',
+        'isVip', 'noShowCount', 'isBanned',
+        'freeWashesRedeemed', 'customDiscountMAD', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'normalizedPhone', 'phoneDisplay', 'clientName',
+        'isVip', 'noShowCount', 'isBanned', 'banReason',
+        'freeWashesRedeemed', 'customDiscountMAD', 'verifiedVisits', 'rewardNote', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && data.normalizedPhone is string && data.normalizedPhone.size() >= 4 && data.normalizedPhone.size() <= 32
+      && data.phoneDisplay is string && data.phoneDisplay.size() >= 4 && data.phoneDisplay.size() <= 40
+      && data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 120
+      && data.isVip is bool
+      && data.noShowCount is number && data.noShowCount >= 0 && data.noShowCount <= 500
+      && data.isBanned is bool
+      && (!('banReason' in data) || (data.banReason is string && data.banReason.size() <= 300))
+      && data.freeWashesRedeemed is number && data.freeWashesRedeemed >= 0 && data.freeWashesRedeemed <= 500
+      && data.customDiscountMAD is number && data.customDiscountMAD >= 0 && data.customDiscountMAD <= 10000
+      && (!('verifiedVisits' in data) || (data.verifiedVisits is number && data.verifiedVisits >= 0 && data.verifiedVisits <= 500))
+      && (!('rewardNote' in data) || (data.rewardNote is string && data.rewardNote.size() <= 300))
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidWaitlistEntry(data) {
+      return data.keys().hasAll([
+        'id', 'barberId', 'barberName', 'date',
+        'preferredTime', 'clientName', 'clientPhone',
+        'servicesSummary', 'status', 'createdAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'barberId', 'barberName', 'date',
+        'preferredTime', 'clientName', 'clientPhone',
+        'servicesSummary', 'status', 'createdAt'
+      ])
+      && isValidId(data.id)
+      && data.barberId is string && data.barberId.size() >= 1 && data.barberId.size() <= 64
+      && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
+      && data.date is string && data.date.size() >= 8 && data.date.size() <= 20
+      && data.preferredTime is string && data.preferredTime.size() >= 2 && data.preferredTime.size() <= 32
+      && data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 120
+      && data.clientPhone is string && data.clientPhone.size() >= 6 && data.clientPhone.size() <= 40
+      && data.servicesSummary is string && data.servicesSummary.size() <= 300
+      && data.status in ['waiting', 'notified', 'converted', 'cancelled']
+      && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64;
+    }
+
+    function isValidShiftRequest(data) {
+      return data.keys().hasAll([
+        'id', 'barberId', 'barberName', 'requestType',
+        'targetDate', 'status', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'barberId', 'barberName', 'requestType',
+        'targetDate', 'targetSlots', 'swapWithBarberId', 'swapWithBarberName',
+        'swapDate', 'reason', 'status', 'reviewerNote',
+        'reviewedBy', 'reviewedAt', 'createdAt', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && data.barberId is string && data.barberId.size() >= 1 && data.barberId.size() <= 64
+      && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
+      && data.requestType in ['day_off', 'day_open', 'slot_block', 'slot_open', 'shift_swap']
+      && data.targetDate is string && data.targetDate.size() >= 8 && data.targetDate.size() <= 20
+      && (!('targetSlots' in data) || (
+        data.targetSlots is list
+        && data.targetSlots.size() <= 12
+        && (data.targetSlots.size() == 0 || data.targetSlots[0] is string)
+      ))
+      && (!('swapWithBarberId' in data) || (data.swapWithBarberId is string && data.swapWithBarberId.size() <= 64))
+      && (!('swapWithBarberName' in data) || (data.swapWithBarberName is string && data.swapWithBarberName.size() <= 100))
+      && (!('swapDate' in data) || (data.swapDate is string && data.swapDate.size() <= 20))
+      && (!('reason' in data) || (data.reason is string && data.reason.size() <= 300))
+      && data.status in ['pending', 'approved', 'rejected']
+      && (!('reviewerNote' in data) || (data.reviewerNote is string && data.reviewerNote.size() <= 300))
+      && (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 100))
+      && (!('reviewedAt' in data) || (data.reviewedAt is string && data.reviewedAt.size() <= 64))
+      && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
     }
 
     // Connection check document for app boot health validation
     match /test/connection {
       allow get: if request.time != null;
+    }
+
+    // Public Google Maps & Business Profile configuration
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId) && request.time != null;
+      allow create, update: if isValidId(settingId)
+        && settingId == 'salon_profile'
+        && isValidSalonSettings(incoming());
+    }
+
+    // Barber shift, break, and off-day configurations
+    match /barber_schedules/{scheduleId} {
+      allow get: if isValidId(scheduleId) && request.time != null;
+      allow list: if request.time != null;
+      allow create, update: if isValidId(scheduleId)
+        && isValidBarberSchedule(incoming())
+        && incoming().id == scheduleId;
+      allow delete: if isValidId(scheduleId) && request.time != null;
+    }
+
+    // Client CRM, Loyalty & Blacklist records
+    match /crm_clients/{clientId} {
+      allow get: if isValidId(clientId) && request.time != null;
+      allow list: if request.time != null;
+      allow create, update: if isValidId(clientId)
+        && isValidCrmClient(incoming())
+        && incoming().id == clientId;
+      allow delete: if isValidId(clientId) && request.time != null;
+    }
+
+    // Smart Waitlist entries
+    match /waitlist/{entryId} {
+      allow get: if isValidId(entryId) && request.time != null;
+      allow list: if request.time != null;
+      allow create: if isValidId(entryId)
+        && isValidWaitlistEntry(incoming())
+        && incoming().id == entryId
+        && incoming().status == 'waiting';
+      allow update: if isValidId(entryId)
+        && isValidWaitlistEntry(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().barberId == existing().barberId
+        && incoming().clientPhone == existing().clientPhone
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+      allow delete: if isValidId(entryId) && request.time != null;
+    }
+
+    // Barber time-off, break-block, and shift-swap planner requests
+    match /shift_requests/{requestId} {
+      allow get: if isValidId(requestId) && request.time != null;
+      allow list: if request.time != null;
+      allow create: if isValidId(requestId)
+        && isValidShiftRequest(incoming())
+        && incoming().id == requestId
+        && incoming().status == 'pending';
+      allow update: if isValidId(requestId)
+        && isValidShiftRequest(incoming())
+        && incoming().id == existing().id
+        && incoming().barberId == existing().barberId
+        && incoming().requestType == existing().requestType
+        && incoming().targetDate == existing().targetDate
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'reviewerNote', 'reviewedBy', 'reviewedAt', 'updatedAt'
+        ]);
+      allow delete: if isValidId(requestId) && request.time != null;
     }
 
     // Bookings collection: real-time synchronized appointments & tickets
@@ -84,7 +269,7 @@ service cloud.firestore {
         && incoming().id == bookingId
         && incoming().status in ['pending', 'pending_quote'];
 
-      // Status, reschedule proposals, dates/times, and admin notes can be updated while keeping core identity immutable
+      // Status, reschedule proposals, dates/times, notes, receipts, and loyalty reward tags
       allow update: if isValidId(bookingId)
         && isValidBooking(incoming())
         && incoming().id == existing().id
@@ -94,7 +279,9 @@ service cloud.firestore {
         && incoming().clientName == existing().clientName
         && incoming().clientPhone == existing().clientPhone
         && incoming().diff(existing()).affectedKeys().hasOnly([
-          'status', 'adminNotes', 'rescheduledTo', 'date', 'timeSlot'
+          'status', 'adminNotes', 'rescheduledTo', 'date', 'timeSlot',
+          'cihReceiptName', 'cihReceiptPreview', 'cihReceiptUploadedAt',
+          'loyaltyRewardApplied', 'attendanceConfirmedAt'
         ]);
 
       allow delete: if isValidId(bookingId) && request.time != null;

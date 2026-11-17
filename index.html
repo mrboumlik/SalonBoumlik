@@ -9,15 +9,45 @@
     <meta property="og:description" content="Salon Boumlik - Men's Services Only. Taroudant, Rue Bir Anzarane. Réservation et devis sur WhatsApp au 0635392503." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="theme-color" content="#0d0f12" />
+    <meta name="theme-color" content="#08090C" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Boumlik" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 
     <!-- Google Fonts including Tifinagh (Tamazight) & Arabic -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Amiri:wght@400;700&family=Noto+Sans+Tifinagh&display=swap" rel="stylesheet">
 
-    <!-- dom-to-image CDN for bulletproof mobile ticket image export -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
+    <!-- Google Analytics (GA4) Placeholder - Replace G-XXXXXXXXXX with your live Measurement ID -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      // Replace 'G-XXXXXXXXXX' with your live GA4 Measurement ID and uncomment loader below:
+      // var s = document.createElement('script'); s.async = true;
+      // s.src = 'https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX';
+      // document.head.appendChild(s);
+      // gtag('config', 'G-XXXXXXXXXX');
+    </script>
+
+    <!-- Meta Pixel (Facebook / Instagram) Placeholder - Replace YOUR_META_PIXEL_ID with live Pixel ID -->
+    <script>
+      !function(f,b,e,v,n,t,s){
+        if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+        n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+        if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+        n.queue=[];
+        // Replace 'YOUR_META_PIXEL_ID' and uncomment below to enable live Meta Pixel:
+        // t=b.createElement(e);t.async=!0;t.src=v;
+        // s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s);
+      }(window, document,'script','https://connect.facebook.net/en_US/fbevents.js');
+      // fbq('init', 'YOUR_META_PIXEL_ID');
+      // fbq('track', 'PageView');
+    </script>
 
     <!-- Schema.org Barbershop structured data -->
     <script type="application/ld+json">
@@ -45,15 +75,21 @@
       "openingHoursSpecification": [
         {
           "@type": "OpeningHoursSpecification",
-          "dayOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday", "Saturday", "Sunday"],
-          "opens": "10:00",
+          "dayOfWeek": ["Tuesday", "Wednesday", "Thursday", "Saturday", "Sunday"],
+          "opens": "11:00",
+          "closes": "13:00"
+        },
+        {
+          "@type": "OpeningHoursSpecification",
+          "dayOfWeek": ["Tuesday", "Wednesday", "Thursday", "Saturday", "Sunday"],
+          "opens": "16:00",
           "closes": "22:00"
         },
         {
           "@type": "OpeningHoursSpecification",
           "dayOfWeek": "Friday",
           "opens": "15:00",
-          "closes": "23:00"
+          "closes": "22:00"
         }
       ]
     }

@@ -88,6 +88,7 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
             const localizedBarberName = barber.name[lang] || barber.name.fr;
             const firstName = localizedBarberName.split(' ')[0];
             const isBioExpanded = expandedBioId === barber.id;
+            const accentColor = barber.themeColor || '#D97706';
 
             return (
               <div
@@ -98,18 +99,27 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                     : 'border-zinc-800 hover:border-zinc-700'
                 }`}
               >
+                {/* Signature Barber Color Accent Bar */}
+                <div
+                  className="absolute top-0 inset-x-0 h-1.5"
+                  style={{ backgroundColor: accentColor }}
+                />
+
                 {barber.isOwner && (
                   <div className="absolute top-4 right-4 z-10">
                     <span className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-400 to-amber-500 text-zinc-950 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full shadow-md">
                       <Crown className="w-3 h-3 text-zinc-950" />
-                      <span>{lang === 'ar' ? 'المالك' : lang === 'amz' ? 'ⴰⵎⵙⴱⴷⴰⴷ' : 'Fondateur'}</span>
+                      <span>{lang === 'ar' ? 'المالك' : lang === 'amz' ? 'ⴰⵎⵙⴱⴷⴰⴷ' : lang === 'en' ? 'Founder' : 'Fondateur'}</span>
                     </span>
                   </div>
                 )}
 
-                <div>
-                  {/* Avatar with gold border */}
-                  <div className="relative w-28 h-28 mx-auto rounded-2xl overflow-hidden border-2 border-amber-500/40 shadow-xl mb-4 group-hover:scale-105 transition-transform">
+                <div className="pt-1">
+                  {/* Avatar with barber signature color ring */}
+                  <div
+                    className="relative w-28 h-28 mx-auto rounded-2xl overflow-hidden border-2 shadow-xl mb-4 group-hover:scale-105 transition-transform"
+                    style={{ borderColor: `${accentColor}90` }}
+                  >
                     <img
                       src={barber.avatar}
                       alt={localizedBarberName}
@@ -124,12 +134,15 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                     <h3 className="text-lg font-bold text-white group-hover:text-amber-300 transition-colors">
                       {localizedBarberName}
                     </h3>
-                    {barber.isOwner && barber.role && (
-                      <div className="text-xs font-semibold text-amber-400">
+                    {barber.role && (
+                      <div
+                        className="text-xs font-bold"
+                        style={{ color: barber.isOwner ? '#FBBF24' : accentColor }}
+                      >
                         {barber.role[lang] || barber.role.fr}
                       </div>
                     )}
-                    {barber.isOwner && barber.experience && (
+                    {barber.experience && (
                       <div className="text-[11px] text-zinc-400">
                         {barber.experience[lang] || barber.experience.fr}
                       </div>
@@ -144,8 +157,60 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                     <span className="font-bold text-white ml-1">{barber.rating}.0</span>
                   </div>
 
+                  {/* Specialty Box (All Barbers) */}
+                  {barber.specialty && (
+                    <div className="p-3 rounded-2xl bg-zinc-950/90 border border-zinc-800/90 text-xs text-zinc-300 mb-3">
+                      <div
+                        className="text-[10px] uppercase font-black tracking-wider mb-1 flex items-center gap-1"
+                        style={{ color: barber.isOwner ? '#FBBF24' : accentColor }}
+                      >
+                        <Sparkles className="w-3 h-3 flex-shrink-0" />
+                        <span>
+                          {lang === 'ar'
+                            ? 'التخصص'
+                            : lang === 'amz'
+                            ? 'ⵜⴰⵎⵙⴽⵉⵔⵜ'
+                            : lang === 'en'
+                            ? 'Specialty'
+                            : lang === 'es'
+                            ? 'Especialidad'
+                            : 'Spécialité'}
+                        </span>
+                      </div>
+                      <p className="leading-relaxed text-[11px] text-zinc-300">
+                        {barber.specialty[lang] || barber.specialty.fr}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Biography Box (All Barbers) */}
+                  {barber.bio && (
+                    <div className="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 mb-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-amber-400 uppercase font-black tracking-wider flex items-center gap-1">
+                          <Award className="w-3 h-3" />
+                          <span>{t.barberBioLabel}</span>
+                        </span>
+                      </div>
+
+                      <p className={`text-zinc-300 text-[11px] leading-relaxed transition-all ${isBioExpanded ? '' : 'line-clamp-3'}`}>
+                        {barber.bio[lang] || barber.bio.fr}
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() => setExpandedBioId(isBioExpanded ? null : barber.id)}
+                        className="text-[10px] font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                      >
+                        {isBioExpanded 
+                          ? (lang === 'ar' ? 'عرض أقل ▲' : lang === 'en' ? 'Less ▲' : 'Moins ▲') 
+                          : (lang === 'ar' ? 'قراءة المزيد ▼' : lang === 'en' ? 'Read more ▼' : 'Lire la suite ▼')}
+                      </button>
+                    </div>
+                  )}
+
                   {/* Contact Info & Personal Instagram Card */}
-                  <div className="p-3 rounded-2xl bg-zinc-950/90 border border-zinc-800 text-xs mb-3 space-y-2">
+                  <div className="p-3 rounded-2xl bg-zinc-950/90 border border-zinc-800 text-xs mb-4 space-y-2">
                     {/* Direct Phone */}
                     <div className="flex items-center justify-between text-[11px]">
                       <span className="text-zinc-400 flex items-center gap-1">
@@ -181,44 +246,6 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                       </div>
                     )}
                   </div>
-
-                  {/* Biography & Credentials Box - ONLY for Hassan */}
-                  {barber.isOwner && barber.bio && (
-                    <div className="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 mb-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-amber-400 uppercase font-black tracking-wider flex items-center gap-1">
-                          <Award className="w-3 h-3" />
-                          <span>{t.barberBioLabel}</span>
-                        </span>
-                      </div>
-
-                      <p className={`text-zinc-300 text-[11px] leading-relaxed transition-all ${isBioExpanded ? '' : 'line-clamp-3'}`}>
-                        {barber.bio[lang] || barber.bio.fr}
-                      </p>
-
-                      <button
-                        type="button"
-                        onClick={() => setExpandedBioId(isBioExpanded ? null : barber.id)}
-                        className="text-[10px] font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
-                      >
-                        {isBioExpanded 
-                          ? (lang === 'ar' ? 'عرض أقل ▲' : 'Moins ▲') 
-                          : (lang === 'ar' ? 'قراءة المزيد ▼' : 'Lire la suite ▼')}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Specialty Box - ONLY for Hassan */}
-                  {barber.isOwner && barber.specialty && (
-                    <div className="p-3 rounded-xl bg-zinc-950/70 border border-zinc-800/80 text-xs text-zinc-400 mb-4">
-                      <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mb-1">
-                        {lang === 'ar' ? 'التخصص' : lang === 'amz' ? 'ⵜⴰⵎⵙⴽⵉⵔⵜ' : lang === 'en' ? 'Specialty' : 'Spécialité'}
-                      </div>
-                      <p className="leading-relaxed text-[11px] text-zinc-300">
-                        {barber.specialty[lang] || barber.specialty.fr}
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 {/* Action Buttons: Choose this barber & Direct WhatsApp */}
@@ -228,7 +255,7 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                     className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                       barber.isOwner
                         ? 'bg-amber-400 hover:bg-amber-300 text-zinc-950 shadow-md shadow-amber-400/20'
-                        : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white'
+                        : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 hover:text-white'
                     }`}
                   >
                     <Scissors className="w-3.5 h-3.5" />
@@ -239,6 +266,8 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                         ? `ⴰⵙⵜⴰⵢ ⵏ ${firstName}` 
                         : lang === 'en' 
                         ? `Book with ${firstName}` 
+                        : lang === 'es'
+                        ? `Reservar con ${firstName}`
                         : `Réserver avec ${firstName}`}
                     </span>
                   </button>

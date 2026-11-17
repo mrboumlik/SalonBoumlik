@@ -4,7 +4,15 @@ export type AppTheme = 'luxury_gold' | 'charcoal' | 'minimal_light';
 
 export type DrinkPreference = 'coffee' | 'tea' | 'none';
 
-export type BookingStatus = 'pending' | 'pending_quote' | 'confirmed' | 'rescheduled' | 'rejected' | 'cancelled';
+export type BookingStatus =
+  | 'pending'
+  | 'pending_quote'
+  | 'confirmed'
+  | 'rescheduled'
+  | 'completed'
+  | 'no_show'
+  | 'rejected'
+  | 'cancelled';
 
 export interface BarberService {
   id: string;
@@ -182,6 +190,7 @@ export interface AppointmentBooking {
   clientName: string;
   clientPhone: string;
   clientEmail?: string;
+  clientNotes?: string;
   notes?: string;
   originalTotalMAD?: number;
   finalTotalMAD?: number;
@@ -193,7 +202,59 @@ export interface AppointmentBooking {
   rescheduledTo?: { date: string; time: string };
   clientLanguage?: Language;
   adminNotes?: string;
+  cihReceiptName?: string;
+  cihReceiptPreview?: string;
+  cihReceiptUploadedAt?: string;
+  loyaltyRewardApplied?: string;
+  attendanceConfirmedAt?: string;
   createdAt: string;
+}
+
+export interface BarberScheduleConfig {
+  id: string; // equals barberId
+  barberId: string;
+  offWeekdays: number[]; // 0=Sunday, 1=Monday (default off), ..., 6=Saturday
+  offDates: string[]; // 'YYYY-MM-DD'
+  breakSlots: string[]; // recurring daily break slots e.g. ['12:00']
+  dateSlotBlocks: string[]; // specific 'YYYY-MM-DD@HH:MM' overrides
+  updatedAt: string;
+}
+
+export interface CrmClientProfile {
+  id: string; // 'c_<normalizedPhoneDigits>'
+  normalizedPhone: string;
+  phoneDisplay: string;
+  clientName: string;
+  isVip: boolean;
+  noShowCount: number;
+  isBanned: boolean;
+  banReason?: string;
+  freeWashesRedeemed: number;
+  customDiscountMAD: number;
+  verifiedVisits?: number;
+  rewardNote?: string;
+  updatedAt: string;
+}
+
+export type WaitlistStatus = 'waiting' | 'notified' | 'converted' | 'cancelled';
+
+export interface WaitlistEntry {
+  id: string;
+  barberId: string;
+  barberName: string;
+  date: string;
+  preferredTime: string;
+  clientName: string;
+  clientPhone: string;
+  servicesSummary: string;
+  status: WaitlistStatus;
+  createdAt: string;
+}
+
+export interface SalonProfileSettings {
+  googleMapsUrl: string;
+  googleReviewUrl: string;
+  updatedAt: string;
 }
 
 export interface ContactMessage {
@@ -205,3 +266,32 @@ export interface ContactMessage {
   message: string;
   createdAt: string;
 }
+
+export type ShiftRequestType =
+  | 'day_off'
+  | 'day_open'
+  | 'slot_block'
+  | 'slot_open'
+  | 'shift_swap';
+
+export type ShiftRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface ShiftRequest {
+  id: string;
+  barberId: string;
+  barberName: string;
+  requestType: ShiftRequestType;
+  targetDate: string; // YYYY-MM-DD
+  targetSlots?: string[]; // specific HH:MM slots for slot_block / partial swap
+  swapWithBarberId?: string;
+  swapWithBarberName?: string;
+  swapDate?: string; // optional return/exchange date YYYY-MM-DD
+  reason?: string;
+  status: ShiftRequestStatus;
+  reviewerNote?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+

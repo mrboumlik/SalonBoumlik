@@ -111,7 +111,7 @@ function playFallbackBase64Sound(): void {
 }
 
 /**
- * Register Service Worker for mobile notification handling
+ * Register or retrieve the active PWA Service Worker registration
  */
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
@@ -119,8 +119,9 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
   }
 
   try {
-    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-    return reg;
+    const existing = await navigator.serviceWorker.getRegistration();
+    if (existing) return existing;
+    return await navigator.serviceWorker.ready;
   } catch (err) {
     console.warn('Service worker registration note:', err);
     return null;
@@ -136,15 +137,12 @@ export async function requestWebNotificationPermission(): Promise<NotificationPe
   }
 
   try {
-    // If already granted, return immediately
     if (Notification.permission === 'granted') {
       return 'granted';
     }
 
-    // Trigger permission request explicitly on user click
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
-      // Warm up Service Worker registration
       await registerServiceWorker();
     }
     return permission;
@@ -155,7 +153,7 @@ export async function requestWebNotificationPermission(): Promise<NotificationPe
 }
 
 /**
- * Dual Alert: Sends Web Notification (via SW or Notification API) + In-App Sound + Toast
+ * Dual Alert: Sends Web Notification (via PWA Service Worker or Notification API) + In-App Sound + Toast
  */
 export function sendDualAlert(
   title: string,
@@ -163,7 +161,7 @@ export function sendDualAlert(
     body?: string;
     type?: ToastMessage['type'];
     skipSound?: boolean;
-    data?: any;
+    data?: Record<string, unknown>;
   }
 ): void {
   const bodyText = options?.body || '';
@@ -175,22 +173,24 @@ export function sendDualAlert(
   }
   showToast(title, bodyText, type);
 
-  // 2. MECHANISM 2: Service Worker & Web Notification API
+  // 2. MECHANISM 2: PWA Service Worker & Web Notification API
   if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-    // Try service worker showNotification first
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.showNotification(title, {
-          body: bodyText,
-          icon: '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
-          badge: '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
-          data: options?.data,
-        } as NotificationOptions).catch(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then((reg) => {
+          return reg.showNotification(title, {
+            body: bodyText,
+            icon: '/pwa-192x192.png',
+            badge: '/pwa-192x192.png',
+            tag: typeof options?.data?.ticketNumber === 'string'
+              ? `sb-${options.data.ticketNumber}`
+              : 'salon-boumlik-alert',
+            data: options?.data || { url: '/' },
+          } as NotificationOptions);
+        })
+        .catch(() => {
           fallbackNotification(title, bodyText);
         });
-      }).catch(() => {
-        fallbackNotification(title, bodyText);
-      });
     } else {
       fallbackNotification(title, bodyText);
     }
@@ -201,8 +201,8 @@ function fallbackNotification(title: string, bodyText: string) {
   try {
     new Notification(title, {
       body: bodyText,
-      icon: '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
-      badge: '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
+      icon: '/pwa-192x192.png',
+      badge: '/pwa-192x192.png',
     });
   } catch (err) {
     console.warn('Native notification fallback warning:', err);

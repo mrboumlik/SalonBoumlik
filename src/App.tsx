@@ -5,6 +5,7 @@ import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { ServicesSection } from './components/ServicesSection';
 import { BookingSection } from './components/BookingSection';
+import { TeamSection } from './components/TeamSection';
 import { ReviewsSection } from './components/ReviewsSection';
 import { ContactSection } from './components/ContactSection';
 import { Footer } from './components/Footer';
@@ -12,6 +13,8 @@ import { DrawerMenu } from './components/DrawerMenu';
 import { TrackBookingModal } from './components/TrackBookingModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { ToastContainer } from './components/ToastContainer';
+import { OfflineIndicator } from './components/OfflineIndicator';
+import { useClientAppointmentReminders } from './utils/clientReminderWatcher';
 import { calculateCartPricing } from './utils/pricingEngine';
 import { HairColorConfig, AppointmentBooking } from './types';
 import { Phone, MessageCircle, Ticket } from 'lucide-react';
@@ -45,12 +48,22 @@ function SalonBoumlikApp() {
     lang,
   });
 
-  // Check URL hash for admin route (/admin or #admin)
+  // Keep live PWA reminder notifications active for tracked client tickets
+  useClientAppointmentReminders(lang);
+
+  // Check URL hash for admin route (#admin) or ticket tracking deep-link (#track=SB-XXXX)
   useEffect(() => {
     const handleHash = () => {
-      const path = window.location.hash.toLowerCase() || window.location.pathname.toLowerCase();
+      const rawHash = window.location.hash || '';
+      const path = rawHash.toLowerCase() || window.location.pathname.toLowerCase();
       if (path.includes('admin')) {
         setIsAdminOpen(true);
+      } else if (rawHash.toLowerCase().includes('track=')) {
+        const ticket = decodeURIComponent(rawHash.split(/track=/i)[1].split('&')[0]).trim();
+        if (ticket) {
+          setTrackSearchInitial(ticket);
+          setIsTrackBookingOpen(true);
+        }
       }
     };
     handleHash();
@@ -98,8 +111,9 @@ function SalonBoumlikApp() {
         />
       </div>
 
-      {/* Global In-App Toast Alert Container */}
+      {/* Global In-App Toast Alert Container & Offline Connectivity Pill */}
       <ToastContainer />
+      <OfflineIndicator />
 
       {/* 1. Sticky Navigation Header */}
       <Navbar
@@ -143,6 +157,14 @@ function SalonBoumlikApp() {
           onChangeProteinPrice={setProteinPrice}
           pricingResult={pricingResult}
           onProceedToBooking={handleScrollToBooking}
+        />
+
+        {/* 4. Meet Our Barbers Section */}
+        <TeamSection
+          onSelectBarberToBook={(barberId) => {
+            setSelectedBarberId(barberId);
+            handleScrollToBooking();
+          }}
         />
 
         {/* Google Reviews 5.0 Widget Section */}
@@ -192,6 +214,7 @@ function SalonBoumlikApp() {
             window.history.replaceState(null, '', window.location.pathname);
           }
         }}
+        onOpenClientTracking={handleOpenTrackWithTicket}
       />
 
       {/* 7. Floating Mobile Quick Action Bar */}
