@@ -14,6 +14,7 @@ import { TrackBookingModal } from './components/TrackBookingModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { ToastContainer } from './components/ToastContainer';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { FloatingWhatsAppButton } from './components/FloatingWhatsAppButton';
 import { useClientAppointmentReminders } from './utils/clientReminderWatcher';
 import { calculateCartPricing } from './utils/pricingEngine';
 import { HairColorConfig, AppointmentBooking } from './types';
@@ -95,7 +96,7 @@ function SalonBoumlikApp() {
 
   return (
     <div
-      className={`min-h-screen bg-black text-zinc-100 flex flex-col font-body selection:bg-red-600/30 selection:text-white overflow-x-hidden relative ${
+      className={`min-h-screen bg-slate-50 dark:bg-black text-slate-900 dark:text-zinc-100 flex flex-col font-body selection:bg-red-600/25 dark:selection:bg-red-600/30 selection:text-slate-950 dark:selection:text-white overflow-x-hidden relative transition-colors duration-200 ${
         isRtl ? 'font-arabic' : ''
       }`}
     >
@@ -107,7 +108,7 @@ function SalonBoumlikApp() {
         <img
           src={SALON_INFO.media.logoClean}
           alt=""
-          className="w-[500px] sm:w-[700px] lg:w-[880px] max-w-none opacity-[0.03] filter grayscale contrast-125 dark:invert pointer-events-none"
+          className="w-[500px] sm:w-[700px] lg:w-[880px] max-w-none opacity-[0.04] dark:opacity-[0.03] filter grayscale contrast-125 dark:invert pointer-events-none"
         />
       </div>
 
@@ -220,13 +221,13 @@ function SalonBoumlikApp() {
       {/* 7. Floating Mobile Quick Action Bar */}
       <aside 
         aria-label="Actions rapides" 
-        className="sm:hidden fixed bottom-3 left-3 right-3 z-40 bg-black/95 backdrop-blur-md p-2 rounded-2xl border border-zinc-800 shadow-2xl flex items-center justify-between gap-2"
+        className="sm:hidden fixed bottom-3 left-3 right-3 z-40 bg-white/95 dark:bg-black/95 backdrop-blur-md p-2 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-2xl flex items-center justify-between gap-2"
       >
         <a
           href={`tel:${SALON_INFO.phone}`}
-          className="flex-1 py-2.5 px-3 rounded-xl bg-zinc-900 border border-zinc-800 text-xs font-bold text-white flex items-center justify-center gap-1.5"
+          className="flex-1 py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 text-xs font-bold text-slate-900 dark:text-white flex items-center justify-center gap-1.5"
         >
-          <Phone className="w-3.5 h-3.5 text-red-500" />
+          <Phone className="w-3.5 h-3.5 text-red-600 dark:text-red-500" />
           <span dir="ltr" className="inline-block font-mono">06 35 39 25 03</span>
         </a>
 
@@ -235,7 +236,7 @@ function SalonBoumlikApp() {
             setTrackSearchInitial('');
             setIsTrackBookingOpen(true);
           }}
-          className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-blue-400 hover:text-white"
+          className="p-2.5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-white"
           title="Suivre ma réservation"
         >
           <Ticket className="w-4 h-4" />
@@ -249,6 +250,12 @@ function SalonBoumlikApp() {
           <span>{lang === 'ar' ? 'حجز موعد' : 'Réserver'}</span>
         </button>
       </aside>
+
+      {/* 8. Floating Bottom-Right WhatsApp Quick Message Button */}
+      <FloatingWhatsAppButton
+        pricingResult={pricingResult}
+        selectedBarberId={selectedBarberId}
+      />
     </div>
   );
 }

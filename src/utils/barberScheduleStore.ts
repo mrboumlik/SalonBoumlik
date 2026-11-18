@@ -217,6 +217,8 @@ export function evaluateBarberDayAvailability(
         (b) =>
           b.date === dateStr &&
           b.barberId === barberId &&
+          b.status !== 'flexible_pending' &&
+          b.timeSlot.trim() !== 'FLEXIBLE' &&
           !['cancelled', 'rejected', 'no_show'].includes(b.status)
       )
       .map((b) => b.timeSlot.trim())
@@ -263,4 +265,54 @@ export function getInitialBookingDate(): string {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * Computes open slots ranked closest to an optional preferred hour hint (e.g. '17:00')
+ * for a given barber across the chosen date or next open working days.
+ */
+export function getRankedAvailableSlotsForBarber(
+  barberId: string,
+  preferredDate: string,
+  preferredTimeHint: string | undefined,
+  schedulesMap: Record<string, BarberScheduleConfig>,
+  bookings: AppointmentBooking[]
+): { date: string; time: string; isSameDay: boolean }[] {
+  const results: { date: string; time: string; isSameDay: boolean }[] = [];
+  const parseMinutes = (hhmm?: string) => {
+    if (!hhmm || !/^\d{1,2}:\d{2}$/.test(hhmm.trim())) return 16 * 60;
+    const [h, m] = hhmm.trim().split(':').map(Number);
+    return h * 60 + m;
+  };
+  const targetMin = parseMinutes(preferredTimeHint);
+
+  const start =
+    preferredDate && /^\d{4}-\d{2}-\d{2}$/.test(preferredDate)
+      ? new Date(`${preferredDate}T12:00:00`)
+      : new Date();
+
+  for (let offset = 0; offset < 5 && results.length < 10; offset++) {
+    const cursor = new Date(start);
+    cursor.setDate(start.getDate() + offset);
+    const yyyy = cursor.getFullYear();
+    const mm = String(cursor.getMonth() + 1).padStart(2, '0');
+    const dd = String(cursor.getDate()).padStart(2, '0');
+    const dStr = `${yyyy}-${mm}-${dd}`;
+
+    const avail = evaluateBarberDayAvailability(barberId, dStr, schedulesMap, bookings);
+    if (avail.isSalonClosedDay || avail.isBarberOffDay || avail.availableSlots.length === 0) {
+      continue;
+    }
+
+    const sortedSlots = [...avail.availableSlots].sort(
+      (a, b) => Math.abs(parseMinutes(a) - targetMin) - Math.abs(parseMinutes(b) - targetMin)
+    );
+    sortedSlots.forEach((slot) => {
+      if (results.length < 10) {
+        results.push({ date: dStr, time: slot, isSameDay: offset === 0 });
+      }
+    });
+  }
+
+  return results;
 }

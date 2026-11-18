@@ -130,3 +130,135 @@ export function computeLoyaltyProgress(
     tiers,
   };
 }
+
+export const POINTS_PER_VISIT = 10;
+
+export interface LoyaltyPointRewardTier {
+  id: string;
+  pointsCost: number;
+  discountMAD: number;
+  label: {
+    ar: string;
+    fr: string;
+    en: string;
+    es: string;
+  };
+  description: {
+    ar: string;
+    fr: string;
+    en: string;
+    es: string;
+  };
+}
+
+export const LOYALTY_POINT_TIERS: LoyaltyPointRewardTier[] = [
+  {
+    id: 'tier-10mad',
+    pointsCost: 20,
+    discountMAD: 10,
+    label: {
+      ar: 'خصم 10 دراهم',
+      fr: 'Remise 10 MAD',
+      en: '10 MAD Discount',
+      es: '10 MAD dto.',
+    },
+    description: {
+      ar: 'صالح لأي خدمة في زيارتك القادمة',
+      fr: 'Valable sur toute prestation',
+      en: 'Valid on any future service',
+      es: 'Válido en cualquier servicio',
+    },
+  },
+  {
+    id: 'tier-30mad',
+    pointsCost: 50,
+    discountMAD: 30,
+    label: {
+      ar: 'خصم 30 درهم',
+      fr: 'Remise 30 MAD',
+      en: '30 MAD Discount',
+      es: '30 MAD dto.',
+    },
+    description: {
+      ar: 'تخفيض مميز على الحلاقة أو العناية',
+      fr: 'Réduction coupe ou soin',
+      en: 'Discount on haircut or care',
+      es: 'Descuento en corte o cuidado',
+    },
+  },
+  {
+    id: 'tier-70mad',
+    pointsCost: 100,
+    discountMAD: 70,
+    label: {
+      ar: 'خصم VIP بقيمة 70 درهم',
+      fr: 'Remise VIP 70 MAD',
+      en: '70 MAD VIP Discount',
+      es: '70 MAD dto. VIP',
+    },
+    description: {
+      ar: 'يغطي باقة الحلاقة واللحية الكاملة',
+      fr: 'Couvre un forfait coupe + barbe',
+      en: 'Covers full haircut & beard combo',
+      es: 'Cubre combo completo corte + barba',
+    },
+  },
+];
+
+export interface ClientLoyaltyPointsSummary {
+  pointsBalance: number;
+  pointsEarnedTotal: number;
+  pointsRedeemedTotal: number;
+  activeDiscountMAD: number;
+  pointsPerVisit: number;
+  nextTier: LoyaltyPointRewardTier | null;
+  pointsRemainingForNextTier: number;
+  progressToNextTierPct: number;
+  canRedeemAny: boolean;
+}
+
+export function computeClientPointsSummary(
+  verifiedVisits: number,
+  crmProfile?: CrmClientProfile | null
+): ClientLoyaltyPointsSummary {
+  const safeVisits = Math.max(0, Math.floor(verifiedVisits || 0));
+  const baselineEarned = safeVisits * POINTS_PER_VISIT;
+  const storedEarned = typeof crmProfile?.pointsEarnedTotal === 'number' ? crmProfile.pointsEarnedTotal : 0;
+  const storedRedeemed = typeof crmProfile?.pointsRedeemedTotal === 'number' ? crmProfile.pointsRedeemedTotal : 0;
+
+  const pointsEarnedTotal = Math.max(storedEarned, baselineEarned);
+  const pointsRedeemedTotal = Math.max(0, storedRedeemed);
+
+  let pointsBalance: number;
+  if (typeof crmProfile?.loyaltyPoints === 'number') {
+    // Include any un-synced completed booking visits beyond storedEarned
+    const extraEarned = Math.max(0, baselineEarned - storedEarned);
+    pointsBalance = Math.max(0, Math.round(crmProfile.loyaltyPoints + extraEarned));
+  } else {
+    pointsBalance = Math.max(0, pointsEarnedTotal - pointsRedeemedTotal);
+  }
+
+  const nextTier =
+    LOYALTY_POINT_TIERS.find((t) => pointsBalance < t.pointsCost) ||
+    LOYALTY_POINT_TIERS[LOYALTY_POINT_TIERS.length - 1];
+
+  const pointsRemainingForNextTier = Math.max(0, nextTier.pointsCost - pointsBalance);
+  const progressToNextTierPct = Math.min(
+    100,
+    Math.round((pointsBalance / nextTier.pointsCost) * 100)
+  );
+  const canRedeemAny = LOYALTY_POINT_TIERS.some((t) => pointsBalance >= t.pointsCost);
+
+  return {
+    pointsBalance,
+    pointsEarnedTotal,
+    pointsRedeemedTotal,
+    activeDiscountMAD: Math.max(0, crmProfile?.customDiscountMAD ?? 0),
+    pointsPerVisit: POINTS_PER_VISIT,
+    nextTier,
+    pointsRemainingForNextTier,
+    progressToNextTierPct,
+    canRedeemAny,
+  };
+}
+

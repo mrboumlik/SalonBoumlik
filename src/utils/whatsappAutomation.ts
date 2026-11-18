@@ -104,6 +104,15 @@ export function buildClientTicketWhatsAppMessage(
         : targetLang === 'en'
         ? 'Appointment Cancelled'
         : 'Rendez-vous Annulé';
+  } else if (booking.status === 'flexible_pending') {
+    statusText =
+      targetLang === 'ar'
+        ? 'طلب مرن — سيختار الحلاق أفضل وقت متاح ⏳'
+        : targetLang === 'es'
+        ? 'Horario flexible — el barbero asignará la hora ⏳'
+        : targetLang === 'en'
+        ? 'Flexible time — Barber assigning optimal slot ⏳'
+        : 'Horaire flexible — Le barbier attribue le créneau ⏳';
   } else if (booking.status === 'rejected') {
     statusText =
       targetLang === 'ar'
@@ -124,6 +133,13 @@ export function buildClientTicketWhatsAppMessage(
         : 'En attente de validation';
   }
 
+  const displayTime =
+    booking.timeSlot === 'FLEXIBLE'
+      ? targetLang === 'ar'
+        ? 'مرن (يختاره الحلاق)'
+        : 'Flexible (Assigné par le barbier)'
+      : booking.timeSlot;
+
   const cihLine = booking.cihReceiptName
     ? targetLang === 'ar'
       ? `\nإيصال تحويل CIH مرفق: ${booking.cihReceiptName}`
@@ -135,7 +151,7 @@ export function buildClientTicketWhatsAppMessage(
 الزبون: ${booking.clientName}
 التذكرة رقم: ${cleanTicket}
 الحلاق: ${barber}
-الموعد: 📅 ${booking.date} • ⏰ ${booking.timeSlot}
+الموعد: 📅 ${booking.date} • ⏰ ${displayTime}
 الخدمات: ${servicesList}
 المجموع: ${total} MAD
 الحالة الحالية: ${statusText}${cihLine}`;

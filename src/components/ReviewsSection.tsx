@@ -11,29 +11,47 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { INITIAL_REVIEWS, SERVICES, SALON_INFO } from '../data/barbershopData';
+import { INITIAL_REVIEWS, SERVICES, SALON_INFO, TEAM_MEMBERS } from '../data/barbershopData';
 import { CustomerReview } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { useSalonProfileSettings } from '../utils/salonSettingsStore';
+import { submitBarberReview, useFirestoreReviews } from '../utils/reviewsStore';
 
 export const ReviewsSection: React.FC = () => {
   const { lang, t } = useLanguage();
   const salonSettings = useSalonProfileSettings();
-  const [reviews, setReviews] = useState<CustomerReview[]>(() => {
+  const { reviews: firestoreReviews } = useFirestoreReviews();
+
+  const [localCustomReviews, setLocalCustomReviews] = useState<CustomerReview[]>(() => {
     try {
       const stored = localStorage.getItem('salon_boumlik_reviews_v3');
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const parsed = JSON.parse(stored) as CustomerReview[];
+        return Array.isArray(parsed)
+          ? parsed.filter((r) => !INITIAL_REVIEWS.some((initR) => initR.id === r.id))
+          : [];
+      }
     } catch {
       // fallback
     }
-    return INITIAL_REVIEWS;
+    return [];
   });
+
+  const reviews: CustomerReview[] = React.useMemo(() => {
+    if (firestoreReviews.length > 0) {
+      const ids = new Set(firestoreReviews.map((r) => r.id));
+      const uniqueLocal = localCustomReviews.filter((r) => !ids.has(r.id));
+      return [...firestoreReviews, ...uniqueLocal];
+    }
+    return [...localCustomReviews, ...INITIAL_REVIEWS];
+  }, [firestoreReviews, localCustomReviews]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [filterRating, setFilterRating] = useState<number | 'all'>('all');
 
   // Form states
+  const [selectedBarberId, setSelectedBarberId] = useState<string>(TEAM_MEMBERS[0]?.id || 'hassan');
   const [author, setAuthor] = useState('');
   const [city, setCity] = useState('');
   const [serviceName, setServiceName] = useState('');
@@ -42,41 +60,31 @@ export const ReviewsSection: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState(false);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('salon_boumlik_reviews_v3', JSON.stringify(reviews));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [reviews]);
-
-  const handleSubmitReview = (e: React.FormEvent) => {
+  const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!author.trim() || !comment.trim()) return;
+    if (!author.trim() || !comment.trim() || isSubmitting) return;
 
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      const newReview: CustomerReview = {
-        id: `rev-${Date.now()}`,
+    try {
+      const saved = await submitBarberReview({
+        barberId: selectedBarberId,
         author: author.trim(),
         city: city.trim() || 'Taroudant',
         serviceName: serviceName || (SERVICES[0].name[lang] || SERVICES[0].name.fr),
         rating,
-        date: {
-          fr: "À l'instant",
-          ar: 'الآن',
-          en: 'Just now',
-          amz: 'ⵖⵉⵍⴰⴷ',
-          es: 'Ahora mismo',
-        }[lang] || 'Just now',
         comment: comment.trim(),
-        tags: [lang === 'ar' ? 'زبون موثق' : 'Client vérifié'],
-        verified: true,
-      };
+        dateLabel:
+          {
+            fr: "À l'instant",
+            ar: 'الآن',
+            en: 'Just now',
+            amz: 'ⵖⵉⵍⴰⴷ',
+            es: 'Ahora mismo',
+          }[lang] || 'Just now',
+      });
 
-      setReviews([newReview, ...reviews]);
-      setIsSubmitting(false);
+      setLocalCustomReviews((prev) => [saved, ...prev.filter((r) => r.id !== saved.id)]);
       setSuccessMessage(true);
 
       try {
@@ -97,7 +105,11 @@ export const ReviewsSection: React.FC = () => {
         setComment('');
         setCity('');
       }, 1500);
-    }, 400);
+    } catch (err) {
+      console.error('Failed to submit review to Firestore:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const filteredReviews = reviews.filter((r) => {
@@ -153,33 +165,33 @@ export const ReviewsSection: React.FC = () => {
   };
 
   return (
-    <section id="reviews" className="py-16 sm:py-24 bg-black text-white relative">
+    <section id="reviews" className="py-16 sm:py-24 bg-slate-50 dark:bg-black text-slate-900 dark:text-white relative border-t border-slate-200 dark:border-zinc-900 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-12">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-bold text-red-400 mb-3">
-            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-bold text-red-600 dark:text-red-400 mb-3 shadow-2xs">
+            <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400" />
             <span>{ui.badge}</span>
           </div>
 
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-white">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white">
             {ui.title}
           </h2>
 
-          <p className="mt-3 text-sm sm:text-base text-zinc-400">
+          <p className="mt-3 text-sm sm:text-base text-slate-600 dark:text-zinc-400">
             {ui.subtitle}
           </p>
         </div>
 
         {/* Realistic Google Reviews Widget Showcase Card */}
-        <div className="max-w-4xl mx-auto mb-12 p-6 sm:p-8 rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-6 border-b border-zinc-800">
+        <div className="max-w-4xl mx-auto mb-12 p-6 sm:p-8 rounded-2xl bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 shadow-xl dark:shadow-2xl">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-6 border-b border-slate-200 dark:border-zinc-800">
             
             {/* Google Rating Big Metric */}
-            <div className="flex items-center gap-4 text-left">
+            <div className="flex items-center gap-4 text-left rtl:text-right">
               {/* Google G logo circle */}
-              <div className="w-16 h-16 rounded-2xl bg-white p-2.5 flex items-center justify-center flex-shrink-0 shadow-md">
+              <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 dark:border-transparent p-2.5 flex items-center justify-center flex-shrink-0 shadow-md">
                 <svg viewBox="0 0 24 24" className="w-full h-full">
                   <path
                     fill="#4285F4"
@@ -202,14 +214,14 @@ export const ReviewsSection: React.FC = () => {
 
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-3xl sm:text-4xl font-black text-white font-mono">5.0</span>
-                  <div className="flex text-amber-400">
+                  <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white font-mono">5.0</span>
+                  <div className="flex text-amber-500 dark:text-amber-400">
                     {[...Array(5)].map((_, i) => (
-                      <Star key={i} className="w-5 h-5 fill-amber-400" />
+                      <Star key={i} className="w-5 h-5 fill-amber-500 dark:fill-amber-400" />
                     ))}
                   </div>
                 </div>
-                <p className="text-xs text-zinc-400 font-medium mt-0.5">
+                <p className="text-xs text-slate-600 dark:text-zinc-400 font-medium mt-0.5">
                   {lang === 'ar'
                     ? 'التقييم الرسمي في Google Maps • صالون بومليك تارودانت'
                     : 'Note d’excellence sur Google Maps • Salon Boumlik Taroudant'}
@@ -231,17 +243,17 @@ export const ReviewsSection: React.FC = () => {
 
               <button
                 onClick={() => setIsQrModalOpen(true)}
-                className="py-2.5 px-3.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-semibold text-xs flex items-center gap-2 transition-colors"
+                className="py-2.5 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-slate-300 dark:border-zinc-700 text-slate-900 dark:text-white font-semibold text-xs flex items-center gap-2 transition-colors cursor-pointer"
               >
-                <QrCode className="w-4 h-4 text-red-500" />
+                <QrCode className="w-4 h-4 text-red-600 dark:text-red-500" />
                 <span>{ui.btnQr}</span>
               </button>
 
               <button
                 onClick={() => setIsModalOpen(true)}
-                className="py-2.5 px-3.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white font-semibold text-xs flex items-center gap-1.5 transition-colors"
+                className="py-2.5 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-slate-300 dark:border-zinc-700 text-slate-800 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
               >
-                <MessageSquarePlus className="w-3.5 h-3.5 text-blue-400" />
+                <MessageSquarePlus className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                 <span>{ui.btnLocal}</span>
               </button>
             </div>
@@ -250,16 +262,16 @@ export const ReviewsSection: React.FC = () => {
 
           {/* Rating filter pills */}
           <div className="flex items-center justify-between gap-3 pt-4 text-xs">
-            <span className="text-zinc-400 font-medium hidden sm:inline">
+            <span className="text-slate-600 dark:text-zinc-400 font-medium hidden sm:inline">
               {lang === 'ar' ? 'تصفية حسب التقييم:' : 'Filtrer par note :'}
             </span>
             <div className="flex items-center gap-1.5 overflow-x-auto">
               <button
                 onClick={() => setFilterRating('all')}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                   filterRating === 'all'
-                    ? 'bg-zinc-800 text-white border border-zinc-700'
-                    : 'text-zinc-400 hover:text-white'
+                    ? 'bg-slate-900 dark:bg-zinc-800 text-white border border-slate-900 dark:border-zinc-700'
+                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white'
                 }`}
               >
                 {lang === 'ar' ? 'الكل' : 'Tous'} ({reviews.length})
@@ -268,14 +280,14 @@ export const ReviewsSection: React.FC = () => {
                 <button
                   key={r}
                   onClick={() => setFilterRating(r)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
                     filterRating === r
-                      ? 'bg-zinc-800 text-white border border-zinc-700'
-                      : 'text-zinc-400 hover:text-white'
+                      ? 'bg-slate-900 dark:bg-zinc-800 text-white border border-slate-900 dark:border-zinc-700'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white'
                   }`}
                 >
                   <span>{r}</span>
-                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  <Star className="w-3 h-3 fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400" />
                 </button>
               ))}
             </div>
@@ -293,40 +305,40 @@ export const ReviewsSection: React.FC = () => {
             return (
               <div
                 key={rev.id}
-                className="p-5 rounded-2xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 transition-all flex flex-col justify-between space-y-4"
+                className="p-5 rounded-2xl bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 shadow-2xs transition-all flex flex-col justify-between space-y-4"
               >
                 <div className="space-y-3">
                   {/* Reviewer Top Bar */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center font-bold text-xs text-white">
+                      <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center justify-center font-bold text-xs text-slate-900 dark:text-white">
                         {authorName.charAt(0)}
                       </div>
                       <div>
-                        <h4 className="font-bold text-white text-xs">{authorName}</h4>
-                        <span className="text-[10px] text-zinc-400">{cityName}</span>
+                        <h4 className="font-bold text-slate-900 dark:text-white text-xs">{authorName}</h4>
+                        <span className="text-[10px] text-slate-500 dark:text-zinc-400">{cityName}</span>
                       </div>
                     </div>
 
-                    <div className="flex text-amber-400">
+                    <div className="flex text-amber-500 dark:text-amber-400">
                       {[...Array(rev.rating)].map((_, i) => (
-                        <Star key={i} className="w-3 h-3 fill-amber-400" />
+                        <Star key={i} className="w-3 h-3 fill-amber-500 dark:fill-amber-400" />
                       ))}
                     </div>
                   </div>
 
                   {/* Comment */}
-                  <p className="text-xs text-zinc-300 leading-relaxed italic">
+                  <p className="text-xs text-slate-700 dark:text-zinc-300 leading-relaxed italic">
                     "{commentText}"
                   </p>
                 </div>
 
                 {/* Service Tag & Verification */}
-                <div className="pt-2 border-t border-zinc-900 flex items-center justify-between text-[11px] text-zinc-400">
-                  <span className="text-zinc-300 font-medium truncate max-w-[150px]">
-                    {serviceStr}
+                <div className="pt-2 border-t border-slate-200 dark:border-zinc-900 flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400">
+                  <span className="text-slate-700 dark:text-zinc-300 font-medium truncate max-w-[165px]">
+                    {rev.barberName ? `${rev.barberName.split(' ')[0]} · ` : ''}{serviceStr}
                   </span>
-                  <span className="flex items-center gap-1 text-emerald-400 text-[10px] font-semibold">
+                  <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400 text-[10px] font-semibold">
                     <CheckCircle2 className="w-3 h-3" />
                     <span>{lang === 'ar' ? 'تقييم موثق' : 'Avis vérifié'}</span>
                   </span>
@@ -340,17 +352,17 @@ export const ReviewsSection: React.FC = () => {
 
       {/* QR CODE MODAL - High Quality Google Review Code */}
       {isQrModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-          <div className="relative w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-5 text-center shadow-2xl">
+        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+          <div className="relative w-full max-w-sm bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-5 text-center shadow-2xl">
             
             <button
               onClick={() => setIsQrModalOpen(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="w-12 h-12 rounded-2xl bg-white p-2 mx-auto shadow-md">
+            <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 dark:border-transparent p-2 mx-auto shadow-md">
               <svg viewBox="0 0 24 24" className="w-full h-full">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -360,10 +372,10 @@ export const ReviewsSection: React.FC = () => {
             </div>
 
             <div>
-              <h3 className="text-lg font-black text-white">
+              <h3 className="text-lg font-black text-slate-900 dark:text-white">
                 {lang === 'ar' ? 'امسح رمز التقييم على Google' : 'Scannez le QR Code Google'}
               </h3>
-              <p className="text-xs text-zinc-400 mt-1">
+              <p className="text-xs text-slate-600 dark:text-zinc-400 mt-1">
                 {lang === 'ar'
                   ? 'وجه كاميرا هاتفك مباشرة نحو الرمز لإعطاء رأيك في ثوانٍ'
                   : 'Ouvrez votre appareil photo pour noter Salon Boumlik en un instant'}
@@ -371,7 +383,7 @@ export const ReviewsSection: React.FC = () => {
             </div>
 
             {/* Official QR Code Image with Google logo in center */}
-            <div className="p-3 bg-white rounded-2xl mx-auto w-56 h-56 shadow-xl flex items-center justify-center">
+            <div className="p-3 bg-white border border-slate-200 dark:border-transparent rounded-2xl mx-auto w-56 h-56 shadow-xl flex items-center justify-center">
               <img
                 src={SALON_INFO.media.qrGoogleReview}
                 alt="Google Review QR Code"
@@ -397,27 +409,27 @@ export const ReviewsSection: React.FC = () => {
 
       {/* LEAVE A REVIEW MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-          <div className="relative w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 sm:p-8 space-y-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+          <div className="relative w-full max-w-md bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-2xl p-6 sm:p-8 space-y-5 shadow-2xl">
             
             <button
               onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
             <div>
-              <h3 className="text-lg font-black text-white">
+              <h3 className="text-lg font-black text-slate-900 dark:text-white">
                 {lang === 'ar' ? 'شاركنا رأيك في صالون بومليك' : 'Donnez Votre Avis'}
               </h3>
-              <p className="text-xs text-zinc-400 mt-0.5">
+              <p className="text-xs text-slate-600 dark:text-zinc-400 mt-0.5">
                 {lang === 'ar' ? 'رأيك يهمنا لمواصلة تقديم أفضل خدمة رجالية بتارودانت' : 'Votre retour nous aide à perfectionner notre expérience.'}
               </p>
             </div>
 
             {successMessage ? (
-              <div className="p-6 text-center text-emerald-400 space-y-2">
+              <div className="p-6 text-center text-emerald-600 dark:text-emerald-400 space-y-2">
                 <CheckCircle2 className="w-10 h-10 mx-auto" />
                 <p className="font-bold text-sm">
                   {lang === 'ar' ? 'شكراً جزيلاً على تقييمك!' : 'Merci pour votre confiance !'}
@@ -426,7 +438,37 @@ export const ReviewsSection: React.FC = () => {
             ) : (
               <form onSubmit={handleSubmitReview} className="space-y-4 text-xs">
                 <div>
-                  <label className="block text-zinc-300 font-semibold mb-1">
+                  <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1.5">
+                    {lang === 'ar' ? 'الحلاق المعني بالتقييم:' : lang === 'en' ? 'Barber:' : 'Barbier concerné :'}
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {TEAM_MEMBERS.map((b) => {
+                      const active = selectedBarberId === b.id;
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => setSelectedBarberId(b.id)}
+                          className={`px-2.5 py-2 rounded-xl border text-left rtl:text-right font-bold flex items-center gap-2 transition-colors cursor-pointer ${
+                            active
+                              ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-500 text-amber-800 dark:text-amber-300'
+                              : 'bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-700'
+                          }`}
+                        >
+                          <img
+                            src={b.avatar}
+                            alt={b.name[lang] || b.name.fr}
+                            className="w-6 h-6 rounded-full object-cover flex-shrink-0"
+                          />
+                          <span className="truncate text-[11px]">{b.name[lang] || b.name.fr}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
                     {lang === 'ar' ? 'الاسم الكامل:' : 'Votre nom :'}
                   </label>
                   <input
@@ -435,12 +477,12 @@ export const ReviewsSection: React.FC = () => {
                     onChange={(e) => setAuthor(e.target.value)}
                     required
                     placeholder="Ex: Omar Ait"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-2.5 text-white placeholder-zinc-500 focus:outline-none focus:border-red-500"
+                    className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 rounded-xl p-2.5 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-red-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-zinc-300 font-semibold mb-1">
+                  <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
                     {lang === 'ar' ? 'المدينة / الحي:' : 'Ville / Quartier :'}
                   </label>
                   <input
@@ -448,25 +490,25 @@ export const ReviewsSection: React.FC = () => {
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
                     placeholder="Taroudant"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-2.5 text-white placeholder-zinc-500 focus:outline-none focus:border-red-500"
+                    className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 rounded-xl p-2.5 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-red-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-zinc-300 font-semibold mb-1">
+                  <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
                     {lang === 'ar' ? 'تقييمك بالنجوم:' : 'Votre note :'}
                   </label>
-                  <div className="flex gap-1 text-amber-400 py-1">
+                  <div className="flex gap-1 text-amber-500 dark:text-amber-400 py-1">
                     {[1, 2, 3, 4, 5].map((star) => (
                       <button
                         key={star}
                         type="button"
                         onClick={() => setRating(star)}
-                        className="p-1 text-2xl hover:scale-110 transition-transform"
+                        className="p-1 text-2xl hover:scale-110 transition-transform cursor-pointer"
                       >
                         <Star
                           className={`w-6 h-6 ${
-                            star <= rating ? 'fill-amber-400 text-amber-400' : 'text-zinc-600'
+                            star <= rating ? 'fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400' : 'text-slate-300 dark:text-zinc-600'
                           }`}
                         />
                       </button>
@@ -475,7 +517,7 @@ export const ReviewsSection: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-zinc-300 font-semibold mb-1">
+                  <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
                     {lang === 'ar' ? 'تعليقك وتجربتك:' : 'Votre commentaire :'}
                   </label>
                   <textarea
@@ -484,7 +526,7 @@ export const ReviewsSection: React.FC = () => {
                     onChange={(e) => setComment(e.target.value)}
                     required
                     placeholder={lang === 'ar' ? 'اكتب رأيك بصراحة...' : 'Partagez votre ressenti...'}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-2.5 text-white placeholder-zinc-500 focus:outline-none focus:border-red-500"
+                    className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 rounded-xl p-2.5 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-red-500"
                   />
                 </div>
 
@@ -492,14 +534,14 @@ export const ReviewsSection: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 rounded-xl bg-zinc-900 text-zinc-400 hover:text-white"
+                    className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white cursor-pointer"
                   >
                     {lang === 'ar' ? 'إلغاء' : 'Annuler'}
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold transition-colors"
+                    className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold transition-colors cursor-pointer"
                   >
                     {isSubmitting ? '...' : lang === 'ar' ? 'نشر التقييم' : 'Publier'}
                   </button>

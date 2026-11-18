@@ -45,19 +45,23 @@ import {
   ListPlus,
   UserCheck,
   Upload,
-  Repeat
+  Repeat,
+  Coins,
+  CalendarClock,
+  BarChart3
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { 
-  requestWebNotificationPermission, 
-  sendWebNotification,
   sendDualAlert,
-  playNotificationSound 
+  playNotificationSound,
+  showToast
 } from '../utils/notifications';
+import { registerStaffPushSubscription } from '../utils/webPushClient';
 import { 
   subscribeToBookings,
   updateBookingStatus, 
   updateBookingAdminNote,
+  assignFlexibleBookingSlot,
   deleteBooking,
   matchesUniversalBookingQuery,
   normalizeMoroccanPhoneDigits
@@ -75,7 +79,10 @@ import {
   useSalonProfileSettings,
   saveSalonProfileSettings,
 } from '../utils/salonSettingsStore';
-import { useBarberSchedules } from '../utils/barberScheduleStore';
+import {
+  useBarberSchedules,
+  getRankedAvailableSlotsForBarber,
+} from '../utils/barberScheduleStore';
 import {
   useCrmClients,
   getCrmDocId,
@@ -87,6 +94,7 @@ import {
 import { computeLoyaltyProgress, getVerifiedVisitsCount } from '../utils/loyaltyEngine';
 import { useWaitlist } from '../utils/waitlistStore';
 import { useShiftRequests } from '../utils/shiftPlannerStore';
+import { useFirestoreReviews } from '../utils/reviewsStore';
 import {
   FinancialAnalyticsPanel,
   BarberSchedulePanel,
@@ -98,6 +106,8 @@ import {
 } from './AdminEnterprisePanels';
 import { AdminShiftPlannerPanel } from './AdminShiftPlannerPanel';
 import { WeeklyWorkloadBarChart } from './WeeklyWorkloadBarChart';
+import { LoyaltyPointsAdminPanel } from './LoyaltyPointsAdminPanel';
+import { ResourcePlanningSummaryCharts } from './ResourcePlanningSummaryCharts';
 import {
   ClientQrTarget,
   parseScannedQrResult,
@@ -170,9 +180,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return true; // enabled by default for admin awareness
   });
 
-  // Track known booking IDs across real-time Firestore snapshot updates
+  // Track known booking IDs, CIH receipts, and waitlist entries across real-time Firestore snapshot updates
   const knownBookingIdsRef = useRef<Set<string>>(new Set());
+  const knownCihReceiptMapRef = useRef<Record<string, string>>({});
   const hasLoadedInitialSnapshotRef = useRef<boolean>(false);
+  const knownWaitlistIdsRef = useRef<Set<string>>(new Set());
+  const hasLoadedWaitlistRef = useRef<boolean>(false);
   const notificationsEnabledRef = useRef<boolean>(notificationsEnabled);
 
   useEffect(() => {
@@ -181,7 +194,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Enterprise Workspace View
   const [workspaceSection, setWorkspaceSection] = useState<
-    'bookings' | 'queue' | 'schedules' | 'shifts' | 'crm' | 'analytics' | 'waitlist'
+    'bookings' | 'queue' | 'summary' | 'schedules' | 'shifts' | 'crm' | 'loyalty' | 'analytics' | 'waitlist'
   >('bookings');
 
   // Version 2.0 Live Enterprise Hooks
@@ -189,6 +202,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const crmClientsMap = useCrmClients();
   const waitlistEntries = useWaitlist();
   const shiftRequests = useShiftRequests();
+  const { reviews: firestoreReviews } = useFirestoreReviews();
 
   // Date Views: 'today' or 'archive'
   const [activeTab, setActiveTab] = useState<'today' | 'archive'>('today');
@@ -229,6 +243,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [waSavedNotice, setWaSavedNotice] = useState(false);
   const [sendingReminderId, setSendingReminderId] = useState<string | null>(null);
   const [quickActionBusyId, setQuickActionBusyId] = useState<string | null>(null);
+  const [flexAssignBusyId, setFlexAssignBusyId] = useState<string | null>(null);
+  const [flexCustomTargetId, setFlexCustomTargetId] = useState<string | null>(null);
+  const [flexCustomDate, setFlexCustomDate] = useState('');
+  const [flexCustomTime, setFlexCustomTime] = useState('16:00');
 
   const [mapsUrlInput, setMapsUrlInput] = useState(salonSettings.googleMapsUrl);
   const [reviewUrlInput, setReviewUrlInput] = useState(salonSettings.googleReviewUrl);
@@ -269,37 +287,75 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!hasLoadedInitialSnapshotRef.current) {
       hasLoadedInitialSnapshotRef.current = true;
       knownBookingIdsRef.current = new Set(currentList.map((b) => b.id));
+      const initialCih: Record<string, string> = {};
+      currentList.forEach((b) => {
+        if (b.cihReceiptUploadedAt || b.cihReceiptName) {
+          initialCih[b.id] = b.cihReceiptUploadedAt || b.cihReceiptName || '1';
+        }
+      });
+      knownCihReceiptMapRef.current = initialCih;
       return;
     }
 
     const prevKnown = knownBookingIdsRef.current;
+    const prevCihMap = knownCihReceiptMapRef.current;
     const newItems = currentList.filter((b) => !prevKnown.has(b.id));
+    const newlyUploadedCih = currentList.filter((b) => {
+      if (!prevKnown.has(b.id)) return false;
+      const sig = b.cihReceiptUploadedAt || b.cihReceiptName || '';
+      return Boolean(sig && prevCihMap[b.id] !== sig);
+    });
+
+    const matchesCurrentStaffScope = (b: AppointmentBooking) => {
+      if (!session || session.role === 'master') return true;
+      return (
+        b.barberId === session.barberId ||
+        b.barberName.toLowerCase().includes(session.name.toLowerCase().split(' ')[0])
+      );
+    };
+
     if (newItems.length > 0) {
-      newItems.forEach((nb) => prevKnown.add(nb.id));
+      newItems.forEach((nb) => {
+        prevKnown.add(nb.id);
+        if (nb.cihReceiptUploadedAt || nb.cihReceiptName) {
+          prevCihMap[nb.id] = nb.cihReceiptUploadedAt || nb.cihReceiptName || '1';
+        }
+      });
 
       if (notificationsEnabledRef.current) {
-        newItems.forEach((nb) => {
-          playNotificationSound();
-
-          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-            try {
-              new Notification('موعد جديد • صالون بومليك', {
-                body: `حجز جديد #${nb.ticketNumber} للزبون ${nb.clientName} مع ${nb.barberName} (${nb.timeSlot})`,
-                icon: '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
-              });
-            } catch (err) {
-              console.warn('Native notification trigger warning:', err);
-            }
-          }
-
+        newItems.filter(matchesCurrentStaffScope).forEach((nb) => {
+          const isFlex = nb.status === 'flexible_pending' || nb.timeSlot === 'FLEXIBLE';
+          const timeText = isFlex ? 'وقت مرن — بانتظار اختيارك' : nb.timeSlot;
           sendDualAlert(
-            '🔔 موعد جديد في الصالون!',
+            isFlex
+              ? `⏳ طلب وقت مرن (${nb.ticketNumber}) • صالون بومليك`
+              : `🔔 موعد جديد (${nb.ticketNumber}) • صالون بومليك`,
             {
-              body: `حجز #${nb.ticketNumber} - الزبون ${nb.clientName} مع ${nb.barberName}`,
+              body: nb.cihReceiptName
+                ? `حجز #${nb.ticketNumber} - ${nb.clientName} مع ${nb.barberName} (${nb.date} ${timeText}) مع إيصال CIH.`
+                : `حجز #${nb.ticketNumber} - ${nb.clientName} مع ${nb.barberName} (${nb.date} ${timeText}).`,
               type: 'info',
-              skipSound: true,
+              tag: `sb-admin-booking-${nb.id}`,
+              data: { ticketNumber: nb.ticketNumber, url: '/#admin' },
             }
           );
+        });
+      }
+    }
+
+    if (newlyUploadedCih.length > 0) {
+      newlyUploadedCih.forEach((b) => {
+        prevCihMap[b.id] = b.cihReceiptUploadedAt || b.cihReceiptName || '1';
+      });
+
+      if (notificationsEnabledRef.current) {
+        newlyUploadedCih.filter(matchesCurrentStaffScope).forEach((b) => {
+          sendDualAlert(`🧾 إيصال تحويل CIH جديد (${b.ticketNumber})`, {
+            body: `قام الزبون ${b.clientName} بإرفاق إيصال التحويل البنكي CIH لموعد ${b.date} (${b.timeSlot}).`,
+            type: 'success',
+            tag: `sb-admin-cih-${b.id}`,
+            data: { ticketNumber: b.ticketNumber, url: '/#admin' },
+          });
         });
       }
     }
@@ -310,7 +366,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!session) {
       hasLoadedInitialSnapshotRef.current = false;
       knownBookingIdsRef.current = new Set();
+      knownCihReceiptMapRef.current = {};
+      hasLoadedWaitlistRef.current = false;
+      knownWaitlistIdsRef.current = new Set();
       return;
+    }
+
+    // Silently keep push subscription synced if permission was already granted by staff
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      void registerStaffPushSubscription({
+        role: session.role,
+        barberId: session.barberId,
+        staffName: session.name,
+      });
     }
 
     const unsubscribe = subscribeToBookings(
@@ -326,6 +394,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       unsubscribe();
     };
   }, [session]);
+
+  // Real-time Staff Waitlist Alert Listener (Master Admin + Assigned Barber)
+  useEffect(() => {
+    if (!session) return;
+    if (!hasLoadedWaitlistRef.current) {
+      hasLoadedWaitlistRef.current = true;
+      knownWaitlistIdsRef.current = new Set(waitlistEntries.map((w) => w.id));
+      return;
+    }
+
+    const prevKnown = knownWaitlistIdsRef.current;
+    const newEntries = waitlistEntries.filter(
+      (w) => !prevKnown.has(w.id) && w.status === 'waiting'
+    );
+    waitlistEntries.forEach((w) => prevKnown.add(w.id));
+
+    if (newEntries.length > 0 && notificationsEnabledRef.current) {
+      newEntries
+        .filter((w) => session.role === 'master' || w.barberId === session.barberId)
+        .forEach((w) => {
+          sendDualAlert('📋 زبون جديد في قائمة الانتظار!', {
+            body: `${w.clientName} (${w.barberName} • ${w.date} ${w.preferredTime})`,
+            type: 'info',
+            tag: `sb-admin-wl-${w.id}`,
+            data: { url: '/#admin' },
+          });
+        });
+    }
+  }, [waitlistEntries, session]);
 
   // Handler to open scanner with instant browser native permission request (navigator.mediaDevices.getUserMedia)
   const handleOpenScanner = async () => {
@@ -507,14 +604,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setPinError(false);
       setPinInput('');
 
-      // Trigger Web Notification permission prompt immediately upon successfully logging into /#admin
-      requestWebNotificationPermission().then((permission) => {
-        if (permission === 'granted') {
-          sendWebNotification('لوحة التحكم نشطة • صالون بومليك', {
-            body: `مرحباً ${newSession?.name}، تم تفعيل الإشعارات الفورية للحجوزات الجديدة والتحديثات.`,
-          });
-        }
-      });
+      // Silently register push subscription ONLY if staff already granted permission
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        void registerStaffPushSubscription({
+          role: newSession.role,
+          barberId: newSession.barberId,
+          staffName: newSession.name,
+        });
+      }
       return;
     }
 
@@ -534,44 +631,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setPinError(false);
   };
 
-  // Toggle Notifications with explicit permission request and test chime
+  // Toggle Notifications with explicit user-gesture PushManager subscription & chime
   const handleToggleNotifications = async () => {
     if (!notificationsEnabled) {
-      // Turning ON: Request permission explicitly
-      const perm = await requestWebNotificationPermission();
+      const subResult = session
+        ? await registerStaffPushSubscription({
+            role: session.role,
+            barberId: session.barberId,
+            staffName: session.name,
+          })
+        : { granted: false, subscribed: false };
+
       setNotificationsEnabled(true);
       try {
         localStorage.setItem(ADMIN_NOTIFS_ENABLED_KEY, 'true');
       } catch {}
 
-      // Play test sound and alert to confirm activation
       playNotificationSound();
-      if (perm === 'granted') {
-        try {
-          new Notification('الإشعارات الصوتية مفعلة ✅', {
-            body: 'ستصلك تنبيهات صوتية ورسائل فورية عند تسجيل أي زبون لحجز جديد.',
-            icon: '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
-          });
-        } catch (e) {
-          console.warn('Test notification note:', e);
-        }
-      }
-      sendDualAlert('تفعيل الإشعارات بنجاح', {
-        body: 'تم تفعيل التنبيهات الصوتية والمنبثقة للحجوزات الجديدة.',
-        type: 'success',
-        skipSound: true,
-      });
+      showToast(
+        subResult.subscribed
+          ? 'تم تفعيل الإشعارات الفورية والخلفية ✓'
+          : 'تم تفعيل التنبيهات الصوتية بنجاح ✓',
+        subResult.subscribed
+          ? 'ستصلك إشعارات الحجوزات الجديدة، إيصالات CIH، وقائمة الانتظار حتى عند إغلاق المتصفح.'
+          : 'ستصلك تنبيهات صوتية داخل لوحة التحكم عند وصول حجوزات جديدة.',
+        'success'
+      );
     } else {
-      // Turning OFF
       setNotificationsEnabled(false);
       try {
         localStorage.setItem(ADMIN_NOTIFS_ENABLED_KEY, 'false');
       } catch {}
-      sendDualAlert('تم إيقاف الإشعارات مؤقتاً', {
-        body: 'تم كتم التنبيهات التلقائية.',
-        type: 'warning',
-        skipSound: true,
-      });
+      showToast('تم إيقاف الإشعارات مؤقتاً', 'تم كتم التنبيهات التلقائية.', 'warning');
     }
   };
 
@@ -769,6 +860,51 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleAssignFlexibleTime = async (
+    booking: AppointmentBooking,
+    assignedDate: string,
+    assignedTime: string
+  ) => {
+    if (!assignedDate || !assignedTime) return;
+    setFlexAssignBusyId(booking.id);
+    try {
+      const staffLabel = session?.name || booking.barberName;
+      const customNote =
+        notesState[booking.id]?.trim() ||
+        `تم اختيار أفضل وقت متاح لك (${assignedDate} الساعة ${assignedTime}) بواسطة ${staffLabel}.`;
+
+      await assignFlexibleBookingSlot(booking.id, assignedDate, assignedTime, customNote);
+      setFlexCustomTargetId(null);
+
+      sendDualAlert(`تم تعيين الوقت وإشعار الزبون (${assignedTime}) ✓`, {
+        body: `تم تحديد موعد ${booking.clientName} يوم ${assignedDate} الساعة ${assignedTime} وتأكيده مع إرسال إشعار فوري للزبون.`,
+        type: 'success',
+        skipSound: true,
+      });
+
+      if (waConfig.enabled && waConfig.autoSendOnConfirm) {
+        await dispatchAutomatedWhatsAppMessage(
+          {
+            ...booking,
+            date: assignedDate,
+            timeSlot: assignedTime,
+            status: 'confirmed',
+          },
+          'confirmation',
+          waConfig
+        );
+      }
+    } catch (err) {
+      console.error('Failed to assign flexible slot:', err);
+      sendDualAlert('خطأ في تعيين الموعد', {
+        body: 'تعذر تحديث التوقيت في قاعدة البيانات.',
+        type: 'warning',
+      });
+    } finally {
+      setFlexAssignBusyId((prev) => (prev === booking.id ? null : prev));
+    }
+  };
+
   const handleSaveClientNote = async (bookingId: string) => {
     const note = notesState[bookingId] || '';
     try {
@@ -878,9 +1014,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     }
 
-    // 3. Status Filter (Pending, Confirmed, Completed, Rejected)
+    // 3. Status Filter (Pending / Flexible Pending, Confirmed, Completed, Rejected)
     if (statusFilter !== 'all') {
-      if (statusFilter === 'pending' && b.status !== 'pending') return false;
+      if (statusFilter === 'pending' && !['pending', 'flexible_pending', 'pending_quote'].includes(b.status)) return false;
       if (statusFilter === 'confirmed' && b.status !== 'confirmed') return false;
       if (statusFilter === 'completed' && b.status !== 'completed') return false;
       if (statusFilter === 'rejected' && !['rejected', 'cancelled', 'no_show'].includes(b.status)) return false;
@@ -901,7 +1037,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // KPI Calculations
   const todayTickets = bookings.filter((b) => b.date === todayStr);
-  const pendingCount = todayTickets.filter((b) => b.status === 'pending').length;
+  const pendingCount = todayTickets.filter((b) =>
+    ['pending', 'flexible_pending', 'pending_quote'].includes(b.status)
+  ).length;
   const confirmedCount = todayTickets.filter((b) => b.status === 'confirmed').length;
   const rejectedCount = todayTickets.filter((b) => b.status === 'rejected').length;
 
@@ -1125,6 +1263,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <button
                 type="button"
+                onClick={() => setWorkspaceSection('summary')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                  workspaceSection === 'summary'
+                    ? 'bg-amber-500 text-black shadow-md'
+                    : 'bg-zinc-900 text-amber-300 hover:bg-zinc-800 border border-zinc-800'
+                }`}
+              >
+                <BarChart3 className="w-4 h-4" />
+                <span>ملخص الموارد • Summary</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setWorkspaceSection('analytics')}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                   workspaceSection === 'analytics'
@@ -1152,6 +1303,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {Object.values(crmClientsMap).filter((c) => c.isBanned).length}
                   </span>
                 )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWorkspaceSection('loyalty')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  workspaceSection === 'loyalty'
+                    ? 'bg-amber-400 text-black shadow-md'
+                    : 'bg-zinc-900 text-amber-300 hover:bg-zinc-800 border border-zinc-800'
+                }`}
+              >
+                <Coins className="w-4 h-4" />
+                <span>نقاط الولاء • Loyalty Points</span>
               </button>
 
               <button
@@ -1259,6 +1423,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {workspaceSection === 'queue' && '⚡ الطابور المباشر لمواعيد اليوم — معرفة التالي في الدور لحظياً'}
                   {workspaceSection === 'analytics' && '📊 إحصائيات الأرباح والخدمات (خاص بالمدير العام)'}
                   {workspaceSection === 'crm' && '👑 إدارة الولاء، الزيارات والقائمة السوداء'}
+                  {workspaceSection === 'loyalty' && '🪙 إدارة نقاط الولاء واستبدالها بتخفيضات على الخدمات القادمة (+10 نقاط لكل زيارة مؤكدة)'}
                   {workspaceSection === 'schedules' && '🕒 تخصيص ساعات الراحة وأيام العطل لكل حلاق'}
                   {workspaceSection === 'shifts' && '⇄ طلبات الإجازة وتبديل المناوبات مع التحديث الفوري لصفحة الحجز'}
                   {workspaceSection === 'waitlist' && '📋 متابعة المسجلين في قائمة الانتظار الذكية'}
@@ -1538,6 +1703,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               />
             )}
 
+            {workspaceSection === 'summary' && (
+              <ResourcePlanningSummaryCharts
+                bookings={bookings}
+                reviews={firestoreReviews}
+                role={session.role}
+                ownBarberId={session.barberId}
+              />
+            )}
+
             {workspaceSection === 'analytics' && (
               <FinancialAnalyticsPanel
                 bookings={bookings}
@@ -1569,6 +1743,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {workspaceSection === 'crm' && (
               <CrmLoyaltyBlacklistPanel
+                bookings={bookings}
+                crmMap={crmClientsMap}
+                onOpenClientTracking={onOpenClientTracking}
+              />
+            )}
+
+            {workspaceSection === 'loyalty' && (
+              <LoyaltyPointsAdminPanel
                 bookings={bookings}
                 crmMap={crmClientsMap}
                 onOpenClientTracking={onOpenClientTracking}
@@ -1875,7 +2057,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
 
                           <span className="text-xs text-zinc-400 font-mono tabular-nums">
-                            📅 {booking.date} • ⏰ {booking.timeSlot}
+                            📅 {booking.date} • ⏰{' '}
+                            {booking.timeSlot === 'FLEXIBLE'
+                              ? 'وقت مرن (يختاره الحلاق)'
+                              : booking.timeSlot}
                           </span>
                         </div>
 
@@ -1912,6 +2097,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${
                             booking.status === 'completed' ? 'bg-teal-500/20 text-teal-300 border border-teal-400/50' :
                             booking.status === 'confirmed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' :
+                            booking.status === 'flexible_pending' ? 'bg-purple-500/20 text-purple-300 border border-purple-400/50' :
                             booking.status === 'pending' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' :
                             booking.status === 'rescheduled' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' :
                             booking.status === 'no_show' ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40' :
@@ -1920,6 +2106,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           }`}>
                             {booking.status === 'completed' ? 'مكتمل — حضر ✓' :
                              booking.status === 'confirmed' ? 'مقبول (Confirmed)' :
+                             booking.status === 'flexible_pending' ? 'وقت مرن — بانتظار تعيين الحلاق' :
                              booking.status === 'pending' ? 'معلق (Pending)' :
                              booking.status === 'rescheduled' ? 'معدل (Rescheduled)' :
                              booking.status === 'no_show' ? 'تغيب (No-Show)' :
@@ -1928,6 +2115,109 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </span>
                         </div>
                       </div>
+
+                      {/* Barber-Assigned Optimal Time Selector for Flexible Bookings */}
+                      {booking.status === 'flexible_pending' && (() => {
+                        const rankedSlots = getRankedAvailableSlotsForBarber(
+                          booking.barberId,
+                          booking.date,
+                          booking.preferredTimeHint,
+                          barberSchedules,
+                          bookings
+                        ).slice(0, 6);
+                        const isCustomOpen = flexCustomTargetId === booking.id;
+                        const isFlexBusy = flexAssignBusyId === booking.id;
+
+                        return (
+                          <div className="p-3 rounded-xl bg-purple-950/35 border border-purple-500/40 space-y-2.5 text-xs">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 font-black text-purple-200">
+                                <CalendarClock className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                                <span>
+                                  الزبون طلب اختيار أفضل وقت متاح له • اضغط لتعيين الساعة وإشعار الزبون تلقائياً
+                                </span>
+                              </div>
+                              {booking.preferredTimeHint && (
+                                <span className="text-[11px] font-mono text-amber-300 bg-amber-500/15 px-2 py-0.5 rounded-md border border-amber-500/30">
+                                  كان يفضل: {booking.preferredTimeHint}
+                                </span>
+                              )}
+                            </div>
+
+                            {rankedSlots.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                {rankedSlots.map((slotOpt) => (
+                                  <button
+                                    key={`${slotOpt.date}-${slotOpt.time}`}
+                                    type="button"
+                                    disabled={isFlexBusy}
+                                    onClick={() => handleAssignFlexibleTime(booking, slotOpt.date, slotOpt.time)}
+                                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                                  >
+                                    {isFlexBusy ? (
+                                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                    )}
+                                    <span>
+                                      {slotOpt.date === booking.date ? 'نفس اليوم' : slotOpt.date.slice(5)} · {slotOpt.time}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-amber-300">
+                                لا توجد ساعات شاغرة تلقائياً في الأيام الثلاثة القادمة، يمكنك تخصيص تاريخ ووقت يدوياً:
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (isCustomOpen) {
+                                    setFlexCustomTargetId(null);
+                                  } else {
+                                    setFlexCustomTargetId(booking.id);
+                                    setFlexCustomDate(booking.date);
+                                    setFlexCustomTime(booking.preferredTimeHint || rankedSlots[0]?.time || '16:00');
+                                  }
+                                }}
+                                className="text-[11px] font-bold text-purple-300 hover:text-white underline cursor-pointer"
+                              >
+                                {isCustomOpen ? 'إخفاء التخصيص اليدوي' : 'تخصيص تاريخ وساعة أخرى يدوياً...'}
+                              </button>
+                            </div>
+
+                            {isCustomOpen && (
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                                <input
+                                  type="date"
+                                  value={flexCustomDate}
+                                  min={todayStr}
+                                  onChange={(e) => setFlexCustomDate(e.target.value)}
+                                  className="bg-black/60 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-white"
+                                />
+                                <input
+                                  type="time"
+                                  value={flexCustomTime}
+                                  onChange={(e) => setFlexCustomTime(e.target.value)}
+                                  className="bg-black/60 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-white font-mono"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={isFlexBusy}
+                                  onClick={() => handleAssignFlexibleTime(booking, flexCustomDate, flexCustomTime)}
+                                  className="min-h-[38px] px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>تعيين وإشعار الزبون</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* Quick Actions for Pending Appointments (Single-Tap Verify Completion & Cancel) */}
                       {(booking.status === 'pending' || booking.status === 'pending_quote') && (

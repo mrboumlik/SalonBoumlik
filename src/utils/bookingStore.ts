@@ -13,6 +13,10 @@ import {
 } from 'firebase/firestore';
 import { AppointmentBooking, BookingStatus } from '../types';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import {
+  dispatchClientBackgroundPush,
+  dispatchStaffBackgroundPush,
+} from './webPushClient';
 
 const BOOKINGS_COLLECTION = 'bookings';
 
@@ -99,6 +103,12 @@ function buildSanitizedBooking(booking: AppointmentBooking): Record<string, unkn
   }
   if (typeof booking.totalDurationMinutes === 'number' && Number.isFinite(booking.totalDurationMinutes)) {
     sanitized.totalDurationMinutes = Math.max(0, Math.min(1000, booking.totalDurationMinutes));
+  }
+  if (typeof booking.isFlexibleTime === 'boolean') {
+    sanitized.isFlexibleTime = booking.isFlexibleTime;
+  }
+  if (booking.preferredTimeHint && booking.preferredTimeHint.trim()) {
+    sanitized.preferredTimeHint = booking.preferredTimeHint.trim().slice(0, 32);
   }
   if (booking.rescheduledTo && booking.rescheduledTo.date && booking.rescheduledTo.time) {
     sanitized.rescheduledTo = {
@@ -391,6 +401,27 @@ export async function createNewBooking(
     const payload = buildSanitizedBooking(newBooking);
     await setDoc(doc(db, BOOKINGS_COLLECTION, id), payload);
     memoryCache = [newBooking, ...memoryCache.filter((b) => b.id !== id)];
+
+    // Dispatch background VAPID Web Push to Master Admin + assigned barber
+    const slotText =
+      newBooking.status === 'flexible_pending' || newBooking.isFlexibleTime
+        ? `توقيت مرن (بانتظار اختيارك لأقرب وقت${newBooking.preferredTimeHint ? ` حول ${newBooking.preferredTimeHint}` : ''})`
+        : `${newBooking.date} الساعة ${newBooking.timeSlot}`;
+    void dispatchStaffBackgroundPush({
+      barberId: newBooking.barberId,
+      eventType: 'new_booking',
+      ticketNumber: newBooking.ticketNumber,
+      url: '/#admin',
+      tag: `sb-new-booking-${newBooking.id}`,
+      title:
+        newBooking.status === 'flexible_pending'
+          ? `Salon Boumlik • طلب وقت مرن (${newBooking.ticketNumber})`
+          : `Salon Boumlik • حجز جديد (${newBooking.ticketNumber})`,
+      body: newBooking.cihReceiptName
+        ? `الزبون ${newBooking.clientName} حجز مع ${newBooking.barberName} (${slotText}) مع إيصال CIH.`
+        : `الزبون ${newBooking.clientName} حجز مع ${newBooking.barberName} (${slotText}).`,
+    });
+
     return newBooking;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
@@ -423,15 +454,142 @@ export async function updateBookingStatus(
 
     await updateDoc(doc(db, BOOKINGS_COLLECTION, id), updatePayload);
 
-    const existing = memoryCache.find((b) => b.id === id);
-    if (!existing) return null;
+    let targetBooking = memoryCache.find((b) => b.id === id);
+    if (!targetBooking) {
+      const snap = await getDoc(doc(db, BOOKINGS_COLLECTION, id));
+      if (snap.exists()) {
+        targetBooking = snap.data() as AppointmentBooking;
+      }
+    }
+
+    if (!targetBooking) return null;
     const updatedBooking: AppointmentBooking = {
-      ...existing,
+      ...targetBooking,
       status: newStatus,
-      adminNotes: adminNotes !== undefined ? adminNotes : existing.adminNotes,
-      rescheduledTo: rescheduledTo !== undefined ? rescheduledTo : existing.rescheduledTo,
+      adminNotes: adminNotes !== undefined ? adminNotes : targetBooking.adminNotes,
+      rescheduledTo: rescheduledTo !== undefined ? rescheduledTo : targetBooking.rescheduledTo,
     };
     memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+
+    // Dispatch background Web Push to client devices when status or time updates
+    const cLang = updatedBooking.clientLanguage || 'ar';
+    if (newStatus === 'confirmed') {
+      void dispatchClientBackgroundPush({
+        clientPhone: updatedBooking.clientPhone,
+        ticketNumber: updatedBooking.ticketNumber,
+        eventType: 'booking_confirmed',
+        url: `/#track=${encodeURIComponent(updatedBooking.ticketNumber)}`,
+        tag: `sb-booking-${updatedBooking.id}-confirmed`,
+        title:
+          cLang === 'ar'
+            ? `Salon Boumlik • تم تأكيد موعدك (${updatedBooking.ticketNumber})`
+            : `Salon Boumlik • Rendez-vous confirmé (${updatedBooking.ticketNumber})`,
+        body:
+          cLang === 'ar'
+            ? `تم تأكيد حجزك مع ${updatedBooking.barberName} بتاريخ ${updatedBooking.date} الساعة ${updatedBooking.timeSlot}.`
+            : `Votre rendez-vous avec ${updatedBooking.barberName} est confirmé le ${updatedBooking.date} à ${updatedBooking.timeSlot}.`,
+      });
+    } else if (newStatus === 'rescheduled' && updatedBooking.rescheduledTo) {
+      void dispatchClientBackgroundPush({
+        clientPhone: updatedBooking.clientPhone,
+        ticketNumber: updatedBooking.ticketNumber,
+        eventType: 'booking_rescheduled',
+        url: `/#track=${encodeURIComponent(updatedBooking.ticketNumber)}`,
+        tag: `sb-booking-${updatedBooking.id}-rescheduled-${updatedBooking.rescheduledTo.time}`,
+        title:
+          cLang === 'ar'
+            ? `Salon Boumlik • تحديث موعدك (${updatedBooking.ticketNumber})`
+            : `Salon Boumlik • Nouvel horaire proposé (${updatedBooking.ticketNumber})`,
+        body:
+          cLang === 'ar'
+            ? `تم تحديث الموعد مع ${updatedBooking.barberName} إلى ${updatedBooking.rescheduledTo.date} الساعة ${updatedBooking.rescheduledTo.time}.`
+            : `Nouvel horaire avec ${updatedBooking.barberName} : ${updatedBooking.rescheduledTo.date} à ${updatedBooking.rescheduledTo.time}.`,
+      });
+    } else if (newStatus === 'rejected' || newStatus === 'cancelled') {
+      void dispatchClientBackgroundPush({
+        clientPhone: updatedBooking.clientPhone,
+        ticketNumber: updatedBooking.ticketNumber,
+        eventType: 'booking_updated',
+        url: `/#track=${encodeURIComponent(updatedBooking.ticketNumber)}`,
+        tag: `sb-booking-${updatedBooking.id}-${newStatus}`,
+        title: `Salon Boumlik • ${updatedBooking.ticketNumber}`,
+        body:
+          adminNotes?.trim() ||
+          (cLang === 'ar'
+            ? 'تم تحديث حالة تذكرتك. اضغط لمراجعة التفاصيل.'
+            : 'Le statut de votre réservation a été mis à jour.'),
+      });
+    }
+
+    return updatedBooking;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Allows the assigned barber or Master Admin to assign the closest optimal date & time slot
+ * to a flexible booking (`flexible_pending`), confirm it, and automatically notify the client.
+ */
+export async function assignFlexibleBookingSlot(
+  id: string,
+  assignedDate: string,
+  assignedTime: string,
+  adminNotes?: string
+): Promise<AppointmentBooking | null> {
+  const path = `${BOOKINGS_COLLECTION}/${id}`;
+  try {
+    const cleanDate = String(assignedDate || '').trim().slice(0, 20);
+    const cleanTime = String(assignedTime || '').trim().slice(0, 16);
+    const noteText = String(
+      adminNotes ||
+        `تم اختيار أفضل وقت متاح لك (${cleanDate} • ${cleanTime}) وتأكيد موعدك بنجاح.`
+    ).slice(0, 500);
+
+    await updateDoc(doc(db, BOOKINGS_COLLECTION, id), {
+      date: cleanDate,
+      timeSlot: cleanTime,
+      status: 'confirmed' as BookingStatus,
+      adminNotes: noteText,
+      rescheduledTo: deleteField(),
+    });
+
+    let targetBooking = memoryCache.find((b) => b.id === id);
+    if (!targetBooking) {
+      const snap = await getDoc(doc(db, BOOKINGS_COLLECTION, id));
+      if (snap.exists()) {
+        targetBooking = snap.data() as AppointmentBooking;
+      }
+    }
+    if (!targetBooking) return null;
+
+    const updatedBooking: AppointmentBooking = {
+      ...targetBooking,
+      date: cleanDate,
+      timeSlot: cleanTime,
+      status: 'confirmed',
+      adminNotes: noteText,
+      rescheduledTo: undefined,
+    };
+    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+
+    const cLang = updatedBooking.clientLanguage || 'ar';
+    void dispatchClientBackgroundPush({
+      clientPhone: updatedBooking.clientPhone,
+      ticketNumber: updatedBooking.ticketNumber,
+      eventType: 'booking_confirmed',
+      url: `/#track=${encodeURIComponent(updatedBooking.ticketNumber)}`,
+      tag: `sb-booking-${updatedBooking.id}-assigned-${cleanTime}`,
+      title:
+        cLang === 'ar'
+          ? `Salon Boumlik • تم تحديد وتأكيد موعدك (${updatedBooking.ticketNumber})`
+          : `Salon Boumlik • Créneau assigné et confirmé (${updatedBooking.ticketNumber})`,
+      body:
+        cLang === 'ar'
+          ? `اختار لك الحلاق ${updatedBooking.barberName} أفضل وقت متاح: ${cleanDate} الساعة ${cleanTime}. مرحباً بك!`
+          : `${updatedBooking.barberName} a sélectionné votre créneau optimal : ${cleanDate} à ${cleanTime}.`,
+    });
+
     return updatedBooking;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
@@ -637,10 +795,29 @@ export async function updateBookingCihReceipt(
 
     await updateDoc(doc(db, BOOKINGS_COLLECTION, id), updatePayload);
 
-    const existing = memoryCache.find((b) => b.id === id);
-    if (!existing) return null;
+    let targetBooking = memoryCache.find((b) => b.id === id);
+    if (!targetBooking) {
+      const snap = await getDoc(doc(db, BOOKINGS_COLLECTION, id));
+      if (snap.exists()) {
+        targetBooking = snap.data() as AppointmentBooking;
+      }
+    }
+
+    if (targetBooking) {
+      void dispatchStaffBackgroundPush({
+        barberId: targetBooking.barberId,
+        eventType: 'cih_receipt_uploaded',
+        ticketNumber: targetBooking.ticketNumber,
+        url: '/#admin',
+        tag: `sb-cih-receipt-${targetBooking.id}`,
+        title: `Salon Boumlik • إيصال تحويل CIH (${targetBooking.ticketNumber})`,
+        body: `قام الزبون ${targetBooking.clientName} بإرفاق إيصال التحويل البنكي CIH لموعد ${targetBooking.date} (${targetBooking.timeSlot}).`,
+      });
+    }
+
+    if (!targetBooking) return null;
     const updatedBooking: AppointmentBooking = {
-      ...existing,
+      ...targetBooking,
       cihReceiptName: cleanName,
       cihReceiptPreview: cleanPreview || undefined,
       cihReceiptUploadedAt: cleanUploadedAt,

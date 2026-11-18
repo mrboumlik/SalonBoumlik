@@ -30,7 +30,14 @@ import {
   Ban,
   ListPlus,
   ChevronRight,
-  ChevronLeft
+  ChevronLeft,
+  BellRing,
+  UserCheck,
+  UserPlus,
+  Sparkles as SparklesIcon,
+  CalendarClock,
+  History,
+  Coins
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import QRCode from 'qrcode';
@@ -48,12 +55,24 @@ import {
   evaluateBarberDayAvailability,
   getInitialBookingDate,
 } from '../utils/barberScheduleStore';
-import { useCrmClients, getCrmDocId } from '../utils/crmStore';
+import {
+  useCrmClients,
+  getCrmDocId,
+  redeemLoyaltyPointsForDiscount,
+  consumeClientDiscountOnBooking,
+} from '../utils/crmStore';
 import { addToWaitlist } from '../utils/waitlistStore';
-import { getVerifiedVisitsCount } from '../utils/loyaltyEngine';
+import {
+  computeClientPointsSummary,
+  getVerifiedVisitsCount,
+  LOYALTY_POINT_TIERS,
+} from '../utils/loyaltyEngine';
 import { rememberTrackedTicket } from '../utils/clientReminderWatcher';
-
-import { requestWebNotificationPermission, sendWebNotification } from '../utils/notifications';
+import { computeBarberReviewStats, useFirestoreReviews } from '../utils/reviewsStore';
+import { sendDualAlert } from '../utils/notifications';
+import { registerClientPushSubscription } from '../utils/webPushClient';
+import { NotificationConsentModal } from './NotificationConsentModal';
+import { ReturningClientLookupModal, RecognizedClientData } from './ReturningClientLookupModal';
 
 interface BookingSectionProps {
   pricingResult: PricingEngineResult;
@@ -90,10 +109,12 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
   const [copiedHolderName, setCopiedHolderName] = useState(false);
   const [copiedAccountNumber, setCopiedAccountNumber] = useState(false);
 
-  // Live Firestore Sync for Bookings, Barber Schedules & CRM Loyalty/Ban checks
+  // Live Firestore Sync for Bookings, Barber Schedules, Reviews & CRM Loyalty/Ban checks
   const [liveBookings, setLiveBookings] = useState<AppointmentBooking[]>(() => getAllBookings());
   const barberSchedules = useBarberSchedules();
   const crmClientsMap = useCrmClients();
+  const { reviews: firestoreReviews } = useFirestoreReviews();
+  const [redeemingPointsTierId, setRedeemingPointsTierId] = useState<string | null>(null);
 
   // Smart Waitlist form state
   const [showWaitlistBox, setShowWaitlistBox] = useState(false);
@@ -119,6 +140,18 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
   }>({});
   const [isDownloading, setIsDownloading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showNotifConsentModal, setShowNotifConsentModal] = useState(false);
+  const [notifSubscribedForTicket, setNotifSubscribedForTicket] = useState(false);
+
+  // Returning Client Quick Recognition Flow
+  const [clientMode, setClientMode] = useState<'first_time' | 'returning'>('first_time');
+  const [isReturningLookupOpen, setIsReturningLookupOpen] = useState(false);
+  const [recognizedClient, setRecognizedClient] = useState<RecognizedClientData | null>(null);
+  const [showRecognizedHistory, setShowRecognizedHistory] = useState(false);
+
+  // Smart Cross-Barber Suggestion & Barber-Assigned Flexible Time State
+  const [inspectedBusySlot, setInspectedBusySlot] = useState<string | null>(null);
+  const [isFlexibleBarberTime, setIsFlexibleBarberTime] = useState(false);
 
   const bookingCardRef = useRef<HTMLDivElement>(null);
   const ticketCardRef = useRef<HTMLDivElement>(null);
@@ -144,14 +177,34 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
     liveBookings
   );
 
-  // Auto-select first open slot if currently picked slot is no longer available
+  // Evaluate availability for all barbers on the chosen date (used for Step 1 open counters & Step 3 cross-barber suggestions)
+  const allBarbersAvailability = React.useMemo(() => {
+    const map: Record<string, ReturnType<typeof evaluateBarberDayAvailability>> = {};
+    TEAM_MEMBERS.forEach((b) => {
+      map[b.id] = evaluateBarberDayAvailability(b.id, date, barberSchedules, liveBookings);
+    });
+    return map;
+  }, [date, barberSchedules, liveBookings]);
+
+  // Clear inspected busy slot when date changes or day is salon closed
   useEffect(() => {
+    setInspectedBusySlot(null);
+  }, [date, selectedBarber.id]);
+
+  // Auto-select first open slot if currently picked slot is no longer available (unless flexible mode is active)
+  useEffect(() => {
+    if (isFlexibleBarberTime) {
+      if (timeSlot !== 'FLEXIBLE') {
+        setTimeSlot('FLEXIBLE');
+      }
+      return;
+    }
     if (dayAvailability.availableSlots.length > 0) {
       if (!dayAvailability.availableSlots.includes(timeSlot)) {
         setTimeSlot(dayAvailability.availableSlots[0]);
       }
     }
-  }, [date, selectedBarber.id, dayAvailability.availableSlots.join(','), timeSlot]);
+  }, [date, selectedBarber.id, dayAvailability.availableSlots.join(','), timeSlot, isFlexibleBarberTime]);
 
   // Clear service error automatically when at least one service is picked
   useEffect(() => {
@@ -169,6 +222,8 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       : [];
   const pastVisitsCount =
     cleanDigits.length >= 6 ? getVerifiedVisitsCount(clientBookingsForPhone, crmProfile) : 0;
+  const pointsSummary =
+    cleanDigits.length >= 6 ? computeClientPointsSummary(pastVisitsCount, crmProfile) : null;
   const isClientBanned = Boolean(crmProfile?.isBanned);
   const nextVisitNumber = pastVisitsCount + 1;
   const isFreeWashEligible =
@@ -239,20 +294,22 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
           : lang === 'es'
           ? 'El salón cierra los lunes. Por favor elige otro día.'
           : 'Le salon est fermé le lundi (jour de repos). Veuillez choisir un autre jour.';
-    } else if (dayAvailability.isBarberOffDay || dayAvailability.availableSlots.length === 0) {
-      errors.timeSlot =
-        lang === 'ar'
-          ? 'جميع المواعيد ممتلئة أو الحلاق في عطلة لهذا اليوم. يمكنك التسجيل في قائمة الانتظار أو اختيار توقيت/يوم آخر.'
-          : lang === 'en'
-          ? 'No available slots for this barber on this date. Join the waitlist or choose another day.'
-          : 'Aucun créneau disponible pour ce barbier à cette date. Rejoignez la liste d’attente ou choisissez un autre jour.';
-    } else if (!dayAvailability.availableSlots.includes(timeSlot)) {
-      errors.timeSlot =
-        lang === 'ar'
-          ? 'الساعة المختارة غير متاحة أو محجوزة بالفعل. يرجى اختيار ساعة أخرى من القائمة.'
-          : lang === 'en'
-          ? 'Selected time slot is unavailable. Please pick an open slot.'
-          : 'Ce créneau horaire n’est plus disponible. Veuillez sélectionner une heure libre.';
+    } else if (!isFlexibleBarberTime) {
+      if (dayAvailability.isBarberOffDay || dayAvailability.availableSlots.length === 0) {
+        errors.timeSlot =
+          lang === 'ar'
+            ? 'جميع المواعيد ممتلئة أو الحلاق في عطلة لهذا اليوم. اختر حلاقاً متاحاً أو فعّل خيار «دع الحلاق يختار لي الوقت المناسب».'
+            : lang === 'en'
+            ? 'No available slots for this barber on this date. Pick another barber or enable "Let the barber choose a suitable time".'
+            : 'Aucun créneau disponible pour ce barbier à cette date. Choisissez un autre barbier ou activez « Laisser le barbier choisir ».' ;
+      } else if (!dayAvailability.availableSlots.includes(timeSlot)) {
+        errors.timeSlot =
+          lang === 'ar'
+            ? 'الساعة المختارة غير متاحة أو محجوزة بالفعل. يرجى اختيار ساعة متاحة أو تفعيل الاختيار المرن للحلاق.'
+            : lang === 'en'
+            ? 'Selected time slot is unavailable. Pick an open slot or let the barber choose.'
+            : 'Ce créneau horaire n’est plus disponible. Sélectionnez une heure libre ou laissez le barbier choisir.';
+      }
     }
 
     if (errors.date || errors.timeSlot) {
@@ -385,20 +442,22 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
           : lang === 'es'
           ? 'El salón cierra los lunes. Por favor elige otro día.'
           : 'Le salon est fermé le lundi (jour de repos). Veuillez choisir un autre jour.';
-    } else if (dayAvailability.isBarberOffDay || dayAvailability.availableSlots.length === 0) {
-      errors.timeSlot =
-        lang === 'ar'
-          ? 'جميع المواعيد ممتلئة أو الحلاق في عطلة لهذا اليوم. يمكنك التسجيل في قائمة الانتظار أو اختيار توقيت/يوم آخر.'
-          : lang === 'en'
-          ? 'No available slots for this barber on this date. Join the waitlist or choose another day.'
-          : 'Aucun créneau disponible pour ce barbier à cette date. Rejoignez la liste d’attente ou choisissez un autre jour.';
-    } else if (!dayAvailability.availableSlots.includes(timeSlot)) {
-      errors.timeSlot =
-        lang === 'ar'
-          ? 'الساعة المختارة غير متاحة أو محجوزة بالفعل. يرجى اختيار ساعة أخرى من القائمة.'
-          : lang === 'en'
-          ? 'Selected time slot is unavailable. Please pick an open slot.'
-          : 'Ce créneau horaire n’est plus disponible. Veuillez sélectionner une heure libre.';
+    } else if (!isFlexibleBarberTime) {
+      if (dayAvailability.isBarberOffDay || dayAvailability.availableSlots.length === 0) {
+        errors.timeSlot =
+          lang === 'ar'
+            ? 'جميع المواعيد ممتلئة أو الحلاق في عطلة لهذا اليوم. اختر حلاقاً آخر أو فعّل الاختيار المرن للحلاق.'
+            : lang === 'en'
+            ? 'No available slots for this barber on this date. Switch barber or let the barber choose.'
+            : 'Aucun créneau disponible pour ce barbier à cette date. Changez de barbier ou laissez le barbier choisir.';
+      } else if (!dayAvailability.availableSlots.includes(timeSlot)) {
+        errors.timeSlot =
+          lang === 'ar'
+            ? 'الساعة المختارة غير متاحة أو محجوزة بالفعل. يرجى اختيار ساعة أخرى أو تفعيل الاختيار المرن.'
+            : lang === 'en'
+            ? 'Selected time slot is unavailable. Please pick an open slot or let the barber choose.'
+            : 'Ce créneau horaire n’est plus disponible. Sélectionnez une heure libre ou laissez le barbier choisir.';
+      }
     }
 
     if (!clientName.trim()) {
@@ -489,6 +548,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
         : undefined;
 
       const trimmedClientNotes = notes.trim().slice(0, 400);
+      const effectiveTimeSlot = isFlexibleBarberTime ? 'FLEXIBLE' : timeSlot;
       const newBooking = await createNewBooking({
         services: [],
         cartItemsSummary: pricingResult.items,
@@ -496,7 +556,11 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
         barberName: barberNameLocalized,
         barberColor: selectedBarber.themeColor || '#D97706',
         date,
-        timeSlot,
+        timeSlot: effectiveTimeSlot,
+        isFlexibleTime: isFlexibleBarberTime,
+        preferredTimeHint: isFlexibleBarberTime
+          ? (inspectedBusySlot || undefined)
+          : undefined,
         clientName: clientName.trim(),
         clientPhone: clientPhone.trim(),
         clientEmail: clientEmail.trim() || undefined,
@@ -504,6 +568,11 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
         clientNotes: trimmedClientNotes || undefined,
         notes: [
           trimmedClientNotes,
+          isFlexibleBarberTime
+            ? (lang === 'ar'
+                ? 'طلب وقت مرن (يختاره الحلاق)'
+                : 'Horaire flexible (choisi par le barbier)')
+            : '',
           includeWaitingSkip ? (lang === 'ar' ? 'خدمة تفادي الانتظار (+10 دراهم)' : 'Service Coupe-File (+10 MAD)') : '',
           loyaltyTag || '',
         ].filter(Boolean).join(' | '),
@@ -511,7 +580,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
         finalTotalMAD: grandTotal,
         totalSavingsMAD: pricingResult.totalSavings + crmCustomDiscount,
         bookingMethod: 'site',
-        status: 'pending',
+        status: isFlexibleBarberTime ? 'flexible_pending' : 'pending',
         cihReceiptName: cihReceiptName || undefined,
         cihReceiptPreview: cihReceiptPreview || undefined,
         cihReceiptUploadedAt: cihReceiptUploadedAt || undefined,
@@ -529,27 +598,40 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
         // ignore
       }
 
+      if (crmCustomDiscount > 0) {
+        consumeClientDiscountOnBooking(
+          clientPhone.trim(),
+          clientName.trim(),
+          crmCustomDiscount,
+          crmClientsMap
+        ).catch((consumeErr) => console.warn('Discount consumption sync note:', consumeErr));
+      }
+
       rememberTrackedTicket(newBooking.ticketNumber, newBooking.clientPhone);
       setCreatedBooking(newBooking);
       setNotes('');
       setCihReceiptName('');
       setCihReceiptPreview('');
       setCihReceiptUploadedAt('');
+      setIsFlexibleBarberTime(false);
+      setInspectedBusySlot(null);
       if (onBookingConfirmed) onBookingConfirmed(newBooking);
 
-      // Request Web Notification permission for clients immediately AFTER digital ticket is generated
-      requestWebNotificationPermission().then((permission) => {
-        if (permission === 'granted') {
-          sendWebNotification(
-            lang === 'ar' ? 'تم تسجيل تذكرتك بنجاح • صالون بومليك' : 'Réservation Confirmée • Salon Boumlik',
-            {
-              body: lang === 'ar'
-                ? `تذكرتك: ${newBooking.ticketNumber} مع ${newBooking.barberName} بتاريخ ${newBooking.date} الساعة ${newBooking.timeSlot}`
-                : `Billet ${newBooking.ticketNumber} avec ${newBooking.barberName} le ${newBooking.date} à ${newBooking.timeSlot}`,
-            }
-          );
+      // Explicit consent workflow: avoid unprompted permission calls or immediate notification spam
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        if (Notification.permission === 'granted') {
+          void registerClientPushSubscription({
+            clientPhone: newBooking.clientPhone,
+            clientName: newBooking.clientName,
+            lang,
+          }).then((res) => setNotifSubscribedForTicket(res.subscribed));
+        } else if (Notification.permission === 'default') {
+          setNotifSubscribedForTicket(false);
+          setShowNotifConsentModal(true);
+        } else {
+          setNotifSubscribedForTicket(false);
         }
-      });
+      }
     } catch (err) {
       console.error('Failed to save booking to Firestore:', err);
       setFieldErrors((prev) => ({
@@ -745,13 +827,16 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
     },
     {
       step: 3 as const,
-      label: lang === 'ar' ? 'الموعد' : lang === 'en' ? 'Date & Time' : lang === 'es' ? 'Fecha y Hora' : 'Date & Heure',
+      label: lang === 'ar' ? 'الوقت' : lang === 'en' ? 'Time' : lang === 'es' ? 'Horario' : 'Horaire',
     },
     {
       step: 4 as const,
-      label: lang === 'ar' ? 'التأكيد' : lang === 'en' ? 'Confirm' : lang === 'es' ? 'Confirmar' : 'Confirmation',
+      label: lang === 'ar' ? 'التفاصيل' : lang === 'en' ? 'Details' : lang === 'es' ? 'Detalles' : 'Détails',
     },
   ];
+
+  const activeStepMeta = wizardSteps.find((s) => s.step === currentStep) || wizardSteps[0];
+  const wizardProgressPercent = Math.round((currentStep / wizardSteps.length) * 100);
 
   const createdTicketHasQueueSkip = Boolean(
     createdBooking &&
@@ -762,6 +847,32 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
           return baseSum > 0 && (createdBooking.originalTotalMAD ?? 0) - baseSum >= 10;
         })())
   );
+
+  const handleClientRecognized = (profile: RecognizedClientData) => {
+    setRecognizedClient(profile);
+    setClientMode('returning');
+    setClientName(profile.clientName);
+    setClientPhone(profile.clientPhone);
+    if (profile.clientEmail) {
+      setClientEmail(profile.clientEmail);
+    }
+    setFieldErrors((prev) => ({ ...prev, clientName: undefined, clientPhone: undefined }));
+  };
+
+  const handleSelectFirstTime = () => {
+    setClientMode('first_time');
+    setRecognizedClient(null);
+    setShowRecognizedHistory(false);
+  };
+
+  const displayTimeSlotLabel =
+    isFlexibleBarberTime || timeSlot === 'FLEXIBLE'
+      ? lang === 'ar'
+        ? 'يختاره الحلاق (مرن)'
+        : lang === 'en'
+        ? 'Barber Chooses (Flex)'
+        : 'Choix du barbier'
+      : timeSlot;
 
   return (
     <section id="booking" className="py-8 sm:py-14 bg-white dark:bg-[#090A0E] text-zinc-900 dark:text-white relative border-b border-zinc-200 dark:border-zinc-800">
@@ -790,10 +901,38 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
             </p>
           </div>
 
-          {/* 4-Step Modern Planity/Fresha Stepper Bar */}
-          <div className="space-y-3 pt-1">
+          {/* 4-Step Visual Progress Bar & Interactive Stepper */}
+          <div className="space-y-3 pt-1" role="region" aria-label="Booking Progress">
+            {/* Numeric Progress Header + Full-Width Bar */}
+            <div className="space-y-1.5 px-1">
+              <div className="flex items-center justify-between text-[11px] font-bold">
+                <span className="text-zinc-700 dark:text-zinc-200">
+                  {lang === 'ar'
+                    ? `الخطوة ${currentStep} من 4 — ${activeStepMeta.label}`
+                    : lang === 'en'
+                    ? `Step ${currentStep} of 4 — ${activeStepMeta.label}`
+                    : `Étape ${currentStep} sur 4 — ${activeStepMeta.label}`}
+                </span>
+                <span className="font-mono font-black text-amber-600 dark:text-amber-400 tabular-nums">
+                  {wizardProgressPercent}%
+                </span>
+              </div>
+              <div
+                className="w-full h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden"
+                role="progressbar"
+                aria-valuenow={wizardProgressPercent}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all duration-300 ease-out"
+                  style={{ width: `${wizardProgressPercent}%` }}
+                />
+              </div>
+            </div>
+
             <div className="relative flex items-center justify-between">
-              {/* Background progress track (flex start-aligned so RTL right-to-left fills seamlessly) */}
+              {/* Stepper Node Connector Track */}
               <div className="absolute top-4 inset-x-7 h-0.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden flex justify-start">
                 <div
                   className="h-full bg-amber-500 transition-all duration-300 ease-out"
@@ -809,7 +948,8 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                     key={item.step}
                     type="button"
                     onClick={() => handleGoToStep(item.step)}
-                    className="relative z-10 flex flex-col items-center gap-1.5 group cursor-pointer focus:outline-none min-w-[60px] min-h-[44px]"
+                    aria-current={isActive ? 'step' : undefined}
+                    className="relative z-10 flex flex-col items-center gap-1.5 group cursor-pointer focus:outline-none min-w-[64px] min-h-[44px]"
                   >
                     <div
                       className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black font-mono transition-all duration-200 border-2 ${
@@ -860,7 +1000,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                   <>
                     <span className="text-zinc-300 dark:text-zinc-700">•</span>
                     <span className="font-mono text-[11px] text-amber-600 dark:text-amber-400 font-bold" dir="ltr">
-                      {date.slice(5)} {timeSlot}
+                      {date.slice(5)} {displayTimeSlotLabel}
                     </span>
                   </>
                 )}
@@ -873,10 +1013,156 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
           </div>
 
           {/* ========================================================= */}
-          {/* STEP 1: CHOOSE BARBER                                     */}
+          {/* STEP 1: RETURNING CLIENT RECOGNITION + CHOOSE BARBER      */}
           {/* ========================================================= */}
           {currentStep === 1 && (
             <div key="step-1" className={`space-y-4 pt-1 ${stepDirection === 'next' ? 'wizard-step-next' : 'wizard-step-prev'}`}>
+              {/* Returning Client Quick Recognition Banner */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-amber-50 via-white to-zinc-50 dark:from-[#17140d] dark:via-[#12141B] dark:to-[#12141B] border border-amber-200 dark:border-amber-500/35 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
+                      <UserCheck className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white">
+                        {lang === 'ar'
+                          ? 'هل زرت صالون بومليك من قبل؟'
+                          : lang === 'en'
+                          ? 'First time or returning client?'
+                          : lang === 'es'
+                          ? '¿Primera visita o cliente habitual?'
+                          : 'Avez-vous déjà visité le Salon Boumlik ?'}
+                      </h3>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        {lang === 'ar'
+                          ? 'التعرف السريع يملأ بياناتك تلقائياً ويظهر رصيد ولائك وسجل مواعيدك.'
+                          : 'La reconnaissance rapide pré-remplit vos infos et charge vos points de fidélité.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSelectFirstTime}
+                    className={`min-h-[44px] py-2.5 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      clientMode === 'first_time' && !recognizedClient
+                        ? 'bg-zinc-900 dark:bg-white text-white dark:text-black border-zinc-900 dark:border-white shadow-sm'
+                        : 'bg-white dark:bg-black/40 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-amber-500/50'
+                    }`}
+                  >
+                    <UserPlus className="w-4 h-4 flex-shrink-0" />
+                    <span>
+                      {lang === 'ar' ? 'حجز جديد (First Time)' : 'Nouvelle Réservation (First Time)'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsReturningLookupOpen(true)}
+                    className={`min-h-[44px] py-2.5 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      recognizedClient
+                        ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm'
+                        : 'bg-amber-500 hover:bg-amber-400 text-black border-amber-400 shadow-sm'
+                    }`}
+                  >
+                    <QrCode className="w-4 h-4 flex-shrink-0" />
+                    <span>
+                      {lang === 'ar' ? 'أنا زبون دائم (Returning Client)' : 'Client Fidèle (Returning Client)'}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Recognized Client Personalized Greeting & Loyalty Card */}
+                {recognizedClient && (
+                  <div className="p-3 rounded-xl bg-emerald-50/90 dark:bg-emerald-950/35 border border-emerald-300 dark:border-emerald-500/40 space-y-2.5 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <div className="font-black text-emerald-900 dark:text-emerald-200 truncate">
+                            {lang === 'ar'
+                              ? `مرحباً بعودتك، ${recognizedClient.clientName}!`
+                              : lang === 'en'
+                              ? `Welcome back, ${recognizedClient.clientName}!`
+                              : `Bon retour, ${recognizedClient.clientName} !`}
+                          </div>
+                          <div className="text-[11px] text-emerald-700 dark:text-emerald-300/90 font-mono" dir="ltr">
+                            {recognizedClient.clientPhone}
+                            {recognizedClient.isVip ? ' · 👑 VIP' : ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-1 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-800 dark:text-amber-300 font-mono font-black text-[11px] flex items-center gap-1">
+                          <Coins className="w-3.5 h-3.5" />
+                          <span>{recognizedClient.loyaltyPoints} pts</span>
+                        </span>
+                        <span className="px-2 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-800 dark:text-emerald-200 font-mono font-bold text-[11px]">
+                          {recognizedClient.verifiedVisits} {lang === 'ar' ? 'زيارة' : 'visites'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-emerald-200/70 dark:border-emerald-500/25">
+                      {recognizedClient.preferredBarberId &&
+                        recognizedClient.preferredBarberId !== selectedBarberId && (
+                          <button
+                            type="button"
+                            onClick={() => onSelectBarberId(recognizedClient.preferredBarberId!)}
+                            className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black text-[11px] flex items-center gap-1 cursor-pointer"
+                          >
+                            <SparklesIcon className="w-3 h-3" />
+                            <span>
+                              {lang === 'ar'
+                                ? `اختيار حلاقك المعتاد (${
+                                    TEAM_MEMBERS.find((m) => m.id === recognizedClient.preferredBarberId)?.name.ar || ''
+                                  })`
+                                : 'Choisir votre barbier habituel'}
+                            </span>
+                          </button>
+                        )}
+
+                      {recognizedClient.pastBookings.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowRecognizedHistory((prev) => !prev)}
+                          className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <History className="w-3.5 h-3.5" />
+                          <span>
+                            {lang === 'ar'
+                              ? `سجل زياراتك السابقة (${recognizedClient.pastBookings.length})`
+                              : `Historique (${recognizedClient.pastBookings.length})`}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+
+                    {showRecognizedHistory && recognizedClient.pastBookings.length > 0 && (
+                      <div className="space-y-1.5 pt-1 max-h-36 overflow-y-auto">
+                        {recognizedClient.pastBookings.slice(0, 4).map((pb) => (
+                          <div
+                            key={pb.id}
+                            className="px-2.5 py-1.5 rounded-lg bg-white/80 dark:bg-black/40 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between gap-2 text-[11px]"
+                          >
+                            <span className="font-mono text-zinc-700 dark:text-zinc-300 truncate">
+                              {pb.ticketNumber} · {pb.barberName}
+                            </span>
+                            <span className="font-mono text-zinc-500 dark:text-zinc-400 flex-shrink-0" dir="ltr">
+                              {pb.date} · {pb.timeSlot === 'FLEXIBLE' ? 'مرن' : pb.timeSlot}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-between">
                 <label className="text-xs sm:text-sm font-bold text-zinc-800 dark:text-zinc-100 flex items-center gap-1.5">
                   <User className="w-4 h-4 text-amber-500" />
@@ -890,7 +1176,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                 </span>
               </div>
 
-              {/* 2x2 Grid of Barbers */}
+              {/* 2x2 Grid of Barbers with Real-Time Open Slots Badge */}
               <div className="grid grid-cols-2 gap-3">
                 {TEAM_MEMBERS.map((barber) => {
                   const isSelected = selectedBarberId === barber.id;
@@ -900,13 +1186,20 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                     barber.specialty?.ar ||
                     (barber.isOwner ? ui.roleOwner : lang === 'ar' ? 'حلاق محترف' : 'Barbier');
                   const bColor = barber.themeColor || '#D97706';
+                  const ratingStats = computeBarberReviewStats(
+                    barber.id,
+                    firestoreReviews,
+                    barber.rating
+                  );
+                  const bAvail = allBarbersAvailability[barber.id];
+                  const openCount = bAvail?.availableSlots.length ?? 0;
 
                   return (
                     <button
                       key={barber.id}
                       type="button"
                       onClick={() => onSelectBarberId(barber.id)}
-                      className={`p-3.5 rounded-2xl border text-left rtl:text-right flex flex-col gap-2.5 transition-all cursor-pointer group relative overflow-hidden min-h-[112px] ${
+                      className={`p-3.5 rounded-2xl border text-left rtl:text-right flex flex-col gap-2.5 transition-all cursor-pointer group relative overflow-hidden min-h-[138px] ${
                         isSelected
                           ? 'bg-amber-50/60 dark:bg-zinc-900 border-2 shadow-md'
                           : 'bg-zinc-50/60 dark:bg-[#12141B] border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
@@ -930,23 +1223,82 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                             outlineOffset: '2px',
                           }}
                         />
-                        {isSelected && (
-                          <div
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-white shadow-xs flex-shrink-0"
-                            style={{ backgroundColor: bColor }}
-                          >
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
-                          </div>
-                        )}
+                        <div className="flex flex-col items-end gap-1">
+                          {isSelected && (
+                            <div
+                              className="w-6 h-6 rounded-full flex items-center justify-center text-white shadow-xs flex-shrink-0"
+                              style={{ backgroundColor: bColor }}
+                            >
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
+                            </div>
+                          )}
+                          {!bAvail?.isSalonClosedDay && (
+                            <span
+                              className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md ${
+                                bAvail?.isBarberOffDay || openCount === 0
+                                  ? 'bg-red-500/10 text-red-600 dark:text-red-400'
+                                  : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                              }`}
+                            >
+                              {bAvail?.isBarberOffDay
+                                ? (lang === 'ar' ? 'راحة' : 'OFF')
+                                : `${openCount} ${lang === 'ar' ? 'متاح' : 'libres'}`}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="min-w-0">
+                      <div className="min-w-0 space-y-1">
                         <span className="font-black text-zinc-900 dark:text-white text-sm block truncate">
                           {bName}
                         </span>
-                        <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 block truncate mt-0.5">
+                        <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 block truncate">
                           {bSpecialty}
                         </span>
+
+                        {/* Live Firestore Average Star-Rating Display */}
+                        <div
+                          className="pt-1 flex items-center gap-1.5 text-[11px]"
+                          aria-label={`${ratingStats.averageRating} out of 5 stars from ${ratingStats.reviewCount} reviews`}
+                        >
+                          <div dir="ltr" className="flex items-center gap-0.5 flex-shrink-0">
+                            {[1, 2, 3, 4, 5].map((starIndex) => {
+                              const fillPct = Math.max(
+                                0,
+                                Math.min(100, (ratingStats.averageRating - (starIndex - 1)) * 100)
+                              );
+                              return (
+                                <span
+                                  key={starIndex}
+                                  className="relative inline-block w-3.5 h-3.5 flex-shrink-0"
+                                >
+                                  <Star className="w-3.5 h-3.5 text-zinc-300 dark:text-zinc-700" />
+                                  {fillPct > 0 && (
+                                    <span
+                                      className="absolute inset-y-0 left-0 overflow-hidden"
+                                      style={{ width: `${fillPct}%` }}
+                                    >
+                                      <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                                    </span>
+                                  )}
+                                </span>
+                              );
+                            })}
+                          </div>
+                          <span className="font-mono font-black text-zinc-900 dark:text-amber-300 tabular-nums">
+                            {ratingStats.averageRating.toFixed(1)}
+                          </span>
+                          <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-mono tabular-nums truncate">
+                            ({ratingStats.reviewCount}{' '}
+                            {lang === 'ar'
+                              ? 'تقييم'
+                              : lang === 'en'
+                              ? ratingStats.reviewCount === 1
+                                ? 'review'
+                                : 'reviews'
+                              : 'avis'})
+                          </span>
+                        </div>
                       </div>
                     </button>
                   );
@@ -1077,7 +1429,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
           )}
 
           {/* ========================================================= */}
-          {/* STEP 3: DATE & TIME SLOT SELECTION                        */}
+          {/* STEP 3: DATE & TIME SLOT SELECTION + SMART SUGGESTIONS    */}
           {/* ========================================================= */}
           {currentStep === 3 && (
             <div key="step-3" className={`space-y-4 pt-1 ${stepDirection === 'next' ? 'wizard-step-next' : 'wizard-step-prev'}`}>
@@ -1096,12 +1448,19 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                 {quickPickDates.map((d) => {
                   const isPicked = date === d.dateStr;
+                  const dayCount = evaluateBarberDayAvailability(
+                    selectedBarber.id,
+                    d.dateStr,
+                    barberSchedules,
+                    liveBookings
+                  ).availableSlots.length;
                   return (
                     <button
                       key={d.dateStr}
                       type="button"
                       onClick={() => {
                         setDate(d.dateStr);
+                        setInspectedBusySlot(null);
                         setFieldErrors((prev) => ({ ...prev, date: undefined, timeSlot: undefined }));
                       }}
                       className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer ${
@@ -1113,6 +1472,17 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                       <span className="block text-[10px] font-bold truncate">{d.dayShort}</span>
                       <span dir="ltr" className="block text-xs font-mono font-black mt-0.5">
                         {d.dayNum}
+                      </span>
+                      <span
+                        className={`block text-[9px] font-mono mt-0.5 ${
+                          isPicked
+                            ? 'text-black/80 font-bold'
+                            : dayCount === 0
+                            ? 'text-red-500'
+                            : 'text-emerald-600 dark:text-emerald-400'
+                        }`}
+                      >
+                        {dayCount} {lang === 'ar' ? 'متاح' : 'libres'}
                       </span>
                     </button>
                   );
@@ -1133,6 +1503,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                   min={new Date().toISOString().split('T')[0]}
                   onChange={(e) => {
                     setDate(e.target.value);
+                    setInspectedBusySlot(null);
                     if (fieldErrors.date || fieldErrors.timeSlot) {
                       setFieldErrors((prev) => ({ ...prev, date: undefined, timeSlot: undefined }));
                     }
@@ -1153,15 +1524,78 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                 )}
               </div>
 
-              {/* Strict 1-Hour Slot Grid with Real-Time Booked & Break Blocking */}
-              <div ref={timeSlotSectionRef} className="space-y-2">
+              {/* Real-Time Cross-Barber Availability Strip */}
+              {!dayAvailability.isSalonClosedDay && (
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 flex items-center justify-between">
+                    <span>
+                      {lang === 'ar'
+                        ? 'التوفر الفوري عند جميع الحلاقين في هذا التاريخ:'
+                        : 'Disponibilité en direct par barbier à cette date :'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {TEAM_MEMBERS.map((b) => {
+                      const avail = allBarbersAvailability[b.id];
+                      const openSlots = avail?.availableSlots.length ?? 0;
+                      const activeB = b.id === selectedBarber.id;
+                      const bShortName = b.name[lang] || b.name.ar;
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => {
+                            onSelectBarberId(b.id);
+                            setInspectedBusySlot(null);
+                            if (avail && avail.availableSlots.length > 0 && isFlexibleBarberTime) {
+                              setIsFlexibleBarberTime(false);
+                              setTimeSlot(avail.availableSlots[0]);
+                            }
+                          }}
+                          className={`px-2.5 py-2 rounded-xl border text-left rtl:text-right transition-all cursor-pointer min-h-[44px] ${
+                            activeB
+                              ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-500 text-zinc-900 dark:text-white shadow-xs'
+                              : 'bg-zinc-50 dark:bg-[#12141B] border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-amber-500/50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="w-2 h-2 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: b.themeColor || '#D97706' }}
+                            />
+                            <span className="text-[11px] font-bold truncate">{bShortName}</span>
+                          </div>
+                          <div
+                            className={`text-[10px] font-mono font-bold mt-0.5 ${
+                              avail?.isBarberOffDay || openSlots === 0
+                                ? 'text-red-500'
+                                : 'text-emerald-600 dark:text-emerald-400'
+                            }`}
+                          >
+                            {avail?.isBarberOffDay
+                              ? (lang === 'ar' ? 'في راحة' : 'En repos')
+                              : `${openSlots} ${lang === 'ar' ? 'ساعة متاحة' : 'libres'}`}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Strict 1-Hour Slot Grid with Real-Time Booked & Break Inspection */}
+              <div ref={timeSlotSectionRef} className="space-y-2.5">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-zinc-500 dark:text-zinc-400 font-semibold flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-amber-500" />
-                    <span>{lang === 'ar' ? 'اختر التوقيت (حصص ساعة كاملة):' : 'Créneau horaire (1 heure) :'}</span>
+                    <span>
+                      {lang === 'ar'
+                        ? 'اختر التوقيت (اضغط على المحجوز لفحص توفر الحلاقين الآخرين):'
+                        : 'Créneau horaire (cliquez un créneau complet pour voir les alternatives) :'}
+                    </span>
                   </span>
                   {!dayAvailability.isSalonClosedDay && !dayAvailability.isBarberOffDay && (
-                    <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                    <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold flex-shrink-0">
                       {dayAvailability.availableSlots.length} {lang === 'ar' ? 'متاح' : 'libre(s)'}
                     </span>
                   )}
@@ -1182,46 +1616,247 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                       <AlertCircle className="w-4 h-4 flex-shrink-0 text-amber-500" />
                       <span>
                         {lang === 'ar'
-                          ? `${barberNameLocalized} في عطلة أو راحة في هذا التاريخ. يمكنك اختيار حلاق آخر أو الانضمام لقائمة الانتظار.`
-                          : `${barberNameLocalized} est indisponible à cette date. Choisissez un autre barbier ou rejoignez la liste d’attente.`}
+                          ? `${barberNameLocalized} في عطلة أو راحة في هذا التاريخ. يمكنك اختيار حلاق متاح أعلاه أو ترك الحلاق يختار لك أقرب موعد مناسب.`
+                          : `${barberNameLocalized} est indisponible à cette date. Choisissez un autre barbier ci-dessus ou laissez le barbier choisir.`}
                       </span>
                     </div>
                   </div>
                 ) : (
                   <div className={`grid grid-cols-3 sm:grid-cols-4 gap-2 rounded-2xl transition-all ${fieldErrors.timeSlot ? 'p-1.5 ring-2 ring-red-500/60 bg-red-500/5' : ''}`}>
                     {dayAvailability.slots.map((slot) => {
-                      const isChosen = slot.available && timeSlot === slot.time;
+                      const isChosen = !isFlexibleBarberTime && slot.available && timeSlot === slot.time;
+                      const isInspectedBusy = !slot.available && inspectedBusySlot === slot.time;
                       return (
                         <button
                           key={slot.time}
                           type="button"
-                          disabled={!slot.available}
                           onClick={() => {
-                            setTimeSlot(slot.time);
-                            if (fieldErrors.timeSlot) {
-                              setFieldErrors((prev) => ({ ...prev, timeSlot: undefined }));
+                            if (slot.available) {
+                              setIsFlexibleBarberTime(false);
+                              setInspectedBusySlot(null);
+                              setTimeSlot(slot.time);
+                              if (fieldErrors.timeSlot) {
+                                setFieldErrors((prev) => ({ ...prev, timeSlot: undefined }));
+                              }
+                            } else {
+                              setIsFlexibleBarberTime(false);
+                              setInspectedBusySlot(slot.time);
                             }
                           }}
-                          className={`min-h-[44px] py-2 px-2 rounded-xl border text-xs font-mono font-bold transition-all flex flex-col items-center justify-center ${
-                            !slot.available
-                              ? 'bg-zinc-100 dark:bg-zinc-900/40 border-zinc-200 dark:border-zinc-800/60 text-zinc-400 dark:text-zinc-600 line-through cursor-not-allowed opacity-70'
+                          className={`min-h-[44px] py-2 px-2 rounded-xl border text-xs font-mono font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
+                            isInspectedBusy
+                              ? 'bg-red-50 dark:bg-red-950/50 border-red-400 text-red-700 dark:text-red-300 ring-2 ring-red-500/30'
+                              : !slot.available
+                              ? 'bg-zinc-100 dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800/80 text-zinc-500 dark:text-zinc-400 hover:border-amber-500/50'
                               : isChosen
-                              ? 'bg-amber-500 border-amber-400 text-black shadow-md shadow-amber-500/20 cursor-pointer'
-                              : 'bg-zinc-50 dark:bg-[#12141B] border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-200 hover:border-amber-500/60 cursor-pointer'
+                              ? 'bg-amber-500 border-amber-400 text-black shadow-md shadow-amber-500/20'
+                              : 'bg-zinc-50 dark:bg-[#12141B] border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-200 hover:border-amber-500/60'
                           }`}
                         >
-                          <span dir="ltr">{slot.time}</span>
+                          <span dir="ltr" className={!slot.available ? 'line-through opacity-80' : ''}>
+                            {slot.time}
+                          </span>
                           {!slot.available && (
-                            <span className="text-[9px] font-sans font-normal no-underline">
+                            <span className="text-[9px] font-sans font-bold text-red-500 dark:text-red-400">
                               {slot.reason === 'booked'
-                                ? (lang === 'ar' ? 'محجوز' : 'Réservé')
-                                : (lang === 'ar' ? 'استراحة' : 'Pause')}
+                                ? (lang === 'ar' ? 'محجوز • بدائل' : 'Complet')
+                                : (lang === 'ar' ? 'استراحة • بدائل' : 'Pause')}
                             </span>
                           )}
                         </button>
                       );
                     })}
                   </div>
+                )}
+
+                {/* SMART CONFLICT & CROSS-BARBER SUGGESTION BANNER */}
+                {!dayAvailability.isSalonClosedDay &&
+                  (inspectedBusySlot || dayAvailability.isFullyBooked || dayAvailability.isBarberOffDay) && (() => {
+                    const targetHour = inspectedBusySlot || timeSlot;
+                    const exactHourAlternatives = targetHour && targetHour !== 'FLEXIBLE'
+                      ? TEAM_MEMBERS.filter(
+                          (b) =>
+                            b.id !== selectedBarber.id &&
+                            (allBarbersAvailability[b.id]?.availableSlots || []).includes(targetHour)
+                        )
+                      : [];
+                    const anyOpenAlternatives = TEAM_MEMBERS.filter(
+                      (b) =>
+                        b.id !== selectedBarber.id &&
+                        (allBarbersAvailability[b.id]?.availableSlots.length || 0) > 0
+                    );
+                    const altNamesAr = exactHourAlternatives
+                      .map((a) => a.name[lang] || a.name.ar)
+                      .join(' / ');
+
+                    return (
+                      <div className="p-3.5 rounded-2xl bg-gradient-to-br from-red-50 via-amber-50/70 to-white dark:from-red-950/35 dark:via-amber-950/25 dark:to-[#12141B] border border-red-300 dark:border-amber-500/50 space-y-3 text-xs">
+                        {/* Alert Title: Preferred Time Is Booked */}
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                          <div className="space-y-0.5">
+                            <div className="font-black text-red-700 dark:text-red-300">
+                              {lang === 'ar'
+                                ? `توقيتك المفضل محجوز! ${inspectedBusySlot ? `(${inspectedBusySlot})` : ''}`
+                                : lang === 'en'
+                                ? `Your preferred time is booked! ${inspectedBusySlot ? `(${inspectedBusySlot})` : ''}`
+                                : `Votre horaire préféré est complet ! ${inspectedBusySlot ? `(${inspectedBusySlot})` : ''}`}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Cross-Barber Exact Match Recommendation */}
+                        {exactHourAlternatives.length > 0 ? (
+                          <div className="p-3 rounded-xl bg-emerald-50/90 dark:bg-emerald-950/35 border border-emerald-300 dark:border-emerald-500/40 space-y-2.5">
+                            <div className="font-bold text-emerald-900 dark:text-emerald-200 leading-relaxed flex items-start gap-1.5">
+                              <SparklesIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
+                              <span>
+                                {lang === 'ar'
+                                  ? `هذا التوقيت غير متوفر عند الحلاق المختار، ولكن الحلاق (${altNamesAr}) متاح في نفس الوقت (${targetHour})! هل تحجز معه؟`
+                                  : lang === 'en'
+                                  ? `This time is booked with your selected barber, but ${altNamesAr} is available at ${targetHour}! Book with them?`
+                                  : `Cet horaire est indisponible chez ce barbier, mais ${altNamesAr} est libre à ${targetHour} ! Réserver avec lui ?`}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {exactHourAlternatives.map((alt) => {
+                                const altName = alt.name[lang] || alt.name.ar;
+                                return (
+                                  <button
+                                    key={alt.id}
+                                    type="button"
+                                    onClick={() => {
+                                      onSelectBarberId(alt.id);
+                                      setTimeSlot(targetHour);
+                                      setIsFlexibleBarberTime(false);
+                                      setInspectedBusySlot(null);
+                                      setFieldErrors((prev) => ({ ...prev, timeSlot: undefined }));
+                                    }}
+                                    className="min-h-[40px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>
+                                      {lang === 'ar'
+                                        ? `حجز مع ${altName} (${targetHour})`
+                                        : `Réserver avec ${altName} (${targetHour})`}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : anyOpenAlternatives.length > 0 ? (
+                          <div className="p-2.5 rounded-xl bg-white/80 dark:bg-black/40 border border-amber-300 dark:border-amber-500/30 space-y-2">
+                            <div className="text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                              {lang === 'ar'
+                                ? 'حلاقون آخرون لديهم أوقات شاغرة في نفس اليوم:'
+                                : 'Autres barbiers disponibles le même jour :'}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {anyOpenAlternatives.map((alt) => {
+                                const altOpen = allBarbersAvailability[alt.id]?.availableSlots || [];
+                                return (
+                                  <button
+                                    key={alt.id}
+                                    type="button"
+                                    onClick={() => {
+                                      onSelectBarberId(alt.id);
+                                      setTimeSlot(altOpen[0]);
+                                      setIsFlexibleBarberTime(false);
+                                      setInspectedBusySlot(null);
+                                      setFieldErrors((prev) => ({ ...prev, timeSlot: undefined }));
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-800 dark:text-amber-200 font-bold text-[11px] cursor-pointer"
+                                  >
+                                    {alt.name[lang] || alt.name.ar} ({altOpen[0]})
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* Quick-Enable Flexible Barber Time inside conflict box */}
+                        {!isFlexibleBarberTime && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsFlexibleBarberTime(true);
+                              setTimeSlot('FLEXIBLE');
+                              setFieldErrors((prev) => ({ ...prev, timeSlot: undefined }));
+                            }}
+                            className="w-full min-h-[42px] py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition-all"
+                          >
+                            <CalendarClock className="w-4 h-4 flex-shrink-0" />
+                            <span>
+                              {lang === 'ar'
+                                ? 'دع الحلاق يختار لي الوقت المناسب'
+                                : lang === 'en'
+                                ? 'Let the barber choose a suitable time for me'
+                                : 'Laisser le barbier choisir un créneau pour moi'}
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                {/* PERMANENT FLEXIBLE USER OPTION: Let Barber Choose Suitable Time */}
+                {!dayAvailability.isSalonClosedDay && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !isFlexibleBarberTime;
+                      setIsFlexibleBarberTime(next);
+                      if (next) {
+                        setTimeSlot('FLEXIBLE');
+                        setFieldErrors((prev) => ({ ...prev, timeSlot: undefined }));
+                      } else if (dayAvailability.availableSlots.length > 0) {
+                        setTimeSlot(dayAvailability.availableSlots[0]);
+                      }
+                    }}
+                    className={`w-full p-3.5 rounded-2xl border text-left rtl:text-right flex items-center justify-between gap-3 transition-all cursor-pointer ${
+                      isFlexibleBarberTime
+                        ? 'bg-amber-500/15 border-2 border-amber-500 shadow-sm'
+                        : 'bg-zinc-50 dark:bg-[#12141B] border-zinc-200 dark:border-zinc-800 hover:border-amber-500/60'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <div
+                        className={`p-2 rounded-xl flex-shrink-0 ${
+                          isFlexibleBarberTime
+                            ? 'bg-amber-500 text-black'
+                            : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                        }`}
+                      >
+                        <CalendarClock className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 space-y-0.5">
+                        <span className="text-xs font-black text-zinc-900 dark:text-white block">
+                          {lang === 'ar'
+                            ? 'دع الحلاق يختار لي الوقت المناسب'
+                            : lang === 'en'
+                            ? 'Let the barber choose a suitable time for me'
+                            : 'Laisser le barbier choisir un horaire convenable pour moi'}
+                        </span>
+                        <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block leading-relaxed">
+                          {lang === 'ar'
+                            ? `سيقوم ${barberNameLocalized} بتحديد أقرب وقت شاغر لك مباشرة وإشعارك فور التعيين.`
+                            : `${barberNameLocalized} vous attribuera le meilleur créneau disponible et vous enverra une alerte.`}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                        isFlexibleBarberTime
+                          ? 'bg-amber-500 border-amber-400 text-black'
+                          : 'border-zinc-300 dark:border-zinc-700'
+                      }`}
+                    >
+                      {isFlexibleBarberTime && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                    </div>
+                  </button>
                 )}
 
                 {fieldErrors.timeSlot && (
@@ -1504,29 +2139,78 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                 </div>
               )}
 
-              {!isClientBanned && cleanDigits.length >= 6 && (pastVisitsCount > 0 || crmProfile?.isVip || crmCustomDiscount > 0) && (
-                <div className="p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-500/40 text-xs flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-300">
-                    <Star className="w-4 h-4 text-amber-500 fill-amber-500 flex-shrink-0" />
-                    <span>
-                      {crmProfile?.isVip ? '👑 VIP • ' : ''}
-                      {lang === 'ar'
-                        ? `مرحباً بعودتك! رصيدك المؤكد: ${pastVisitsCount} زيارة`
-                        : `Bon retour ! ${pastVisitsCount} visite(s) confirmée(s)`}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {isFreeWashEligible && (
-                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
-                        {lang === 'ar' ? '🎁 غسل شعر مجاني مستحق!' : '🎁 Shampoing Gratuit offert !'}
+              {!isClientBanned && cleanDigits.length >= 6 && (pastVisitsCount > 0 || (pointsSummary && pointsSummary.pointsBalance > 0) || crmProfile?.isVip || crmCustomDiscount > 0) && (
+                <div className="p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-500/40 text-xs space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-300">
+                      <Star className="w-4 h-4 text-amber-500 fill-amber-500 flex-shrink-0" />
+                      <span>
+                        {crmProfile?.isVip ? '👑 VIP • ' : ''}
+                        {lang === 'ar'
+                          ? `مرحباً بعودتك! رصيدك المؤكد: ${pastVisitsCount} زيارة · ${pointsSummary?.pointsBalance ?? 0} نقطة ولاء`
+                          : `Bon retour ! ${pastVisitsCount} visite(s) · ${pointsSummary?.pointsBalance ?? 0} pts fidélité`}
                       </span>
-                    )}
-                    {crmCustomDiscount > 0 && (
-                      <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-black text-[10px] font-bold">
-                        {lang === 'ar' ? `تخفيض ولاء -${crmCustomDiscount} MAD` : `Remise fidélité -${crmCustomDiscount} MAD`}
-                      </span>
-                    )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {isFreeWashEligible && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
+                          {lang === 'ar' ? '🎁 غسل شعر مجاني مستحق!' : '🎁 Shampoing Gratuit offert !'}
+                        </span>
+                      )}
+                      {crmCustomDiscount > 0 && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-black text-[10px] font-bold">
+                          {lang === 'ar' ? `تخفيض ولاء مفعل -${crmCustomDiscount} MAD` : `Remise fidélité -${crmCustomDiscount} MAD`}
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  {pointsSummary && pointsSummary.canRedeemAny && (
+                    <div className="pt-2 border-t border-amber-300/40 dark:border-amber-500/20 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-amber-700 dark:text-amber-200">
+                        {lang === 'ar' ? 'استبدال نقاطك الآن:' : 'Utiliser vos points :'}
+                      </span>
+                      {LOYALTY_POINT_TIERS.filter((tier) => pointsSummary.pointsBalance >= tier.pointsCost).map((tier) => (
+                        <button
+                          key={tier.id}
+                          type="button"
+                          disabled={redeemingPointsTierId !== null}
+                          onClick={async () => {
+                            setRedeemingPointsTierId(tier.id);
+                            try {
+                              await redeemLoyaltyPointsForDiscount({
+                                phone: clientPhone.trim(),
+                                clientName: clientName.trim() || crmProfile?.clientName || 'Client',
+                                pointsCost: tier.pointsCost,
+                                discountMAD: tier.discountMAD,
+                                verifiedVisits: pastVisitsCount,
+                                crmMap: crmClientsMap,
+                              });
+                              sendDualAlert(
+                                lang === 'ar'
+                                  ? `تم تفعيل خصم -${tier.discountMAD} MAD بنجاح!`
+                                  : `Remise -${tier.discountMAD} MAD activée !`,
+                                {
+                                  body: lang === 'ar'
+                                    ? 'تم خصم المبلغ تلقائياً من مجموع هذا الطلب.'
+                                    : 'La remise a été déduite automatiquement de votre total.',
+                                  type: 'success',
+                                  skipSound: true,
+                                }
+                              );
+                            } finally {
+                              setRedeemingPointsTierId(null);
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] font-mono tabular-nums cursor-pointer disabled:opacity-50"
+                        >
+                          {redeemingPointsTierId === tier.id
+                            ? '...'
+                            : `${tier.pointsCost} pts → -${tier.discountMAD} MAD`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1748,8 +2432,8 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                   <a
                     href={`https://wa.me/${SALON_INFO.whatsappNumber}?text=${encodeURIComponent(
                       lang === 'ar'
-                        ? `مرحباً صالون بومليك، قمت بالتحويل البنكي عبر CIH لتأكيد حجزي (${clientName.trim() || 'زبون'} - بتاريخ ${date} الساعة ${timeSlot} مع ${barberNameLocalized}). مرفق طيه صورة إيصال التحويل:`
-                        : `Bonjour Salon Boumlik, voici mon reçu de virement CIH pour confirmer ma réservation à l'avance (${clientName.trim() || 'Client'} - le ${date} à ${timeSlot} avec ${barberNameLocalized}) :`
+                        ? `مرحباً صالون بومليك، قمت بالتحويل البنكي عبر CIH لتأكيد حجزي (${clientName.trim() || 'زبون'} - بتاريخ ${date} (${displayTimeSlotLabel}) مع ${barberNameLocalized}). مرفق طيه صورة إيصال التحويل:`
+                        : `Bonjour Salon Boumlik, voici mon reçu de virement CIH pour confirmer ma réservation à l'avance (${clientName.trim() || 'Client'} - le ${date} (${displayTimeSlotLabel}) avec ${barberNameLocalized}) :`
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -1823,7 +2507,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                 <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 pb-2 border-b border-zinc-200 dark:border-zinc-800/80">
                   <span>{barberNameLocalized}</span>
                   <span dir="ltr" className="font-mono font-bold text-zinc-900 dark:text-white">
-                    {date} • {timeSlot}
+                    {date} • {displayTimeSlotLabel}
                   </span>
                 </div>
 
@@ -1898,7 +2582,12 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                 <button
                   type="button"
                   onClick={handleConfirmBooking}
-                  disabled={isSubmitting || isClientBanned || dayAvailability.isSalonClosedDay || dayAvailability.availableSlots.length === 0}
+                  disabled={
+                    isSubmitting ||
+                    isClientBanned ||
+                    dayAvailability.isSalonClosedDay ||
+                    (!isFlexibleBarberTime && dayAvailability.availableSlots.length === 0)
+                  }
                   className="col-span-2 min-h-[52px] py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 disabled:opacity-50 disabled:cursor-not-allowed text-black font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shadow-amber-500/25 active:scale-[0.99] transition-all cursor-pointer"
                 >
                   <Ticket className="w-4 h-4 sm:w-5 sm:h-5 text-black flex-shrink-0" />
@@ -1985,7 +2674,10 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                     📅 {createdBooking.date}
                   </div>
                   <div className="text-xs text-blue-400 font-mono font-bold">
-                    ⏰ {createdBooking.timeSlot}
+                    ⏰{' '}
+                    {createdBooking.timeSlot === 'FLEXIBLE'
+                      ? (lang === 'ar' ? 'وقت مرن — سيختاره الحلاق' : 'Horaire flexible — Choisi par le barbier')
+                      : createdBooking.timeSlot}
                   </div>
                 </div>
               </div>
@@ -2156,10 +2848,37 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                 </button>
               )}
 
+              {typeof window !== 'undefined' && 'Notification' in window && (
+                notifSubscribedForTicket || Notification.permission === 'granted' ? (
+                  <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold flex items-center justify-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>
+                      {lang === 'ar'
+                        ? 'إشعارات متابعة التذكرة مفعلة على هذا الجهاز ✓'
+                        : 'Alertes en temps réel activées sur cet appareil ✓'}
+                    </span>
+                  </div>
+                ) : Notification.permission === 'default' ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowNotifConsentModal(true)}
+                    className="w-full py-2 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <BellRing className="w-3.5 h-3.5 text-amber-400" />
+                    <span>
+                      {lang === 'ar'
+                        ? 'تفعيل إشعارات تأكيد الموعد ونقاط الولاء'
+                        : 'Activer les alertes de confirmation et fidélité'}
+                    </span>
+                  </button>
+                ) : null
+              )}
+
               <button
                 type="button"
                 onClick={() => {
                   setCreatedBooking(null);
+                  setShowNotifConsentModal(false);
                   setCurrentStep(1);
                 }}
                 className="w-full py-1.5 text-xs text-zinc-400 hover:text-white transition-colors cursor-pointer"
@@ -2171,6 +2890,28 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
           </div>
         </div>
       )}
+
+      {createdBooking && (
+        <NotificationConsentModal
+          isOpen={showNotifConsentModal}
+          ticketNumber={createdBooking.ticketNumber}
+          clientName={createdBooking.clientName}
+          clientPhone={createdBooking.clientPhone}
+          lang={lang}
+          onClose={() => setShowNotifConsentModal(false)}
+          onSubscribed={(granted) => setNotifSubscribedForTicket(granted)}
+        />
+      )}
+
+      <ReturningClientLookupModal
+        isOpen={isReturningLookupOpen}
+        lang={lang}
+        liveBookings={liveBookings}
+        crmClientsMap={crmClientsMap}
+        onClose={() => setIsReturningLookupOpen(false)}
+        onRecognized={handleClientRecognized}
+        onSwitchToFirstTime={handleSelectFirstTime}
+      />
 
     </section>
   );

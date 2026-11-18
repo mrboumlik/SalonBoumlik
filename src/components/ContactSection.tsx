@@ -115,17 +115,17 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
   ];
 
   return (
-    <section id="contact" className="py-16 md:py-24 bg-[#050609] relative border-t border-zinc-800/80">
+    <section id="contact" className="py-16 md:py-24 bg-white dark:bg-[#050609] relative border-t border-slate-200 dark:border-zinc-800/80 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto space-y-3 mb-12">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-xs font-bold text-amber-300">
-            <QrCode className="w-3.5 h-3.5 text-amber-400" />
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 text-xs font-bold text-amber-800 dark:text-amber-300">
+            <QrCode className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
             <span>{t.navContact}</span>
           </div>
 
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-white font-display tracking-tight">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-slate-900 dark:text-white font-display tracking-tight">
             {lang === 'ar' ? (
               <span>التواصل، <span className="text-gold-gradient">الشبكات والباركود</span></span>
             ) : lang === 'amz' ? (
@@ -137,7 +137,7 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
             )}
           </h2>
 
-          <p className="text-sm sm:text-base text-zinc-300 font-body">
+          <p className="text-sm sm:text-base text-slate-600 dark:text-zinc-300 font-body">
             {lang === 'ar'
               ? 'امسح رموز الاستجابة السريعة الرسمية أو تواصل مع حسن مباشرة عبر الواتساب على الرقم 0635392503.'
               : lang === 'amz'
@@ -155,7 +155,7 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
             return (
               <div
                 key={idx}
-                className="rounded-3xl p-5 bg-zinc-900/90 border border-zinc-800 hover:border-amber-500/40 transition-all flex flex-col items-center text-center shadow-xl group"
+                className="rounded-3xl p-5 bg-slate-50 dark:bg-zinc-900/90 border border-slate-200 dark:border-zinc-800 hover:border-amber-500/50 transition-all flex flex-col items-center text-center shadow-md dark:shadow-xl group"
               >
                 {/* QR preview box */}
                 <div 
@@ -164,7 +164,7 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
                     image: item.image,
                     description: item.subtitle,
                   })}
-                  className="w-36 h-36 rounded-2xl bg-white p-2 shadow-inner cursor-pointer hover:scale-105 transition-transform mb-3 relative flex items-center justify-center"
+                  className="w-36 h-36 rounded-2xl bg-white border border-slate-200 dark:border-transparent p-2 shadow-inner cursor-pointer hover:scale-105 transition-transform mb-3 relative flex items-center justify-center"
                 >
                   <img
                     src={item.image}
@@ -177,21 +177,21 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
                 </div>
 
                 <div className="space-y-1 mb-3">
-                  <h4 className="text-sm font-bold text-white flex items-center justify-center gap-1.5">
-                    <Icon className="w-4 h-4 text-amber-400" />
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center justify-center gap-1.5">
+                    <Icon className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                     <span>{item.title}</span>
                   </h4>
-                  <p className="text-[11px] text-zinc-400">{item.subtitle}</p>
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400">{item.subtitle}</p>
                 </div>
 
-                <div className="mt-auto w-full pt-2 border-t border-zinc-800/80 flex gap-2">
+                <div className="mt-auto w-full pt-2 border-t border-slate-200 dark:border-zinc-800/80 flex gap-2">
                   <button
                     onClick={() => setActiveQrModal({
                       title: item.title,
                       image: item.image,
                       description: item.subtitle,
                     })}
-                    className="flex-1 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold cursor-pointer"
+                    className="flex-1 py-1.5 rounded-xl bg-white hover:bg-slate-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-slate-300 dark:border-transparent text-slate-800 dark:text-zinc-200 text-xs font-semibold cursor-pointer transition-colors"
                   >
                     {lang === 'ar' ? 'تكبير الباركود' : lang === 'amz' ? 'ⵙⵉⵎⵖⵓⵔ' : 'Agrandir QR'}
                   </button>
@@ -200,7 +200,7 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
                       href={item.actionUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="p-1.5 rounded-xl bg-amber-400 text-zinc-950 hover:bg-amber-300"
+                      className="p-1.5 rounded-xl bg-amber-400 text-zinc-950 hover:bg-amber-300 transition-colors"
                       title="Ouvrir le lien"
                     >
                       <ExternalLink className="w-4 h-4" />
@@ -217,25 +217,26 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
           
           {/* Left Details */}
           <div className="lg:col-span-5 space-y-5">
-            <div className="rounded-3xl bg-zinc-900/90 border border-zinc-800 p-6 space-y-4 shadow-xl">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Phone className="w-4 h-4 text-amber-400" />
+            <div className="rounded-3xl bg-slate-50 dark:bg-zinc-900/90 border border-slate-200 dark:border-zinc-800 p-6 space-y-4 shadow-md dark:shadow-xl">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Phone className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                 <span>
                   {lang === 'ar' ? 'الاتصال المباشر والمالك' : lang === 'amz' ? 'ⴰⵎⵢⴰⵡⴰⴹ ⵓⵙⵔⵉⴷ' : 'Contact Direct & Propriétaire'}
                 </span>
               </h3>
 
-              <div className="p-4 rounded-2xl bg-zinc-950/80 border border-amber-500/30 space-y-2">
-                <div className="text-xs text-zinc-400">
+              <div className="p-4 rounded-2xl bg-white dark:bg-zinc-950/80 border border-amber-300 dark:border-amber-500/30 space-y-2 shadow-2xs">
+                <div className="text-xs text-slate-500 dark:text-zinc-400">
                   {lang === 'ar' ? 'المؤسس وخبير الحلاقة :' : lang === 'amz' ? 'ⴰⵎⵙⴱⴷⴰⴷ ⵏ ⵙⴰⵍⵓⵏ :' : 'Propriétaire & Maître Barbier :'}
                 </div>
-                <div className="text-base font-bold text-white">
+                <div className="text-base font-bold text-slate-900 dark:text-white">
                   {SALON_INFO.owner[lang] || SALON_INFO.owner.fr}
                 </div>
                 <div className="flex items-center justify-between gap-2 pt-1">
                   <a 
                     href={`tel:${SALON_INFO.phone}`} 
-                    className="text-lg font-mono font-black text-amber-400 hover:underline"
+                    className="text-lg font-mono font-black text-amber-700 dark:text-amber-400 hover:underline"
+                    dir="ltr"
                   >
                     06 35 39 25 03
                   </a>
@@ -243,7 +244,7 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
                     href={`https://wa.me/${SALON_INFO.whatsappNumber}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-3 py-1 rounded-xl bg-emerald-500 text-zinc-950 font-bold text-xs flex items-center gap-1 shadow-md"
+                    className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow-md transition-colors"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
                     <span>WhatsApp</span>
@@ -252,35 +253,35 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
               </div>
 
               {/* Email box */}
-              <div className="p-4 rounded-2xl bg-zinc-950/80 border border-zinc-800 space-y-2">
-                <div className="text-xs text-zinc-400">
+              <div className="p-4 rounded-2xl bg-white dark:bg-zinc-950/80 border border-slate-200 dark:border-zinc-800 space-y-2 shadow-2xs">
+                <div className="text-xs text-slate-500 dark:text-zinc-400">
                   {lang === 'ar' ? 'البريد الإلكتروني / Gmail :' : lang === 'amz' ? 'ⵉⵎⵉⵢⵍ :' : 'Courriel officiel / Gmail :'}
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-mono font-bold text-zinc-200 break-all">
+                  <span className="text-sm font-mono font-bold text-slate-900 dark:text-zinc-200 break-all">
                     {SALON_INFO.email}
                   </span>
                   <button
                     onClick={handleCopyEmail}
-                    className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white cursor-pointer"
+                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white cursor-pointer"
                   >
-                    {copiedEmail ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedEmail ? <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                 </div>
               </div>
 
               {/* Exact location summary */}
-              <div className="space-y-2 pt-2 text-xs text-zinc-300">
+              <div className="space-y-2 pt-2 text-xs text-slate-700 dark:text-zinc-300">
                 <a
                   href={salonSettings.googleMapsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-start gap-2.5 p-3 rounded-xl bg-zinc-950/80 border border-zinc-800 hover:border-amber-500/50 hover:text-white transition-all group"
+                  className="flex items-start gap-2.5 p-3 rounded-xl bg-white dark:bg-zinc-950/80 border border-slate-200 dark:border-zinc-800 hover:border-amber-500/60 hover:text-slate-950 dark:hover:text-white transition-all group shadow-2xs"
                 >
-                  <MapPin className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
+                  <MapPin className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
                   <div className="flex-1">
                     <span>{SALON_INFO.address[lang] || SALON_INFO.address.fr}</span>
-                    <span className="mt-1 flex items-center gap-1 text-[11px] text-blue-400 font-bold">
+                    <span className="mt-1 flex items-center gap-1 text-[11px] text-blue-600 dark:text-blue-400 font-bold">
                       <span>{lang === 'ar' ? 'فتح في خرائط Google' : 'Ouvrir dans Google Maps'}</span>
                       <ExternalLink className="w-3 h-3" />
                     </span>
@@ -292,21 +293,21 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
 
           {/* Right Form with Direct Gmail Compose & WhatsApp */}
           <div className="lg:col-span-7">
-            <div className="rounded-3xl bg-zinc-900/90 border border-zinc-800 p-6 sm:p-8 shadow-2xl">
+            <div className="rounded-3xl bg-slate-50 dark:bg-zinc-900/90 border border-slate-200 dark:border-zinc-800 p-6 sm:p-8 shadow-lg dark:shadow-2xl">
               <div className="mb-6">
-                <h3 className="text-lg sm:text-xl font-bold text-white font-display">
+                <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white font-display">
                   Envoyer une Demande / Message
                 </h3>
-                <p className="text-xs text-zinc-400 mt-1">
+                <p className="text-xs text-slate-600 dark:text-zinc-400 mt-1">
                   Posez vos questions ou demandez un devis directement à Hassan.
                 </p>
               </div>
 
               {submittedInApp ? (
-                <div className="p-8 rounded-2xl bg-zinc-950 border border-emerald-500/40 text-center space-y-3">
-                  <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto" />
-                  <h4 className="text-base font-bold text-white">Message enregistré avec succès !</h4>
-                  <p className="text-xs text-zinc-300 max-w-sm mx-auto">
+                <div className="p-8 rounded-2xl bg-white dark:bg-zinc-950 border border-emerald-300 dark:border-emerald-500/40 text-center space-y-3">
+                  <CheckCircle2 className="w-12 h-12 text-emerald-600 dark:text-emerald-400 mx-auto" />
+                  <h4 className="text-base font-bold text-slate-900 dark:text-white">Message enregistré avec succès !</h4>
+                  <p className="text-xs text-slate-600 dark:text-zinc-300 max-w-sm mx-auto">
                     Merci {fullName}. L'équipe du Salon Boumlik vous répondra rapidement au {phone || 'votre numéro'}.
                   </p>
                 </div>
@@ -315,7 +316,7 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1">
                         Nom & Prénom *
                       </label>
                       <input
@@ -324,12 +325,12 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
                         placeholder="Ex: Tariq"
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
-                        className="w-full bg-zinc-950 text-xs text-zinc-100 px-3.5 py-2.5 rounded-xl border border-zinc-800 focus:outline-none focus:border-amber-500"
+                        className="w-full bg-white dark:bg-zinc-950 text-xs text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-500 px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-zinc-800 focus:outline-none focus:border-amber-500"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1">
                         Numéro de Téléphone *
                       </label>
                       <input
@@ -338,13 +339,13 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
                         placeholder="06 XX XX XX XX"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
-                        className="w-full bg-zinc-950 text-xs text-zinc-100 px-3.5 py-2.5 rounded-xl border border-zinc-800 focus:outline-none focus:border-amber-500"
+                        className="w-full bg-white dark:bg-zinc-950 text-xs text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-500 px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-zinc-800 focus:outline-none focus:border-amber-500"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1">
                       Votre Message / Question *
                     </label>
                     <textarea
@@ -353,12 +354,12 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
                       placeholder="Indiquez votre demande (coupe, protéine, barbe, horaire souhaité sur Rue Bir Anzarane)..."
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
-                      className="w-full bg-zinc-950 text-xs text-zinc-100 p-3.5 rounded-xl border border-zinc-800 focus:outline-none focus:border-amber-500"
+                      className="w-full bg-white dark:bg-zinc-950 text-xs text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-500 p-3.5 rounded-xl border border-slate-300 dark:border-zinc-800 focus:outline-none focus:border-amber-500"
                     />
                   </div>
 
                   {/* Actions: Send WhatsApp & Gmail */}
-                  <div className="pt-2 border-t border-zinc-800/80 space-y-3">
+                  <div className="pt-2 border-t border-slate-200 dark:border-zinc-800/80 space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <button
                         type="button"
@@ -393,20 +394,20 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
       {/* QR Code Lightbox Modal */}
       {activeQrModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150">
-          <div className="bg-zinc-950 border border-amber-500/40 rounded-3xl max-w-xs sm:max-w-sm w-full p-6 text-center space-y-4 shadow-2xl relative">
+          <div className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-amber-500/40 rounded-3xl max-w-xs sm:max-w-sm w-full p-6 text-center space-y-4 shadow-2xl relative">
             <button
               onClick={() => setActiveQrModal(null)}
-              className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white rounded-xl bg-zinc-900"
+              className="absolute top-4 right-4 p-2 text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white rounded-xl bg-slate-100 dark:bg-zinc-900 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
             <div>
-              <h4 className="text-base font-bold text-white">{activeQrModal.title}</h4>
-              <p className="text-xs text-zinc-400 mt-1">{activeQrModal.description}</p>
+              <h4 className="text-base font-bold text-slate-900 dark:text-white">{activeQrModal.title}</h4>
+              <p className="text-xs text-slate-600 dark:text-zinc-400 mt-1">{activeQrModal.description}</p>
             </div>
 
-            <div className="w-56 h-56 mx-auto rounded-2xl overflow-hidden p-3 bg-white shadow-2xl">
+            <div className="w-56 h-56 mx-auto rounded-2xl overflow-hidden p-3 bg-white border border-slate-200 dark:border-transparent shadow-2xl">
               <img
                 src={activeQrModal.image}
                 alt={activeQrModal.title}
@@ -414,7 +415,7 @@ Envoyé depuis le site Salon Boumlik (Taroudant, Rue Bir Anzarane, 2ème étage)
               />
             </div>
 
-            <p className="text-[11px] text-zinc-500">
+            <p className="text-[11px] text-slate-500 dark:text-zinc-500">
               Scannez ce code avec l'appareil photo de votre téléphone.
             </p>
           </div>

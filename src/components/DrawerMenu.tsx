@@ -36,8 +36,8 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   onOpenAdmin,
   onSelectBarberForBooking,
 }) => {
-  const { lang, t, isRtl } = useLanguage();
-  const { theme, setTheme } = useTheme();
+  const { lang, isRtl } = useLanguage();
+  const { isDark, setTheme } = useTheme();
   const salonSettings = useSalonProfileSettings();
 
   // Accordion state: null = all collapsed by default, or specific active key
@@ -129,24 +129,24 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
     <div className="fixed inset-0 z-50 overflow-hidden">
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
+        className="fixed inset-0 bg-black/75 dark:bg-black/80 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       />
 
       {/* Drawer Panel */}
       <div 
-        className={`fixed inset-y-0 ${isRtl ? 'left-0' : 'right-0'} max-w-full w-full sm:max-w-xl bg-zinc-950 border-${isRtl ? 'r' : 'l'} border-zinc-800 shadow-2xl flex flex-col z-10`}
+        className={`fixed inset-y-0 ${isRtl ? 'left-0 border-r' : 'right-0 border-l'} max-w-full w-full sm:max-w-xl bg-white dark:bg-zinc-950 border-slate-200 dark:border-zinc-800 shadow-2xl flex flex-col z-10`}
       >
         {/* Drawer Header */}
-        <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-black/70">
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between bg-slate-50 dark:bg-black/70">
           <div className="flex items-center gap-3">
             {/* Barber Pole Striped Accent */}
-            <div className="w-2.5 h-7 rounded-full bg-gradient-to-b from-red-600 via-white to-blue-600 shadow-sm" />
+            <div className="w-2.5 h-7 rounded-full bg-gradient-to-b from-red-600 via-white to-blue-600 border border-slate-200 dark:border-transparent shadow-sm" />
             <div>
-              <h2 className="text-lg font-black text-white tracking-wide font-display">
-                SALON <span className="text-red-500">BOU</span><span className="text-blue-500">MLIK</span>
+              <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-wide font-display">
+                SALON <span className="text-red-600 dark:text-red-500">BOU</span><span className="text-blue-600 dark:text-blue-500">MLIK</span>
               </h2>
-              <p className="text-[11px] text-zinc-400 font-medium">
+              <p className="text-[11px] text-slate-600 dark:text-zinc-400 font-medium">
                 {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
               </p>
             </div>
@@ -154,7 +154,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
 
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-900 border border-zinc-800 transition-colors"
+            className="p-2 rounded-xl text-slate-600 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-zinc-900 border border-slate-300 dark:border-zinc-800 transition-colors cursor-pointer"
             aria-label="Fermer"
           >
             <X className="w-5 h-5" />
@@ -165,32 +165,32 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
           
           {/* ACCORDION ITEM 1: TEAM */}
-          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/50 overflow-hidden transition-all">
+          <div className="rounded-2xl border border-slate-200 dark:border-zinc-800/80 bg-slate-50 dark:bg-zinc-900/50 overflow-hidden transition-all">
             <button
               type="button"
               onClick={() => toggleSection('team')}
-              className="w-full p-4 flex items-center justify-between gap-3 text-left hover:bg-zinc-850/80 transition-colors cursor-pointer"
+              className="w-full p-4 flex items-center justify-between gap-3 text-left rtl:text-right hover:bg-slate-100 dark:hover:bg-zinc-900 transition-colors cursor-pointer"
             >
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-red-600/15 border border-red-500/30 flex items-center justify-center text-red-500 flex-shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-red-50 dark:bg-red-600/15 border border-red-200 dark:border-red-500/30 flex items-center justify-center text-red-600 dark:text-red-500 flex-shrink-0">
                   <Users className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-white">{labels.team}</h3>
-                  <p className="text-[11px] text-zinc-400">
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">{labels.team}</h3>
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400">
                     {lang === 'ar' ? '4 حلاقين محترفين برئاسة حسن' : '4 barbiers qualifiés'}
                   </p>
                 </div>
               </div>
               <ChevronDown 
-                className={`w-4 h-4 text-zinc-400 transition-transform duration-300 ${
-                  expandedSection === 'team' ? 'rotate-180 text-amber-400' : ''
+                className={`w-4 h-4 text-slate-500 dark:text-zinc-400 transition-transform duration-300 ${
+                  expandedSection === 'team' ? 'rotate-180 text-amber-600 dark:text-amber-400' : ''
                 }`}
               />
             </button>
 
             {expandedSection === 'team' && (
-              <div className="p-4 pt-1 border-t border-zinc-800/60 space-y-3.5 animate-in fade-in duration-200">
+              <div className="p-4 pt-2 border-t border-slate-200 dark:border-zinc-800/60 space-y-3.5 animate-in fade-in duration-200">
                 {TEAM_MEMBERS.map((barber: BarberStaff) => {
                   const name = barber.name[lang] || barber.name.fr;
                   const bio = barber.bio ? (barber.bio[lang] || barber.bio.fr) : '';
@@ -198,10 +198,10 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                   return (
                     <div 
                       key={barber.id}
-                      className="p-3.5 rounded-xl bg-zinc-950/80 border border-zinc-800 hover:border-zinc-700 transition-all space-y-2.5"
+                      className="p-3.5 rounded-xl bg-white dark:bg-zinc-950/80 border border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 transition-all space-y-2.5"
                     >
                       <div className="flex items-start gap-3">
-                        <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-zinc-800 flex-shrink-0 border border-zinc-700">
+                        <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-slate-100 dark:bg-zinc-800 flex-shrink-0 border border-slate-300 dark:border-zinc-700">
                           <img 
                             src={barber.avatar} 
                             alt={name} 
@@ -215,8 +215,8 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                         </div>
 
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-bold text-white text-sm truncate">{name}</h4>
-                          <span className="text-[11px] font-semibold text-amber-400 block truncate">
+                          <h4 className="font-bold text-slate-900 dark:text-white text-sm truncate">{name}</h4>
+                          <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 block truncate">
                             {barber.isOwner ? (lang === 'ar' ? 'المؤسس وخبير الحلاقة (منذ 2016)' : 'Fondateur & Maître Barbier (depuis 2016)') : (lang === 'ar' ? 'حلاق محترف' : 'Barbier Pro')}
                           </span>
                         </div>
@@ -224,7 +224,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
 
                       {/* Hassan only bio */}
                       {barber.isOwner && bio && (
-                        <p className="text-xs text-zinc-300 leading-relaxed bg-black/40 p-2.5 rounded-lg border border-zinc-800/80">
+                        <p className="text-xs text-slate-700 dark:text-zinc-300 leading-relaxed bg-slate-50 dark:bg-black/40 p-2.5 rounded-lg border border-slate-200 dark:border-zinc-800/80">
                           {bio}
                         </p>
                       )}
@@ -234,9 +234,9 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                         {barber.phone && (
                           <a
                             href={`tel:${barber.phone}`}
-                            className="flex-1 py-1.5 px-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 text-center font-mono flex items-center justify-center gap-1.5 transition-colors"
+                            className="flex-1 py-1.5 px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-slate-300 dark:border-zinc-700 text-slate-900 dark:text-zinc-200 text-center font-mono flex items-center justify-center gap-1.5 transition-colors"
                           >
-                            <Phone className="w-3 h-3 text-red-500" />
+                            <Phone className="w-3 h-3 text-red-600 dark:text-red-500" />
                             <span dir="ltr">{barber.phone}</span>
                           </a>
                         )}
@@ -258,7 +258,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                             href={barber.instagram}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-pink-400 transition-colors"
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-slate-300 dark:border-zinc-700 text-pink-600 dark:text-pink-400 transition-colors"
                             title="Instagram"
                           >
                             <Instagram className="w-3.5 h-3.5" />
@@ -272,7 +272,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                               onSelectBarberForBooking(barber.id);
                               onClose();
                             }}
-                            className="py-1.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black transition-colors"
+                            className="py-1.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black transition-colors cursor-pointer"
                           >
                             {lang === 'ar' ? 'حجز' : 'Choisir'}
                           </button>
@@ -286,39 +286,39 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
           </div>
 
           {/* ACCORDION ITEM 2: GALLERY */}
-          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/50 overflow-hidden transition-all">
+          <div className="rounded-2xl border border-slate-200 dark:border-zinc-800/80 bg-slate-50 dark:bg-zinc-900/50 overflow-hidden transition-all">
             <button
               type="button"
               onClick={() => toggleSection('gallery')}
-              className="w-full p-4 flex items-center justify-between gap-3 text-left hover:bg-zinc-850/80 transition-colors cursor-pointer"
+              className="w-full p-4 flex items-center justify-between gap-3 text-left rtl:text-right hover:bg-slate-100 dark:hover:bg-zinc-900 transition-colors cursor-pointer"
             >
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-blue-600/15 border border-blue-500/30 flex items-center justify-center text-blue-400 flex-shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-600/15 border border-blue-200 dark:border-blue-500/30 flex items-center justify-center text-blue-600 dark:text-blue-400 flex-shrink-0">
                   <ImageIcon className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-white">{labels.gallery}</h3>
-                  <p className="text-[11px] text-zinc-400">
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">{labels.gallery}</h3>
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400">
                     {lang === 'ar' ? 'قصات التدريج واللحية' : 'Photos de réalisations'}
                   </p>
                 </div>
               </div>
               <ChevronDown 
-                className={`w-4 h-4 text-zinc-400 transition-transform duration-300 ${
-                  expandedSection === 'gallery' ? 'rotate-180 text-amber-400' : ''
+                className={`w-4 h-4 text-slate-500 dark:text-zinc-400 transition-transform duration-300 ${
+                  expandedSection === 'gallery' ? 'rotate-180 text-amber-600 dark:text-amber-400' : ''
                 }`}
               />
             </button>
 
             {expandedSection === 'gallery' && (
-              <div className="p-4 pt-1 border-t border-zinc-800/60 space-y-4 animate-in fade-in duration-200">
+              <div className="p-4 pt-2 border-t border-slate-200 dark:border-zinc-800/60 space-y-4 animate-in fade-in duration-200">
                 {/* Instagram CTA Banner */}
-                <div className="p-4 rounded-xl bg-gradient-to-r from-pink-950/40 via-purple-950/30 to-zinc-900 border border-pink-500/40 space-y-2">
-                  <div className="flex items-center gap-2 text-pink-400 font-bold text-xs">
+                <div className="p-4 rounded-xl bg-gradient-to-r from-pink-50 via-purple-50 to-slate-50 dark:from-pink-950/40 dark:via-purple-950/30 dark:to-zinc-900 border border-pink-300 dark:border-pink-500/40 space-y-2">
+                  <div className="flex items-center gap-2 text-pink-700 dark:text-pink-400 font-bold text-xs">
                     <Instagram className="w-4 h-4" />
                     <span>Instagram Officiel @SalonBoumlik</span>
                   </div>
-                  <p className="text-zinc-200 text-xs font-semibold">
+                  <p className="text-slate-800 dark:text-zinc-200 text-xs font-semibold">
                     {labels.instaCta}
                   </p>
                   <a
@@ -337,7 +337,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                   {galleryPhotos.map((photo, idx) => (
                     <div 
                       key={idx}
-                      className="group relative aspect-square rounded-xl overflow-hidden bg-zinc-950 border border-zinc-800"
+                      className="group relative aspect-square rounded-xl overflow-hidden bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800"
                     >
                       <img 
                         src={photo.src} 
@@ -352,55 +352,55 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
           </div>
 
           {/* ACCORDION ITEM 3: WI-FI & LOUNGE */}
-          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/50 overflow-hidden transition-all">
+          <div className="rounded-2xl border border-slate-200 dark:border-zinc-800/80 bg-slate-50 dark:bg-zinc-900/50 overflow-hidden transition-all">
             <button
               type="button"
               onClick={() => toggleSection('wifi')}
-              className="w-full p-4 flex items-center justify-between gap-3 text-left hover:bg-zinc-850/80 transition-colors cursor-pointer"
+              className="w-full p-4 flex items-center justify-between gap-3 text-left rtl:text-right hover:bg-slate-100 dark:hover:bg-zinc-900 transition-colors cursor-pointer"
             >
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-emerald-600/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 flex-shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-600/15 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 flex-shrink-0">
                   <Wifi className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-white">{labels.wifi}</h3>
-                  <p className="text-[11px] text-zinc-400">
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">{labels.wifi}</h3>
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400">
                     {lang === 'ar' ? 'شبكة مجانية وسريعة بالصالون' : 'Connexion haut débit'}
                   </p>
                 </div>
               </div>
               <ChevronDown 
-                className={`w-4 h-4 text-zinc-400 transition-transform duration-300 ${
-                  expandedSection === 'wifi' ? 'rotate-180 text-amber-400' : ''
+                className={`w-4 h-4 text-slate-500 dark:text-zinc-400 transition-transform duration-300 ${
+                  expandedSection === 'wifi' ? 'rotate-180 text-amber-600 dark:text-amber-400' : ''
                 }`}
               />
             </button>
 
             {expandedSection === 'wifi' && (
-              <div className="p-4 pt-1 border-t border-zinc-800/60 space-y-3 animate-in fade-in duration-200">
-                <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800 space-y-2 text-xs">
+              <div className="p-4 pt-2 border-t border-slate-200 dark:border-zinc-800/60 space-y-3 animate-in fade-in duration-200">
+                <div className="p-4 rounded-xl bg-white dark:bg-zinc-950/80 border border-slate-200 dark:border-zinc-800 space-y-2 text-xs">
                   <div className="flex items-center justify-between">
-                    <span className="text-zinc-400">{lang === 'ar' ? 'اسم الشبكة (SSID):' : 'Réseau :'}</span>
-                    <span className="font-mono font-bold text-white">{SALON_INFO.media.wifiSsid}</span>
+                    <span className="text-slate-600 dark:text-zinc-400">{lang === 'ar' ? 'اسم الشبكة (SSID):' : 'Réseau :'}</span>
+                    <span className="font-mono font-bold text-slate-900 dark:text-white">{SALON_INFO.media.wifiSsid}</span>
                   </div>
 
-                  <div className="flex items-center justify-between pt-1 border-t border-zinc-800/80">
-                    <span className="text-zinc-400">{lang === 'ar' ? 'كلمة المرور:' : 'Mot de passe :'}</span>
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-200 dark:border-zinc-800/80">
+                    <span className="text-slate-600 dark:text-zinc-400">{lang === 'ar' ? 'كلمة المرور:' : 'Mot de passe :'}</span>
                     <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-amber-400">{SALON_INFO.media.wifiPassword}</span>
+                      <span className="font-mono font-bold text-amber-700 dark:text-amber-400">{SALON_INFO.media.wifiPassword}</span>
                       <button
                         onClick={copyWifiPassword}
-                        className="p-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+                        className="p-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
                         title="Copier"
                       >
-                        {wifiCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        {wifiCopied ? <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                       </button>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 text-[11px] text-zinc-400 p-2.5 rounded-lg bg-black/40 border border-zinc-800">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <div className="flex items-center gap-2 text-[11px] text-slate-700 dark:text-zinc-400 p-2.5 rounded-lg bg-white dark:bg-black/40 border border-slate-200 dark:border-zinc-800">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                   <span>{lang === 'ar' ? 'صالون مكيف ومريح مع شاي مغربي أصيل' : 'Salon climatisé et thé offert durant votre attente.'}</span>
                 </div>
               </div>
@@ -408,38 +408,38 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
           </div>
 
           {/* ACCORDION ITEM 4: EXACT LOCATION & MAP */}
-          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/50 overflow-hidden transition-all">
+          <div className="rounded-2xl border border-slate-200 dark:border-zinc-800/80 bg-slate-50 dark:bg-zinc-900/50 overflow-hidden transition-all">
             <button
               type="button"
               onClick={() => toggleSection('location')}
-              className="w-full p-4 flex items-center justify-between gap-3 text-left hover:bg-zinc-850/80 transition-colors cursor-pointer"
+              className="w-full p-4 flex items-center justify-between gap-3 text-left rtl:text-right hover:bg-slate-100 dark:hover:bg-zinc-900 transition-colors cursor-pointer"
             >
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-500/15 border border-amber-300 dark:border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 flex-shrink-0">
                   <MapPin className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-white">{labels.location}</h3>
-                  <p className="text-[11px] text-zinc-400">
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">{labels.location}</h3>
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400">
                     {lang === 'ar' ? 'شارع بئر أنزران فوق مخبزة إتري' : 'Rue Bir Anzarane, Taroudant'}
                   </p>
                 </div>
               </div>
               <ChevronDown 
-                className={`w-4 h-4 text-zinc-400 transition-transform duration-300 ${
-                  expandedSection === 'location' ? 'rotate-180 text-amber-400' : ''
+                className={`w-4 h-4 text-slate-500 dark:text-zinc-400 transition-transform duration-300 ${
+                  expandedSection === 'location' ? 'rotate-180 text-amber-600 dark:text-amber-400' : ''
                 }`}
               />
             </button>
 
             {expandedSection === 'location' && (
-              <div className="p-4 pt-1 border-t border-zinc-800/60 space-y-3 animate-in fade-in duration-200">
-                <div className="p-3.5 rounded-xl bg-zinc-950/80 border border-zinc-800 text-xs space-y-2">
-                  <div className="font-bold text-white flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-red-500" />
+              <div className="p-4 pt-2 border-t border-slate-200 dark:border-zinc-800/60 space-y-3 animate-in fade-in duration-200">
+                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950/80 border border-slate-200 dark:border-zinc-800 text-xs space-y-2">
+                  <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-red-600 dark:text-red-500" />
                     <span>{SALON_INFO.address[lang] || SALON_INFO.address.fr}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-blue-400 text-[11px]">
+                  <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-400 text-[11px]">
                     <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
                     <span>{lang === 'ar' ? 'الطابق 2 فوق مخبزة إتري وصانع الأسنان' : '2ème Étage au-dessus Boulangerie ITRI & Dentiste'}</span>
                   </div>
@@ -462,57 +462,55 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
         </div>
 
         {/* PWA Install Prompt Box in Drawer */}
-        <div className="px-4 py-2 bg-zinc-950/90 border-t border-zinc-800/80">
+        <div className="px-4 py-2 bg-slate-50 dark:bg-zinc-950/90 border-t border-slate-200 dark:border-zinc-800/80">
           <PWAInstallButton variant="drawer" />
         </div>
 
         {/* Theme Switcher in Drawer */}
-        <div className="p-3 bg-zinc-950 border-t border-zinc-800/80 flex items-center justify-between text-xs">
-          <span className="text-zinc-400 font-semibold text-[11px]">
-            {lang === 'ar' ? 'نمط وألوان الموقع:' : 'Thème visuel :'}
+        <div className="p-3 bg-slate-50 dark:bg-zinc-950 border-t border-slate-200 dark:border-zinc-800/80 flex items-center justify-between text-xs">
+          <span className="text-slate-600 dark:text-zinc-400 font-semibold text-[11px]">
+            {lang === 'ar' ? 'مظهر الموقع:' : 'Apparence :'}
           </span>
           <div className="flex items-center gap-1.5">
             <button
+              type="button"
               onClick={() => setTheme('luxury_gold')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                theme === 'luxury_gold' ? 'bg-amber-500 text-black shadow' : 'bg-zinc-900 text-zinc-400 hover:text-white'
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                isDark
+                  ? 'bg-zinc-900 text-amber-300 border border-amber-500/50 shadow'
+                  : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100'
               }`}
             >
-              ✨ {lang === 'ar' ? 'ذهبي' : 'Gold'}
+              🌙 {lang === 'ar' ? 'الوضع الداكن' : lang === 'en' ? 'Dark' : 'Sombre'}
             </button>
             <button
-              onClick={() => setTheme('charcoal')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                theme === 'charcoal' ? 'bg-blue-600 text-white shadow' : 'bg-zinc-900 text-zinc-400 hover:text-white'
-              }`}
-            >
-              💈 {lang === 'ar' ? 'فحمي' : 'Charcoal'}
-            </button>
-            <button
+              type="button"
               onClick={() => setTheme('minimal_light')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                theme === 'minimal_light' ? 'bg-zinc-200 text-zinc-900 shadow' : 'bg-zinc-900 text-zinc-400 hover:text-white'
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                !isDark
+                  ? 'bg-slate-900 text-white shadow'
+                  : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
               }`}
             >
-              ☀️ {lang === 'ar' ? 'أبيض' : 'Light'}
+              ☀️ {lang === 'ar' ? 'الوضع الفاتح' : lang === 'en' ? 'Light' : 'Clair'}
             </button>
           </div>
         </div>
 
         {/* Drawer Footer with Admin Access */}
-        <div className="p-4 border-t border-zinc-800 bg-black/80 flex items-center justify-between gap-3">
+        <div className="p-4 border-t border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-black/80 flex items-center justify-between gap-3">
           <button
             onClick={() => {
               onClose();
               onOpenAdmin();
             }}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 text-xs font-semibold transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white border border-slate-300 dark:border-zinc-800 text-xs font-semibold transition-colors cursor-pointer"
           >
-            <Lock className="w-3.5 h-3.5 text-red-500" />
+            <Lock className="w-3.5 h-3.5 text-red-600 dark:text-red-500" />
             <span>{labels.adminButton}</span>
           </button>
 
-          <span className="text-[10px] text-zinc-400 font-mono">
+          <span className="text-[10px] text-slate-500 dark:text-zinc-400 font-mono">
             v3.3 • Taroudant
           </span>
         </div>

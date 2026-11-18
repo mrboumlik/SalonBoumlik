@@ -34,6 +34,7 @@ service cloud.firestore {
         'clientNotes', 'notes', 'services', 'cartItemsSummary', 'originalTotalMAD',
         'finalTotalMAD', 'totalSavingsMAD', 'bookingMethod',
         'drinkPreference', 'totalDurationMinutes', 'status',
+        'isFlexibleTime', 'preferredTimeHint',
         'rescheduledTo', 'clientLanguage', 'adminNotes',
         'cihReceiptName', 'cihReceiptPreview', 'cihReceiptUploadedAt',
         'loyaltyRewardApplied', 'attendanceConfirmedAt', 'createdAt'
@@ -58,7 +59,9 @@ service cloud.firestore {
       && (!('bookingMethod' in data) || data.bookingMethod in ['site', 'whatsapp'])
       && (!('drinkPreference' in data) || data.drinkPreference in ['coffee', 'tea', 'none'])
       && (!('totalDurationMinutes' in data) || (data.totalDurationMinutes is number && data.totalDurationMinutes >= 0 && data.totalDurationMinutes <= 1000))
-      && data.status in ['pending', 'pending_quote', 'confirmed', 'rescheduled', 'completed', 'no_show', 'rejected', 'cancelled']
+      && data.status in ['pending', 'pending_quote', 'flexible_pending', 'confirmed', 'rescheduled', 'completed', 'no_show', 'rejected', 'cancelled']
+      && (!('isFlexibleTime' in data) || data.isFlexibleTime is bool)
+      && (!('preferredTimeHint' in data) || (data.preferredTimeHint is string && data.preferredTimeHint.size() <= 32))
       && (!('rescheduledTo' in data) || (
         data.rescheduledTo is map
         && data.rescheduledTo.keys().hasAll(['date', 'time'])
@@ -113,7 +116,9 @@ service cloud.firestore {
       && data.keys().hasOnly([
         'id', 'normalizedPhone', 'phoneDisplay', 'clientName',
         'isVip', 'noShowCount', 'isBanned', 'banReason',
-        'freeWashesRedeemed', 'customDiscountMAD', 'verifiedVisits', 'rewardNote', 'updatedAt'
+        'freeWashesRedeemed', 'customDiscountMAD', 'verifiedVisits',
+        'loyaltyPoints', 'pointsEarnedTotal', 'pointsRedeemedTotal',
+        'rewardNote', 'updatedAt'
       ])
       && isValidId(data.id)
       && data.normalizedPhone is string && data.normalizedPhone.size() >= 4 && data.normalizedPhone.size() <= 32
@@ -126,6 +131,9 @@ service cloud.firestore {
       && data.freeWashesRedeemed is number && data.freeWashesRedeemed >= 0 && data.freeWashesRedeemed <= 500
       && data.customDiscountMAD is number && data.customDiscountMAD >= 0 && data.customDiscountMAD <= 10000
       && (!('verifiedVisits' in data) || (data.verifiedVisits is number && data.verifiedVisits >= 0 && data.verifiedVisits <= 500))
+      && (!('loyaltyPoints' in data) || (data.loyaltyPoints is number && data.loyaltyPoints >= 0 && data.loyaltyPoints <= 100000))
+      && (!('pointsEarnedTotal' in data) || (data.pointsEarnedTotal is number && data.pointsEarnedTotal >= 0 && data.pointsEarnedTotal <= 100000))
+      && (!('pointsRedeemedTotal' in data) || (data.pointsRedeemedTotal is number && data.pointsRedeemedTotal >= 0 && data.pointsRedeemedTotal <= 100000))
       && (!('rewardNote' in data) || (data.rewardNote is string && data.rewardNote.size() <= 300))
       && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
     }
@@ -182,6 +190,55 @@ service cloud.firestore {
       && (!('reviewerNote' in data) || (data.reviewerNote is string && data.reviewerNote.size() <= 300))
       && (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 100))
       && (!('reviewedAt' in data) || (data.reviewedAt is string && data.reviewedAt.size() <= 64))
+      && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidReview(data) {
+      return data.keys().hasAll([
+        'id', 'barberId', 'barberName', 'author',
+        'rating', 'comment', 'verified', 'createdAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'barberId', 'barberName', 'author', 'city',
+        'serviceName', 'rating', 'comment', 'dateLabel',
+        'verified', 'createdAt'
+      ])
+      && isValidId(data.id)
+      && data.barberId is string && data.barberId.size() >= 1 && data.barberId.size() <= 64
+      && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
+      && data.author is string && data.author.size() >= 1 && data.author.size() <= 120
+      && (!('city' in data) || (data.city is string && data.city.size() <= 80))
+      && (!('serviceName' in data) || (data.serviceName is string && data.serviceName.size() <= 120))
+      && data.rating is number && data.rating >= 1 && data.rating <= 5
+      && data.comment is string && data.comment.size() >= 1 && data.comment.size() <= 600
+      && (!('dateLabel' in data) || (data.dateLabel is string && data.dateLabel.size() <= 64))
+      && data.verified is bool
+      && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64;
+    }
+
+    function isValidPushSubscription(data) {
+      return data.keys().hasAll([
+        'id', 'role', 'endpoint', 'p256dh', 'auth', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'role', 'normalizedPhone', 'clientPhone', 'clientName',
+        'barberId', 'staffName', 'endpoint', 'p256dh', 'auth',
+        'lang', 'userAgent', 'createdAt', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && data.role in ['client', 'master', 'barber']
+      && (!('normalizedPhone' in data) || (data.normalizedPhone is string && data.normalizedPhone.size() <= 32))
+      && (!('clientPhone' in data) || (data.clientPhone is string && data.clientPhone.size() <= 40))
+      && (!('clientName' in data) || (data.clientName is string && data.clientName.size() <= 120))
+      && (!('barberId' in data) || (data.barberId is string && data.barberId.size() <= 64))
+      && (!('staffName' in data) || (data.staffName is string && data.staffName.size() <= 100))
+      && data.endpoint is string && data.endpoint.size() >= 10 && data.endpoint.size() <= 1000
+      && data.endpoint.matches('^https://.*$')
+      && data.p256dh is string && data.p256dh.size() >= 10 && data.p256dh.size() <= 300
+      && data.auth is string && data.auth.size() >= 5 && data.auth.size() <= 200
+      && (!('lang' in data) || data.lang in ['fr', 'ar', 'en', 'amz', 'es'])
+      && (!('userAgent' in data) || (data.userAgent is string && data.userAgent.size() <= 300))
       && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64
       && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
     }
@@ -263,11 +320,11 @@ service cloud.firestore {
       allow get: if isValidId(bookingId) && request.time != null;
       allow list: if request.time != null;
 
-      // Clients can submit new bookings with initial pending status
+      // Clients can submit new bookings with initial pending or flexible_pending status
       allow create: if isValidId(bookingId)
         && isValidBooking(incoming())
         && incoming().id == bookingId
-        && incoming().status in ['pending', 'pending_quote'];
+        && incoming().status in ['pending', 'pending_quote', 'flexible_pending'];
 
       // Status, reschedule proposals, dates/times, notes, receipts, and loyalty reward tags
       allow update: if isValidId(bookingId)
@@ -285,6 +342,27 @@ service cloud.firestore {
         ]);
 
       allow delete: if isValidId(bookingId) && request.time != null;
+    }
+
+    // Verified barber reviews & star ratings
+    match /reviews/{reviewId} {
+      allow get: if isValidId(reviewId) && request.time != null;
+      allow list: if request.time != null;
+      allow create: if isValidId(reviewId)
+        && isValidReview(incoming())
+        && incoming().id == reviewId;
+      allow update: if false;
+      allow delete: if isValidId(reviewId) && request.time != null;
+    }
+
+    // VAPID Web Push subscriptions for clients and salon staff
+    match /push_subscriptions/{subscriptionId} {
+      allow get: if isValidId(subscriptionId) && request.time != null;
+      allow list: if request.time != null;
+      allow create, update: if isValidId(subscriptionId)
+        && isValidPushSubscription(incoming())
+        && incoming().id == subscriptionId;
+      allow delete: if isValidId(subscriptionId) && request.time != null;
     }
   }
 }

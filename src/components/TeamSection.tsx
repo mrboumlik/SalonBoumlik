@@ -24,7 +24,7 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
   const [expandedBioId, setExpandedBioId] = useState<string | null>('hassan');
 
   return (
-    <section id="team" className="py-16 md:py-24 bg-[#08090C] relative border-t border-zinc-800/80">
+    <section id="team" className="py-16 md:py-24 bg-white dark:bg-[#08090C] relative border-t border-slate-200 dark:border-zinc-800/80 transition-colors">
       
       {/* Background glow */}
       <div className="absolute top-1/2 left-1/4 w-[450px] h-[350px] bg-amber-500/10 blur-[140px] rounded-full pointer-events-none" />
@@ -33,12 +33,12 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
         
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto space-y-3 mb-10">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-xs font-bold text-amber-300">
-            <Users className="w-3.5 h-3.5 text-amber-400" />
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 text-xs font-bold text-amber-800 dark:text-amber-300">
+            <Users className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
             <span>{t.ourTeamTitle}</span>
           </div>
 
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-white font-display tracking-tight">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-slate-900 dark:text-white font-display tracking-tight">
             {lang === 'ar' ? (
               <span>فريق <span className="text-gold-gradient">صالون بومليك</span></span>
             ) : lang === 'amz' ? (
@@ -50,22 +50,22 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
             )}
           </h2>
 
-          <p className="text-sm sm:text-base text-zinc-300 font-body">
+          <p className="text-sm sm:text-base text-slate-600 dark:text-zinc-300 font-body">
             {t.ourTeamSubtitle}
           </p>
         </div>
 
         {/* Official Salon Instagram Highlight Header Bar */}
-        <div className="max-w-2xl mx-auto mb-10 p-3.5 rounded-2xl bg-zinc-900/90 border border-amber-500/30 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left shadow-lg">
+        <div className="max-w-2xl mx-auto mb-10 p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-900/90 border border-amber-300 dark:border-amber-500/30 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left rtl:sm:text-right shadow-md dark:shadow-lg">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-rose-500 flex items-center justify-center text-zinc-950 flex-shrink-0 shadow-md">
-              <Instagram className="w-5 h-5 text-zinc-950" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-rose-500 flex items-center justify-center text-white flex-shrink-0 shadow-md">
+              <Instagram className="w-5 h-5 text-white" />
             </div>
             <div>
-              <span className="text-xs font-bold text-white block">
+              <span className="text-xs font-bold text-slate-900 dark:text-white block">
                 {lang === 'ar' ? 'إنستغرام صالون بومليك الرسمي' : lang === 'amz' ? 'ⵉⵏⵙⵜⴰⴳⵔⴰⵎ ⴰⵎⴰⴷⴷⵓⴷ ⵏ ⵙⴰⵍⵓⵏ' : 'Instagram Officiel Salon Boumlik'}
               </span>
-              <span className="text-[11px] text-zinc-400">
+              <span className="text-[11px] text-slate-600 dark:text-zinc-400">
                 @SalonBoumlik • Rue Bir Anzarane, Taroudant
               </span>
             </div>
@@ -93,10 +93,10 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
             return (
               <div
                 key={barber.id}
-                className={`rounded-3xl overflow-hidden bg-zinc-900 border transition-all duration-300 flex flex-col justify-between p-6 relative group ${
+                className={`rounded-3xl overflow-hidden bg-slate-50 dark:bg-zinc-900 border transition-all duration-300 flex flex-col justify-between p-6 relative group ${
                   barber.isOwner
-                    ? 'border-amber-400/60 shadow-2xl shadow-amber-500/10 ring-1 ring-amber-400/30'
-                    : 'border-zinc-800 hover:border-zinc-700'
+                    ? 'border-amber-500 dark:border-amber-400/60 shadow-xl dark:shadow-2xl shadow-amber-500/10 ring-1 ring-amber-400/40 dark:ring-amber-400/30'
+                    : 'border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 shadow-sm'
                 }`}
               >
                 {/* Signature Barber Color Accent Bar */}
@@ -126,43 +126,45 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                       className="w-full h-full object-cover"
                       loading="lazy"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
                   </div>
 
                   {/* Name & Role */}
                   <div className="text-center space-y-1 mb-3">
-                    <h3 className="text-lg font-bold text-white group-hover:text-amber-300 transition-colors">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white group-hover:text-amber-700 dark:group-hover:text-amber-300 transition-colors">
                       {localizedBarberName}
                     </h3>
                     {barber.role && (
                       <div
-                        className="text-xs font-bold"
-                        style={{ color: barber.isOwner ? '#FBBF24' : accentColor }}
+                        className={`text-xs font-bold ${barber.isOwner ? 'text-amber-700 dark:text-amber-400' : ''}`}
+                        style={!barber.isOwner ? { color: accentColor } : undefined}
                       >
                         {barber.role[lang] || barber.role.fr}
                       </div>
                     )}
                     {barber.experience && (
-                      <div className="text-[11px] text-zinc-400">
+                      <div className="text-[11px] text-slate-500 dark:text-zinc-400">
                         {barber.experience[lang] || barber.experience.fr}
                       </div>
                     )}
                   </div>
 
                   {/* Rating */}
-                  <div className="flex items-center justify-center gap-1 text-amber-400 text-xs mb-3">
+                  <div className="flex items-center justify-center gap-1 text-amber-500 dark:text-amber-400 text-xs mb-3">
                     {[...Array(5)].map((_, i) => (
-                      <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />
+                      <Star key={i} className="w-3.5 h-3.5 fill-amber-500 dark:fill-amber-400" />
                     ))}
-                    <span className="font-bold text-white ml-1">{barber.rating}.0</span>
+                    <span className="font-bold text-slate-900 dark:text-white ml-1">{barber.rating}.0</span>
                   </div>
 
                   {/* Specialty Box (All Barbers) */}
                   {barber.specialty && (
-                    <div className="p-3 rounded-2xl bg-zinc-950/90 border border-zinc-800/90 text-xs text-zinc-300 mb-3">
+                    <div className="p-3 rounded-2xl bg-white dark:bg-zinc-950/90 border border-slate-200 dark:border-zinc-800/90 text-xs text-slate-700 dark:text-zinc-300 mb-3">
                       <div
-                        className="text-[10px] uppercase font-black tracking-wider mb-1 flex items-center gap-1"
-                        style={{ color: barber.isOwner ? '#FBBF24' : accentColor }}
+                        className={`text-[10px] uppercase font-black tracking-wider mb-1 flex items-center gap-1 ${
+                          barber.isOwner ? 'text-amber-700 dark:text-amber-400' : ''
+                        }`}
+                        style={!barber.isOwner ? { color: accentColor } : undefined}
                       >
                         <Sparkles className="w-3 h-3 flex-shrink-0" />
                         <span>
@@ -177,7 +179,7 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                             : 'Spécialité'}
                         </span>
                       </div>
-                      <p className="leading-relaxed text-[11px] text-zinc-300">
+                      <p className="leading-relaxed text-[11px] text-slate-700 dark:text-zinc-300">
                         {barber.specialty[lang] || barber.specialty.fr}
                       </p>
                     </div>
@@ -185,22 +187,22 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
 
                   {/* Biography Box (All Barbers) */}
                   {barber.bio && (
-                    <div className="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 mb-3 space-y-2">
+                    <div className="p-3.5 rounded-2xl bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 text-xs text-slate-700 dark:text-zinc-300 mb-3 space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-amber-400 uppercase font-black tracking-wider flex items-center gap-1">
+                        <span className="text-[10px] text-amber-700 dark:text-amber-400 uppercase font-black tracking-wider flex items-center gap-1">
                           <Award className="w-3 h-3" />
                           <span>{t.barberBioLabel}</span>
                         </span>
                       </div>
 
-                      <p className={`text-zinc-300 text-[11px] leading-relaxed transition-all ${isBioExpanded ? '' : 'line-clamp-3'}`}>
+                      <p className={`text-slate-700 dark:text-zinc-300 text-[11px] leading-relaxed transition-all ${isBioExpanded ? '' : 'line-clamp-3'}`}>
                         {barber.bio[lang] || barber.bio.fr}
                       </p>
 
                       <button
                         type="button"
                         onClick={() => setExpandedBioId(isBioExpanded ? null : barber.id)}
-                        className="text-[10px] font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                        className="text-[10px] font-bold text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors cursor-pointer"
                       >
                         {isBioExpanded 
                           ? (lang === 'ar' ? 'عرض أقل ▲' : lang === 'en' ? 'Less ▲' : 'Moins ▲') 
@@ -210,16 +212,16 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                   )}
 
                   {/* Contact Info & Personal Instagram Card */}
-                  <div className="p-3 rounded-2xl bg-zinc-950/90 border border-zinc-800 text-xs mb-4 space-y-2">
+                  <div className="p-3 rounded-2xl bg-white dark:bg-zinc-950/90 border border-slate-200 dark:border-zinc-800 text-xs mb-4 space-y-2">
                     {/* Direct Phone */}
                     <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-zinc-400 flex items-center gap-1">
-                        <Phone className="w-3 h-3 text-amber-400" />
+                      <span className="text-slate-600 dark:text-zinc-400 flex items-center gap-1">
+                        <Phone className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                         <span>{t.barberDirectPhoneLabel || 'Téléphone'}</span>
                       </span>
                       <a
                         href={`tel:${barber.phone?.replace(/\s+/g, '') || '0635392503'}`}
-                        className="font-mono font-bold text-amber-400 hover:underline"
+                        className="font-mono font-bold text-amber-700 dark:text-amber-400 hover:underline"
                         dir="ltr"
                       >
                         {barber.phone}
@@ -228,16 +230,16 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
 
                     {/* Personal Instagram */}
                     {barber.instagram && (
-                      <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-zinc-900">
-                        <span className="text-zinc-400 flex items-center gap-1">
-                          <Instagram className="w-3 h-3 text-pink-400" />
+                      <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-200 dark:border-zinc-900">
+                        <span className="text-slate-600 dark:text-zinc-400 flex items-center gap-1">
+                          <Instagram className="w-3 h-3 text-pink-600 dark:text-pink-400" />
                           <span>{t.barberPersonalIgLabel || 'Instagram'}</span>
                         </span>
                         <a
                           href={barber.instagram}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="font-bold text-pink-400 hover:text-pink-300 flex items-center gap-1 transition-colors"
+                          className="font-bold text-pink-700 dark:text-pink-400 hover:text-pink-800 dark:hover:text-pink-300 flex items-center gap-1 transition-colors"
                           dir="ltr"
                         >
                           <span>{barber.instagramHandle}</span>
@@ -249,13 +251,13 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                 </div>
 
                 {/* Action Buttons: Choose this barber & Direct WhatsApp */}
-                <div className="pt-2 border-t border-zinc-800/80 space-y-2">
+                <div className="pt-2 border-t border-slate-200 dark:border-zinc-800/80 space-y-2">
                   <button
                     onClick={() => onSelectBarberToBook(barber.id)}
                     className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                       barber.isOwner
                         ? 'bg-amber-400 hover:bg-amber-300 text-zinc-950 shadow-md shadow-amber-400/20'
-                        : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 hover:text-white'
+                        : 'bg-slate-900 hover:bg-slate-800 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-white'
                     }`}
                   >
                     <Scissors className="w-3.5 h-3.5" />
@@ -280,7 +282,7 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full py-2 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors"
+                    className="w-full py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/30 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
                     <span>WhatsApp {firstName}</span>

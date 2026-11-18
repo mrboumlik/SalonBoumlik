@@ -27,7 +27,8 @@ import {
   History,
   Award,
   Star,
-  Gift
+  Gift,
+  Coins
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useLanguage } from '../context/LanguageContext';
@@ -40,16 +41,26 @@ import {
   cancelClientBooking,
   updateBookingCihReceipt
 } from '../utils/bookingStore';
-import { useCrmClients, getCrmDocId } from '../utils/crmStore';
-import { computeLoyaltyProgress, getVerifiedVisitsCount } from '../utils/loyaltyEngine';
+import { useCrmClients, getCrmDocId, redeemLoyaltyPointsForDiscount } from '../utils/crmStore';
+import {
+  computeLoyaltyProgress,
+  computeClientPointsSummary,
+  getVerifiedVisitsCount,
+  LOYALTY_POINT_TIERS,
+  LoyaltyPointRewardTier,
+} from '../utils/loyaltyEngine';
 import { rememberTrackedTicket } from '../utils/clientReminderWatcher';
 import { 
   requestWebNotificationPermission, 
-  sendDualAlert 
+  sendDualAlert,
+  showToast,
+  playNotificationSound
 } from '../utils/notifications';
+import { registerClientPushSubscription } from '../utils/webPushClient';
 import { buildClientTicketWhatsAppMessage } from '../utils/whatsappAutomation';
 import { CIH_BANK_DETAILS, processCihReceiptFile } from '../utils/cihReceipt';
 import { CihBankLogo } from './CihBankLogo';
+import { LoyaltyProgressCard } from './LoyaltyProgressCard';
 import { AppointmentBooking, BookingStatus } from '../types';
 import { SALON_INFO } from '../data/barbershopData';
 
@@ -87,6 +98,11 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
   const [cihUploadError, setCihUploadError] = useState<string | null>(null);
   const [showLoyaltyHistoryLog, setShowLoyaltyHistoryLog] = useState<boolean>(true);
   const [showFullHistoryArchive, setShowFullHistoryArchive] = useState<boolean>(true);
+  const [redeemingTierId, setRedeemingTierId] = useState<string | null>(null);
+  const [redeemFeedback, setRedeemFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
 
   const performSearch = (query: string, source: AppointmentBooking[] = liveBookings) => {
     let q = query.trim();
@@ -160,17 +176,43 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
   }, [isOpen]);
 
   const handleEnableNotifications = async () => {
+    const phone =
+      foundBookings[0]?.clientPhone ||
+      activeCrmProfile?.phoneDisplay ||
+      activeCrmProfile?.normalizedPhone ||
+      '';
+    const name = foundBookings[0]?.clientName || activeCrmProfile?.clientName || 'Client';
+
+    if (phone) {
+      const result = await registerClientPushSubscription({
+        clientPhone: phone,
+        clientName: name,
+        lang,
+      });
+      setNotifStatus(result.granted ? 'granted' : Notification.permission);
+      if (result.granted) {
+        playNotificationSound();
+        showToast(
+          lang === 'ar' ? 'تم تفعيل الإشعارات بنجاح • صالون بومليك' : 'Notifications Activées • Salon Boumlik',
+          lang === 'ar'
+            ? 'ستصلك تنبيهات موثوقة عند تأكيد الموعد، تعديل التوقيت، أو تحديث نقاط الولاء.'
+            : 'Vous recevrez des alertes fiables pour vos confirmations, horaires et points.',
+          'success'
+        );
+      }
+      return;
+    }
+
     const perm = await requestWebNotificationPermission();
     setNotifStatus(perm);
     if (perm === 'granted') {
-      sendDualAlert(
+      playNotificationSound();
+      showToast(
         lang === 'ar' ? 'تم تفعيل الإشعارات بنجاح • صالون بومليك' : 'Notifications Activées • Salon Boumlik',
-        {
-          body: lang === 'ar' 
-            ? 'ستصلك تنبيهات صوتية فورية بأي تحديث بخصوص موعدك وتجهيز الكرسي.'
-            : 'Vous recevrez des alertes sonores pour les mises à jour de votre créneau.',
-          type: 'success',
-        }
+        lang === 'ar'
+          ? 'ستصلك تنبيهات موثوقة بأي تحديث بخصوص موعدك وتجهيز الكرسي.'
+          : 'Vous recevrez des alertes fiables pour les mises à jour de votre créneau.',
+        'success'
       );
     }
   };
@@ -219,7 +261,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
       const errMsg = lang === 'ar'
         ? 'لم يتم العثور على رمز QR صالح في الصورة المرفوعة. تأكد من وضوح الصورة.'
         : 'Impossible de lire le code QR sur cette image. Veuillez réessayer.';
-      alert(errMsg);
+      showToast(lang === 'ar' ? 'تعذر قراءة رمز QR' : 'Lecture QR impossible', errMsg, 'warning');
     } finally {
       // Reset input value so same file can be chosen again if needed
       if (e.target) e.target.value = '';
@@ -448,6 +490,19 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
             </span>
           </div>
         );
+      case 'flexible_pending':
+        return (
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/15 border border-purple-400/40 text-purple-300 font-bold text-xs">
+            <Clock className="w-3.5 h-3.5" />
+            <span>
+              {lang === 'ar'
+                ? 'وقت مرن — الحلاق يختار لك أفضل توقيت متاح'
+                : lang === 'en'
+                ? 'Flexible Time — Barber Assigning Optimal Slot'
+                : 'Horaire flexible — Le barbier attribue votre créneau'}
+            </span>
+          </div>
+        );
       case 'pending':
       default:
         return (
@@ -517,6 +572,54 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     ? getVerifiedVisitsCount(fullClientCrmHistory, activeCrmProfile)
     : activeCrmProfile?.verifiedVisits ?? 0;
   const loyaltyProgress = computeLoyaltyProgress(verifiedVisitsTotal, lang);
+  const pointsSummary = computeClientPointsSummary(verifiedVisitsTotal, activeCrmProfile);
+
+  const profilePhone =
+    primaryMatchedBooking?.clientPhone ||
+    activeCrmProfile?.phoneDisplay ||
+    activeCrmProfile?.normalizedPhone ||
+    '';
+  const profileName =
+    primaryMatchedBooking?.clientName || activeCrmProfile?.clientName || 'Client';
+
+  const handleRedeemPointsTier = async (tier: LoyaltyPointRewardTier) => {
+    if (!profilePhone || pointsSummary.pointsBalance < tier.pointsCost || redeemingTierId) {
+      return;
+    }
+    setRedeemingTierId(tier.id);
+    setRedeemFeedback(null);
+    try {
+      const langKey: 'ar' | 'fr' | 'en' | 'es' =
+        lang === 'ar' || lang === 'en' || lang === 'es' ? lang : 'fr';
+      await redeemLoyaltyPointsForDiscount({
+        phone: profilePhone,
+        clientName: profileName,
+        pointsCost: tier.pointsCost,
+        discountMAD: tier.discountMAD,
+        label: `🎟️ ${tier.label[langKey]} (-${tier.discountMAD} MAD) · ${tier.pointsCost} pts`,
+        verifiedVisits: verifiedVisitsTotal,
+        crmMap: crmClientsMap,
+      });
+      setRedeemFeedback({
+        type: 'success',
+        message:
+          lang === 'ar'
+            ? `تم استبدال ${tier.pointsCost} نقطة بنجاح! خصم -${tier.discountMAD} MAD جاهز وسيُطبق تلقائياً في حجزك القادم.`
+            : lang === 'en'
+            ? `Redeemed ${tier.pointsCost} pts! -${tier.discountMAD} MAD discount is now active for your next booking.`
+            : lang === 'es'
+            ? `¡Canjeados ${tier.pointsCost} pts! Descuento de -${tier.discountMAD} MAD activo para tu próxima reserva.`
+            : `${tier.pointsCost} pts échangés ! Une remise de -${tier.discountMAD} MAD s'appliquera à votre prochaine réservation.`,
+      });
+    } catch (err: any) {
+      setRedeemFeedback({
+        type: 'error',
+        message: err?.message || (lang === 'ar' ? 'تعذر استبدال النقاط حالياً.' : 'Échec de l’échange.'),
+      });
+    } finally {
+      setRedeemingTierId(null);
+    }
+  };
 
   const ui = {
     title: {
@@ -703,34 +806,129 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
               <p>{lang === 'ar' ? 'جاري جلب التذاكر من السحابة...' : 'Synchronisation en cours...'}</p>
             </div>
           ) : foundBookings.length === 0 && hasSearched && searchedCrmFallback ? (
-            <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/12 via-zinc-900/95 to-zinc-900 border border-amber-500/35 space-y-3 text-xs">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-sm font-black text-white flex items-center gap-2">
-                    <span>{searchedCrmFallback.clientName}</span>
-                    {searchedCrmFallback.isVip && (
-                      <span className="text-amber-300 text-xs font-bold">· 👑 VIP</span>
-                    )}
+            <div className="space-y-4">
+              <LoyaltyProgressCard
+                clientName={searchedCrmFallback.clientName}
+                crmProfile={searchedCrmFallback}
+                loyaltyProgress={loyaltyProgress}
+                pointsSummary={pointsSummary}
+                lang={lang}
+              />
+
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/12 via-zinc-900/95 to-zinc-900 border border-amber-500/35 space-y-3 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-black text-white flex items-center gap-2">
+                      <span>{searchedCrmFallback.clientName}</span>
+                      {searchedCrmFallback.isVip && (
+                        <span className="text-amber-300 text-xs font-bold">· 👑 VIP</span>
+                      )}
+                    </div>
+                    <div dir="ltr" className="text-zinc-400 font-mono mt-0.5">
+                      {searchedCrmFallback.phoneDisplay || searchedCrmFallback.normalizedPhone}
+                    </div>
                   </div>
-                  <div dir="ltr" className="text-zinc-400 font-mono mt-0.5">
-                    {searchedCrmFallback.phoneDisplay || searchedCrmFallback.normalizedPhone}
+                  <div className="font-mono font-black text-amber-400 text-base tabular-nums">
+                    {loyaltyProgress.verifiedVisits} / {loyaltyProgress.nextMilestone}
                   </div>
                 </div>
-                <div className="font-mono font-black text-amber-400 text-base tabular-nums">
-                  {loyaltyProgress.verifiedVisits} / {loyaltyProgress.nextMilestone}
+                <p className="text-zinc-400">
+                  {lang === 'ar'
+                    ? 'تم التعرف على ملف الزبون بنجاح في برنامج الولاء (لا توجد حجوزات نشطة حالياً).'
+                    : 'Profil client reconnu dans le programme de fidélité (aucune réservation active).'}
+                </p>
+
+              {/* Loyalty Points Balance & Redeem Box inside CRM-only Profile */}
+              <div className="pt-3 border-t border-zinc-800/80 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 font-black text-amber-300">
+                    <Coins className="w-4 h-4 text-amber-400" />
+                    <span>
+                      {lang === 'ar'
+                        ? 'نقاط الولاء والاستبدال بخصم'
+                        : lang === 'en'
+                        ? 'Loyalty Points & Discounts'
+                        : lang === 'es'
+                        ? 'Puntos de Fidelidad y Descuentos'
+                        : 'Points de Fidélité & Remises'}
+                    </span>
+                  </div>
+                  <div className="font-mono font-black text-amber-400 text-sm tabular-nums">
+                    {pointsSummary.pointsBalance} pts
+                    <span className="text-[10px] text-zinc-400 font-normal ms-1.5">
+                      (+{pointsSummary.pointsPerVisit}/{lang === 'ar' ? 'زيارة' : 'visite'})
+                    </span>
+                  </div>
+                </div>
+
+                {pointsSummary.activeDiscountMAD > 0 && (
+                  <div className="px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-bold flex items-center justify-between">
+                    <span>
+                      {lang === 'ar'
+                        ? 'رصيد خصم نشط للحجز القادم:'
+                        : lang === 'en'
+                        ? 'Active discount ready for next booking:'
+                        : 'Crédit remise actif pour votre prochain RDV :'}
+                    </span>
+                    <span className="font-mono font-black tabular-nums">-{pointsSummary.activeDiscountMAD} MAD</span>
+                  </div>
+                )}
+
+                {redeemFeedback && (
+                  <div
+                    className={`p-2.5 rounded-xl border text-[11px] font-semibold ${
+                      redeemFeedback.type === 'success'
+                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                        : 'bg-red-500/15 border-red-500/40 text-red-300'
+                    }`}
+                  >
+                    {redeemFeedback.message}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {LOYALTY_POINT_TIERS.map((tier) => {
+                    const canRedeem = pointsSummary.pointsBalance >= tier.pointsCost;
+                    const isBusy = redeemingTierId === tier.id;
+                    const langKey: 'ar' | 'fr' | 'en' | 'es' =
+                      lang === 'ar' || lang === 'en' || lang === 'es' ? lang : 'fr';
+                    return (
+                      <button
+                        key={tier.id}
+                        type="button"
+                        disabled={!canRedeem || Boolean(redeemingTierId)}
+                        onClick={() => handleRedeemPointsTier(tier)}
+                        className={`p-2.5 rounded-xl border text-left rtl:text-right transition-all flex flex-col justify-between gap-1.5 ${
+                          canRedeem
+                            ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/50 text-white cursor-pointer'
+                            : 'bg-black/40 border-zinc-800 text-zinc-500 opacity-70 cursor-not-allowed'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-mono font-black text-amber-300 text-[11px] tabular-nums">
+                            {tier.pointsCost} pts
+                          </span>
+                          <span className="font-mono font-black text-emerald-400 text-[11px] tabular-nums">
+                            -{tier.discountMAD} MAD
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-bold">
+                          {isBusy
+                            ? '...'
+                            : canRedeem
+                            ? lang === 'ar'
+                              ? `استبدل الآن ← ${tier.label.ar}`
+                              : `Redeem ${tier.label[langKey]}`
+                            : lang === 'ar'
+                            ? `تحتاج ${tier.pointsCost - pointsSummary.pointsBalance} نقطة`
+                            : `${tier.pointsCost - pointsSummary.pointsBalance} pts manquants`}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <div className="h-2.5 w-full rounded-full bg-black/70 border border-zinc-800 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-500"
-                  style={{ width: `${loyaltyProgress.progressPercent}%` }}
-                />
-              </div>
-              <p className="text-zinc-400">
-                {lang === 'ar'
-                  ? 'تم التعرف على ملف الزبون بنجاح في برنامج الولاء (لا توجد حجوزات نشطة حالياً).'
-                  : 'Profil client reconnu dans le programme de fidélité (aucune réservation active).'}
-              </p>
+            </div>
             </div>
           ) : foundBookings.length === 0 && hasSearched ? (
             <div className="text-center py-8 text-zinc-400 text-xs">
@@ -739,8 +937,16 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
             </div>
           ) : (
             <>
-              {/* Multi-Tier Verified Loyalty Program Card (5, 10, 15...) */}
+              {/* Visual Circular Loyalty Progress Component + Multi-Tier Verified Loyalty Program */}
               {primaryMatchedBooking && primaryClientDigits.length >= 4 && (
+                <>
+                <LoyaltyProgressCard
+                  clientName={primaryMatchedBooking.clientName}
+                  crmProfile={crmClientProfile}
+                  loyaltyProgress={loyaltyProgress}
+                  pointsSummary={pointsSummary}
+                  lang={lang}
+                />
                 <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/12 via-zinc-900/95 to-zinc-900 border border-amber-500/35 space-y-3.5 shadow-lg">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -918,6 +1124,141 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     </div>
                   )}
 
+                  {/* Loyalty Points Balance & Discount Redemption Section */}
+                  <div className="pt-3 border-t border-zinc-800/80 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/35 flex items-center justify-center text-amber-400">
+                          <Coins className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-black text-white flex items-center gap-1.5">
+                            <span>
+                              {lang === 'ar'
+                                ? 'نقاط الولاء • خصم الخدمات القادمة'
+                                : lang === 'en'
+                                ? 'Loyalty Points • Redeem for Discounts'
+                                : lang === 'es'
+                                ? 'Puntos de Fidelidad • Canjear Descuentos'
+                                : 'Points de Fidélité • Échanger contre Remises'}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-zinc-400">
+                            {lang === 'ar'
+                              ? `تكسب +${pointsSummary.pointsPerVisit} نقاط عن كل زيارة مكتملة · المكتسب: ${pointsSummary.pointsEarnedTotal} | المستبدل: ${pointsSummary.pointsRedeemedTotal}`
+                              : lang === 'en'
+                              ? `Earn +${pointsSummary.pointsPerVisit} pts per verified visit · Earned: ${pointsSummary.pointsEarnedTotal} | Redeemed: ${pointsSummary.pointsRedeemedTotal}`
+                              : `+${pointsSummary.pointsPerVisit} pts / visite confirmée · Gagnés : ${pointsSummary.pointsEarnedTotal} | Utilisés : ${pointsSummary.pointsRedeemedTotal}`}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-right rtl:text-left">
+                        <div className="font-mono font-black text-base text-amber-400 tabular-nums">
+                          {pointsSummary.pointsBalance} <span className="text-[11px] font-bold">pts</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Progress bar toward next redeemable points tier */}
+                    {pointsSummary.nextTier && (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono tabular-nums">
+                          <span>
+                            {lang === 'ar'
+                              ? `الهدف القادم للاستبدال: ${pointsSummary.nextTier.pointsCost} نقطة ← خصم -${pointsSummary.nextTier.discountMAD} MAD`
+                              : lang === 'en'
+                              ? `Next reward tier: ${pointsSummary.nextTier.pointsCost} pts → -${pointsSummary.nextTier.discountMAD} MAD off`
+                              : `Prochain palier : ${pointsSummary.nextTier.pointsCost} pts → -${pointsSummary.nextTier.discountMAD} MAD`}
+                          </span>
+                          <span className="text-amber-300 font-bold">
+                            {pointsSummary.pointsBalance} / {pointsSummary.nextTier.pointsCost}
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-300"
+                            style={{ width: `${pointsSummary.progressToNextTierPct}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Active Discount Credit Ready for Next Booking */}
+                    {pointsSummary.activeDiscountMAD > 0 && (
+                      <div className="px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center justify-between gap-2">
+                        <span>
+                          {lang === 'ar'
+                            ? '🎟️ لديك رصيد خصم نشط سيُخصم تلقائياً عند الحجز القادم:'
+                            : lang === 'en'
+                            ? '🎟️ Active discount voucher ready for your next booking:'
+                            : '🎟️ Bon de réduction actif pour votre prochain rendez-vous :'}
+                        </span>
+                        <span className="font-mono font-black text-sm tabular-nums">
+                          -{pointsSummary.activeDiscountMAD} MAD
+                        </span>
+                      </div>
+                    )}
+
+                    {redeemFeedback && (
+                      <div
+                        className={`p-2.5 rounded-xl border text-[11px] font-semibold ${
+                          redeemFeedback.type === 'success'
+                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                            : 'bg-red-500/15 border-red-500/40 text-red-300'
+                        }`}
+                      >
+                        {redeemFeedback.message}
+                      </div>
+                    )}
+
+                    {/* Redeemable Point Tiers */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {LOYALTY_POINT_TIERS.map((tier) => {
+                        const canRedeem = pointsSummary.pointsBalance >= tier.pointsCost;
+                        const isBusy = redeemingTierId === tier.id;
+                        const langKey: 'ar' | 'fr' | 'en' | 'es' =
+                          lang === 'ar' || lang === 'en' || lang === 'es' ? lang : 'fr';
+                        return (
+                          <button
+                            key={tier.id}
+                            type="button"
+                            disabled={!canRedeem || Boolean(redeemingTierId)}
+                            onClick={() => handleRedeemPointsTier(tier)}
+                            className={`p-2.5 rounded-xl border text-left rtl:text-right transition-all flex flex-col justify-between gap-1 ${
+                              canRedeem
+                                ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/50 text-white cursor-pointer shadow-sm'
+                                : 'bg-black/40 border-zinc-800 text-zinc-500 opacity-75 cursor-not-allowed'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-mono font-black text-amber-300 text-[11px] tabular-nums">
+                                {tier.pointsCost} pts
+                              </span>
+                              <span className="font-mono font-black text-emerald-400 text-xs tabular-nums">
+                                -{tier.discountMAD} MAD
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-bold truncate">{tier.label[langKey]}</div>
+                            <div className="text-[10px] font-semibold text-zinc-300">
+                              {isBusy
+                                ? '...'
+                                : canRedeem
+                                ? lang === 'ar'
+                                  ? 'استبدال النقاط ← خصم فوري'
+                                  : lang === 'en'
+                                  ? 'Redeem Now'
+                                  : 'Échanger maintenant'
+                                : lang === 'ar'
+                                ? `ينقصك ${tier.pointsCost - pointsSummary.pointsBalance} نقطة`
+                                : `${tier.pointsCost - pointsSummary.pointsBalance} pts left`}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {/* Dedicated Loyalty History Log (Every Confirmed Attended Visit) */}
                   <div className="pt-2 border-t border-zinc-800/80 space-y-2">
                     <button
@@ -1015,6 +1356,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     )}
                   </div>
                 </div>
+                </>
               )}
 
               {foundBookings.map((booking) => (
@@ -1136,7 +1478,11 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     <span className="text-[10px] text-zinc-400 uppercase font-semibold block">
                       {lang === 'ar' ? 'التوقيت المختار' : 'Heure de Passage'}
                     </span>
-                    <span className="font-mono font-bold text-blue-400 block">{booking.timeSlot}</span>
+                    <span className="font-mono font-bold text-blue-400 block">
+                      {booking.timeSlot === 'FLEXIBLE'
+                        ? (lang === 'ar' ? 'مرن (بانتظار تحديد الحلاق)' : 'Flexible (Choix barbier)')
+                        : booking.timeSlot}
+                    </span>
                   </div>
                 </div>
 

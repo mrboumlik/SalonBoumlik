@@ -110,8 +110,17 @@
         },
         "status": {
           "type": "string",
-          "enum": ["pending", "pending_quote", "confirmed", "rescheduled", "completed", "no_show", "rejected", "cancelled"],
+          "enum": ["pending", "pending_quote", "flexible_pending", "confirmed", "rescheduled", "completed", "no_show", "rejected", "cancelled"],
           "description": "Current appointment workflow status"
+        },
+        "isFlexibleTime": {
+          "type": "boolean",
+          "description": "True when client lets the barber assign the closest suitable time slot"
+        },
+        "preferredTimeHint": {
+          "type": "string",
+          "description": "Optional preferred hour requested before switching to barber-assigned flexible time",
+          "maxLength": 32
         },
         "rescheduledTo": {
           "type": "object",
@@ -270,6 +279,18 @@
         "verifiedVisits": {
           "type": "number",
           "description": "Verified attendance count incremented only when admin confirms booking completion"
+        },
+        "loyaltyPoints": {
+          "type": "number",
+          "description": "Current redeemable loyalty points balance earned from visits"
+        },
+        "pointsEarnedTotal": {
+          "type": "number",
+          "description": "Lifetime cumulative loyalty points earned"
+        },
+        "pointsRedeemedTotal": {
+          "type": "number",
+          "description": "Lifetime cumulative loyalty points redeemed for service discounts"
         },
         "rewardNote": {
           "type": "string",
@@ -480,6 +501,152 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Verified client review and star rating linked to a Salon Boumlik barber",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "barberId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "barberName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "author": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "city": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "serviceName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "rating": {
+          "type": "number",
+          "description": "Star rating from 1 to 5"
+        },
+        "comment": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600
+        },
+        "dateLabel": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "barberId",
+        "barberName",
+        "author",
+        "rating",
+        "comment",
+        "verified",
+        "createdAt"
+      ]
+    },
+    "PushSubscriptionRecord": {
+      "title": "PushSubscriptionRecord",
+      "description": "Web Push VAPID subscription record linked to a client phone number or barber/admin staff profile",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["client", "master", "barber"]
+        },
+        "normalizedPhone": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "clientPhone": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "clientName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "barberId": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "staffName": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 1000
+        },
+        "p256dh": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 300
+        },
+        "auth": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 200
+        },
+        "lang": {
+          "type": "string",
+          "enum": ["fr", "ar", "en", "amz", "es"]
+        },
+        "userAgent": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "endpoint",
+        "p256dh",
+        "auth",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -518,6 +685,18 @@
         "$ref": "#/entities/ShiftRequest"
       },
       "description": "Barber time-off, break-block, and shift-swap requests with Master Admin approval workflow"
+    },
+    "/reviews/{reviewId}": {
+      "schema": {
+        "$ref": "#/entities/Review"
+      },
+      "description": "Barber star ratings and client reviews synced from Firestore"
+    },
+    "/push_subscriptions/{subscriptionId}": {
+      "schema": {
+        "$ref": "#/entities/PushSubscriptionRecord"
+      },
+      "description": "VAPID Web Push subscriptions for clients and staff enabling background push alerts"
     }
   }
 }

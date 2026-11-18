@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { AppointmentBooking, Language } from '../types';
+import { AppointmentBooking, CrmClientProfile, Language } from '../types';
 import { normalizeMoroccanPhoneDigits, subscribeToBookings } from './bookingStore';
+import { subscribeToCrmClients } from './crmStore';
+import { computeClientPointsSummary } from './loyaltyEngine';
 import { sendDualAlert } from './notifications';
 
 const TRACKED_TICKETS_KEY = 'salon_boumlik_tracked_tickets_v1';
@@ -202,6 +204,8 @@ export function useClientAppointmentReminders(lang: Language): void {
   const prevStatusMapRef = useRef<Record<string, string>>({});
   const hydratedRef = useRef(false);
   const latestBookingsRef = useRef<AppointmentBooking[]>([]);
+  const prevPointsMapRef = useRef<Record<string, number>>({});
+  const hydratedCrmRef = useRef(false);
 
   useEffect(() => {
     const unsub = subscribeToBookings((bookings) => {
@@ -227,6 +231,53 @@ export function useClientAppointmentReminders(lang: Language): void {
       });
     });
 
+    const unsubCrm = subscribeToCrmClients((crmMap: Record<string, CrmClientProfile>) => {
+      const trackedPhones = readStringArray(TRACKED_PHONES_KEY);
+      if (!hydratedCrmRef.current) {
+        const seedPts: Record<string, number> = {};
+        Object.values(crmMap).forEach((profile) => {
+          const pts = computeClientPointsSummary(profile.verifiedVisits ?? 0, profile).pointsBalance;
+          seedPts[profile.id] = pts;
+        });
+        prevPointsMapRef.current = seedPts;
+        hydratedCrmRef.current = true;
+        return;
+      }
+
+      Object.values(crmMap).forEach((profile) => {
+        const currentPts = computeClientPointsSummary(profile.verifiedVisits ?? 0, profile).pointsBalance;
+        const previousPts = prevPointsMapRef.current[profile.id];
+        if (
+          previousPts !== undefined &&
+          previousPts !== currentPts &&
+          trackedPhones.includes(profile.normalizedPhone)
+        ) {
+          const delta = currentPts - previousPts;
+          const eventKey = `pts:${profile.id}:${currentPts}:${profile.updatedAt}`;
+          if (!hasNotifiedEvent(eventKey)) {
+            markEventNotified(eventKey);
+            sendDualAlert(
+              lang === 'ar'
+                ? '🪙 تحديث رصيد نقاط الولاء!'
+                : lang === 'en'
+                ? '🪙 Loyalty Points Updated!'
+                : '🪙 Points de Fidélité Mis à Jour !',
+              {
+                body:
+                  lang === 'ar'
+                    ? `${delta > 0 ? `+${delta}` : delta} نقطة — رصيدك الحالي: ${currentPts} نقطة.`
+                    : `${delta > 0 ? `+${delta}` : delta} pts — Nouveau solde : ${currentPts} pts.`,
+                type: 'success',
+                tag: `sb-points-${profile.id}-${currentPts}`,
+                data: { url: `/#track=${encodeURIComponent(profile.normalizedPhone)}` },
+              }
+            );
+          }
+        }
+        prevPointsMapRef.current[profile.id] = currentPts;
+      });
+    });
+
     const intervalId = window.setInterval(() => {
       if (latestBookingsRef.current.length > 0) {
         checkUpcomingAppointmentReminders(latestBookingsRef.current, lang);
@@ -235,6 +286,7 @@ export function useClientAppointmentReminders(lang: Language): void {
 
     return () => {
       unsub();
+      unsubCrm();
       window.clearInterval(intervalId);
     };
   }, [lang]);

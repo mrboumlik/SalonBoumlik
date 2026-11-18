@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { WaitlistEntry, WaitlistStatus } from '../types';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import { dispatchStaffBackgroundPush } from './webPushClient';
 
 const WAITLIST_COLLECTION = 'waitlist';
 
@@ -92,6 +93,16 @@ export async function addToWaitlist(
   try {
     await setDoc(doc(db, WAITLIST_COLLECTION, id), entry);
     cachedWaitlist = [entry, ...cachedWaitlist];
+
+    void dispatchStaffBackgroundPush({
+      barberId: entry.barberId,
+      eventType: 'waitlist_joined',
+      url: '/#admin',
+      tag: `sb-waitlist-${entry.id}`,
+      title: 'Salon Boumlik • تسجيل جديد في قائمة الانتظار',
+      body: `الزبون ${entry.clientName} انضم لقائمة الانتظار (${entry.barberName} • ${entry.date} ${entry.preferredTime}).`,
+    });
+
     return entry;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);

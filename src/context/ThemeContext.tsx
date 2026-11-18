@@ -3,6 +3,7 @@ import { AppTheme } from '../types';
 
 interface ThemeContextType {
   theme: AppTheme;
+  isDark: boolean;
   setTheme: (theme: AppTheme) => void;
   toggleTheme: () => void;
   themeConfig: {
@@ -22,13 +23,13 @@ const THEME_INFO: Record<AppTheme, { id: AppTheme; name: { fr: string; ar: strin
   luxury_gold: {
     id: 'luxury_gold',
     name: {
-      fr: 'Or & Sombre Élégant',
-      ar: 'ذهبي كلاسيكي فاخر',
-      en: 'Luxury Dark Gold',
+      fr: 'Mode Sombre',
+      ar: 'الوضع الداكن',
+      en: 'Dark Mode',
       amz: 'ⵓⵔⵖ ⴷ ⵓⴱⵕⴽⴰⵏ',
-      es: 'Oro y Negro Elegante',
+      es: 'Modo Oscuro',
     },
-    icon: '✨',
+    icon: '🌙',
   },
   charcoal: {
     id: 'charcoal',
@@ -44,11 +45,11 @@ const THEME_INFO: Record<AppTheme, { id: AppTheme; name: { fr: string; ar: strin
   minimal_light: {
     id: 'minimal_light',
     name: {
-      fr: 'Minimaliste Clair',
-      ar: 'أبيض كلاسيكي نقي',
-      en: 'Minimalist Light',
+      fr: 'Mode Clair',
+      ar: 'الوضع الفاتح',
+      en: 'Light Mode',
       amz: 'ⴰⵎⵍⵍⴰⵍ ⵉⴼⴰⵡⵏ',
-      es: 'Minimalista Claro',
+      es: 'Modo Claro',
     },
     icon: '☀️',
   },
@@ -66,8 +67,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {
       // ignore
     }
-    return 'minimal_light';
+    return 'luxury_gold';
   });
+
+  const isDark = theme !== 'minimal_light';
 
   const setTheme = (newTheme: AppTheme) => {
     setThemeState(newTheme);
@@ -79,13 +82,13 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const toggleTheme = () => {
-    const list: AppTheme[] = ['luxury_gold', 'charcoal', 'minimal_light'];
-    const nextIndex = (list.indexOf(theme) + 1) % list.length;
-    setTheme(list[nextIndex]);
+    setTheme(isDark ? 'minimal_light' : 'luxury_gold');
   };
 
   useEffect(() => {
     const root = document.documentElement;
+    root.classList.toggle('dark', isDark);
+    root.style.colorScheme = isDark ? 'dark' : 'light';
     root.classList.remove('theme-gold', 'theme-charcoal', 'theme-light');
     if (theme === 'luxury_gold') {
       root.classList.add('theme-gold');
@@ -94,10 +97,15 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } else if (theme === 'minimal_light') {
       root.classList.add('theme-light');
     }
-  }, [theme]);
+
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeColorMeta) {
+      themeColorMeta.setAttribute('content', isDark ? '#08090C' : '#F8FAFC');
+    }
+  }, [theme, isDark]);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme, themeConfig: THEME_INFO[theme] }}>
+    <ThemeContext.Provider value={{ theme, isDark, setTheme, toggleTheme, themeConfig: THEME_INFO[theme] }}>
       {children}
     </ThemeContext.Provider>
   );

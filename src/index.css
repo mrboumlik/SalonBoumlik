@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --font-serif: 'Cinzel', serif;
@@ -21,14 +22,26 @@
   font-family: 'Noto Sans Tifinagh', serif;
 }
 
-/* Gold gradient text & accents */
+/* Gold gradient text & accents (WCAG AA contrast across light & dark) */
 .text-gold-gradient {
+  background: linear-gradient(135deg, #92400E 0%, #B45309 45%, #D97706 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+html.dark .text-gold-gradient {
   background: linear-gradient(135deg, #FFF0B3 0%, #E6C265 40%, #B88B27 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 .text-gold-metallic {
+  background: linear-gradient(180deg, #451A03 0%, #B45309 55%, #78350F 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+html.dark .text-gold-metallic {
   background: linear-gradient(180deg, #FFFFFF 0%, #E6C265 50%, #996F16 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -52,77 +65,41 @@
   height: 7px;
 }
 ::-webkit-scrollbar-track {
-  background: #0B0D11;
+  background: #F1F5F9;
 }
 ::-webkit-scrollbar-thumb {
-  background: #252830;
+  background: #CBD5E1;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
+  background: #B45309;
+}
+
+html.dark ::-webkit-scrollbar-track {
+  background: #0B0D11;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #252830;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
   background: #CFA032;
 }
 
-/* Themes Definition */
+/* Themes Definition (High-Contrast Light & Signature Dark) */
+html body {
+  background-color: #F8FAFC;
+  color: #0F172A;
+}
+
+html.dark body,
 html.theme-gold body {
   background-color: #050507;
   color: #F4F4F5;
 }
 
-html.theme-charcoal body {
+html.dark.theme-charcoal body {
   background-color: #0E1015;
   color: #F4F4F5;
-}
-
-html.theme-light body {
-  background-color: #FFFFFF;
-  color: #090A0E;
-}
-
-html.theme-light .bg-black {
-  background-color: #FFFFFF !important;
-}
-
-html.theme-light .bg-zinc-950,
-html.theme-light .bg-\[\#090A0E\],
-html.theme-light .bg-\[\#0D0F14\],
-html.theme-light .bg-\[\#0E1015\],
-html.theme-light .bg-\[\#050609\] {
-  background-color: #FFFFFF !important;
-  color: #0F172A !important;
-}
-
-html.theme-light .bg-zinc-900,
-html.theme-light .bg-\[\#12141B\],
-html.theme-light .bg-\[\#181B23\] {
-  background-color: #F8FAFC !important;
-  color: #0F172A !important;
-}
-
-html.theme-light .border-zinc-800,
-html.theme-light .border-zinc-900,
-html.theme-light .border-zinc-700 {
-  border-color: #E2E8F0 !important;
-}
-
-html.theme-light .text-white {
-  color: #090A0E !important;
-}
-
-html.theme-light .text-zinc-200,
-html.theme-light .text-zinc-300,
-html.theme-light .text-zinc-400 {
-  color: #475569 !important;
-}
-
-html.theme-light .text-zinc-500 {
-  color: #64748B !important;
-}
-
-html.theme-light input,
-html.theme-light select {
-  background-color: #FFFFFF !important;
-  color: #090A0E !important;
-  border-color: #CBD5E1 !important;
 }
 
 /* Barber Pole Accents */

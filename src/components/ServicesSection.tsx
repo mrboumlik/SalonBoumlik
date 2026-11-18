@@ -140,7 +140,7 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
   );
 
   return (
-    <section id="services" className="py-16 sm:py-24 bg-black text-white relative">
+    <section id="services" className="py-16 sm:py-24 bg-slate-50 dark:bg-black text-slate-900 dark:text-white relative border-t border-slate-200 dark:border-zinc-900 transition-colors">
       {/* Barber Pole subtle border on top */}
       <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-600 via-white to-blue-600 opacity-80" />
 
@@ -148,32 +148,32 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
         
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-16">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-bold text-red-400 mb-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-bold text-red-600 dark:text-red-400 mb-3 shadow-2xs">
             <Tag className="w-3.5 h-3.5" />
             <span>{ui.badge}</span>
           </div>
 
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-white">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white">
             {ui.title}
           </h2>
 
-          <p className="mt-3 text-sm sm:text-base text-zinc-400 leading-relaxed">
+          <p className="mt-3 text-sm sm:text-base text-slate-600 dark:text-zinc-400 leading-relaxed">
             {ui.subtitle}
           </p>
 
           {/* Quick Combo Banner */}
-          <div className="mt-6 inline-flex flex-wrap items-center justify-center gap-2 sm:gap-4 p-2.5 sm:p-3 rounded-2xl bg-zinc-950 border border-zinc-800/90 text-xs">
-            <span className="font-bold text-zinc-300 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+          <div className="mt-6 inline-flex flex-wrap items-center justify-center gap-2 sm:gap-4 p-2.5 sm:p-3 rounded-2xl bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800/90 text-xs shadow-xs">
+            <span className="font-bold text-slate-800 dark:text-zinc-300 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-red-600 dark:bg-red-500 animate-pulse" />
               {lang === 'ar' ? 'باقة الحسانة + اللحية:' : 'Combo Coupe + Barbe :'}
             </span>
-            <span className="font-mono font-bold text-white line-through text-zinc-500">40 MAD</span>
-            <span className="font-mono font-black text-emerald-400 text-sm">35 MAD</span>
-            <span className="bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded-full font-bold text-[10px] border border-emerald-500/30">
+            <span className="font-mono font-bold line-through text-slate-400 dark:text-zinc-500">40 MAD</span>
+            <span className="font-mono font-black text-emerald-700 dark:text-emerald-400 text-sm">35 MAD</span>
+            <span className="bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full font-bold text-[10px] border border-emerald-300 dark:border-emerald-500/30">
               {lang === 'ar' ? 'وفر 5 دراهم' : 'Économisez 5 MAD'}
             </span>
-            <span className="text-zinc-500 hidden md:inline">•</span>
-            <span className="text-zinc-400 text-[11px] hidden md:inline">
+            <span className="text-slate-400 dark:text-zinc-500 hidden md:inline">•</span>
+            <span className="text-slate-600 dark:text-zinc-400 text-[11px] hidden md:inline">
               {lang === 'ar' ? '+ تخفيض الغسيل والشمع والبروشينغ' : '+ Lavage à 5 MAD, Cire à 10 MAD, Peinado à 10 MAD'}
             </span>
           </div>
@@ -185,10 +185,10 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 activeCategory === cat.id
-                  ? 'bg-zinc-800 text-white border border-zinc-700 shadow-lg'
-                  : 'bg-zinc-950 text-zinc-400 hover:text-zinc-200 border border-zinc-900 hover:border-zinc-800'
+                  ? 'bg-slate-900 dark:bg-zinc-800 text-white border border-slate-900 dark:border-zinc-700 shadow-lg'
+                  : 'bg-white dark:bg-zinc-950 text-slate-600 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-zinc-200 border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-800'
               }`}
             >
               {cat.label[lang] || cat.label.fr}
@@ -212,8 +212,8 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                   onClick={() => onToggleServiceId(service.id)}
                   className={`group relative p-5 rounded-2xl cursor-pointer transition-all duration-200 flex flex-col justify-between ${
                     isSelected
-                      ? 'bg-zinc-900 border-2 border-red-500 shadow-xl shadow-red-500/10'
-                      : 'bg-zinc-950/80 hover:bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700'
+                      ? 'bg-white dark:bg-zinc-900 border-2 border-red-600 dark:border-red-500 shadow-xl shadow-red-500/10'
+                      : 'bg-white dark:bg-zinc-950/80 hover:bg-slate-50 dark:hover:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800/80 hover:border-slate-300 dark:hover:border-zinc-700 shadow-2xs'
                   }`}
                 >
                   <div>
@@ -221,15 +221,15 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                     <div className="flex items-start justify-between gap-3 mb-2.5">
                       <div className="flex-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="font-black text-white text-base group-hover:text-red-400 transition-colors">
+                          <h3 className="font-black text-slate-900 dark:text-white text-base group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
                             {name}
                           </h3>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800/90 border border-zinc-700/80 text-zinc-200 text-[11px] font-mono font-bold whitespace-nowrap">
-                            <Clock className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800/90 border border-slate-200 dark:border-zinc-700/80 text-slate-700 dark:text-zinc-200 text-[11px] font-mono font-bold whitespace-nowrap">
+                            <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                             <span>{formatDuration(service.durationMinutes)}</span>
                           </span>
                           {service.popular && (
-                            <span className="px-1.5 py-0.5 rounded bg-red-600/20 text-red-400 text-[10px] font-bold border border-red-500/30">
+                            <span className="px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-600/20 text-red-700 dark:text-red-400 text-[10px] font-bold border border-red-200 dark:border-red-500/30">
                               HOT
                             </span>
                           )}
@@ -240,13 +240,13 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                       <div className={`w-7 h-7 rounded-xl flex items-center justify-center transition-all ${
                         isSelected
                           ? 'bg-red-600 text-white shadow-md'
-                          : 'bg-zinc-900 border border-zinc-700 text-zinc-400 group-hover:border-zinc-600'
+                          : 'bg-slate-100 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 text-slate-600 dark:text-zinc-400 group-hover:border-slate-400 dark:group-hover:border-zinc-600'
                       }`}>
                         {isSelected ? <Check className="w-4 h-4 stroke-[3]" /> : <Plus className="w-4 h-4" />}
                       </div>
                     </div>
 
-                    <p className="text-xs text-zinc-400 leading-relaxed mb-4">
+                    <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed mb-4">
                       {desc}
                     </p>
                   </div>
@@ -255,10 +255,10 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                   {service.id === 'hair-color' && isSelected && (
                     <div 
                       onClick={(e) => e.stopPropagation()} 
-                      className="p-3 bg-zinc-900/90 rounded-xl border border-zinc-700 space-y-3 mb-3 text-xs"
+                      className="p-3 bg-slate-50 dark:bg-zinc-900/90 rounded-xl border border-slate-200 dark:border-zinc-700 space-y-3 mb-3 text-xs"
                     >
                       <div>
-                        <label className="text-[11px] font-bold text-zinc-300 block mb-1">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-zinc-300 block mb-1">
                           {lang === 'ar' ? 'اختر لون الصباغة:' : 'Nuance de couleur :'}
                         </label>
                         <select
@@ -269,7 +269,7 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                               tone: e.target.value as HairColorConfig['tone'],
                             })
                           }
-                          className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2 text-white text-xs font-semibold focus:border-red-500 focus:outline-none"
+                          className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-700 rounded-lg p-2 text-slate-900 dark:text-white text-xs font-semibold focus:border-red-500 focus:outline-none"
                         >
                           <option value="grey_white">
                             {COLOR_LABELS.grey_white[lang] || COLOR_LABELS.grey_white.fr} — 150 MAD
@@ -284,11 +284,11 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-bold text-zinc-300 block mb-1.5">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-zinc-300 block mb-1.5">
                           {lang === 'ar' ? 'نوع التغطية:' : 'Application :'}
                         </label>
                         <div className="grid grid-cols-2 gap-2">
-                          <label className="flex items-center gap-2 p-2 rounded-lg bg-zinc-950 border border-zinc-800 cursor-pointer text-xs">
+                          <label className="flex items-center gap-2 p-2 rounded-lg bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 cursor-pointer text-xs">
                             <input
                               type="radio"
                               name="color-coverage"
@@ -296,12 +296,12 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                               onChange={() => onChangeColorConfig({ ...colorConfig, coverage: 'full' })}
                               className="accent-red-500"
                             />
-                            <span className="text-zinc-200">
+                            <span className="text-slate-800 dark:text-zinc-200">
                               {COVERAGE_LABELS.full[lang] || COVERAGE_LABELS.full.fr}
                             </span>
                           </label>
 
-                          <label className="flex items-center gap-2 p-2 rounded-lg bg-zinc-950 border border-zinc-800 cursor-pointer text-xs">
+                          <label className="flex items-center gap-2 p-2 rounded-lg bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 cursor-pointer text-xs">
                             <input
                               type="radio"
                               name="color-coverage"
@@ -309,7 +309,7 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                               onChange={() => onChangeColorConfig({ ...colorConfig, coverage: 'highlights' })}
                               className="accent-red-500"
                             />
-                            <span className="text-zinc-200">
+                            <span className="text-slate-800 dark:text-zinc-200">
                               {COVERAGE_LABELS.highlights[lang] || COVERAGE_LABELS.highlights.fr}
                             </span>
                           </label>
@@ -321,9 +321,9 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                   {service.id === 'protein' && isSelected && (
                     <div 
                       onClick={(e) => e.stopPropagation()} 
-                      className="p-3 bg-zinc-900/90 rounded-xl border border-zinc-700 space-y-2 mb-3 text-xs"
+                      className="p-3 bg-slate-50 dark:bg-zinc-900/90 rounded-xl border border-slate-200 dark:border-zinc-700 space-y-2 mb-3 text-xs"
                     >
-                      <label className="text-[11px] font-bold text-zinc-300 block">
+                      <label className="text-[11px] font-bold text-slate-700 dark:text-zinc-300 block">
                         {lang === 'ar' ? 'طول وكثافة الشعر:' : 'Longueur de cheveux :'}
                       </label>
                       <div className="grid grid-cols-3 gap-1.5">
@@ -332,10 +332,10 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                             key={p}
                             type="button"
                             onClick={() => onChangeProteinPrice(p)}
-                            className={`p-1.5 rounded-lg text-center font-mono font-bold transition-colors ${
+                            className={`p-1.5 rounded-lg text-center font-mono font-bold transition-colors cursor-pointer ${
                               proteinPrice === p
                                 ? 'bg-red-600 text-white'
-                                : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
+                                : 'bg-white dark:bg-zinc-950 text-slate-700 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white border border-slate-200 dark:border-zinc-800'
                             }`}
                           >
                             {p} MAD
@@ -346,13 +346,13 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                   )}
 
                   {/* Bottom Price Tag */}
-                  <div className="pt-3 border-t border-zinc-900 flex items-center justify-between">
-                    <span className="text-xs text-zinc-400">
+                  <div className="pt-3 border-t border-slate-200 dark:border-zinc-900 flex items-center justify-between">
+                    <span className="text-xs text-slate-500 dark:text-zinc-400">
                       {service.id === 'protein'
                         ? lang === 'ar' ? 'يبدأ من' : 'À partir de'
                         : lang === 'ar' ? 'السعر الأساسي' : 'Tarif'}
                     </span>
-                    <span className="font-mono text-lg font-black text-white">
+                    <span className="font-mono text-lg font-black text-slate-900 dark:text-white">
                       {service.id === 'hair-color'
                         ? `${COLOR_PRICES[colorConfig.tone]} MAD`
                         : service.id === 'protein'
@@ -367,24 +367,24 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
 
           {/* Sticky Live Cart (4-5 Cols) */}
           <div className="lg:col-span-5 xl:col-span-4 sticky top-20">
-            <div className="p-6 rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl space-y-5">
+            <div className="p-6 rounded-2xl bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 shadow-xl dark:shadow-2xl space-y-5">
               
               {/* Cart Header */}
-              <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-4">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-red-600/10 border border-red-500/30 flex items-center justify-center text-red-500">
+                  <div className="w-9 h-9 rounded-xl bg-red-50 dark:bg-red-600/10 border border-red-200 dark:border-red-500/30 flex items-center justify-center text-red-600 dark:text-red-500">
                     <ShoppingCart className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="font-black text-white text-base">{ui.cartTitle}</h3>
-                    <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+                    <h3 className="font-black text-slate-900 dark:text-white text-base">{ui.cartTitle}</h3>
+                    <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-zinc-400">
                       <span>
                         {pricingResult.items.length} {lang === 'ar' ? 'خدمة مختارة' : lang === 'en' ? 'selected' : 'soins'}
                       </span>
                       {totalEstimatedDuration > 0 && (
                         <>
-                          <span className="text-zinc-600">•</span>
-                          <span className="inline-flex items-center gap-1 text-amber-400 font-mono font-semibold">
+                          <span className="text-slate-300 dark:text-zinc-600">•</span>
+                          <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 font-mono font-semibold">
                             <Clock className="w-3 h-3" />
                             <span>{formatDuration(totalEstimatedDuration)}</span>
                           </span>
@@ -397,10 +397,9 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                 {pricingResult.items.length > 0 && (
                   <button
                     onClick={() => {
-                      // leave empty or toggle
                       selectedIds.forEach((id) => onToggleServiceId(id));
                     }}
-                    className="text-xs text-zinc-400 hover:text-red-400 transition-colors flex items-center gap-1"
+                    className="text-xs text-slate-500 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 transition-colors flex items-center gap-1 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>{lang === 'ar' ? 'تفريغ' : 'Vider'}</span>
@@ -410,8 +409,8 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
 
               {/* Items List */}
               {pricingResult.items.length === 0 ? (
-                <div className="py-8 text-center text-zinc-400 text-xs">
-                  <Scissors className="w-8 h-8 text-zinc-700 mx-auto mb-2 animate-bounce" />
+                <div className="py-8 text-center text-slate-500 dark:text-zinc-400 text-xs">
+                  <Scissors className="w-8 h-8 text-slate-300 dark:text-zinc-700 mx-auto mb-2 animate-bounce" />
                   <p>{ui.emptyCart}</p>
                 </div>
               ) : (
@@ -419,22 +418,22 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                   {pricingResult.items.map((item) => (
                     <div 
                       key={item.serviceId}
-                      className="p-3 rounded-xl bg-zinc-900/70 border border-zinc-800/80 flex items-center justify-between gap-3 text-xs"
+                      className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/70 border border-slate-200 dark:border-zinc-800/80 flex items-center justify-between gap-3 text-xs"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="font-bold text-white truncate">{item.name}</span>
+                          <span className="font-bold text-slate-900 dark:text-white truncate">{item.name}</span>
                           {(() => {
                             const matched = BASE_SERVICES.find((s) => s.id === item.serviceId);
                             return matched ? (
-                              <span className="text-[10px] font-mono text-zinc-400 flex-shrink-0">
+                              <span className="text-[10px] font-mono text-slate-500 dark:text-zinc-400 flex-shrink-0">
                                 ({formatDuration(matched.durationMinutes)})
                               </span>
                             ) : null;
                           })()}
                         </div>
                         {item.discountApplied && (
-                          <span className="text-[10px] text-emerald-400 font-medium block truncate">
+                          <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium block truncate">
                             ✓ {item.discountApplied}
                           </span>
                         )}
@@ -442,16 +441,16 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
 
                       <div className="flex items-center gap-2">
                         {item.originalPrice !== item.finalPrice && (
-                          <span className="font-mono text-zinc-400 line-through text-[11px]">
+                          <span className="font-mono text-slate-400 dark:text-zinc-400 line-through text-[11px]">
                             {item.originalPrice}
                           </span>
                         )}
-                        <span className="font-mono font-black text-white text-sm">
+                        <span className="font-mono font-black text-slate-900 dark:text-white text-sm">
                           {item.finalPrice} MAD
                         </span>
                         <button
                           onClick={() => onToggleServiceId(item.serviceId)}
-                          className="p-1 text-zinc-400 hover:text-red-400 transition-colors"
+                          className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -463,12 +462,12 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
 
               {/* Discounts & Overrides Breakdown */}
               {pricingResult.discountsBreakdown.length > 0 && (
-                <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-1.5 text-xs">
-                  <span className="font-bold text-emerald-400 block text-[11px] uppercase tracking-wider">
+                <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-500/30 space-y-1.5 text-xs">
+                  <span className="font-bold text-emerald-800 dark:text-emerald-400 block text-[11px] uppercase tracking-wider">
                     {lang === 'ar' ? 'التخفيضات المطبقة تلقائياً:' : 'Remises Automatiques :'}
                   </span>
                   {pricingResult.discountsBreakdown.map((disc, idx) => (
-                    <div key={idx} className="flex justify-between items-center text-emerald-300/90 text-[11px]">
+                    <div key={idx} className="flex justify-between items-center text-emerald-700 dark:text-emerald-300/90 text-[11px]">
                       <span>• {disc.title}</span>
                       <span className="font-mono font-bold">-{disc.savedMAD} MAD</span>
                     </div>
@@ -478,15 +477,15 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
 
               {/* Total & Savings Banner */}
               {pricingResult.items.length > 0 && (
-                <div className="space-y-3 pt-3 border-t border-zinc-800">
+                <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-zinc-800">
                   {/* Dynamic Total Savings Badge */}
                   {pricingResult.totalSavings > 0 && (
-                    <div className="p-3 rounded-xl bg-gradient-to-r from-red-950/60 via-zinc-900 to-blue-950/60 border border-red-500/40 flex items-center justify-between text-xs font-bold shadow-lg">
-                      <span className="text-red-400 flex items-center gap-1.5">
-                        <Sparkles className="w-4 h-4 text-amber-400" />
+                    <div className="p-3 rounded-xl bg-gradient-to-r from-red-50 via-slate-50 to-blue-50 dark:from-red-950/60 dark:via-zinc-900 dark:to-blue-950/60 border border-red-200 dark:border-red-500/40 flex items-center justify-between text-xs font-bold shadow-sm">
+                      <span className="text-red-700 dark:text-red-400 flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                         <span>{ui.savingsLabel}</span>
                       </span>
-                      <span className="font-mono text-base font-black text-emerald-400">
+                      <span className="font-mono text-base font-black text-emerald-700 dark:text-emerald-400">
                         {pricingResult.totalSavings} MAD
                       </span>
                     </div>
@@ -495,15 +494,15 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                   {/* Final Price Line */}
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="text-xs text-zinc-400 block">{ui.totalLabel}</span>
+                      <span className="text-xs text-slate-600 dark:text-zinc-400 block">{ui.totalLabel}</span>
                       {pricingResult.totalSavings > 0 && (
-                        <span className="text-[11px] text-zinc-400 line-through font-mono">
+                        <span className="text-[11px] text-slate-400 line-through font-mono">
                           {pricingResult.originalSubtotal} MAD
                         </span>
                       )}
                     </div>
-                    <span className="font-mono text-2xl sm:text-3xl font-black text-white">
-                      {pricingResult.finalTotal} <span className="text-red-500 text-lg">MAD</span>
+                    <span className="font-mono text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">
+                      {pricingResult.finalTotal} <span className="text-red-600 dark:text-red-500 text-lg">MAD</span>
                     </span>
                   </div>
 
@@ -513,7 +512,7 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                     className="w-full py-3.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-sm flex items-center justify-center gap-2 shadow-xl shadow-red-600/20 transition-all cursor-pointer"
                   >
                     <span>{ui.proceedBtn}</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <ArrowRight className="w-4 h-4 rtl:rotate-180" />
                   </button>
                 </div>
               )}

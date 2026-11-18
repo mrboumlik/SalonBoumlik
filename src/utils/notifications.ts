@@ -161,6 +161,7 @@ export function sendDualAlert(
     body?: string;
     type?: ToastMessage['type'];
     skipSound?: boolean;
+    tag?: string;
     data?: Record<string, unknown>;
   }
 ): void {
@@ -173,8 +174,14 @@ export function sendDualAlert(
   }
   showToast(title, bodyText, type);
 
-  // 2. MECHANISM 2: PWA Service Worker & Web Notification API
+  // 2. MECHANISM 2: Trusted PWA Service Worker Notification API (prevents duplicate/spam warnings)
   if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+    const resolvedTag =
+      options?.tag ||
+      (typeof options?.data?.ticketNumber === 'string'
+        ? `sb-${options.data.ticketNumber}`
+        : 'salon-boumlik-alert');
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.ready
         .then((reg) => {
@@ -182,27 +189,28 @@ export function sendDualAlert(
             body: bodyText,
             icon: '/pwa-192x192.png',
             badge: '/pwa-192x192.png',
-            tag: typeof options?.data?.ticketNumber === 'string'
-              ? `sb-${options.data.ticketNumber}`
-              : 'salon-boumlik-alert',
+            tag: resolvedTag,
+            renotify: false,
+            requireInteraction: false,
             data: options?.data || { url: '/' },
           } as NotificationOptions);
         })
         .catch(() => {
-          fallbackNotification(title, bodyText);
+          fallbackNotification(title, bodyText, resolvedTag);
         });
     } else {
-      fallbackNotification(title, bodyText);
+      fallbackNotification(title, bodyText, resolvedTag);
     }
   }
 }
 
-function fallbackNotification(title: string, bodyText: string) {
+function fallbackNotification(title: string, bodyText: string, tag?: string) {
   try {
     new Notification(title, {
       body: bodyText,
       icon: '/pwa-192x192.png',
       badge: '/pwa-192x192.png',
+      tag: tag || 'salon-boumlik-alert',
     });
   } catch (err) {
     console.warn('Native notification fallback warning:', err);
@@ -211,6 +219,6 @@ function fallbackNotification(title: string, bodyText: string) {
 
 // Backward compatibility helper
 export function sendWebNotification(title: string, options?: NotificationOptions): boolean {
-  sendDualAlert(title, { body: options?.body });
+  sendDualAlert(title, { body: options?.body, tag: options?.tag });
   return true;
 }

@@ -326,7 +326,12 @@ export async function downloadTicketAsPng(
       x: cardX + 62 + colW,
       y: gridY + cellH + 18,
       label: lang === 'ar' ? 'التوقيت • TIME' : 'HORAIRE',
-      value: booking.timeSlot,
+      value:
+        booking.timeSlot === 'FLEXIBLE'
+          ? lang === 'ar'
+            ? 'يختاره الحلاق (مرن)'
+            : 'Choix du barbier'
+          : booking.timeSlot,
       color: '#60A5FA',
     },
   ];

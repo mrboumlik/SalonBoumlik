@@ -39,29 +39,29 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ variant = 'n
         <button
           type="button"
           onClick={handleClick}
-          className="py-1.5 px-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+          className="min-h-[38px] py-1.5 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/15 dark:hover:bg-amber-500/25 border border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
           title={label}
         >
-          <Download className="w-3.5 h-3.5 text-amber-400" />
+          <Download className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
           <span className="hidden lg:inline">{label}</span>
         </button>
       ) : (
         <button
           type="button"
           onClick={handleClick}
-          className="w-full py-2.5 px-3.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+          className="w-full py-2.5 px-3.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/15 dark:hover:bg-amber-500/25 border border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
         >
-          <Smartphone className="w-4 h-4 text-amber-400" />
+          <Smartphone className="w-4 h-4 text-amber-700 dark:text-amber-400" />
           <span>{label}</span>
         </button>
       )}
 
       {showIOSGuide && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl bg-zinc-950 border border-amber-500/40 p-5 space-y-3 shadow-2xl text-white">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
+          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-zinc-950 border border-slate-200 dark:border-amber-500/40 p-5 space-y-3 shadow-2xl text-slate-900 dark:text-white">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-2.5">
               <div className="flex items-center gap-2 font-black text-sm">
-                <Smartphone className="w-4 h-4 text-amber-400" />
+                <Smartphone className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                 <span>
                   {lang === 'ar'
                     ? 'تثبيت تطبيق صالون بومليك'
@@ -73,14 +73,14 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ variant = 'n
               <button
                 type="button"
                 onClick={() => setShowIOSGuide(false)}
-                className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
+                className="p-1 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <p className="text-xs text-zinc-300 leading-relaxed flex items-start gap-2">
-              <Share className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-slate-700 dark:text-zinc-300 leading-relaxed flex items-start gap-2">
+              <Share className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
               <span>
                 {lang === 'ar'
                   ? 'على جهاز iPhone/iPad: اضغط على زر المشاركة (Share) أسفل المتصفح ثم اختر "إضافة إلى الشاشة الرئيسية" (Add to Home Screen) لتثبيت التطبيق وتلقي التذكيرات.'

@@ -12,7 +12,12 @@ import {
   normalizeMoroccanPhoneDigits,
   updateBookingStatus,
 } from './bookingStore';
-import { getMilestoneRewardLabel } from './loyaltyEngine';
+import {
+  computeClientPointsSummary,
+  getMilestoneRewardLabel,
+  POINTS_PER_VISIT,
+} from './loyaltyEngine';
+import { dispatchClientBackgroundPush } from './webPushClient';
 
 const CRM_COLLECTION = 'crm_clients';
 
@@ -93,6 +98,9 @@ export interface AggregatedCrmClient {
   freeWashesRedeemed: number;
   customDiscountMAD: number;
   verifiedVisits: number;
+  loyaltyPoints: number;
+  pointsEarnedTotal: number;
+  pointsRedeemedTotal: number;
   rewardNote?: string;
   visitCount: number;
   completedCount: number;
@@ -124,6 +132,9 @@ export function buildCrmClientSummaries(
         freeWashesRedeemed: stored?.freeWashesRedeemed ?? 0,
         customDiscountMAD: stored?.customDiscountMAD ?? 0,
         verifiedVisits: stored?.verifiedVisits ?? 0,
+        loyaltyPoints: stored?.loyaltyPoints ?? 0,
+        pointsEarnedTotal: stored?.pointsEarnedTotal ?? 0,
+        pointsRedeemedTotal: stored?.pointsRedeemedTotal ?? 0,
         rewardNote: stored?.rewardNote,
         visitCount: 0,
         completedCount: 0,
@@ -176,11 +187,16 @@ export function buildCrmClientSummaries(
         : b.date.localeCompare(a.date)
     );
     const canonicalVerified = Math.max(client.verifiedVisits, client.completedCount);
+    const storedProfile = crmMap[client.id];
+    const pointsSummary = computeClientPointsSummary(canonicalVerified, storedProfile);
     const earnedWashes = Math.floor(canonicalVerified / 5);
     const eligibleFreeWashes = Math.max(0, earnedWashes - client.freeWashesRedeemed);
     return {
       ...client,
       verifiedVisits: canonicalVerified,
+      loyaltyPoints: pointsSummary.pointsBalance,
+      pointsEarnedTotal: pointsSummary.pointsEarnedTotal,
+      pointsRedeemedTotal: pointsSummary.pointsRedeemedTotal,
       bookings: sortedBookings,
       eligibleFreeWashes,
     };
@@ -212,6 +228,9 @@ function buildSanitizedCrmProfile(
     freeWashesRedeemed: Math.max(0, Math.min(500, patch.freeWashesRedeemed ?? existing?.freeWashesRedeemed ?? 0)),
     customDiscountMAD: Math.max(0, Math.min(10000, patch.customDiscountMAD ?? existing?.customDiscountMAD ?? 0)),
     verifiedVisits: Math.max(0, Math.min(500, patch.verifiedVisits ?? existing?.verifiedVisits ?? 0)),
+    loyaltyPoints: Math.max(0, Math.min(100000, patch.loyaltyPoints ?? existing?.loyaltyPoints ?? 0)),
+    pointsEarnedTotal: Math.max(0, Math.min(100000, patch.pointsEarnedTotal ?? existing?.pointsEarnedTotal ?? 0)),
+    pointsRedeemedTotal: Math.max(0, Math.min(100000, patch.pointsRedeemedTotal ?? existing?.pointsRedeemedTotal ?? 0)),
     updatedAt: new Date().toISOString().slice(0, 64),
   };
 
@@ -413,6 +432,10 @@ export async function confirmClientAttendance(
   }
 
   const nextVerifiedVisits = priorVerified + 1;
+  const currentPointsSummary = computeClientPointsSummary(priorVerified, existing);
+  const nextLoyaltyPoints = currentPointsSummary.pointsBalance + POINTS_PER_VISIT;
+  const nextEarnedTotal = currentPointsSummary.pointsEarnedTotal + POINTS_PER_VISIT;
+
   const unlockedMilestone =
     nextVerifiedVisits > 0 && nextVerifiedVisits % 5 === 0 ? nextVerifiedVisits : null;
 
@@ -423,8 +446,8 @@ export async function confirmClientAttendance(
   const noteToClient =
     booking.adminNotes ||
     (unlockedMilestone
-      ? `تم تأكيد حضورك مع ${booking.barberName}! تهانينا على بلوغ الزيارة المؤكدة رقم ${nextVerifiedVisits}: ${getMilestoneRewardLabel(unlockedMilestone, booking.clientLanguage || 'ar')}.`
-      : `تم تأكيد حضورك بنجاح مع ${booking.barberName} وإضافة +1 نقطة ولاء (${nextVerifiedVisits}).`);
+      ? `تم تأكيد حضورك مع ${booking.barberName}! تهانينا على بلوغ الزيارة المؤكدة رقم ${nextVerifiedVisits}: ${getMilestoneRewardLabel(unlockedMilestone, booking.clientLanguage || 'ar')} (+${POINTS_PER_VISIT} نقطة ولاء).`
+      : `تم تأكيد حضورك بنجاح مع ${booking.barberName} وإضافة +${POINTS_PER_VISIT} نقطة ولاء (الرصيد: ${nextLoyaltyPoints} نقطة).`);
 
   const updatedBooking = await markBookingAttendanceCompleted(
     booking.id,
@@ -437,11 +460,31 @@ export async function confirmClientAttendance(
     booking.clientName,
     {
       verifiedVisits: nextVerifiedVisits,
+      loyaltyPoints: nextLoyaltyPoints,
+      pointsEarnedTotal: nextEarnedTotal,
+      pointsRedeemedTotal: currentPointsSummary.pointsRedeemedTotal,
       rewardNote: rewardLabel || existing?.rewardNote,
     },
     existing
   );
   const savedProfile = await persistCrmProfile(nextProfile);
+
+  const cLang = booking.clientLanguage || 'ar';
+  void dispatchClientBackgroundPush({
+    clientPhone: booking.clientPhone,
+    ticketNumber: booking.ticketNumber,
+    eventType: 'booking_attended',
+    url: `/#track=${encodeURIComponent(booking.ticketNumber)}`,
+    tag: `sb-attended-${booking.id}`,
+    title:
+      cLang === 'ar'
+        ? `Salon Boumlik • تم تأكيد حضورك (+${POINTS_PER_VISIT} نقطة ولاء)`
+        : `Salon Boumlik • Présence confirmée (+${POINTS_PER_VISIT} pts)`,
+    body:
+      cLang === 'ar'
+        ? `تم تسجيل حضورك للتذكرة ${booking.ticketNumber} وإضافة +${POINTS_PER_VISIT} نقطة. رصيدك الحالي: ${nextLoyaltyPoints} نقطة.`
+        : `Votre visite (${booking.ticketNumber}) est validée ! +${POINTS_PER_VISIT} pts ajoutés (solde : ${nextLoyaltyPoints} pts).`,
+  });
 
   return {
     booking: updatedBooking,
@@ -451,4 +494,146 @@ export async function confirmClientAttendance(
     unlockedMilestone,
     alreadyCompleted: false,
   };
+}
+
+/**
+ * Redeems Loyalty Points from `crm_clients/{clientId}` into an instant service discount (MAD)
+ * that automatically applies to the client's next booking.
+ */
+export async function redeemLoyaltyPointsForDiscount(params: {
+  phone: string;
+  clientName: string;
+  pointsCost: number;
+  discountMAD: number;
+  label?: string;
+  verifiedVisits?: number;
+  crmMap?: Record<string, CrmClientProfile>;
+}): Promise<CrmClientProfile> {
+  const crmMap = params.crmMap ?? cachedCrmMap;
+  const id = getCrmDocId(params.phone);
+  const existing = crmMap[id];
+  const visits = Math.max(params.verifiedVisits ?? 0, existing?.verifiedVisits ?? 0);
+  const summary = computeClientPointsSummary(visits, existing);
+
+  if (summary.pointsBalance < params.pointsCost) {
+    throw new Error('Insufficient loyalty points balance.');
+  }
+
+  const nextBalance = Math.max(0, summary.pointsBalance - params.pointsCost);
+  const nextRedeemed = summary.pointsRedeemedTotal + params.pointsCost;
+  const nextDiscount = (existing?.customDiscountMAD ?? 0) + Math.max(0, Math.round(params.discountMAD));
+
+  const next = buildSanitizedCrmProfile(
+    params.phone,
+    params.clientName,
+    {
+      verifiedVisits: visits,
+      loyaltyPoints: nextBalance,
+      pointsEarnedTotal: summary.pointsEarnedTotal,
+      pointsRedeemedTotal: nextRedeemed,
+      customDiscountMAD: nextDiscount,
+      rewardNote:
+        params.label ||
+        `🎟️ استبدال ${params.pointsCost} نقطة ولاء ← خصم -${params.discountMAD} MAD`,
+    },
+    existing
+  );
+  const saved = await persistCrmProfile(next);
+
+  void dispatchClientBackgroundPush({
+    clientPhone: params.phone,
+    eventType: 'loyalty_points_updated',
+    url: `/#track=${encodeURIComponent(params.phone)}`,
+    tag: `sb-points-redeem-${id}-${nextRedeemed}`,
+    title: 'Salon Boumlik • تحديث نقاط الولاء',
+    body: `تم استبدال ${params.pointsCost} نقطة ولاء بخصم -${params.discountMAD} MAD جاهز لموعدك القادم. الرصيد المتبقي: ${nextBalance} نقطة.`,
+  });
+
+  return saved;
+}
+
+/**
+ * Awards or deducts loyalty points for a client from Admin Dashboard.
+ */
+export async function adjustClientLoyaltyPoints(params: {
+  phone: string;
+  clientName: string;
+  pointsDelta: number;
+  verifiedVisits?: number;
+  note?: string;
+  crmMap?: Record<string, CrmClientProfile>;
+}): Promise<CrmClientProfile> {
+  const crmMap = params.crmMap ?? cachedCrmMap;
+  const id = getCrmDocId(params.phone);
+  const existing = crmMap[id];
+  const visits = Math.max(params.verifiedVisits ?? 0, existing?.verifiedVisits ?? 0);
+  const summary = computeClientPointsSummary(visits, existing);
+
+  const nextBalance = Math.max(0, summary.pointsBalance + Math.round(params.pointsDelta));
+  const nextEarned =
+    params.pointsDelta > 0
+      ? summary.pointsEarnedTotal + Math.round(params.pointsDelta)
+      : summary.pointsEarnedTotal;
+
+  const next = buildSanitizedCrmProfile(
+    params.phone,
+    params.clientName,
+    {
+      verifiedVisits: visits,
+      loyaltyPoints: nextBalance,
+      pointsEarnedTotal: nextEarned,
+      pointsRedeemedTotal: summary.pointsRedeemedTotal,
+      rewardNote:
+        params.note ||
+        (params.pointsDelta >= 0
+          ? `⭐ منح +${Math.round(params.pointsDelta)} نقطة ولاء إضافية من الإدارة`
+          : `تعديل رصيد النقاط (${Math.round(params.pointsDelta)} نقطة)`),
+    },
+    existing
+  );
+  const saved = await persistCrmProfile(next);
+
+  if (params.pointsDelta !== 0) {
+    const sign = params.pointsDelta > 0 ? `+${Math.round(params.pointsDelta)}` : `${Math.round(params.pointsDelta)}`;
+    void dispatchClientBackgroundPush({
+      clientPhone: params.phone,
+      eventType: 'loyalty_points_updated',
+      url: `/#track=${encodeURIComponent(params.phone)}`,
+      tag: `sb-points-adjust-${id}-${nextBalance}`,
+      title: 'Salon Boumlik • تحديث رصيد نقاط الولاء',
+      body: `تم تحديث رصيد نقاط الولاء (${sign} نقطة). رصيدك الحالي: ${nextBalance} نقطة.`,
+    });
+  }
+
+  return saved;
+}
+
+/**
+ * Consumes applied `customDiscountMAD` after a client submits a booking using their discount voucher.
+ */
+export async function consumeClientDiscountOnBooking(
+  phone: string,
+  clientName: string,
+  usedDiscountMAD: number,
+  crmMap: Record<string, CrmClientProfile> = cachedCrmMap
+): Promise<CrmClientProfile | null> {
+  if (usedDiscountMAD <= 0) return null;
+  const id = getCrmDocId(phone);
+  const existing = crmMap[id];
+  if (!existing || (existing.customDiscountMAD ?? 0) <= 0) return null;
+
+  const remainingDiscount = Math.max(0, (existing.customDiscountMAD ?? 0) - usedDiscountMAD);
+  const next = buildSanitizedCrmProfile(
+    phone,
+    clientName,
+    {
+      customDiscountMAD: remainingDiscount,
+      rewardNote:
+        remainingDiscount === 0
+          ? '✓ تم استخدام خصم نقاط الولاء في الحجز الأخير'
+          : `🎁 رصيد خصم متبقي: -${remainingDiscount} MAD`,
+    },
+    existing
+  );
+  return persistCrmProfile(next);
 }

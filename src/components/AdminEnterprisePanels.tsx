@@ -65,6 +65,7 @@ import { getCrmDocId } from '../utils/crmStore';
 import { normalizeMoroccanPhoneDigits } from '../utils/bookingStore';
 import { downloadCrmAccountingCsv } from '../utils/csvExport';
 import { WeeklyWorkloadBarChart } from './WeeklyWorkloadBarChart';
+import { useFirestoreReviews } from '../utils/reviewsStore';
 
 /* ============================================================================
  * 1. FINANCIAL & BARBER PERFORMANCE ANALYTICS PANEL
@@ -120,6 +121,9 @@ function computeBarberSatisfactionMetrics(
   const firstAr = barber.name.ar.split(' ')[0];
 
   const matchingReviews = reviews.filter((rev) => {
+    if (rev.barberId) {
+      return rev.barberId === barber.id;
+    }
     const text = extractReviewText(rev.comment).toLowerCase();
     return text.includes(firstFr) || text.includes(firstAr);
   });
@@ -192,6 +196,7 @@ export const FinancialAnalyticsPanel: React.FC<{
   role?: 'master' | 'barber';
   ownBarberId?: string;
 }> = ({ bookings, role = 'master', ownBarberId = 'all' }) => {
+  const { reviews: firestoreReviews } = useFirestoreReviews();
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
   const currentMonthPrefix = todayStr.slice(0, 7); // YYYY-MM
@@ -341,7 +346,8 @@ export const FinancialAnalyticsPanel: React.FC<{
     .slice(0, 6);
 
   // Top Performers Ranking (All Barbers ranked by Revenue + Client Satisfaction for Selected Month)
-  const storedReviews = readStoredClientReviews();
+  const storedReviews =
+    firestoreReviews.length > 0 ? firestoreReviews : readStoredClientReviews();
   const allMonthCompleted = bookings.filter(
     (b) =>
       b.status === 'completed' &&

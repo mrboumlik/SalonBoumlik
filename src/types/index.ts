@@ -7,6 +7,7 @@ export type DrinkPreference = 'coffee' | 'tea' | 'none';
 export type BookingStatus =
   | 'pending'
   | 'pending_quote'
+  | 'flexible_pending'
   | 'confirmed'
   | 'rescheduled'
   | 'completed'
@@ -148,6 +149,9 @@ export interface CustomerReview {
     en: string[];
     amz: string[];
   };
+  barberId?: string;
+  barberName?: string;
+  createdAt?: string;
   verified?: boolean;
 }
 
@@ -199,6 +203,8 @@ export interface AppointmentBooking {
   drinkPreference?: DrinkPreference;
   totalDurationMinutes?: number;
   status: BookingStatus;
+  isFlexibleTime?: boolean;
+  preferredTimeHint?: string;
   rescheduledTo?: { date: string; time: string };
   clientLanguage?: Language;
   adminNotes?: string;
@@ -232,6 +238,9 @@ export interface CrmClientProfile {
   freeWashesRedeemed: number;
   customDiscountMAD: number;
   verifiedVisits?: number;
+  loyaltyPoints?: number;
+  pointsEarnedTotal?: number;
+  pointsRedeemedTotal?: number;
   rewardNote?: string;
   updatedAt: string;
 }

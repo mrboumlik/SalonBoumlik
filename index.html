@@ -22,6 +22,19 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Amiri:wght@400;700&family=Noto+Sans+Tifinagh&display=swap" rel="stylesheet">
 
+    <!-- Theme bootstrap (prevents flash before React mounts) -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('salon_boumlik_theme');
+          var isDark = saved !== 'minimal_light';
+          var root = document.documentElement;
+          root.classList.toggle('dark', isDark);
+          root.style.colorScheme = isDark ? 'dark' : 'light';
+        } catch (e) {}
+      })();
+    </script>
+
     <!-- Google Analytics (GA4) Placeholder - Replace G-XXXXXXXXXX with your live Measurement ID -->
     <script>
       window.dataLayer = window.dataLayer || [];
@@ -95,7 +108,7 @@
     }
     </script>
   </head>
-  <body class="bg-[#08090C] text-zinc-100 antialiased selection:bg-amber-500/30 selection:text-amber-200 min-h-screen">
+  <body class="bg-slate-50 dark:bg-[#08090C] text-slate-900 dark:text-zinc-100 antialiased selection:bg-amber-500/30 selection:text-amber-900 dark:selection:text-amber-200 min-h-screen">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
