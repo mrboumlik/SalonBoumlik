@@ -1,6 +1,8 @@
 import QRCode from 'qrcode';
 import { AppointmentBooking, Language } from '../types';
 import { SALON_INFO, TEAM_MEMBERS } from '../data/barbershopData';
+import { buildBookingCheckInQrPayload } from './clientQr';
+import { pickLang } from './i18n';
 
 function loadImage(src: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
@@ -60,7 +62,7 @@ export async function downloadTicketAsPng(
   const barberObj = TEAM_MEMBERS.find((b) => b.id === booking.barberId);
   const accentColor = booking.barberColor || barberObj?.themeColor || '#D97706';
 
-  const qrPayload = `${window.location.origin}/#track=${encodeURIComponent(booking.ticketNumber)}`;
+  const qrPayload = buildBookingCheckInQrPayload(booking);
   const qrDataUrl =
     existingQrDataUrl ||
     (await QRCode.toDataURL(qrPayload, {
@@ -101,7 +103,13 @@ export async function downloadTicketAsPng(
 
   if (srvItems.length === 0) {
     displayRows.push({
-      label: lang === 'ar' ? '• حلاقة وعناية — صالون بومليك' : '• Coiffure & Soins Salon Boumlik',
+      label: pickLang(lang, {
+        ar: '• حلاقة وعناية — صالون بومليك',
+        fr: '• Coiffure & Soins Salon Boumlik',
+        amz: '• ⵜⴰⴽⵔⴹⴰ ⴷ ⵓⴼⵓⵍⴽⵉ — ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ',
+        en: '• Grooming & Care — Salon Boumlik',
+        es: '• Corte y cuidado — Salon Boumlik',
+      }),
       amount: `${Math.max(0, (booking.finalTotalMAD ?? 0) - queueFee)} MAD`,
       labelColor: '#E4E4E7',
       amountColor: '#FBBF24',
@@ -119,12 +127,13 @@ export async function downloadTicketAsPng(
 
   if (hasQueueAvoidance) {
     displayRows.push({
-      label:
-        lang === 'ar'
-          ? '⚡ خدمة تفادي الانتظار'
-          : lang === 'en'
-          ? '⚡ Queue Avoidance Service'
-          : '⚡ Service Coupe-File (تفادي الانتظار)',
+      label: pickLang(lang, {
+        ar: '⚡ خدمة تفادي الانتظار',
+        fr: '⚡ Service Coupe-File',
+        amz: '⚡ ⵜⴰⵏⴰⴼⵓⵜ ⵏ ⵓⵣⵔⴰⵢ',
+        en: '⚡ Queue Avoidance Service',
+        es: '⚡ Servicio Sin Espera',
+      }),
       amount: '+10 MAD',
       labelColor: '#FCD34D',
       amountColor: '#FBBF24',
@@ -135,17 +144,26 @@ export async function downloadTicketAsPng(
     displayRows.push({
       label:
         booking.loyaltyRewardApplied ||
-        (lang === 'ar' ? '🎁 تخفيض الولاء / VIP' : '🎁 Remise Fidélité / VIP'),
+        pickLang(lang, {
+          ar: '🎁 تخفيض الولاء / VIP',
+          fr: '🎁 Remise Fidélité / VIP',
+          amz: '🎁 ⴰⵙⵙⵏⵇⵙ ⵏ ⵜⵖⵓⵏⵉ / VIP',
+          en: '🎁 Loyalty / VIP Discount',
+          es: '🎁 Descuento Fidelidad / VIP',
+        }),
       amount: `-${impliedLoyaltyDiscount} MAD`,
       labelColor: '#6EE7B7',
       amountColor: '#34D399',
     });
   } else if ((booking.totalSavingsMAD ?? 0) > 0) {
     displayRows.push({
-      label:
-        lang === 'ar'
-          ? '🎁 إجمالي التوفير المطبق'
-          : '🎁 Économie totale appliquée',
+      label: pickLang(lang, {
+        ar: '🎁 إجمالي التوفير المطبق',
+        fr: '🎁 Économie totale appliquée',
+        amz: '🎁 ⵜⵉⵙⵏⴼⴰⵍ ⵎⴰⵕⵕⴰ',
+        en: '🎁 Total Savings Applied',
+        es: '🎁 Ahorro total aplicado',
+      }),
       amount: `-${booking.totalSavingsMAD} MAD`,
       labelColor: '#6EE7B7',
       amountColor: '#34D399',
@@ -284,7 +302,13 @@ export async function downloadTicketAsPng(
   ctx.fillStyle = '#A1A1AA';
   ctx.font = '700 15px sans-serif';
   ctx.fillText(
-    lang === 'ar' ? 'الحلاق المعين • BARBIER ASSIGNÉ' : 'BARBIER ASSIGNÉ • ASSIGNED BARBER',
+    pickLang(lang, {
+      ar: 'الحلاق المعين • BARBIER',
+      fr: 'BARBIER ASSIGNÉ',
+      amz: 'ⴰⵎⴽⵕⴰⴹ • BARBIER',
+      en: 'ASSIGNED BARBER',
+      es: 'BARBERO ASIGNADO',
+    }),
     cardX + 108,
     barberBoxY + 32
   );
@@ -304,33 +328,61 @@ export async function downloadTicketAsPng(
     {
       x: cardX + 42,
       y: gridY,
-      label: lang === 'ar' ? 'الزبون • CLIENT' : 'CLIENT',
+      label: pickLang(lang, {
+        ar: 'الزبون • CLIENT',
+        fr: 'CLIENT',
+        amz: 'ⴰⵎⵙⴰⵖ • CLIENT',
+        en: 'CLIENT',
+        es: 'CLIENTE',
+      }),
       value: booking.clientName,
       color: '#FFFFFF',
     },
     {
       x: cardX + 62 + colW,
       y: gridY,
-      label: lang === 'ar' ? 'الهاتف • PHONE' : 'TÉLÉPHONE',
+      label: pickLang(lang, {
+        ar: 'الهاتف • PHONE',
+        fr: 'TÉLÉPHONE',
+        amz: 'ⵜⵉⵍⵉⴼⵓⵏ • PHONE',
+        en: 'PHONE',
+        es: 'TELÉFONO',
+      }),
       value: booking.clientPhone,
       color: '#34D399',
     },
     {
       x: cardX + 42,
       y: gridY + cellH + 18,
-      label: lang === 'ar' ? 'التاريخ • DATE' : 'DATE',
+      label: pickLang(lang, {
+        ar: 'التاريخ • DATE',
+        fr: 'DATE',
+        amz: 'ⴰⵙⴰⴽⵓⴷ • DATE',
+        en: 'DATE',
+        es: 'FECHA',
+      }),
       value: booking.date,
       color: '#FBBF24',
     },
     {
       x: cardX + 62 + colW,
       y: gridY + cellH + 18,
-      label: lang === 'ar' ? 'التوقيت • TIME' : 'HORAIRE',
+      label: pickLang(lang, {
+        ar: 'التوقيت • TIME',
+        fr: 'HORAIRE',
+        amz: 'ⴰⴽⵓⴷ • TIME',
+        en: 'TIME',
+        es: 'HORARIO',
+      }),
       value:
         booking.timeSlot === 'FLEXIBLE'
-          ? lang === 'ar'
-            ? 'يختاره الحلاق (مرن)'
-            : 'Choix du barbier'
+          ? pickLang(lang, {
+              ar: 'يختاره الحلاق (مرن)',
+              fr: 'Choix du barbier',
+              amz: 'ⴰⴽⵓⴷ ⴰⵍⵡⵡⴰⵖ',
+              en: 'Barber Choice',
+              es: 'Elige el barbero',
+            })
           : booking.timeSlot,
       color: '#60A5FA',
     },
@@ -366,7 +418,13 @@ export async function downloadTicketAsPng(
   ctx.fillStyle = '#9CA3AF';
   ctx.font = '700 15px sans-serif';
   ctx.fillText(
-    lang === 'ar' ? 'الخدمات والرسوم • SERVICES & FEES' : 'PRESTATIONS & FRAIS SÉLECTIONNÉS',
+    pickLang(lang, {
+      ar: 'الخدمات والرسوم • SERVICES & FEES',
+      fr: 'PRESTATIONS & FRAIS SÉLECTIONNÉS',
+      amz: 'ⵜⵉⵡⵓⵔⵉⵡⵉⵏ • SERVICES',
+      en: 'SELECTED SERVICES & FEES',
+      es: 'SERVICIOS Y TARIFAS',
+    }),
     cardX + 66,
     srvY + 34
   );
@@ -402,7 +460,13 @@ export async function downloadTicketAsPng(
   ctx.fillStyle = '#D4D4D8';
   ctx.font = '800 20px sans-serif';
   ctx.fillText(
-    lang === 'ar' ? 'المجموع النهائي (الأداء بالصالون)' : 'TOTAL FINAL (PAIEMENT AU SALON)',
+    pickLang(lang, {
+      ar: 'المجموع النهائي (الأداء بالصالون)',
+      fr: 'TOTAL FINAL (PAIEMENT AU SALON)',
+      amz: 'ⵜⵉⵖⵔⴰⴷ ⵎⴰⵕⵕⴰ (ⴰⵙⴰⵍⵓⵏ)',
+      en: 'FINAL TOTAL (PAY AT SALON)',
+      es: 'TOTAL FINAL (PAGO EN SALÓN)',
+    }),
     cardX + 66,
     totalDivY + 48
   );
@@ -447,7 +511,13 @@ export async function downloadTicketAsPng(
   ctx.fillStyle = '#FFFFFF';
   ctx.font = '800 22px sans-serif';
   ctx.fillText(
-    lang === 'ar' ? 'تذكرة إلكترونية رسمية' : 'BILLET ÉLECTRONIQUE OFFICIEL',
+    pickLang(lang, {
+      ar: 'تذكرة إلكترونية رسمية',
+      fr: 'BILLET ÉLECTRONIQUE OFFICIEL',
+      amz: 'ⵜⴰⴼⵔⴽⵉⵜ ⵜⴰⵎⴰⴷⴷⵓⴷⵜ',
+      en: 'OFFICIAL DIGITAL TICKET',
+      es: 'TICKET DIGITAL OFICIAL',
+    }),
     infoX,
     qrBoxY + 44
   );
@@ -463,7 +533,13 @@ export async function downloadTicketAsPng(
 
   ctx.fillStyle = '#FBBF24';
   ctx.font = '700 16px sans-serif';
-  ctx.fillText('Scan QR to track live status', infoX, qrBoxY + 184);
+  ctx.fillText(
+    booking.checkInToken
+      ? `Check-In QR (${booking.checkInToken}) • Scan at Salon`
+      : 'Scan Check-In QR upon arrival',
+    infoX,
+    qrBoxY + 184
+  );
 
   ctx.restore();
 

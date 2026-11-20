@@ -163,6 +163,28 @@
           "description": "ISO timestamp when admin confirmed client attendance for verified loyalty progress",
           "maxLength": 64
         },
+        "checkInToken": {
+          "type": "string",
+          "description": "Unique booking check-in QR verification code",
+          "maxLength": 32
+        },
+        "checkedInAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when client checked in via QR scan at salon",
+          "maxLength": 64
+        },
+        "caisseLoggedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when completed appointment payment was logged to Caisse",
+          "maxLength": 64
+        },
+        "caisseEntryId": {
+          "type": "string",
+          "description": "Linked CaisseEntry document ID created after attendance confirmation",
+          "maxLength": 128
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",
@@ -647,6 +669,252 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "CaisseEntry": {
+      "title": "CaisseEntry",
+      "description": "Barber or shop cash register transaction (income, expense, float adjustment, credit repayment)",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "barberId": {
+          "type": "string",
+          "enum": ["hassan", "anouar-arif", "lahcen-lhanz", "mounir-querdeny"]
+        },
+        "barberName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "type": {
+          "type": "string",
+          "enum": ["income", "expense", "float_adjustment", "credit_repayment"]
+        },
+        "date": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "serviceIds": {
+          "type": "array"
+        },
+        "serviceNames": {
+          "type": "array"
+        },
+        "expectedAmountMAD": {
+          "type": "number"
+        },
+        "amountPaidMAD": {
+          "type": "number"
+        },
+        "creditAmountMAD": {
+          "type": "number"
+        },
+        "creditRemainingMAD": {
+          "type": "number"
+        },
+        "creditStatus": {
+          "type": "string",
+          "enum": ["none", "open", "partial", "paid"]
+        },
+        "clientName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "clientPhone": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "expectedRepaymentDate": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "repaidDate": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "repaidAmountMAD": {
+          "type": "number"
+        },
+        "parentCreditEntryId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "sourceBookingId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "sourceTicketNumber": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "createdByRole": {
+          "type": "string",
+          "enum": ["master", "barber"]
+        },
+        "createdByName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "barberId",
+        "barberName",
+        "type",
+        "date",
+        "expectedAmountMAD",
+        "amountPaidMAD",
+        "creditAmountMAD",
+        "creditRemainingMAD",
+        "createdByRole",
+        "createdByName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CaisseBarberSetting": {
+      "title": "CaisseBarberSetting",
+      "description": "Commission percentage configuration per barber controlled by Master Admin",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "barberId": {
+          "type": "string",
+          "enum": ["hassan", "anouar-arif", "lahcen-lhanz", "mounir-querdeny"]
+        },
+        "commissionPercent": {
+          "type": "number"
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "barberId",
+        "commissionPercent",
+        "updatedBy",
+        "updatedAt"
+      ]
+    },
+    "CaisseDailySettlement": {
+      "title": "CaisseDailySettlement",
+      "description": "Daily Caisse collection status, recalculate/reset state, and unpaid carry-over tracking",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "barberId": {
+          "type": "string",
+          "enum": ["hassan", "anouar-arif", "lahcen-lhanz", "mounir-querdeny"]
+        },
+        "barberName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "date": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "collected": {
+          "type": "boolean"
+        },
+        "collectedAmountMAD": {
+          "type": "number"
+        },
+        "barberShareMAD": {
+          "type": "number"
+        },
+        "shopShareMAD": {
+          "type": "number"
+        },
+        "floatMAD": {
+          "type": "number"
+        },
+        "expensesMAD": {
+          "type": "number"
+        },
+        "carryOverOwedMAD": {
+          "type": "number"
+        },
+        "resetCount": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "confirmedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "confirmedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "barberId",
+        "barberName",
+        "date",
+        "collected",
+        "collectedAmountMAD",
+        "barberShareMAD",
+        "shopShareMAD",
+        "floatMAD",
+        "expensesMAD",
+        "carryOverOwedMAD",
+        "resetCount",
+        "confirmedBy",
+        "confirmedAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -697,6 +965,24 @@
         "$ref": "#/entities/PushSubscriptionRecord"
       },
       "description": "VAPID Web Push subscriptions for clients and staff enabling background push alerts"
+    },
+    "/caisse_entries/{entryId}": {
+      "schema": {
+        "$ref": "#/entities/CaisseEntry"
+      },
+      "description": "Caisse income, expense, float adjustment, and credit repayment entries scoped per barber and Master Admin"
+    },
+    "/caisse_settings/{settingId}": {
+      "schema": {
+        "$ref": "#/entities/CaisseBarberSetting"
+      },
+      "description": "Per-barber commission percentage settings managed by Master Admin"
+    },
+    "/caisse_settlements/{settlementId}": {
+      "schema": {
+        "$ref": "#/entities/CaisseDailySettlement"
+      },
+      "description": "Daily Caisse collection status, manual recalculate/reset state, and unpaid barber carry-over records"
     }
   }
 }

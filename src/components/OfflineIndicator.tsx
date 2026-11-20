@@ -2,6 +2,7 @@ import React from 'react';
 import { WifiOff } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { useLanguage } from '../context/LanguageContext';
+import { pickLang } from '../utils/i18n';
 
 export const OfflineIndicator: React.FC = () => {
   const isOnline = useOnlineStatus();
@@ -16,11 +17,13 @@ export const OfflineIndicator: React.FC = () => {
     >
       <WifiOff className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
       <span>
-        {lang === 'ar'
-          ? 'وضع عدم الاتصال — التذاكر المخزنة متاحة للمعاينة'
-          : lang === 'en'
-          ? 'Offline mode — cached view active'
-          : 'Mode hors ligne — consultation en cache active'}
+        {pickLang(lang, {
+          ar: 'وضع عدم الاتصال — التذاكر المخزنة متاحة للمعاينة',
+          fr: 'Mode hors ligne — consultation en cache active',
+          amz: 'ⴰⵙⴽⴽⵉⵏ ⴱⵍⴰ ⴰⵏⵜⵉⵔⵏⵉⵜ — ⴰⵙⴽⵏ ⵏ ⵜⵡⵔⵉⵇⵉⵏ',
+          en: 'Offline mode — cached view active',
+          es: 'Modo sin conexión — vista en caché activa',
+        })}
       </span>
     </div>
   );

@@ -2,6 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { BarChart3 } from 'lucide-react';
 import { AppointmentBooking } from '../types';
 import { TEAM_MEMBERS } from '../data/barbershopData';
+import { useLanguage } from '../context/LanguageContext';
+import { pickLang } from '../utils/i18n';
 
 interface WeeklyWorkloadBarChartProps {
   bookings: AppointmentBooking[];
@@ -56,6 +58,7 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
   bookings,
   todayStr,
 }) => {
+  const { lang } = useLanguage();
   const [rangeMode, setRangeMode] = useState<'calendar_week' | 'rolling_7d'>('calendar_week');
 
   const bounds = useMemo(
@@ -117,10 +120,24 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
         <div>
           <h4 className="text-sm font-black text-white flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-amber-400" />
-            <span>توزيع المواعيد المكتملة هذا الأسبوع • Weekly Team Workload</span>
+            <span>
+              {pickLang(lang, {
+                ar: 'توزيع المواعيد المكتملة هذا الأسبوع',
+                fr: 'Répartition hebdomadaire des rendez-vous terminés',
+                amz: 'ⴰⴱⴹⴰⵢ ⵏ ⵉⵎⵓⵄⵉⴷⵏ ⵉⵎⴷⵏ ⵉⵎⴰⵍⴰⵙⵙ ⴰⴷ',
+                en: 'Weekly Team Completed Workload',
+                es: 'Carga semanal completada del equipo',
+              })}
+            </span>
           </h4>
           <p className="text-[11px] text-zinc-400 mt-0.5">
-            عدد المواعيد المكتملة لكل حلاق لمتابعة توازن ضغط العمل بين أعضاء الفريق ({bounds.label})
+            {pickLang(lang, {
+              ar: `عدد المواعيد المكتملة لكل حلاق لمتابعة توازن ضغط العمل بين أعضاء الفريق (${bounds.label})`,
+              fr: `Nombre de rendez-vous terminés par barbier pour suivre l’équilibre de charge (${bounds.label})`,
+              amz: `ⴰⵎⴹⴰⵏ ⵏ ⵉⵎⵓⵄⵉⴷⵏ ⵉⵎⴷⵏ ⵉ ⴽⵓ ⴰⵎⵣⵣⴰⴳ ⵉ ⵓⴹⴼⴰⵕ ⵏ ⵜⵡⵓⵔⵉ (${bounds.label})`,
+              en: `Completed appointments per barber to monitor team workload balance (${bounds.label})`,
+              es: `Citas completadas por barbero para equilibrar la carga (${bounds.label})`,
+            })}
           </p>
         </div>
 
@@ -135,7 +152,7 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
                   : 'text-zinc-400 hover:text-white'
               }`}
             >
-              هذا الأسبوع
+              {pickLang(lang, { ar: 'هذا الأسبوع', fr: 'Cette semaine', amz: 'ⵉⵎⴰⵍⴰⵙⵙ ⴰⴷ', en: 'This Week', es: 'Esta semana' })}
             </button>
             <button
               type="button"
@@ -146,12 +163,12 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
                   : 'text-zinc-400 hover:text-white'
               }`}
             >
-              آخر 7 أيام
+              {pickLang(lang, { ar: 'آخر 7 أيام', fr: '7 derniers jours', amz: '7 ⵡⵓⵙⵙⴰⵏ', en: 'Last 7 Days', es: 'Últimos 7 días' })}
             </button>
           </div>
 
           <span className="text-[11px] font-mono font-bold text-emerald-300 tabular-nums">
-            المجموع: {chartStats.totalCompleted}
+            {pickLang(lang, { ar: 'المجموع:', fr: 'Total :', amz: 'ⴰⵎⴰⵜⴰⵢ:', en: 'Total:', es: 'Total:' })} {chartStats.totalCompleted}
           </span>
         </div>
       </div>
@@ -191,7 +208,7 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
                 style={{ bottom: `${avgPctFromBottom}%` }}
               >
                 <span className=" -translate-y-4 px-1.5 py-0.5 rounded bg-zinc-950/90 border border-amber-500/35 text-[9px] font-mono text-amber-300 tabular-nums">
-                  المتوسط: {chartStats.avgCount.toFixed(1)}
+                  {pickLang(lang, { ar: 'المتوسط:', fr: 'Moy. :', amz: 'ⴰⵏⴰⵎⵎⴰⵙ:', en: 'Avg:', es: 'Prom.:' })} {chartStats.avgCount.toFixed(1)}
                 </span>
               </div>
             )}
@@ -208,12 +225,13 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
                     ? Math.round((count / chartStats.totalCompleted) * 100)
                     : 0;
                 const color = barber.themeColor || '#D97706';
+                const barberLabel = barber.name[lang] || barber.name.ar || barber.name.fr;
 
                 return (
                   <div
                     key={barber.id}
                     className="h-full flex flex-col justify-end items-center group"
-                    title={`${barber.name.ar}: ${count} مواعيد مكتملة (${sharePct}%)`}
+                    title={`${barberLabel}: ${count} (${sharePct}%)`}
                   >
                     {/* Count Label Above Bar */}
                     <div className="mb-1 text-[11px] font-mono font-black text-white tabular-nums transition-transform group-hover:scale-110 flex-shrink-0">
@@ -248,6 +266,7 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
                   ? Math.round((count / chartStats.totalCompleted) * 100)
                   : 0;
               const color = barber.themeColor || '#D97706';
+              const barberFirst = (barber.name[lang] || barber.name.ar || barber.name.fr).split(' ')[0];
 
               return (
                 <div key={barber.id} className="min-w-0 space-y-0.5">
@@ -256,10 +275,11 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
                       className="w-2 h-2 rounded-full flex-shrink-0"
                       style={{ backgroundColor: color }}
                     />
-                    <span className="truncate">{barber.name.ar.split(' ')[0]}</span>
+                    <span className="truncate">{barberFirst}</span>
                   </div>
                   <div className="text-[10px] font-mono text-zinc-400 tabular-nums">
-                    {sharePct}% · {count} موعد
+                    {sharePct}% · {count}{' '}
+                    {pickLang(lang, { ar: 'موعد', fr: 'RDV', amz: 'ⴰⵎⵓⵄⵉⴷ', en: 'visits', es: 'citas' })}
                   </div>
                 </div>
               );

@@ -13,9 +13,37 @@ export interface ClientQrTarget {
 }
 
 export interface ParsedQrScanResult {
-  kind: 'client' | 'ticket' | 'phone';
+  kind: 'client' | 'ticket' | 'phone' | 'checkin';
   query: string;
   clientId?: string;
+  checkInToken?: string;
+}
+
+/**
+ * Generates a short unique check-in verification token for an appointment ticket QR.
+ */
+export function generateCheckInToken(): string {
+  const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const timePart = Date.now().toString(36).slice(-3).toUpperCase();
+  return `CHK-${rand}${timePart}`.slice(0, 16);
+}
+
+/**
+ * Builds the unique check-in QR code payload for a confirmed booking so staff
+ * can scan it on arrival at Salon Boumlik.
+ */
+export function buildBookingCheckInQrPayload(booking: {
+  ticketNumber: string;
+  checkInToken?: string;
+}): string {
+  const origin =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://salonboumlik.com';
+  const tokenPart = booking.checkInToken
+    ? `&k=${encodeURIComponent(booking.checkInToken)}`
+    : '';
+  return `${origin}/#checkin=${encodeURIComponent(booking.ticketNumber)}${tokenPart}`;
 }
 
 /**
@@ -49,14 +77,42 @@ export async function generateClientProfileQrDataUrl(
 }
 
 /**
- * Parses scanned QR text from either a Client Profile QR, an Appointment Ticket QR,
- * or a raw ticket/phone code, normalizing it for direct lookup in TrackBookingModal or Admin filters.
+ * Parses scanned QR text from a Booking Check-In QR, Client Profile QR, Appointment Ticket QR,
+ * or a raw ticket/phone code.
  */
 export function parseScannedQrResult(rawDecoded: string): ParsedQrScanResult {
   const text = rawDecoded.trim();
 
   if (!text) {
     return { kind: 'ticket', query: '' };
+  }
+
+  // Unique Booking Arrival Check-In QR (#checkin=#SB-1234&k=CHK-...)
+  if (text.toLowerCase().includes('checkin=')) {
+    const afterCheckin = text.split(/checkin=/i)[1] || '';
+    const rawTicketVal = afterCheckin.split('&')[0] || '';
+    let decodedTicket = rawTicketVal.trim();
+    try {
+      decodedTicket = decodeURIComponent(rawTicketVal).trim();
+    } catch {
+      decodedTicket = rawTicketVal.trim();
+    }
+
+    let checkInToken: string | undefined;
+    const tokenMatch = text.match(/[?&#]k=([^&#]+)/i);
+    if (tokenMatch?.[1]) {
+      try {
+        checkInToken = decodeURIComponent(tokenMatch[1]).trim();
+      } catch {
+        checkInToken = tokenMatch[1].trim();
+      }
+    }
+
+    return {
+      kind: 'checkin',
+      query: decodedTicket,
+      checkInToken,
+    };
   }
 
   // Legacy/explicit prefix check (e.g. SBOUMLIK_CLIENT:c_612345678|0612345678)

@@ -3,6 +3,7 @@ import { BellRing, CheckCircle2, ShieldCheck, X } from 'lucide-react';
 import { Language } from '../types';
 import { registerClientPushSubscription } from '../utils/webPushClient';
 import { showToast } from '../utils/notifications';
+import { pickLang } from '../utils/i18n';
 
 interface NotificationConsentModalProps {
   isOpen: boolean;
@@ -27,7 +28,85 @@ export const NotificationConsentModal: React.FC<NotificationConsentModalProps> =
 
   if (!isOpen) return null;
 
-  const isAr = lang === 'ar';
+  const ui = {
+    ticketBadge: pickLang(lang, {
+      ar: `تم إصدار تذكرتك ${ticketNumber} بنجاح`,
+      fr: `Ticket ${ticketNumber} généré`,
+      amz: `ⴰⵜⵉⴽⵉ ${ticketNumber} ⵉⵜⵜⵓⵙⴽⵔ`,
+      en: `Ticket ${ticketNumber} Generated`,
+      es: `Ticket ${ticketNumber} generado`,
+    }),
+    title: pickLang(lang, {
+      ar: 'تفعيل إشعارات الموعد المباشرة',
+      fr: 'Restez informé en temps réel',
+      amz: 'ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵓⵙⵉⵀⵍ ⵙ ⵜⵉⵣⵣⵍⴰ',
+      en: 'Stay Updated on Your Appointment',
+      es: 'Mantente informado sobre tu cita',
+    }),
+    description: pickLang(lang, {
+      ar: 'للبقاء على اطلاع دائم بموعدك، التغييرات، وتأكيد الحضور، يرجى السماح بتلقي الإشعارات.',
+      fr: 'Autorisez les notifications Salon Boumlik pour recevoir les confirmations, changements d’horaire et mises à jour de fidélité.',
+      amz: 'ⵙⵙⵉⵔⴳ ⵉ ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ ⴰⴼⴰⴷ ⴰⴷ ⵜⴰⵎⵥⴷ ⵉⵙⵉⵙⴼⵉⵡⵏ ⵏ ⵓⵙⵉⵀⵍ ⴷ ⵜⵏⵇⵇⵉⴹⵉⵏ.',
+      en: 'Allow trusted Salon Boumlik alerts to receive instant updates on confirmation, schedule changes, and loyalty points.',
+      es: 'Permite las notificaciones de Salon Boumlik para recibir avisos de confirmación, cambios de horario y puntos de fidelidad.',
+    }),
+    bullet1: pickLang(lang, {
+      ar: 'تأكيد الحضور والقبول من طرف الحلاق والإدارة',
+      fr: 'Confirmation immédiate de présence et validation',
+      amz: 'ⴰⵙⵙⴷⵓ ⵓⵙⵔⵉⴷ ⵙⴳ ⵓⵎⴽⵔⴰⴹ ⴷ ⵜⵎⵙⵙⵓⴳⵓⵔⵜ',
+      en: 'Instant barber and admin arrival confirmation',
+      es: 'Confirmación inmediata de asistencia',
+    }),
+    bullet2: pickLang(lang, {
+      ar: 'تنبيهات تعديل التوقيت وتحديث نقاط الولاء حتى عند إغلاق المتصفح',
+      fr: 'Mises à jour d’horaire et points de fidélité même navigateur fermé',
+      amz: 'ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵜⵙⵔⴰⴳⵜ ⴷ ⵜⵏⵇⵇⵉⴹⵉⵏ ⵏ ⵜⵖⵓⵏⵉ',
+      en: 'Schedule changes and loyalty updates even when browser is closed',
+      es: 'Cambios de horario y puntos de fidelidad incluso con el navegador cerrado',
+    }),
+    laterBtn: pickLang(lang, {
+      ar: 'لاحقاً',
+      fr: 'Plus tard',
+      amz: 'ⴰⵔ ⴷⴼⴼⵉⵔ',
+      en: 'Later',
+      es: 'Más tarde',
+    }),
+    allowBtn: pickLang(lang, {
+      ar: 'موافق',
+      fr: 'Autoriser',
+      amz: 'ⵙⵙⵉⵔⴳ',
+      en: 'Allow',
+      es: 'Permitir',
+    }),
+    toastSuccessTitle: pickLang(lang, {
+      ar: 'تم تفعيل الإشعارات الموثوقة بنجاح ✓',
+      fr: 'Notifications activées ✓',
+      amz: 'ⵉⵜⵜⵓⵙⵔⴳ ⵓⵣⵏ ⵏ ⵉⵏⵖⵎⵉⵙⵏ ✓',
+      en: 'Notifications Enabled ✓',
+      es: 'Notificaciones activadas ✓',
+    }),
+    toastSuccessBody: pickLang(lang, {
+      ar: `سيصلك إشعار فوري عند تأكيد الموعد (${ticketNumber}) أو تحديث التوقيت أو نقاط الولاء.`,
+      fr: `Vous recevrez les alertes en temps réel pour le ticket ${ticketNumber}.`,
+      amz: `ⴰⴷ ⵜⴰⵎⵥⴷ ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵓⵜⵉⴽⵉ ${ticketNumber}.`,
+      en: `You will receive instant updates for ticket ${ticketNumber}.`,
+      es: `Recibirás avisos en tiempo real para tu ticket ${ticketNumber}.`,
+    }),
+    toastBlockedTitle: pickLang(lang, {
+      ar: 'تم حظر الإشعارات في المتصفح',
+      fr: 'Notifications bloquées',
+      amz: 'ⵜⵜⵓⴳⴷⴰⵍⵏ ⵉⵏⵖⵎⵉⵙⵏ',
+      en: 'Notifications Blocked',
+      es: 'Notificaciones bloqueadas',
+    }),
+    toastBlockedBody: pickLang(lang, {
+      ar: 'يمكنك تفعيل الإشعارات لاحقاً من إعدادات المتصفح لمتابعة تذكرتك.',
+      fr: 'Vous pouvez autoriser les notifications depuis les paramètres du navigateur.',
+      amz: 'ⵜⵥⴹⴰⵕⴷ ⴰⴷ ⵜⵙⵙⵉⵔⴳⴷ ⵉⵏⵖⵎⵉⵙⵏ ⵙⴳ ⵉⵙⵖⴰⵍⵏ ⵏ ⵓⵎⵙⵙⵓⴳⵓⵔ.',
+      en: 'You can enable notifications later from your browser settings.',
+      es: 'Puedes habilitar las notificaciones más adelante en la configuración del navegador.',
+    }),
+  };
 
   const handleAllowClick = async () => {
     if (isProcessing) return;
@@ -40,23 +119,10 @@ export const NotificationConsentModal: React.FC<NotificationConsentModalProps> =
       });
 
       if (result.granted) {
-        // Show in-app UI confirmation only (no redundant OS popup on grant to avoid browser spam flags)
-        showToast(
-          isAr ? 'تم تفعيل الإشعارات الموثوقة بنجاح ✓' : 'Notifications activées ✓',
-          isAr
-            ? `سيصلك إشعار فوري عند تأكيد الموعد (${ticketNumber}) أو تحديث التوقيت أو نقاط الولاء.`
-            : `Vous recevrez les alertes en temps réel pour le ticket ${ticketNumber}.`,
-          'success'
-        );
+        showToast(ui.toastSuccessTitle, ui.toastSuccessBody, 'success');
         onSubscribed?.(true);
       } else {
-        showToast(
-          isAr ? 'تم حظر الإشعارات في المتصفح' : 'Notifications bloquées',
-          isAr
-            ? 'يمكنك تفعيل الإشعارات لاحقاً من إعدادات المتصفح لمتابعة تذكرتك.'
-            : 'Vous pouvez autoriser les notifications depuis les paramètres du navigateur.',
-          'warning'
-        );
+        showToast(ui.toastBlockedTitle, ui.toastBlockedBody, 'warning');
         onSubscribed?.(false);
       }
       onClose();
@@ -96,61 +162,29 @@ export const NotificationConsentModal: React.FC<NotificationConsentModalProps> =
           <div className="space-y-2">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>
-                {isAr
-                  ? `تم إصدار تذكرتك ${ticketNumber} بنجاح`
-                  : lang === 'en'
-                  ? `Ticket ${ticketNumber} Generated`
-                  : lang === 'es'
-                  ? `Ticket ${ticketNumber} generado`
-                  : `Ticket ${ticketNumber} généré`}
-              </span>
+              <span>{ui.ticketBadge}</span>
             </div>
 
             <h3
               id="notif-consent-title"
               className="text-base sm:text-lg font-black text-white leading-snug pt-1"
             >
-              {isAr
-                ? 'تفعيل إشعارات الموعد المباشرة'
-                : lang === 'en'
-                ? 'Stay Updated on Your Appointment'
-                : lang === 'es'
-                ? 'Mantente informado sobre tu cita'
-                : 'Restez informé en temps réel'}
+              {ui.title}
             </h3>
 
             <p className="text-xs sm:text-sm text-zinc-200 leading-relaxed font-medium">
-              للبقاء على اطلاع دائم بموعدك، التغييرات، وتأكيد الحضور، يرجى السماح بتلقي الإشعارات.
+              {ui.description}
             </p>
-
-            {!isAr && (
-              <p className="text-[11px] text-zinc-400 leading-relaxed">
-                {lang === 'en'
-                  ? 'Allow trusted Salon Boumlik alerts to receive instant updates on confirmation, schedule changes, and loyalty points.'
-                  : lang === 'es'
-                  ? 'Permite las notificaciones de Salon Boumlik para recibir avisos de confirmación, cambios de horario y puntos de fidelidad.'
-                  : 'Autorisez les notifications Salon Boumlik pour recevoir les confirmations, changements d’horaire et mises à jour de fidélité.'}
-              </p>
-            )}
           </div>
 
           <div className="p-3 rounded-2xl bg-zinc-900/70 border border-zinc-800 text-[11px] text-zinc-300 space-y-1.5 text-start">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-              <span>
-                {isAr
-                  ? 'تأكيد الحضور والقبول من طرف الحلاق والإدارة'
-                  : 'Confirmation immédiate de présence et validation'}
-              </span>
+              <span>{ui.bullet1}</span>
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-              <span>
-                {isAr
-                  ? 'تنبيهات تعديل التوقيت وتحديث نقاط الولاء حتى عند إغلاق المتصفح'
-                  : 'Mises à jour d’horaire et points de fidélité même navigateur fermé'}
-              </span>
+              <span>{ui.bullet2}</span>
             </div>
           </div>
 
@@ -161,7 +195,7 @@ export const NotificationConsentModal: React.FC<NotificationConsentModalProps> =
               disabled={isProcessing}
               className="py-3 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 font-bold text-xs sm:text-sm transition-colors cursor-pointer disabled:opacity-50"
             >
-              {isAr ? 'لاحقاً (Later)' : 'لاحقاً • Later'}
+              {ui.laterBtn}
             </button>
 
             <button
@@ -171,13 +205,7 @@ export const NotificationConsentModal: React.FC<NotificationConsentModalProps> =
               className="py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-black text-xs sm:text-sm shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-60"
             >
               <BellRing className="w-4 h-4 text-black" />
-              <span>
-                {isProcessing
-                  ? '...'
-                  : isAr
-                  ? 'موافق (Allow)'
-                  : 'موافق • Allow'}
-              </span>
+              <span>{isProcessing ? '...' : ui.allowBtn}</span>
             </button>
           </div>
         </div>

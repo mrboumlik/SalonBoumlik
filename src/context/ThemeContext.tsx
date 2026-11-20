@@ -67,7 +67,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {
       // ignore
     }
-    return 'luxury_gold';
+    return 'minimal_light';
   });
 
   const isDark = theme !== 'minimal_light';
@@ -100,7 +100,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const themeColorMeta = document.querySelector('meta[name="theme-color"]');
     if (themeColorMeta) {
-      themeColorMeta.setAttribute('content', isDark ? '#08090C' : '#F8FAFC');
+      themeColorMeta.setAttribute('content', isDark ? '#0B0C10' : '#FAF9F6');
     }
   }, [theme, isDark]);
 

@@ -1,234 +1,427 @@
 import React from 'react';
-import { 
-  MapPin, 
-  Phone, 
-  Mail, 
-  ArrowUp, 
-  Instagram, 
-  Facebook, 
-  MessageCircle, 
-  ShieldCheck,
+import {
+  MapPin,
+  Phone,
+  Mail,
+  ArrowUp,
+  Instagram,
+  Facebook,
+  MessageCircle,
   Lock,
   Ticket,
   ExternalLink,
-  Star
+  Star,
+  Scissors,
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
 import { useSalonProfileSettings } from '../utils/salonSettingsStore';
+import { pickLang } from '../utils/i18n';
+
+import type { HomepageSectionKey } from './DrawerMenu';
 
 interface FooterProps {
   onOpenBooking: () => void;
   onOpenTrackBooking?: () => void;
   onOpenAdmin?: () => void;
+  onNavigateToSection?: (sectionId: HomepageSectionKey) => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ 
+export const Footer: React.FC<FooterProps> = ({
   onOpenBooking,
   onOpenTrackBooking,
-  onOpenAdmin 
+  onOpenAdmin,
+  onNavigateToSection,
 }) => {
-  const { lang, t } = useLanguage();
+  const { lang } = useLanguage();
   const salonSettings = useSalonProfileSettings();
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleSectionLink = (e: React.MouseEvent, sectionId: HomepageSectionKey) => {
+    if (onNavigateToSection) {
+      e.preventDefault();
+      onNavigateToSection(sectionId);
+    }
+  };
+
+  const labels = {
+    about: pickLang(lang, {
+      ar: 'صالون حلاقة وعناية متكاملة مخصص للرجال في تارودانت.',
+      fr: 'Salon de coiffure et barbier exclusivement masculin à Taroudant.',
+      amz: 'ⴰⵙⴰⵍⵓⵏ ⵏ ⵜⴽⵔⴹⴰ ⵉⵥⵍⵉ ⵉ ⵉⵔⴳⴰⵣⵏ ⴳ ⵜⴰⵔⵓⴷⴰⵏⵜ.',
+      en: 'Men-only barbershop & grooming lounge in Taroudant.',
+      es: 'Barbería y cuidado masculino en Taroudant.',
+    }),
+    quickActionsTitle: pickLang(lang, {
+      ar: 'روابط سريعة',
+      fr: 'Navigation',
+      amz: 'ⵉⵣⴷⴰⵢⵏ',
+      en: 'Quick Links',
+      es: 'Enlaces',
+    }),
+    bookOnline: pickLang(lang, {
+      ar: 'حجز موعد عبر الموقع',
+      fr: 'Réserver en ligne',
+      amz: 'ⴰⵙⵔⵓⵙ ⴳ ⵓⵙⵉⵜ',
+      en: 'Book Appointment',
+      es: 'Reservar cita',
+    }),
+    servicesLink: pickLang(lang, {
+      ar: 'الخدمات والأثمنة',
+      fr: 'Services & Tarifs',
+      amz: 'ⵜⵉⵏⴰⴼⵓⵜⵉⵏ',
+      en: 'Services & Pricing',
+      es: 'Servicios y tarifas',
+    }),
+    reviewsLink: pickLang(lang, {
+      ar: 'تقييمات Google 5.0',
+      fr: 'Avis Google 5.0',
+      amz: 'ⵉⵙⵓⵜⴰⴳ Google 5.0',
+      en: 'Google Reviews 5.0',
+      es: 'Reseñas Google 5.0',
+    }),
+    faqLink: pickLang(lang, {
+      ar: 'الأسئلة الشائعة',
+      fr: 'FAQ & Règles',
+      amz: 'ⵉⵙⵇⵙⵉⵜⵏ',
+      en: 'FAQ & Policies',
+      es: 'Preguntas frecuentes',
+    }),
+    contactLink: pickLang(lang, {
+      ar: 'التواصل والباركود',
+      fr: 'Contact & QR',
+      amz: 'ⴰⵎⵢⴰⵡⴰⴹ',
+      en: 'Contact & QR',
+      es: 'Contacto y QR',
+    }),
+    teamLink: pickLang(lang, {
+      ar: 'فريق الحلاقين',
+      fr: 'Équipe de Barbiers',
+      amz: 'ⵜⴰⵔⴰⴱⴱⵓⵜ',
+      en: 'Barbers Team',
+      es: 'Equipo',
+    }),
+    loyaltyLink: pickLang(lang, {
+      ar: 'برنامج الولاء',
+      fr: 'Programme Fidélité',
+      amz: 'ⵜⴰⵖⵓⵏⵉ',
+      en: 'Loyalty Program',
+      es: 'Fidelidad',
+    }),
+    servicesHeading: pickLang(lang, {
+      ar: 'خدمات الزبناء',
+      fr: 'Services Client',
+      amz: 'ⵜⵉⵏⴰⴼⵓⵜⵉⵏ',
+      en: 'Client Services',
+      es: 'Servicios Cliente',
+    }),
+    trackBtn: pickLang(lang, {
+      ar: 'تتبع التذكرة',
+      fr: 'Suivre mon rendez-vous',
+      amz: 'ⴹⴼⵕ ⵜⴰⵡⵔⵉⵇⵜ',
+      en: 'Track Ticket',
+      es: 'Seguir reserva',
+    }),
+    googleReviewBtn: pickLang(lang, {
+      ar: 'تقييم 5★ على Google',
+      fr: 'Avis 5★ sur Google',
+      amz: 'ⵜⴰⵏⵏⴰⵢⵜ 5★ Google',
+      en: 'Leave 5★ Google Review',
+      es: 'Reseña 5★ Google',
+    }),
+    directionsBtn: pickLang(lang, {
+      ar: 'الاتجاهات (Maps)',
+      fr: 'Itinéraire Maps',
+      amz: 'ⴰⵖⴰⵔⴰⵙ Maps',
+      en: 'Maps Directions',
+      es: 'Cómo llegar',
+    }),
+    addressHeading: pickLang(lang, {
+      ar: 'العنوان والتواصل',
+      fr: 'Adresse & Contact',
+      amz: 'ⴰⴷⵖⴰⵔ ⴷ ⵓⵎⵢⴰⵡⴰⴹ',
+      en: 'Location & Contact',
+      es: 'Ubicación y Contacto',
+    }),
+    rights: pickLang(lang, {
+      ar: 'صالون بومليك تارودانت — جميع الحقوق محفوظة',
+      fr: 'Salon Boumlik Taroudant — Tous droits réservés',
+      amz: 'ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ ⵜⴰⵔⵓⴷⴰⵏⵜ — ⴰⴽⴽⵯ ⵉⵣⵔⴼⴰⵏ ⵜⵜⵓⵃⴹⴰⵏ',
+      en: 'Salon Boumlik Taroudant — All rights reserved',
+      es: 'Salon Boumlik Taroudant — Todos los derechos reservados',
+    }),
+    staffAccess: pickLang(lang, {
+      ar: 'دخول الإدارة',
+      fr: 'Accès Équipe',
+      amz: 'ⴰⴽⵛⵓⵎ ⵏ ⵜⵔⴰⴱⴱⵓⵜ',
+      en: 'Staff Access',
+      es: 'Acceso Equipo',
+    }),
+    topAria: pickLang(lang, {
+      ar: 'العودة إلى الأعلى',
+      fr: 'Haut de page',
+      amz: 'ⴰⴼⵍⵍⴰ ⵏ ⵜⵙⵏⴰ',
+      en: 'Back to top',
+      es: 'Subir',
+    }),
+  };
+
   return (
-    <footer className="bg-slate-100 dark:bg-black border-t border-slate-200 dark:border-zinc-900 text-slate-600 dark:text-zinc-400 text-xs transition-colors">
-      
-      {/* Barber Pole Top Line */}
-      <div className="h-1 w-full bg-gradient-to-r from-red-600 via-white to-blue-600 opacity-90" />
-
-      {/* Main Footer Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          
-          {/* Brand Info */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 p-0.5 flex items-center justify-center shadow-md">
-                <img 
-                  src={SALON_INFO.media.logoClean} 
-                  alt="Salon Boumlik Logo" 
-                  className="w-full h-full object-contain filter drop-shadow"
-                />
-              </div>
-              <div>
-                <span className="font-display text-base font-black text-slate-900 dark:text-white">
-                  SALON <span className="text-red-600 dark:text-red-500">BOU</span><span className="text-blue-600 dark:text-blue-500">MLIK</span>
-                </span>
-                <div className="text-[11px] italic text-slate-700 dark:text-zinc-300">"{SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}"</div>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
-              {lang === 'ar'
-                ? 'صالون حلاقة وعناية متكاملة مخصص للرجال في تارودانت. قصات عصرية، تحديد اللحية بالموس، وعلاجات البروتين في بيئة احترافية.'
-                : 'Salon de coiffure et barbier d’exception réservé aux hommes à Taroudant. Coiffure contemporaine, rituels barbe et soins du visage.'}
-            </p>
-
-            <div className="flex items-center gap-2 pt-1">
-              <a
-                href={SALON_INFO.social.instagram}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-900 hover:bg-slate-200 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:text-pink-600 dark:hover:text-pink-400 border border-slate-300 dark:border-zinc-800 flex items-center justify-center transition-colors"
-                title="Instagram @SalonBoumlik"
-              >
-                <Instagram className="w-4 h-4" />
-              </a>
-
-              <a
-                href={SALON_INFO.social.facebook}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-900 hover:bg-slate-200 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 border border-slate-300 dark:border-zinc-800 flex items-center justify-center transition-colors"
-                title="Facebook Salon Boumlik"
-              >
-                <Facebook className="w-4 h-4" />
-              </a>
-
-              <a
-                href={`https://wa.me/${SALON_INFO.whatsappNumber}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-900 hover:bg-slate-200 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 border border-slate-300 dark:border-zinc-800 flex items-center justify-center transition-colors"
-                title="WhatsApp 0635392503"
-              >
-                <MessageCircle className="w-4 h-4" />
-              </a>
-            </div>
+    <footer className="relative z-10 bg-stone-100/80 dark:bg-[#0B0C10] border-t border-stone-200 dark:border-zinc-800/80 text-stone-600 dark:text-zinc-400 text-xs transition-colors">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-8 pb-24 sm:py-9">
+        {/* 1. Centered Brand Identity Header */}
+        <div className="flex flex-col items-center text-center pb-7 mb-7 border-b border-stone-200/80 dark:border-zinc-800/80 space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700/80 p-1 flex items-center justify-center shadow-2xs">
+            <img
+              src={SALON_INFO.media.logoClean}
+              alt="Salon Boumlik Logo"
+              className="w-full h-full object-contain"
+            />
           </div>
 
+          <div className="space-y-1 max-w-md">
+            <span className="font-display text-lg sm:text-xl font-black tracking-wide text-slate-900 dark:text-white block">
+              SALON <span className="text-amber-700 dark:text-amber-400">BOUMLIK</span>
+            </span>
+            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300/90">
+              {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
+            </p>
+            <p className="text-xs text-stone-500 dark:text-zinc-400 leading-relaxed text-balance">
+              {labels.about}
+            </p>
+          </div>
+
+          {/* Centered Social Media Icon Row */}
+          <div className="flex items-center justify-center gap-3 pt-1">
+            <a
+              href={SALON_INFO.social.instagram}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200/80 dark:hover:bg-zinc-800 text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white border border-stone-200 dark:border-zinc-800 flex items-center justify-center transition-all duration-200 shadow-2xs"
+              title="Instagram @SalonBoumlik"
+              aria-label="Instagram"
+            >
+              <Instagram className="w-4 h-4" />
+            </a>
+
+            <a
+              href={SALON_INFO.social.facebook}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200/80 dark:hover:bg-zinc-800 text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white border border-stone-200 dark:border-zinc-800 flex items-center justify-center transition-all duration-200 shadow-2xs"
+              title="Facebook Salon Boumlik"
+              aria-label="Facebook"
+            >
+              <Facebook className="w-4 h-4" />
+            </a>
+
+            <a
+              href={`https://wa.me/${SALON_INFO.whatsappNumber}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200/80 dark:hover:bg-zinc-800 text-stone-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 border border-stone-200 dark:border-zinc-800 flex items-center justify-center transition-all duration-200 shadow-2xs"
+              title="WhatsApp 0635392503"
+              aria-label="WhatsApp"
+            >
+              <MessageCircle className="w-4 h-4" />
+            </a>
+          </div>
+        </div>
+
+        {/* 2. Compact 2-Column Mobile / 3-Column Desktop Grid (Links + Contact Card) */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8 items-start">
           {/* Quick Links */}
           <div className="space-y-3">
-            <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider">
-              {lang === 'ar' ? 'روابط سريعة' : 'Navigation Rapide'}
+            <h4 className="font-black text-slate-900 dark:text-white text-xs tracking-wide">
+              {labels.quickActionsTitle}
             </h4>
-            <ul className="space-y-2 text-xs text-slate-600 dark:text-zinc-400">
+            <ul className="space-y-2.5 text-xs text-stone-600 dark:text-zinc-400">
               <li>
-                <a href="#services" className="hover:text-slate-950 dark:hover:text-white transition-colors">
-                  {lang === 'ar' ? 'قائمة الخدمات والأسعار' : 'Prestations & Tarifs'}
+                <button
+                  type="button"
+                  onClick={onOpenBooking}
+                  className="hover:text-amber-700 dark:hover:text-amber-400 font-bold text-slate-800 dark:text-zinc-200 transition-colors inline-flex items-center gap-1.5 cursor-pointer py-0.5 text-start"
+                >
+                  <Scissors className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400 flex-shrink-0" />
+                  <span>{labels.bookOnline}</span>
+                </button>
+              </li>
+              <li>
+                <a
+                  href="#section-services"
+                  onClick={(e) => handleSectionLink(e, 'services')}
+                  className="hover:text-slate-950 dark:hover:text-white transition-colors inline-block py-0.5"
+                >
+                  {labels.servicesLink}
                 </a>
               </li>
               <li>
-                <a href="#booking" className="hover:text-slate-950 dark:hover:text-white transition-colors">
-                  {lang === 'ar' ? 'حجز موعد عبر الموقع' : 'Réservation en Ligne'}
+                <a
+                  href="#section-team"
+                  onClick={(e) => handleSectionLink(e, 'team')}
+                  className="hover:text-slate-950 dark:hover:text-white transition-colors inline-block py-0.5"
+                >
+                  {labels.teamLink}
                 </a>
               </li>
               <li>
-                <a href="#reviews" className="hover:text-slate-950 dark:hover:text-white transition-colors">
-                  {lang === 'ar' ? 'تقييمات Google Maps 5.0' : 'Avis Google 5.0'}
+                <a
+                  href="#section-faq"
+                  onClick={(e) => handleSectionLink(e, 'faq')}
+                  className="hover:text-slate-950 dark:hover:text-white transition-colors inline-block py-0.5"
+                >
+                  {labels.faqLink}
                 </a>
               </li>
               <li>
-                <a href="#contact" className="hover:text-slate-950 dark:hover:text-white transition-colors">
-                  {lang === 'ar' ? 'الموقع الدقيق والاتصال' : 'Contact & Itinéraire'}
+                <a
+                  href="#section-contact"
+                  onClick={(e) => handleSectionLink(e, 'contact')}
+                  className="hover:text-slate-950 dark:hover:text-white transition-colors inline-block py-0.5"
+                >
+                  {labels.contactLink}
                 </a>
               </li>
             </ul>
           </div>
 
-          {/* Client Tools */}
+          {/* Client Services */}
           <div className="space-y-3">
-            <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider">
-              {lang === 'ar' ? 'خدمات الزبناء' : 'Services & Suivi'}
+            <h4 className="font-black text-slate-900 dark:text-white text-xs tracking-wide">
+              {labels.servicesHeading}
             </h4>
-            <div className="space-y-2">
+            <ul className="space-y-2.5 text-xs text-stone-600 dark:text-zinc-400">
               {onOpenTrackBooking && (
-                <button
-                  onClick={onOpenTrackBooking}
-                  className="w-full text-left rtl:text-right p-2.5 rounded-xl bg-white dark:bg-zinc-900 hover:bg-slate-200 dark:hover:bg-zinc-800 border border-slate-300 dark:border-zinc-800 text-slate-900 dark:text-zinc-200 text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer"
-                >
-                  <Ticket className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  <span>{lang === 'ar' ? 'تتبع حالة التذكرة مباشرة' : 'Suivre ma Réservation'}</span>
-                </button>
+                <li>
+                  <button
+                    type="button"
+                    onClick={onOpenTrackBooking}
+                    className="hover:text-amber-700 dark:hover:text-amber-400 font-bold text-slate-800 dark:text-zinc-200 transition-colors inline-flex items-center gap-1.5 cursor-pointer py-0.5 text-start"
+                  >
+                    <Ticket className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400 flex-shrink-0" />
+                    <span>{labels.trackBtn}</span>
+                  </button>
+                </li>
               )}
 
-              <a
-                href={salonSettings.googleReviewUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-1.5 p-2.5 rounded-xl bg-white dark:bg-zinc-900 hover:bg-slate-200 dark:hover:bg-zinc-800 border border-slate-300 dark:border-zinc-800 text-amber-800 dark:text-amber-300 text-xs font-semibold text-center transition-colors"
-              >
-                <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400" />
-                <span>{lang === 'ar' ? 'ملف Google Business & تقييم 5★' : 'Google Business • Laisser un Avis 5★'}</span>
-              </a>
+              <li>
+                <a
+                  href="#section-loyalty"
+                  onClick={(e) => handleSectionLink(e, 'loyalty')}
+                  className="hover:text-slate-950 dark:hover:text-white transition-colors inline-block py-0.5"
+                >
+                  {labels.loyaltyLink}
+                </a>
+              </li>
 
+              <li>
+                <a
+                  href="#section-reviews"
+                  onClick={(e) => handleSectionLink(e, 'reviews')}
+                  className="hover:text-slate-950 dark:hover:text-white transition-colors inline-block py-0.5"
+                >
+                  {labels.reviewsLink}
+                </a>
+              </li>
+
+              <li>
+                <a
+                  href={salonSettings.googleReviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-amber-700 dark:hover:text-amber-400 transition-colors inline-flex items-center gap-1.5 py-0.5"
+                >
+                  <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500 flex-shrink-0" />
+                  <span>{labels.googleReviewBtn}</span>
+                </a>
+              </li>
+
+              <li>
+                <a
+                  href={salonSettings.googleMapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-slate-950 dark:hover:text-white transition-colors inline-flex items-center gap-1.5 py-0.5"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400 flex-shrink-0" />
+                  <span>{labels.directionsBtn}</span>
+                  <ExternalLink className="w-3 h-3 opacity-70 flex-shrink-0" />
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          {/* 3. Clean Contact & Location Card */}
+          <div className="col-span-2 md:col-span-1 rounded-2xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-800 p-4 shadow-2xs space-y-3">
+            <h4 className="font-black text-slate-900 dark:text-white text-xs tracking-wide">
+              {labels.addressHeading}
+            </h4>
+            <div className="space-y-2.5 text-xs text-stone-600 dark:text-zinc-400">
               <a
                 href={salonSettings.googleMapsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-center gap-1.5 p-2.5 rounded-xl bg-blue-50 dark:bg-blue-600/15 hover:bg-blue-100 dark:hover:bg-blue-600/25 border border-blue-200 dark:border-blue-500/30 text-blue-700 dark:text-blue-300 text-xs font-bold text-center transition-colors"
+                className="flex items-start gap-2.5 hover:text-amber-700 dark:hover:text-amber-400 transition-colors leading-relaxed"
               >
-                <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                <span>{lang === 'ar' ? 'فتح الاتجاهات على Google Maps' : 'Itinéraire Google Maps'}</span>
-                <ExternalLink className="w-3 h-3" />
+                <MapPin className="w-4 h-4 text-amber-700 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                <span>{SALON_INFO.shortAddress[lang] || SALON_INFO.shortAddress.fr}</span>
+              </a>
+
+              <a
+                href={`tel:${SALON_INFO.phone}`}
+                className="flex items-center gap-2.5 text-slate-800 dark:text-zinc-200 hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
+              >
+                <Phone className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                <span dir="ltr" className="font-mono font-bold">
+                  {SALON_INFO.displayPhone}
+                </span>
+              </a>
+
+              <a
+                href={`mailto:${SALON_INFO.email}`}
+                className="flex items-center gap-2.5 text-slate-700 dark:text-zinc-300 hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
+              >
+                <Mail className="w-4 h-4 text-stone-500 dark:text-zinc-400 flex-shrink-0" />
+                <span dir="ltr" className="font-mono truncate">
+                  {SALON_INFO.email}
+                </span>
               </a>
             </div>
           </div>
-
-          {/* Direct Address & Contact */}
-          <div className="space-y-3">
-            <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider">
-              {lang === 'ar' ? 'العنوان بتارودانت' : 'Adresse & Contact'}
-            </h4>
-            <div className="space-y-2 text-xs text-slate-600 dark:text-zinc-400">
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-red-600 dark:text-red-500 flex-shrink-0 mt-0.5" />
-                <a 
-                  href={salonSettings.googleMapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                >
-                  {SALON_INFO.shortAddress[lang] || SALON_INFO.shortAddress.fr}
-                </a>
-              </div>
-              <div className="flex items-center gap-2">
-                <Phone className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-                <a href={`tel:${SALON_INFO.phone}`} className="font-mono text-slate-900 dark:text-zinc-200 hover:underline">
-                  {SALON_INFO.displayPhone}
-                </a>
-              </div>
-              <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-                <span className="font-mono text-slate-700 dark:text-zinc-300">{SALON_INFO.email}</span>
-              </div>
-            </div>
-          </div>
-
         </div>
 
-        {/* Bottom Bar */}
-        <div className="mt-10 pt-6 border-t border-slate-200 dark:border-zinc-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-slate-600 dark:text-zinc-400">
-          <div>
-            © {new Date().getFullYear()} Salon Boumlik Taroudant. Tous droits réservés.
-          </div>
+        {/* 4. Sleek Bottom Copyright & Admin Bar */}
+        <div className="mt-7 pt-5 border-t border-stone-200/80 dark:border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px] text-stone-500 dark:text-zinc-400">
+          <span>
+            © {new Date().getFullYear()} {labels.rights}
+          </span>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5">
             {onOpenAdmin && (
               <button
+                type="button"
                 onClick={onOpenAdmin}
-                className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-stone-600 dark:text-zinc-400 hover:text-amber-700 dark:hover:text-amber-400 hover:bg-white dark:hover:bg-zinc-900 border border-transparent hover:border-stone-200 dark:hover:border-zinc-800 transition-colors cursor-pointer"
               >
                 <Lock className="w-3.5 h-3.5" />
-                <span>Accès Équipe (Hassan)</span>
+                <span>{labels.staffAccess}</span>
               </button>
             )}
 
             <button
+              type="button"
               onClick={scrollToTop}
-              className="p-1.5 rounded-lg bg-white dark:bg-zinc-900 hover:bg-slate-200 dark:hover:bg-zinc-800 border border-slate-300 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
-              aria-label="Haut de page"
+              className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-900 hover:bg-stone-200/80 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 flex items-center justify-center transition-colors cursor-pointer"
+              aria-label={labels.topAria}
+              title={labels.topAria}
             >
-              <ArrowUp className="w-4 h-4" />
+              <ArrowUp className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
-
       </div>
     </footer>
   );

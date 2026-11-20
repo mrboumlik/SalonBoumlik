@@ -18,6 +18,7 @@ import {
 import {
   AppointmentBooking,
   BarberScheduleConfig,
+  Language,
   ShiftRequest,
   ShiftRequestType,
 } from '../types';
@@ -37,6 +38,8 @@ import {
   rejectShiftRequest,
 } from '../utils/shiftPlannerStore';
 import { sendDualAlert } from '../utils/notifications';
+import { useLanguage } from '../context/LanguageContext';
+import { pickLang } from '../utils/i18n';
 
 interface AdminShiftPlannerPanelProps {
   requests: ShiftRequest[];
@@ -48,14 +51,14 @@ interface AdminShiftPlannerPanelProps {
   todayStr: string;
 }
 
-const WEEKDAY_LABELS: Record<number, { ar: string; fr: string }> = {
-  0: { ar: 'الأحد', fr: 'Dim' },
-  1: { ar: 'الإثنين', fr: 'Lun' },
-  2: { ar: 'الثلاثاء', fr: 'Mar' },
-  3: { ar: 'الأربعاء', fr: 'Mer' },
-  4: { ar: 'الخميس', fr: 'Jeu' },
-  5: { ar: 'الجمعة', fr: 'Ven' },
-  6: { ar: 'السبت', fr: 'Sam' },
+const WEEKDAY_LABELS: Record<number, Record<Language, string>> = {
+  0: { ar: 'الأحد', fr: 'Dim', amz: 'ⴰⵙⴰⵎⴰⵙ', en: 'Sun', es: 'Dom' },
+  1: { ar: 'الإثنين', fr: 'Lun', amz: 'ⴰⵢⵏⴰⵙ', en: 'Mon', es: 'Lun' },
+  2: { ar: 'الثلاثاء', fr: 'Mar', amz: 'ⴰⵙⵉⵏⴰⵙ', en: 'Tue', es: 'Mar' },
+  3: { ar: 'الأربعاء', fr: 'Mer', amz: 'ⴰⴽⵕⴰⵙ', en: 'Wed', es: 'Mié' },
+  4: { ar: 'الخميس', fr: 'Jeu', amz: 'ⴰⴽⵡⴰⵙ', en: 'Thu', es: 'Jue' },
+  5: { ar: 'الجمعة', fr: 'Ven', amz: 'ⴰⵙⵉⵎⵡⴰⵙ', en: 'Fri', es: 'Vie' },
+  6: { ar: 'السبت', fr: 'Sam', amz: 'ⴰⵙⵉⴹⵢⴰⵙ', en: 'Sat', es: 'Sáb' },
 };
 
 function getCalendarWeekDays(weekOffset: number) {
@@ -83,21 +86,66 @@ function getCalendarWeekDays(weekOffset: number) {
   });
 }
 
-function getRequestTypeMeta(type: ShiftRequestType): {
+function getRequestTypeMeta(type: ShiftRequestType, lang: Language): {
   label: string;
   tone: string;
 } {
   switch (type) {
     case 'day_off':
-      return { label: 'إجازة يوم كامل (حجب)', tone: 'text-red-300' };
+      return {
+        label: pickLang(lang, {
+          ar: 'إجازة يوم كامل (حجب)',
+          fr: 'Journée de congé (bloquer)',
+          amz: 'ⴰⵙⵙ ⵏ ⵓⵙⵓⵏⴼⵓ',
+          en: 'Full Day Off (Block)',
+          es: 'Día libre (bloquear)',
+        }),
+        tone: 'text-red-300',
+      };
     case 'day_open':
-      return { label: 'إتاحة يوم عمل (فتح)', tone: 'text-emerald-300' };
+      return {
+        label: pickLang(lang, {
+          ar: 'إتاحة يوم عمل (فتح)',
+          fr: 'Ouvrir journée de travail',
+          amz: 'ⵕⵥⵎ ⴰⵙⵙ ⵏ ⵜⵡⵓⵔⵉ',
+          en: 'Open Work Day',
+          es: 'Abrir día laboral',
+        }),
+        tone: 'text-emerald-300',
+      };
     case 'slot_block':
-      return { label: 'حجب ساعات محددة', tone: 'text-amber-300' };
+      return {
+        label: pickLang(lang, {
+          ar: 'حجب ساعات محددة',
+          fr: 'Bloquer des créneaux',
+          amz: 'ⵇⵇⵏ ⵜⵉⵙⵔⴰⴳⵉⵏ',
+          en: 'Block Specific Hours',
+          es: 'Bloquear horas',
+        }),
+        tone: 'text-amber-300',
+      };
     case 'slot_open':
-      return { label: 'إعادة فتح ساعات', tone: 'text-emerald-300' };
+      return {
+        label: pickLang(lang, {
+          ar: 'إعادة فتح ساعات',
+          fr: 'Rouvrir des créneaux',
+          amz: 'ⵕⵥⵎ ⵜⵉⵙⵔⴰⴳⵉⵏ',
+          en: 'Reopen Hours',
+          es: 'Reabrir horas',
+        }),
+        tone: 'text-emerald-300',
+      };
     case 'shift_swap':
-      return { label: 'تبديل مناوبة مع زميل', tone: 'text-blue-300' };
+      return {
+        label: pickLang(lang, {
+          ar: 'تبديل مناوبة مع زميل',
+          fr: 'Échange de créneau avec collègue',
+          amz: 'ⴰⵙⵏⴼⵍ ⵏ ⵜⵡⵓⵔⵉ ⴷ ⵓⵎⴷⴷⴰⴽⴽʷⵍ',
+          en: 'Shift Swap with Colleague',
+          es: 'Cambio de turno con colega',
+        }),
+        tone: 'text-blue-300',
+      };
   }
 }
 
@@ -110,6 +158,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
   reviewerName,
   todayStr,
 }) => {
+  const { lang } = useLanguage();
   const defaultRequesterId =
     role === 'barber' ? ownBarberId : TEAM_MEMBERS[1]?.id || TEAM_MEMBERS[0].id;
 
@@ -135,6 +184,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
   const effectiveBarberId = role === 'barber' ? ownBarberId : barberId;
   const requesterBarber =
     TEAM_MEMBERS.find((b) => b.id === effectiveBarberId) || TEAM_MEMBERS[0];
+  const requesterBarberLabel = requesterBarber.name[lang] || requesterBarber.name.ar || requesterBarber.name.fr;
   const activeSchedule =
     schedules[effectiveBarberId] || getDefaultBarberSchedule(effectiveBarberId);
   const colleagueOptions = TEAM_MEMBERS.filter((b) => b.id !== effectiveBarberId);
@@ -258,16 +308,40 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
     if (submitting) return;
 
     if (!targetDate) {
-      sendDualAlert('يرجى تحديد التاريخ في التقويم', { type: 'warning', skipSound: true });
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'يرجى تحديد التاريخ في التقويم',
+          fr: 'Veuillez sélectionner une date dans le calendrier',
+          amz: 'ⵙⵜⵉ ⴰⵙⴰⴽⵓⴷ ⴳ ⵓⵙⵎⵍⵓⵙⵙⴰⵏ',
+          en: 'Please select a date on the calendar',
+          es: 'Por favor selecciona una fecha en el calendario',
+        }),
+        { type: 'warning', skipSound: true }
+      );
       return;
     }
 
     if (isTargetMonday) {
-      sendDualAlert('الصالون مغلق يوم الإثنين', {
-        body: 'يوم الإثنين هو العطلة الأسبوعية الرسمية للصالون. اختر يوماً آخر.',
-        type: 'warning',
-        skipSound: true,
-      });
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'الصالون مغلق يوم الإثنين',
+          fr: 'Le salon est fermé le lundi',
+          amz: 'ⵜⴰⵃⴰⵏⵓⵜ ⵜⵇⵇⵏ ⴰⵙⵙ ⵏ ⵓⵢⵏⴰⵙ',
+          en: 'The salon is closed on Mondays',
+          es: 'El salón cierra los lunes',
+        }),
+        {
+          body: pickLang(lang, {
+            ar: 'يوم الإثنين هو العطلة الأسبوعية الرسمية للصالون. اختر يوماً آخر.',
+            fr: 'Le lundi est le jour de repos hebdomadaire officiel. Choisissez un autre jour.',
+            amz: 'ⴰⵙⵙ ⵏ ⵓⵢⵏⴰⵙ ⵉⴳⴰ ⴰⵙⵙ ⵏ ⵓⵙⵓⵏⴼⵓ.',
+            en: 'Monday is the salon’s weekly day off. Please pick another day.',
+            es: 'El lunes es el día de descanso oficial. Elige otro día.',
+          }),
+          type: 'warning',
+          skipSound: true,
+        }
+      );
       return;
     }
 
@@ -275,11 +349,26 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
       (requestType === 'slot_block' || requestType === 'slot_open') &&
       selectedSlots.length === 0
     ) {
-      sendDualAlert('اختر ساعة واحدة على الأقل من التقويم', {
-        body: 'اضغط مباشرة على الساعات في التقويم أعلاه أو اخترها أدناه.',
-        type: 'warning',
-        skipSound: true,
-      });
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'اختر ساعة واحدة على الأقل من التقويم',
+          fr: 'Sélectionnez au moins un créneau',
+          amz: 'ⵙⵜⵉ ⵜⴰⵙⵔⴰⴳⵜ ⵢⴰⵜ ⵖⵓⵔ ⵓⴷⵔⵓⵙ',
+          en: 'Select at least one time slot',
+          es: 'Selecciona al menos una hora',
+        }),
+        {
+          body: pickLang(lang, {
+            ar: 'اضغط مباشرة على الساعات في التقويم أعلاه أو اخترها أدناه.',
+            fr: 'Cliquez directement sur les créneaux ci-dessus ou ci-dessous.',
+            amz: 'ⴰⴷⵔ ⵖⴼ ⵜⵙⵔⴰⴳⵉⵏ ⴰⴼⵍⵍⴰ ⵏⵖ ⵉⵣⴷⴰⵔ.',
+            en: 'Click directly on the hours in the calendar above or pick below.',
+            es: 'Haz clic en las horas del calendario superior o inferior.',
+          }),
+          type: 'warning',
+          skipSound: true,
+        }
+      );
       return;
     }
 
@@ -287,10 +376,16 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
       requestType === 'shift_swap' &&
       (!swapWithBarberId || swapWithBarberId === effectiveBarberId)
     ) {
-      sendDualAlert('اختر الحلاق البديل للتبديل', {
-        type: 'warning',
-        skipSound: true,
-      });
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'اختر الحلاق البديل للتبديل',
+          fr: 'Choisissez le barbier pour l’échange',
+          amz: 'ⵙⵜⵉ ⴰⵎⵣⵣⴰⴳ ⵉ ⵓⵙⵏⴼⵍ',
+          en: 'Select a colleague for the shift swap',
+          es: 'Elige el barbero para el intercambio',
+        }),
+        { type: 'warning', skipSound: true }
+      );
       return;
     }
 
@@ -318,19 +413,55 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
       setSelectedSlots([]);
       setSwapDate('');
       setReason('');
-      sendDualAlert('تم إرسال طلب تغيير التوفر بنجاح ✓', {
-        body:
-          role === 'master'
-            ? 'تم تسجيل الطلب في قائمة المراجعة للاعتماد.'
-            : 'سيراجع المدير العام الطلب ويتم تحديث التوفر في صفحة الحجز فور الموافقة.',
-        type: 'success',
-      });
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'تم إرسال طلب تغيير التوفر بنجاح ✓',
+          fr: 'Demande de modification envoyée ✓',
+          amz: 'ⵉⵜⵜⵓⵢⴰⵣⵏ ⵓⵙⵓⵜⵔ ✓',
+          en: 'Availability request submitted ✓',
+          es: 'Solicitud de disponibilidad enviada ✓',
+        }),
+        {
+          body:
+            role === 'master'
+              ? pickLang(lang, {
+                  ar: 'تم تسجيل الطلب في قائمة المراجعة للاعتماد.',
+                  fr: 'Enregistrée dans la file de validation.',
+                  amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⵙⵓⵜⵔ.',
+                  en: 'Recorded in the review queue for approval.',
+                  es: 'Registrada en la cola de aprobación.',
+                })
+              : pickLang(lang, {
+                  ar: 'سيراجع المدير العام الطلب ويتم تحديث التوفر في صفحة الحجز فور الموافقة.',
+                  fr: 'La direction examinera la demande ; le calendrier sera mis à jour dès approbation.',
+                  amz: 'ⴰⴷ ⵜ ⵉⵥⵕ ⵓⵏⵎⵀⴰⵍ ⵉⵙⵎⴰⵢⵏⵓ ⴰⵙⵎⵍⵓⵙⵙⴰⵏ.',
+                  en: 'Management will review it and booking availability will sync upon approval.',
+                  es: 'La dirección la revisará y se sincronizará al aprobarse.',
+                }),
+          type: 'success',
+        }
+      );
     } catch {
-      sendDualAlert('تعذر إرسال الطلب', {
-        body: 'تحقق من الاتصال وحاول مرة أخرى.',
-        type: 'warning',
-        skipSound: true,
-      });
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'تعذر إرسال الطلب',
+          fr: 'Échec de l’envoi',
+          amz: 'ⵓⵔ ⵉⵣⵎⵉⵔ ⴰⴷ ⵉⵜⵜⵓⵢⴰⵣⵏ',
+          en: 'Failed to submit request',
+          es: 'No se pudo enviar la solicitud',
+        }),
+        {
+          body: pickLang(lang, {
+            ar: 'تحقق من الاتصال وحاول مرة أخرى.',
+            fr: 'Vérifiez votre connexion et réessayez.',
+            amz: 'ⵙⵙⴼⵇⴷ ⴰⵣⴷⴰⵢ ⵏⵏⴽ.',
+            en: 'Check your connection and try again.',
+            es: 'Comprueba tu conexión e inténtalo de nuevo.',
+          }),
+          type: 'warning',
+          skipSound: true,
+        }
+      );
     } finally {
       setSubmitting(false);
     }
@@ -346,18 +477,40 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
         reviewerName,
         reviewNotes[req.id]
       );
-      sendDualAlert('تمت الموافقة ومزامنة توفر الحجز ✓', {
-        body: `تم تحديث جدول ${req.barberName}${
-          req.swapWithBarberName ? ` و ${req.swapWithBarberName}` : ''
-        } في نظام الحجز الرئيسي مباشرة.`,
-        type: 'success',
-      });
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'تمت الموافقة ومزامنة توفر الحجز ✓',
+          fr: 'Approuvé et synchronisé avec les réservations ✓',
+          amz: 'ⵉⵜⵜⵓⵇⴱⵍ ⵉⵜⵜⵓⵙⵎⴰⵢⵏⵓ ✓',
+          en: 'Approved and synced with booking availability ✓',
+          es: 'Aprobado y sincronizado ✓',
+        }),
+        {
+          body: pickLang(lang, {
+            ar: `تم تحديث جدول ${req.barberName}${req.swapWithBarberName ? ` و ${req.swapWithBarberName}` : ''} في نظام الحجز الرئيسي مباشرة.`,
+            fr: `Planning de ${req.barberName}${req.swapWithBarberName ? ` et ${req.swapWithBarberName}` : ''} mis à jour en direct.`,
+            amz: `ⵉⵜⵜⵓⵙⵎⴰⵢⵏⵓ ⵓⵙⵎⵍⵓⵙⵙⴰⵏ ⵏ ${req.barberName}.`,
+            en: `Updated ${req.barberName}${req.swapWithBarberName ? ` & ${req.swapWithBarberName}` : ''} schedule live.`,
+            es: `Horario de ${req.barberName} actualizado en vivo.`,
+          }),
+          type: 'success',
+        }
+      );
     } catch {
-      sendDualAlert('تعذر اعتماد الطلب', {
-        body: 'حدث خطأ أثناء تحديث التوفر في قاعدة البيانات.',
-        type: 'warning',
-        skipSound: true,
-      });
+      sendDualAlert(
+        pickLang(lang, { ar: 'تعذر اعتماد الطلب', fr: 'Échec de l’approbation', amz: 'ⴰⵣⴳⴰⵍ', en: 'Failed to approve request', es: 'Error al aprobar' }),
+        {
+          body: pickLang(lang, {
+            ar: 'حدث خطأ أثناء تحديث التوفر في قاعدة البيانات.',
+            fr: 'Erreur lors de la mise à jour en base de données.',
+            amz: 'ⵜⴰⵣⴳⴰⵍⵜ ⴳ ⵓⵙⵎⴰⵢⵏⵓ.',
+            en: 'Database error while updating availability.',
+            es: 'Error al actualizar la disponibilidad.',
+          }),
+          type: 'warning',
+          skipSound: true,
+        }
+      );
     } finally {
       setBusyId(null);
     }
@@ -368,11 +521,20 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
     setBusyId(req.id);
     try {
       await rejectShiftRequest(req.id, reviewerName, reviewNotes[req.id]);
-      sendDualAlert('تم رفض الطلب', {
-        body: `لم يتغير جدول ${req.barberName}.`,
-        type: 'warning',
-        skipSound: true,
-      });
+      sendDualAlert(
+        pickLang(lang, { ar: 'تم رفض الطلب', fr: 'Demande refusée', amz: 'ⵉⵜⵜⵓⵢⴰⴳⵉ ⵓⵙⵓⵜⵔ', en: 'Request rejected', es: 'Solicitud rechazada' }),
+        {
+          body: pickLang(lang, {
+            ar: `لم يتغير جدول ${req.barberName}.`,
+            fr: `Le planning de ${req.barberName} reste inchangé.`,
+            amz: `ⵓⵔ ⵉⵏⴼⵍ ⵓⵙⵎⵍⵓⵙⵙⴰⵏ ⵏ ${req.barberName}.`,
+            en: `${req.barberName} schedule unchanged.`,
+            es: `El horario de ${req.barberName} no ha cambiado.`,
+          }),
+          type: 'warning',
+          skipSound: true,
+        }
+      );
     } finally {
       setBusyId(null);
     }
@@ -382,7 +544,10 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
     setBusyId(req.id);
     try {
       await deleteShiftRequest(req.id);
-      sendDualAlert('تم حذف الطلب', { type: 'success', skipSound: true });
+      sendDualAlert(
+        pickLang(lang, { ar: 'تم حذف الطلب', fr: 'Demande supprimée', amz: 'ⵉⵜⵜⵓⴽⴽⵙ ⵓⵙⵓⵜⵔ', en: 'Request deleted', es: 'Solicitud eliminada' }),
+        { type: 'success', skipSound: true }
+      );
     } finally {
       setBusyId(null);
     }
@@ -413,21 +578,41 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
         <div>
           <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
             <Calendar className="w-4 h-4 text-amber-400" />
-            <span>مخطط المناوبات والتوفر • Admin Shift Planner</span>
+            <span>
+              {pickLang(lang, {
+                ar: 'مخطط المناوبات والتوفر',
+                fr: 'Planificateur d’équipes & disponibilités',
+                amz: 'ⴰⵖⴰⵡⴰⵙ ⵏ ⵜⵡⵓⵔⵉ ⴷ ⵓⵜⵓⴼⵔ',
+                en: 'Admin Shift & Availability Planner',
+                es: 'Planificador de Turnos y Disponibilidad',
+              })}
+            </span>
           </h3>
           <p className="text-[11px] text-zinc-400 mt-0.5">
             {role === 'master'
-              ? 'تقويم تفاعلي لتقديم تغييرات التوفر، وموافقة أو رفض الطلبات مع مزامنة فورية لنظام الحجز.'
-              : 'اضغط على أي يوم أو ساعة في التقويم لتقديم طلب تعديل توفرك أو إجازتك للمدير العام.'}
+              ? pickLang(lang, {
+                  ar: 'تقويم تفاعلي لتقديم تغييرات التوفر، وموافقة أو رفض الطلبات مع مزامنة فورية لنظام الحجز.',
+                  fr: 'Calendrier interactif pour soumettre et valider les changements de disponibilité en temps réel.',
+                  amz: 'ⴰⵙⵎⵍⵓⵙⵙⴰⵏ ⵉ ⵓⵙⵎⴰⵢⵏⵓ ⵏ ⵓⵜⵓⴼⵔ ⴷ ⵜⵓⵔⴰⴳⵜ ⵏ ⵉⵙⵓⵜⴰⵔ.',
+                  en: 'Interactive calendar to submit, approve, or deny availability changes with real-time booking sync.',
+                  es: 'Calendario interactivo para gestionar y aprobar cambios de disponibilidad en tiempo real.',
+                })
+              : pickLang(lang, {
+                  ar: 'اضغط على أي يوم أو ساعة في التقويم لتقديم طلب تعديل توفرك أو إجازتك للمدير العام.',
+                  fr: 'Cliquez sur un jour ou créneau du calendrier pour soumettre une demande de congé ou modification.',
+                  amz: 'ⴰⴷⵔ ⵖⴼ ⵡⴰⵙⵙ ⵏⵖ ⵜⴰⵙⵔⴰⴳⵜ ⵉ ⵓⵙⵓⵜⵔ ⵏ ⵓⵙⵓⵏⴼⵓ.',
+                  en: 'Click any day or hour in the calendar to submit an availability or leave request.',
+                  es: 'Haz clic en cualquier día u hora para solicitar un cambio o día libre.',
+                })}
           </p>
         </div>
 
         <div className="flex items-center gap-2.5 font-mono tabular-nums text-[11px] flex-shrink-0">
           <span className="px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold">
-            معلق: {pendingCount}
+            {pickLang(lang, { ar: 'معلق:', fr: 'En attente :', amz: 'ⵓⵔ ⵜⴰ:', en: 'Pending:', es: 'Pendiente:' })} {pendingCount}
           </span>
           <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-bold">
-            معتمد: {approvedCount}
+            {pickLang(lang, { ar: 'معتمد:', fr: 'Approuvé :', amz: 'ⵉⵜⵜⵓⵇⴱⵍ:', en: 'Approved:', es: 'Aprobado:' })} {approvedCount}
           </span>
         </div>
       </div>
@@ -439,7 +624,13 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="text-xs font-black text-white">
-                1. اختر الأيام أو الساعات من التقويم:
+                {pickLang(lang, {
+                  ar: '1. اختر الأيام أو الساعات من التقويم:',
+                  fr: '1. Sélectionnez les jours ou créneaux du calendrier :',
+                  amz: '1. ⵙⵜⵉ ⵓⵙⵙⴰⵏ ⵏⵖ ⵜⵉⵙⵔⴰⴳⵉⵏ ⵙⴳ ⵓⵙⵎⵍⵓⵙⵙⴰⵏ:',
+                  en: '1. Select days or hours from the calendar:',
+                  es: '1. Selecciona días u horas del calendario:',
+                })}
               </span>
               {role === 'barber' && (
                 <span
@@ -449,7 +640,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                     borderColor: `${getBarberColor(effectiveBarberId)}60`,
                   }}
                 >
-                  {requesterBarber.name.ar}
+                  {requesterBarberLabel}
                 </span>
               )}
             </div>
@@ -478,7 +669,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                         className="w-2 h-2 rounded-full flex-shrink-0"
                         style={{ backgroundColor: active ? '#fff' : color }}
                       />
-                      <span>{b.name.ar}</span>
+                      <span>{b.name[lang] || b.name.ar || b.name.fr}</span>
                     </button>
                   );
                 })}
@@ -494,7 +685,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                 className="px-2.5 py-1.5 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-bold flex items-center gap-1 cursor-pointer"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
-                <span>السابق</span>
+                <span>{pickLang(lang, { ar: 'السابق', fr: 'Précédent', amz: 'ⵉⵣⵔⵉⵏ', en: 'Prev', es: 'Anterior' })}</span>
               </button>
               <button
                 type="button"
@@ -505,14 +696,14 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                     : 'bg-zinc-950 hover:bg-zinc-800 border-zinc-800 text-zinc-200'
                 }`}
               >
-                الأسبوع الحالي
+                {pickLang(lang, { ar: 'الأسبوع الحالي', fr: 'Semaine actuelle', amz: 'ⵉⵎⴰⵍⴰⵙⵙ ⴰⴷ', en: 'Current Week', es: 'Semana actual' })}
               </button>
               <button
                 type="button"
                 onClick={() => setWeekOffset((w) => w + 1)}
                 className="px-2.5 py-1.5 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-bold flex items-center gap-1 cursor-pointer"
               >
-                <span>التالي</span>
+                <span>{pickLang(lang, { ar: 'التالي', fr: 'Suivant', amz: 'ⴷ-ⵉⴷⴷⴰⵏ', en: 'Next', es: 'Siguiente' })}</span>
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -520,15 +711,15 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
             <div className="flex flex-wrap items-center gap-3 text-[10px]">
               <span className="flex items-center gap-1 text-emerald-300">
                 <span className="w-2.5 h-2.5 rounded bg-emerald-600/40 border border-emerald-500/60 inline-block" />
-                متاح (اضغط لطلب حجب)
+                {pickLang(lang, { ar: 'متاح (اضغط لطلب حجب)', fr: 'Disponible (cliquer pour bloquer)', amz: 'ⵉⵍⵍⴰ (ⴰⴷⵔ ⵉ ⵓⵇⵇⵏ)', en: 'Available (click to block)', es: 'Disponible (clic para bloquear)' })}
               </span>
               <span className="flex items-center gap-1 text-red-300">
                 <span className="w-2.5 h-2.5 rounded bg-red-900/60 border border-red-500/60 inline-block" />
-                محجوب (اضغط لطلب فتح)
+                {pickLang(lang, { ar: 'محجوب (اضغط لطلب فتح)', fr: 'Bloqué (cliquer pour ouvrir)', amz: 'ⵉⵇⵇⵏ (ⴰⴷⵔ ⵉ ⵓⵕⵥⴰⵎ)', en: 'Blocked (click to open)', es: 'Bloqueado (clic para abrir)' })}
               </span>
               <span className="flex items-center gap-1 text-amber-300">
                 <span className="w-2.5 h-2.5 rounded bg-amber-500/40 border border-amber-400 inline-block" />
-                محدد / طلب معلق
+                {pickLang(lang, { ar: 'محدد / طلب معلق', fr: 'Sélectionné / En attente', amz: 'ⵉⵜⵜⵓⵙⵜⵉ / ⵓⵔ ⵜⴰ', en: 'Selected / Pending', es: 'Seleccionado / Pendiente' })}
               </span>
             </div>
           </div>
@@ -539,8 +730,8 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
           <table className="w-full min-w-[760px] border-collapse text-center">
             <thead>
               <tr className="bg-zinc-950 border-b border-zinc-800">
-                <th className="p-2.5 text-right font-black text-zinc-400 w-20 border-l border-zinc-800/80">
-                  التوقيت
+                <th className="p-2.5 text-start font-black text-zinc-400 w-20 border-l border-zinc-800/80">
+                  {pickLang(lang, { ar: 'التوقيت', fr: 'Heure', amz: 'ⴰⴽⵓⴷ', en: 'Time', es: 'Hora' })}
                 </th>
                 {weekDays.map((day) => {
                   const avail = evaluateBarberDayAvailability(
@@ -564,7 +755,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                     >
                       <div className="space-y-1">
                         <div className="font-black text-xs text-white">
-                          {day.label.ar}
+                          {day.label[lang] || day.label.ar}
                         </div>
                         <div className="font-mono text-[10px] text-zinc-400 tabular-nums">
                           {day.shortDate}
@@ -572,7 +763,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
 
                         {isMondayClosed ? (
                           <div className="py-1 px-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-500 text-[10px]">
-                            عطلة الصالون
+                            {pickLang(lang, { ar: 'عطلة الصالون', fr: 'Salon fermé', amz: 'ⵉⵇⵇⵏ', en: 'Salon Closed', es: 'Cerrado' })}
                           </div>
                         ) : (
                           <button
@@ -589,10 +780,10 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                             }`}
                           >
                             {dayPending
-                              ? '⏳ طلب معلق'
+                              ? pickLang(lang, { ar: '⏳ طلب معلق', fr: '⏳ En attente', amz: '⏳ ⵓⵔ ⵜⴰ', en: '⏳ Pending', es: '⏳ Pendiente' })
                               : avail.isBarberOffDay
-                              ? 'إجازة (اطلب فتحاً)'
-                              : 'يوم عمل (اطلب إجازة)'}
+                              ? pickLang(lang, { ar: 'إجازة (اطلب فتحاً)', fr: 'Repos (ouvrir)', amz: 'ⴰⵙⵓⵏⴼⵓ (ⵕⵥⵎ)', en: 'Off (Request Open)', es: 'Libre (abrir)' })
+                              : pickLang(lang, { ar: 'يوم عمل (اطلب إجازة)', fr: 'Travail (congé)', amz: 'ⵜⴰⵡⵓⵔⵉ (ⴰⵙⵓⵏⴼⵓ)', en: 'Workday (Req. Off)', es: 'Laboral (pedir libre)' })}
                           </button>
                         )}
                       </div>
@@ -629,7 +820,11 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                           className="p-1.5 border-l border-zinc-800/60 bg-zinc-950/40"
                         >
                           <div className="py-1.5 rounded-lg text-[10px] text-zinc-600 font-medium">
-                            {isMonday ? 'مغلق' : !inSalonHours ? 'خارج الدوام' : 'إجازة'}
+                            {isMonday
+                              ? pickLang(lang, { ar: 'مغلق', fr: 'Fermé', amz: 'ⵉⵇⵇⵏ', en: 'Closed', es: 'Cerrado' })
+                              : !inSalonHours
+                              ? pickLang(lang, { ar: 'خارج الدوام', fr: 'Hors horaire', amz: 'ⴱⵕⵕⴰ', en: 'Off Hours', es: 'Fuera horario' })
+                              : pickLang(lang, { ar: 'إجازة', fr: 'Congé', amz: 'ⴰⵙⵓⵏⴼⵓ', en: 'Off', es: 'Libre' })}
                           </div>
                         </td>
                       );
@@ -685,12 +880,12 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                           }`}
                         >
                           {isStaged
-                            ? '✓ محدد للطلب'
+                            ? pickLang(lang, { ar: '✓ محدد للطلب', fr: '✓ Sélectionné', amz: '✓ ⵉⵜⵜⵓⵙⵜⵉ', en: '✓ Selected', es: '✓ Selec.' })
                             : hasPendingSlotReq
-                            ? '⏳ معلق'
+                            ? pickLang(lang, { ar: '⏳ معلق', fr: '⏳ Attente', amz: '⏳ ⵓⵔ ⵜⴰ', en: '⏳ Pending', es: '⏳ Pend.' })
                             : isBlocked
-                            ? '⏸ محجوب'
-                            : '✓ متاح'}
+                            ? pickLang(lang, { ar: '⏸ محجوب', fr: '⏸ Bloqué', amz: '⏸ ⵉⵇⵇⵏ', en: '⏸ Blocked', es: '⏸ Bloq.' })
+                            : pickLang(lang, { ar: '✓ متاح', fr: '✓ Libre', amz: '✓ ⵉⵍⵍⴰ', en: '✓ Open', es: '✓ Libre' })}
                         </button>
                       </td>
                     );
@@ -709,17 +904,25 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-black text-white text-xs flex items-center gap-1.5">
               <Send className="w-3.5 h-3.5 text-amber-400" />
-              <span>2. تفاصيل طلب تعديل التوفر المحدد</span>
+              <span>
+                {pickLang(lang, {
+                  ar: '2. تفاصيل طلب تعديل التوفر المحدد',
+                  fr: '2. Détails de la demande sélectionnée',
+                  amz: '2. ⵉⴼⵔⵓⵔⵉⵜⵏ ⵏ ⵓⵙⵓⵜⵔ',
+                  en: '2. Request Details',
+                  es: '2. Detalles de la solicitud',
+                })}
+              </span>
             </span>
 
             {/* Mode Switcher */}
             <div className="flex flex-wrap items-center gap-1.5">
               {[
-                { id: 'slot_block', label: 'حجب ساعات', icon: Clock },
-                { id: 'slot_open', label: 'فتح ساعات', icon: CalendarCheck2 },
-                { id: 'day_off', label: 'يوم إجازة', icon: CalendarOff },
-                { id: 'day_open', label: 'فتح يوم', icon: CalendarCheck2 },
-                { id: 'shift_swap', label: 'تبديل مناوبة', icon: Repeat },
+                { id: 'slot_block', label: pickLang(lang, { ar: 'حجب ساعات', fr: 'Bloquer heures', amz: 'ⵇⵇⵏ ⵜⵉⵙⵔⴰⴳⵉⵏ', en: 'Block Hours', es: 'Bloquear horas' }), icon: Clock },
+                { id: 'slot_open', label: pickLang(lang, { ar: 'فتح ساعات', fr: 'Ouvrir heures', amz: 'ⵕⵥⵎ ⵜⵉⵙⵔⴰⴳⵉⵏ', en: 'Open Hours', es: 'Abrir horas' }), icon: CalendarCheck2 },
+                { id: 'day_off', label: pickLang(lang, { ar: 'يوم إجازة', fr: 'Jour de congé', amz: 'ⴰⵙⵙ ⵏ ⵓⵙⵓⵏⴼⵓ', en: 'Day Off', es: 'Día libre' }), icon: CalendarOff },
+                { id: 'day_open', label: pickLang(lang, { ar: 'فتح يوم', fr: 'Ouvrir jour', amz: 'ⵕⵥⵎ ⴰⵙⵙ', en: 'Open Day', es: 'Abrir día' }), icon: CalendarCheck2 },
+                { id: 'shift_swap', label: pickLang(lang, { ar: 'تبديل مناوبة', fr: 'Échanger', amz: 'ⵙⵏⴼⵍ ⵜⴰⵡⵓⵔⵉ', en: 'Shift Swap', es: 'Cambiar turno' }), icon: Repeat },
               ].map((opt) => {
                 const Icon = opt.icon;
                 const active = requestType === opt.id;
@@ -750,7 +953,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
             <div className="md:col-span-3">
               <label className="block text-[11px] text-zinc-400 mb-1 font-bold">
-                التاريخ المحدد
+                {pickLang(lang, { ar: 'التاريخ المحدد', fr: 'Date choisie', amz: 'ⴰⵙⴰⴽⵓⴷ ⵉⵜⵜⵓⵙⵜⵉⵏ', en: 'Selected Date', es: 'Fecha' })}
               </label>
               <input
                 type="date"
@@ -769,7 +972,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
               <>
                 <div className="md:col-span-3">
                   <label className="block text-[11px] text-amber-300 mb-1 font-bold">
-                    الحلاق البديل في التبديل
+                    {pickLang(lang, { ar: 'الحلاق البديل في التبديل', fr: 'Barbier d’échange', amz: 'ⴰⵎⵣⵣⴰⴳ ⴰⵎⴰⴷⴷⴰⴽⴽʷⵍ', en: 'Swap With Barber', es: 'Intercambiar con' })}
                   </label>
                   <select
                     value={swapWithBarberId}
@@ -778,14 +981,14 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                   >
                     {colleagueOptions.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name.ar} ({c.name.fr})
+                        {c.name[lang] || c.name.ar || c.name.fr}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="md:col-span-3">
                   <label className="block text-[11px] text-zinc-400 mb-1 font-bold">
-                    تاريخ التغطية البديل (اختياري)
+                    {pickLang(lang, { ar: 'تاريخ التغطية البديل (اختياري)', fr: 'Date de remplacement (opt.)', amz: 'ⴰⵙⴰⴽⵓⴷ ⵏ ⵓⵙⵏⴼⵍ', en: 'Replacement Date (opt.)', es: 'Fecha reemplazo (opc.)' })}
                   </label>
                   <input
                     type="date"
@@ -800,14 +1003,14 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
               <div className="md:col-span-6">
                 <label className="block text-[11px] text-zinc-400 mb-1 font-bold">
                   {requestType === 'day_off' || requestType === 'day_open'
-                    ? 'نطاق التعديل'
-                    : 'الساعات المحددة من التقويم'}
+                    ? pickLang(lang, { ar: 'نطاق التعديل', fr: 'Portée', amz: 'ⴰⵙⴰⵜⴰⵍ', en: 'Scope', es: 'Alcance' })
+                    : pickLang(lang, { ar: 'الساعات المحددة من التقويم', fr: 'Créneaux sélectionnés', amz: 'ⵜⵉⵙⵔⴰⴳⵉⵏ ⵉⵜⵜⵓⵙⵜⵉⵏ', en: 'Selected Time Slots', es: 'Horas seleccionadas' })}
                 </label>
                 {requestType === 'day_off' || requestType === 'day_open' ? (
                   <div className="px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 font-bold">
                     {requestType === 'day_off'
-                      ? `يوم عطلة كامل بتاريخ ${targetDate}`
-                      : `فتح يوم عمل كامل بتاريخ ${targetDate}`}
+                      ? pickLang(lang, { ar: `يوم عطلة كامل بتاريخ ${targetDate}`, fr: `Journée complète de congé : ${targetDate}`, amz: `ⴰⵙⵙ ⵏ ⵓⵙⵓⵏⴼⵓ ${targetDate}`, en: `Full day off on ${targetDate}`, es: `Día libre completo el ${targetDate}` })
+                      : pickLang(lang, { ar: `فتح يوم عمل كامل بتاريخ ${targetDate}`, fr: `Ouvrir journée complète : ${targetDate}`, amz: `ⵕⵥⵎ ⴰⵙⵙ ${targetDate}`, en: `Open full workday on ${targetDate}`, es: `Abrir día completo el ${targetDate}` })}
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
@@ -835,14 +1038,14 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
 
             <div className="md:col-span-3">
               <label className="block text-[11px] text-zinc-400 mb-1 font-bold">
-                ملاحظة / سبب (اختياري)
+                {pickLang(lang, { ar: 'ملاحظة / سبب (اختياري)', fr: 'Note / Motif (optionnel)', amz: 'ⵜⴰⵎⵍⴰⵢⵜ (ⵓⵔ ⵉⴱⵣⵣⵉⵣ)', en: 'Note / Reason (optional)', es: 'Nota / Motivo (opc.)' })}
               </label>
               <input
                 type="text"
                 maxLength={250}
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="سبب التعديل..."
+                placeholder={pickLang(lang, { ar: 'سبب التعديل...', fr: 'Motif...', amz: 'ⵜⴰⵎⵍⴰⵢⵜ...', en: 'Reason...', es: 'Motivo...' })}
                 className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
               />
             </div>
@@ -851,10 +1054,16 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
             <span className="text-[11px] text-zinc-400">
               {selectedSlots.length > 0
-                ? `الساعات المحددة: ${selectedSlots.join(' · ')}`
+                ? `${pickLang(lang, { ar: 'الساعات المحددة:', fr: 'Créneaux :', amz: 'ⵜⵉⵙⵔⴰⴳⵉⵏ:', en: 'Selected slots:', es: 'Horas:' })} ${selectedSlots.join(' · ')}`
                 : isTargetMonday
-                ? 'يوم الإثنين مغلق رسمياً'
-                : 'اضغط على خلايا التقويم أعلاه لتحديد أو تعديل الساعات بسهولة.'}
+                ? pickLang(lang, { ar: 'يوم الإثنين مغلق رسمياً', fr: 'Fermé le lundi', amz: 'ⵉⵇⵇⵏ ⴰⵙⵙ ⵏ ⵓⵢⵏⴰⵙ', en: 'Salon closed on Mondays', es: 'Cerrado los lunes' })
+                : pickLang(lang, {
+                    ar: 'اضغط على خلايا التقويم أعلاه لتحديد أو تعديل الساعات بسهولة.',
+                    fr: 'Cliquez sur les cellules du calendrier ci-dessus pour sélectionner vos créneaux.',
+                    amz: 'ⴰⴷⵔ ⵖⴼ ⵜⵙⵔⴰⴳⵉⵏ ⴰⴼⵍⵍⴰ.',
+                    en: 'Click calendar cells above to select or modify slots easily.',
+                    es: 'Haz clic en las celdas del calendario arriba para seleccionar horas.',
+                  })}
             </span>
             <button
               type="submit"
@@ -866,7 +1075,15 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
               ) : (
                 <Send className="w-4 h-4" />
               )}
-              <span>إرسال طلب تغيير التوفر</span>
+              <span>
+                {pickLang(lang, {
+                  ar: 'إرسال طلب تغيير التوفر',
+                  fr: 'Envoyer la demande',
+                  amz: 'ⴰⵣⵏ ⴰⵙⵓⵜⵔ',
+                  en: 'Submit Availability Request',
+                  es: 'Enviar solicitud',
+                })}
+              </span>
             </button>
           </div>
         </form>
@@ -879,17 +1096,29 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <span>
               {role === 'master'
-                ? 'طلبات تغيير التوفر والمناوبات (قبول أو رفض مع المزامنة التلقائية)'
-                : 'سجل طلباتك المقدمة وحالة الموافقة'}
+                ? pickLang(lang, {
+                    ar: 'طلبات تغيير التوفر والمناوبات (قبول أو رفض مع المزامنة التلقائية)',
+                    fr: 'Demandes de disponibilité et d’échanges (approbation avec synchro auto)',
+                    amz: 'ⵉⵙⵓⵜⴰⵔ ⵏ ⵓⵙⵏⴼⵍ ⵏ ⵜⵡⵓⵔⵉ',
+                    en: 'Shift & Availability Requests (Approve / Deny with Auto-Sync)',
+                    es: 'Solicitudes de turnos (aprobar o rechazar con sincronización)',
+                  })
+                : pickLang(lang, {
+                    ar: 'سجل طلباتك المقدمة وحالة الموافقة',
+                    fr: 'Historique de vos demandes et statuts',
+                    amz: 'ⴰⵎⵣⵔⵓⵢ ⵏ ⵉⵙⵓⵜⴰⵔ ⵏⵏⴽ',
+                    en: 'Your Submitted Requests & Approval Status',
+                    es: 'Historial de tus solicitudes',
+                  })}
             </span>
           </span>
 
           <div className="flex items-center gap-1.5 overflow-x-auto">
             {[
-              { id: 'all', label: 'الكل' },
-              { id: 'pending', label: `معلق (${pendingCount})` },
-              { id: 'approved', label: 'مقبول ✓' },
-              { id: 'rejected', label: 'مرفوض' },
+              { id: 'all', label: pickLang(lang, { ar: 'الكل', fr: 'Tous', amz: 'ⴰⴽⴽʷ', en: 'All', es: 'Todos' }) },
+              { id: 'pending', label: `${pickLang(lang, { ar: 'معلق', fr: 'Attente', amz: 'ⵓⵔ ⵜⴰ', en: 'Pending', es: 'Pendiente' })} (${pendingCount})` },
+              { id: 'approved', label: pickLang(lang, { ar: 'مقبول ✓', fr: 'Approuvé ✓', amz: 'ⵉⵜⵜⵓⵇⴱⵍ ✓', en: 'Approved ✓', es: 'Aprobado ✓' }) },
+              { id: 'rejected', label: pickLang(lang, { ar: 'مرفوض', fr: 'Refusé', amz: 'ⵉⵜⵜⵓⵢⴰⴳⵉ', en: 'Rejected', es: 'Rechazado' }) },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -911,7 +1140,13 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
           <div className="p-8 text-center rounded-2xl bg-zinc-900/50 border border-zinc-800 space-y-1.5">
             <Calendar className="w-7 h-7 text-zinc-600 mx-auto" />
             <p className="text-sm font-bold text-zinc-300">
-              لا توجد طلبات تغيير توفر في هذا القسم حالياً.
+              {pickLang(lang, {
+                ar: 'لا توجد طلبات تغيير توفر في هذا القسم حالياً.',
+                fr: 'Aucune demande de disponibilité dans cette section.',
+                amz: 'ⵓⵔ ⵍⵍⵉⵏ ⵉⵙⵓⵜⴰⵔ ⴳ ⵓⴳⵣⵣⵓⵎ ⴰⴷ.',
+                en: 'No availability change requests in this section.',
+                es: 'No hay solicitudes en esta sección.',
+              })}
             </p>
           </div>
         ) : (
@@ -920,7 +1155,15 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
               const color = getBarberColor(req.barberId);
               const conflicts = req.status === 'pending' ? getBookingConflicts(req) : [];
               const isBusy = busyId === req.id;
-              const meta = getRequestTypeMeta(req.requestType);
+              const meta = getRequestTypeMeta(req.requestType, lang);
+              const reqBarberObj = TEAM_MEMBERS.find((m) => m.id === req.barberId);
+              const reqBarberName = reqBarberObj ? (reqBarberObj.name[lang] || req.barberName) : req.barberName;
+              const swapPartnerObj = req.swapWithBarberId
+                ? TEAM_MEMBERS.find((m) => m.id === req.swapWithBarberId)
+                : undefined;
+              const swapPartnerName = swapPartnerObj
+                ? swapPartnerObj.name[lang] || req.swapWithBarberName
+                : req.swapWithBarberName;
 
               return (
                 <div
@@ -941,7 +1184,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                             className="w-2.5 h-2.5 rounded-full"
                             style={{ backgroundColor: color }}
                           />
-                          {req.barberName}
+                          {reqBarberName}
                         </span>
                         <span className={`text-[11px] font-bold ${meta.tone}`}>
                           · {meta.label}
@@ -956,10 +1199,10 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                           }`}
                         >
                           {req.status === 'pending'
-                            ? 'قيد المراجعة'
+                            ? pickLang(lang, { ar: 'قيد المراجعة', fr: 'En attente', amz: 'ⵓⵔ ⵜⴰ', en: 'Pending', es: 'Pendiente' })
                             : req.status === 'approved'
-                            ? 'مقبول وتمت المزامنة ✓'
-                            : 'مرفوض'}
+                            ? pickLang(lang, { ar: 'مقبول وتمت المزامنة ✓', fr: 'Approuvé & synchro ✓', amz: 'ⵉⵜⵜⵓⵇⴱⵍ ✓', en: 'Approved & Synced ✓', es: 'Aprobado ✓' })
+                            : pickLang(lang, { ar: 'مرفوض', fr: 'Refusé', amz: 'ⵉⵜⵜⵓⵢⴰⴳⵉ', en: 'Rejected', es: 'Rechazado' })}
                         </span>
                       </div>
 
@@ -970,10 +1213,10 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                             🕒 {req.targetSlots.join(' · ')}
                           </span>
                         )}
-                        {req.requestType === 'shift_swap' && req.swapWithBarberName && (
+                        {req.requestType === 'shift_swap' && swapPartnerName && (
                           <span className="font-sans text-blue-300 font-bold">
-                            ⇄ مع {req.swapWithBarberName}
-                            {req.swapDate ? ` (مقابل ${req.swapDate})` : ''}
+                            ⇄ {pickLang(lang, { ar: `مع ${swapPartnerName}`, fr: `avec ${swapPartnerName}`, amz: `ⴷ ${swapPartnerName}`, en: `with ${swapPartnerName}`, es: `con ${swapPartnerName}` })}
+                            {req.swapDate ? ` (${req.swapDate})` : ''}
                           </span>
                         )}
                       </div>
@@ -985,7 +1228,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                         disabled={isBusy}
                         onClick={() => handleDelete(req)}
                         className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-950/40 transition-colors cursor-pointer"
-                        title="حذف / سحب الطلب"
+                        title={pickLang(lang, { ar: 'حذف / سحب الطلب', fr: 'Supprimer la demande', amz: 'ⴽⴽⵙ ⴰⵙⵓⵜⵔ', en: 'Delete / Withdraw Request', es: 'Eliminar solicitud' })}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -994,7 +1237,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
 
                   {req.reason && (
                     <p className="text-[11px] text-zinc-300 bg-black/35 px-2.5 py-1.5 rounded-lg border border-zinc-800/80">
-                      السبب: {req.reason}
+                      {pickLang(lang, { ar: 'السبب:', fr: 'Motif :', amz: 'ⵜⴰⵎⵍⴰⵢⵜ:', en: 'Reason:', es: 'Motivo:' })} {req.reason}
                     </p>
                   )}
 
@@ -1002,16 +1245,20 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                     <div className="p-2 rounded-lg bg-orange-950/40 border border-orange-500/40 text-orange-200 text-[11px] flex items-center gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5 text-orange-400 flex-shrink-0" />
                       <span>
-                        تنبيه: يوجد {conflicts.length} موعد حجز نشط لهذا الحلاق في هذا التاريخ (
-                        {conflicts.map((c) => `${c.timeSlot} ${c.clientName}`).slice(0, 2).join('، ')}
-                        ).
+                        {pickLang(lang, {
+                          ar: `تنبيه: يوجد ${conflicts.length} موعد حجز نشط لهذا الحلاق في هذا التاريخ (${conflicts.map((c) => `${c.timeSlot} ${c.clientName}`).slice(0, 2).join('، ')}).`,
+                          fr: `Attention : ${conflicts.length} RDV actif(s) à cette date (${conflicts.map((c) => `${c.timeSlot} ${c.clientName}`).slice(0, 2).join(', ')}).`,
+                          amz: `ⵜⴰⵖⴹⴼⵜ: ⵍⵍⴰⵏ ${conflicts.length} ⵉⵎⵓⵄⵉⴷⵏ ⴳ ⵓⵙⴰⴽⵓⴷ ⴰⴷ.`,
+                          en: `Warning: ${conflicts.length} active booking(s) on this date (${conflicts.map((c) => `${c.timeSlot} ${c.clientName}`).slice(0, 2).join(', ')}).`,
+                          es: `Aviso: ${conflicts.length} cita(s) activa(s) en esta fecha (${conflicts.map((c) => `${c.timeSlot} ${c.clientName}`).slice(0, 2).join(', ')}).`,
+                        })}
                       </span>
                     </div>
                   )}
 
                   {req.reviewerNote && (
                     <div className="text-[11px] text-zinc-400">
-                      رد الإدارة ({req.reviewedBy || 'Master Admin'}):{' '}
+                      {pickLang(lang, { ar: 'رد الإدارة', fr: 'Réponse direction', amz: 'ⵜⴰⵎⵔⴰⵔⵓⵜ', en: 'Management note', es: 'Respuesta dirección' })} ({req.reviewedBy || 'Master Admin'}):{' '}
                       <span className="text-zinc-200">{req.reviewerNote}</span>
                     </div>
                   )}
@@ -1024,7 +1271,13 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                         onChange={(e) =>
                           setReviewNotes((prev) => ({ ...prev, [req.id]: e.target.value }))
                         }
-                        placeholder="ملاحظة للموظف (اختياري)..."
+                        placeholder={pickLang(lang, {
+                          ar: 'ملاحظة للموظف (اختياري)...',
+                          fr: 'Note au collaborateur (optionnel)...',
+                          amz: 'ⵜⴰⵎⵍⴰⵢⵜ (ⵓⵔ ⵉⴱⵣⵣⵉⵣ)...',
+                          en: 'Note for staff (optional)...',
+                          es: 'Nota para el personal (opcional)...',
+                        })}
                         className="flex-1 bg-black/50 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-[11px] text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
                       />
                       <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -1039,7 +1292,9 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                           ) : (
                             <CheckCircle2 className="w-3.5 h-3.5" />
                           )}
-                          <span>موافقة ومزامنة ✓</span>
+                          <span>
+                            {pickLang(lang, { ar: 'موافقة ومزامنة ✓', fr: 'Approuver ✓', amz: 'ⵇⴱⵍ ✓', en: 'Approve & Sync ✓', es: 'Aprobar ✓' })}
+                          </span>
                         </button>
                         <button
                           type="button"
@@ -1048,7 +1303,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                           className="px-3 py-1.5 rounded-lg bg-red-950/70 hover:bg-red-600 border border-red-500/40 text-red-200 hover:text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer disabled:opacity-50"
                         >
                           <XCircle className="w-3.5 h-3.5" />
-                          <span>رفض</span>
+                          <span>{pickLang(lang, { ar: 'رفض', fr: 'Refuser', amz: 'ⴰⴳⵉ', en: 'Deny', es: 'Rechazar' })}</span>
                         </button>
                       </div>
                     </div>

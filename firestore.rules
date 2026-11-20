@@ -37,7 +37,9 @@ service cloud.firestore {
         'isFlexibleTime', 'preferredTimeHint',
         'rescheduledTo', 'clientLanguage', 'adminNotes',
         'cihReceiptName', 'cihReceiptPreview', 'cihReceiptUploadedAt',
-        'loyaltyRewardApplied', 'attendanceConfirmedAt', 'createdAt'
+        'loyaltyRewardApplied', 'attendanceConfirmedAt',
+        'checkInToken', 'checkedInAt', 'caisseLoggedAt', 'caisseEntryId',
+        'createdAt'
       ])
       && isValidId(data.id)
       && data.ticketNumber is string && data.ticketNumber.size() >= 3 && data.ticketNumber.size() <= 32
@@ -76,6 +78,10 @@ service cloud.firestore {
       && (!('cihReceiptUploadedAt' in data) || (data.cihReceiptUploadedAt is string && data.cihReceiptUploadedAt.size() <= 64))
       && (!('loyaltyRewardApplied' in data) || (data.loyaltyRewardApplied is string && data.loyaltyRewardApplied.size() <= 200))
       && (!('attendanceConfirmedAt' in data) || (data.attendanceConfirmedAt is string && data.attendanceConfirmedAt.size() <= 64))
+      && (!('checkInToken' in data) || (data.checkInToken is string && data.checkInToken.size() <= 32))
+      && (!('checkedInAt' in data) || (data.checkedInAt is string && data.checkedInAt.size() <= 64))
+      && (!('caisseLoggedAt' in data) || (data.caisseLoggedAt is string && data.caisseLoggedAt.size() <= 64))
+      && (!('caisseEntryId' in data) || (data.caisseEntryId is string && data.caisseEntryId.size() <= 128))
       && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64;
     }
 
@@ -243,6 +249,93 @@ service cloud.firestore {
       && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
     }
 
+    function isValidCaisseEntry(data) {
+      return data.keys().hasAll([
+        'id', 'barberId', 'barberName', 'type', 'date',
+        'expectedAmountMAD', 'amountPaidMAD', 'creditAmountMAD', 'creditRemainingMAD',
+        'createdByRole', 'createdByName', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'barberId', 'barberName', 'type', 'date',
+        'serviceIds', 'serviceNames',
+        'expectedAmountMAD', 'amountPaidMAD', 'creditAmountMAD', 'creditRemainingMAD',
+        'creditStatus', 'clientName', 'clientPhone', 'expectedRepaymentDate',
+        'repaidDate', 'repaidAmountMAD', 'parentCreditEntryId',
+        'sourceBookingId', 'sourceTicketNumber', 'note',
+        'createdByRole', 'createdByName', 'createdAt', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && data.barberId in ['hassan', 'anouar-arif', 'lahcen-lhanz', 'mounir-querdeny']
+      && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
+      && data.type in ['income', 'expense', 'float_adjustment', 'credit_repayment']
+      && data.date is string && data.date.size() >= 8 && data.date.size() <= 20
+      && (!('serviceIds' in data) || (data.serviceIds is list && data.serviceIds.size() <= 20))
+      && (!('serviceNames' in data) || (data.serviceNames is list && data.serviceNames.size() <= 20))
+      && data.expectedAmountMAD is number && data.expectedAmountMAD >= 0 && data.expectedAmountMAD <= 100000
+      && data.amountPaidMAD is number && data.amountPaidMAD >= 0 && data.amountPaidMAD <= 100000
+      && data.creditAmountMAD is number && data.creditAmountMAD >= 0 && data.creditAmountMAD <= 100000
+      && data.creditRemainingMAD is number && data.creditRemainingMAD >= 0 && data.creditRemainingMAD <= 100000
+      && (!('creditStatus' in data) || data.creditStatus in ['none', 'open', 'partial', 'paid'])
+      && (!('clientName' in data) || (data.clientName is string && data.clientName.size() <= 120))
+      && (!('clientPhone' in data) || (data.clientPhone is string && data.clientPhone.size() <= 40))
+      && (!('expectedRepaymentDate' in data) || (data.expectedRepaymentDate is string && data.expectedRepaymentDate.size() <= 20))
+      && (!('repaidDate' in data) || (data.repaidDate is string && data.repaidDate.size() <= 20))
+      && (!('repaidAmountMAD' in data) || (data.repaidAmountMAD is number && data.repaidAmountMAD >= 0 && data.repaidAmountMAD <= 100000))
+      && (!('parentCreditEntryId' in data) || (data.parentCreditEntryId is string && data.parentCreditEntryId.size() <= 128))
+      && (!('sourceBookingId' in data) || (data.sourceBookingId is string && data.sourceBookingId.size() <= 128))
+      && (!('sourceTicketNumber' in data) || (data.sourceTicketNumber is string && data.sourceTicketNumber.size() <= 32))
+      && (!('note' in data) || (data.note is string && data.note.size() <= 400))
+      && data.createdByRole in ['master', 'barber']
+      && data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 100
+      && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidCaisseSetting(data) {
+      return data.keys().hasAll([
+        'id', 'barberId', 'commissionPercent', 'updatedBy', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'barberId', 'commissionPercent', 'updatedBy', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && data.barberId in ['hassan', 'anouar-arif', 'lahcen-lhanz', 'mounir-querdeny']
+      && data.commissionPercent is number && data.commissionPercent >= 0 && data.commissionPercent <= 100
+      && data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 100
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidCaisseSettlement(data) {
+      return data.keys().hasAll([
+        'id', 'barberId', 'barberName', 'date', 'collected',
+        'collectedAmountMAD', 'barberShareMAD', 'shopShareMAD',
+        'floatMAD', 'expensesMAD', 'carryOverOwedMAD', 'resetCount',
+        'confirmedBy', 'confirmedAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'barberId', 'barberName', 'date', 'collected',
+        'collectedAmountMAD', 'barberShareMAD', 'shopShareMAD',
+        'floatMAD', 'expensesMAD', 'carryOverOwedMAD', 'resetCount',
+        'note', 'confirmedBy', 'confirmedAt', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && data.barberId in ['hassan', 'anouar-arif', 'lahcen-lhanz', 'mounir-querdeny']
+      && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
+      && data.date is string && data.date.size() >= 8 && data.date.size() <= 20
+      && data.collected is bool
+      && data.collectedAmountMAD is number && data.collectedAmountMAD >= 0 && data.collectedAmountMAD <= 100000
+      && data.barberShareMAD is number && data.barberShareMAD >= 0 && data.barberShareMAD <= 100000
+      && data.shopShareMAD is number && data.shopShareMAD >= 0 && data.shopShareMAD <= 100000
+      && data.floatMAD is number && data.floatMAD >= 0 && data.floatMAD <= 100000
+      && data.expensesMAD is number && data.expensesMAD >= 0 && data.expensesMAD <= 100000
+      && data.carryOverOwedMAD is number && data.carryOverOwedMAD >= 0 && data.carryOverOwedMAD <= 100000
+      && data.resetCount is number && data.resetCount >= 0 && data.resetCount <= 1000
+      && (!('note' in data) || (data.note is string && data.note.size() <= 400))
+      && data.confirmedBy is string && data.confirmedBy.size() >= 1 && data.confirmedBy.size() <= 100
+      && data.confirmedAt is string && data.confirmedAt.size() >= 10 && data.confirmedAt.size() <= 64
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
     // Connection check document for app boot health validation
     match /test/connection {
       allow get: if request.time != null;
@@ -338,7 +431,8 @@ service cloud.firestore {
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'status', 'adminNotes', 'rescheduledTo', 'date', 'timeSlot',
           'cihReceiptName', 'cihReceiptPreview', 'cihReceiptUploadedAt',
-          'loyaltyRewardApplied', 'attendanceConfirmedAt'
+          'loyaltyRewardApplied', 'attendanceConfirmedAt',
+          'checkedInAt', 'caisseLoggedAt', 'caisseEntryId'
         ]);
 
       allow delete: if isValidId(bookingId) && request.time != null;
@@ -363,6 +457,48 @@ service cloud.firestore {
         && isValidPushSubscription(incoming())
         && incoming().id == subscriptionId;
       allow delete: if isValidId(subscriptionId) && request.time != null;
+    }
+
+    // Caisse & Accounting entries per barber and shop box
+    match /caisse_entries/{entryId} {
+      allow get: if isValidId(entryId) && request.time != null;
+      allow list: if request.time != null;
+      allow create: if isValidId(entryId)
+        && isValidCaisseEntry(incoming())
+        && incoming().id == entryId;
+      allow update: if isValidId(entryId)
+        && isValidCaisseEntry(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'barberId', 'barberName', 'type', 'date',
+          'serviceIds', 'serviceNames',
+          'expectedAmountMAD', 'amountPaidMAD', 'creditAmountMAD', 'creditRemainingMAD',
+          'creditStatus', 'clientName', 'clientPhone', 'expectedRepaymentDate',
+          'repaidDate', 'repaidAmountMAD', 'note', 'updatedAt'
+        ]);
+      allow delete: if isValidId(entryId) && request.time != null;
+    }
+
+    // Caisse commission percentage settings per barber
+    match /caisse_settings/{settingId} {
+      allow get: if isValidId(settingId) && request.time != null;
+      allow list: if request.time != null;
+      allow create, update: if isValidId(settingId)
+        && isValidCaisseSetting(incoming())
+        && incoming().id == settingId
+        && incoming().barberId == settingId;
+      allow delete: if isValidId(settingId) && request.time != null;
+    }
+
+    // Caisse daily collection status, recalculate/reset state, and carry-over tracking
+    match /caisse_settlements/{settlementId} {
+      allow get: if isValidId(settlementId) && request.time != null;
+      allow list: if request.time != null;
+      allow create, update: if isValidId(settlementId)
+        && isValidCaisseSettlement(incoming())
+        && incoming().id == settlementId;
+      allow delete: if isValidId(settlementId) && request.time != null;
     }
   }
 }

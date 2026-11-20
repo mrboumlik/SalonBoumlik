@@ -17,6 +17,7 @@ import {
   dispatchClientBackgroundPush,
   dispatchStaffBackgroundPush,
 } from './webPushClient';
+import { generateCheckInToken } from './clientQr';
 
 const BOOKINGS_COLLECTION = 'bookings';
 
@@ -139,6 +140,18 @@ function buildSanitizedBooking(booking: AppointmentBooking): Record<string, unkn
   }
   if (booking.attendanceConfirmedAt && booking.attendanceConfirmedAt.trim()) {
     sanitized.attendanceConfirmedAt = booking.attendanceConfirmedAt.trim().slice(0, 64);
+  }
+  if (booking.checkInToken && booking.checkInToken.trim()) {
+    sanitized.checkInToken = booking.checkInToken.trim().slice(0, 32);
+  }
+  if (booking.checkedInAt && booking.checkedInAt.trim()) {
+    sanitized.checkedInAt = booking.checkedInAt.trim().slice(0, 64);
+  }
+  if (booking.caisseLoggedAt && booking.caisseLoggedAt.trim()) {
+    sanitized.caisseLoggedAt = booking.caisseLoggedAt.trim().slice(0, 64);
+  }
+  if (booking.caisseEntryId && booking.caisseEntryId.trim()) {
+    sanitized.caisseEntryId = booking.caisseEntryId.trim().slice(0, 128);
   }
 
   return sanitized;
@@ -392,6 +405,7 @@ export async function createNewBooking(
     ...bookingData,
     id,
     ticketNumber,
+    checkInToken: bookingData.checkInToken || generateCheckInToken(),
     status: bookingData.status || 'pending',
     createdAt: new Date().toISOString(),
   };
@@ -821,6 +835,76 @@ export async function updateBookingCihReceipt(
       cihReceiptName: cleanName,
       cihReceiptPreview: cleanPreview || undefined,
       cihReceiptUploadedAt: cleanUploadedAt,
+    };
+    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    return updatedBooking;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Records client arrival check-in via unique QR scan (`checkedInAt`) in Cloud Firestore.
+ */
+export async function checkInBookingByQr(
+  id: string
+): Promise<AppointmentBooking | null> {
+  const path = `${BOOKINGS_COLLECTION}/${id}`;
+  try {
+    const nowIso = new Date().toISOString().slice(0, 64);
+    await updateDoc(doc(db, BOOKINGS_COLLECTION, id), {
+      checkedInAt: nowIso,
+    });
+
+    let existing = memoryCache.find((b) => b.id === id);
+    if (!existing) {
+      const snap = await getDoc(doc(db, BOOKINGS_COLLECTION, id));
+      if (snap.exists()) {
+        existing = snap.data() as AppointmentBooking;
+      }
+    }
+    if (!existing) return null;
+
+    const updatedBooking: AppointmentBooking = {
+      ...existing,
+      checkedInAt: nowIso,
+    };
+    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    return updatedBooking;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Marks a completed appointment booking as logged into Caisse (`caisseLoggedAt` + `caisseEntryId`).
+ */
+export async function markBookingCaisseLogged(
+  id: string,
+  caisseEntryId: string
+): Promise<AppointmentBooking | null> {
+  const path = `${BOOKINGS_COLLECTION}/${id}`;
+  try {
+    const nowIso = new Date().toISOString().slice(0, 64);
+    const cleanEntryId = String(caisseEntryId || '').trim().slice(0, 128);
+    await updateDoc(doc(db, BOOKINGS_COLLECTION, id), {
+      caisseLoggedAt: nowIso,
+      caisseEntryId: cleanEntryId,
+    });
+
+    let existing = memoryCache.find((b) => b.id === id);
+    if (!existing) {
+      const snap = await getDoc(doc(db, BOOKINGS_COLLECTION, id));
+      if (snap.exists()) {
+        existing = snap.data() as AppointmentBooking;
+      }
+    }
+    if (!existing) return null;
+
+    const updatedBooking: AppointmentBooking = {
+      ...existing,
+      caisseLoggedAt: nowIso,
+      caisseEntryId: cleanEntryId,
     };
     memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
     return updatedBooking;

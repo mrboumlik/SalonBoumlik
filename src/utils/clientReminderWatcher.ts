@@ -4,6 +4,7 @@ import { normalizeMoroccanPhoneDigits, subscribeToBookings } from './bookingStor
 import { subscribeToCrmClients } from './crmStore';
 import { computeClientPointsSummary } from './loyaltyEngine';
 import { sendDualAlert } from './notifications';
+import { pickLang } from './i18n';
 
 const TRACKED_TICKETS_KEY = 'salon_boumlik_tracked_tickets_v1';
 const TRACKED_PHONES_KEY = 'salon_boumlik_tracked_phones_v1';
@@ -40,6 +41,14 @@ export function rememberTrackedTicket(ticketNumber: string, clientPhone?: string
   if (clientPhone) {
     rememberTrackedPhone(clientPhone);
   }
+}
+
+export function getRememberedPhones(): string[] {
+  return readStringArray(TRACKED_PHONES_KEY);
+}
+
+export function getRememberedTickets(): string[] {
+  return readStringArray(TRACKED_TICKETS_KEY);
 }
 
 export function rememberTrackedPhone(rawPhone: string): void {
@@ -98,52 +107,73 @@ function notifyBookingStatusUpdate(booking: AppointmentBooking, lang: Language):
 
   if (booking.status === 'confirmed') {
     toastType = 'success';
-    title =
-      lang === 'ar'
-        ? `تم تأكيد موعدك (${booking.ticketNumber}) ✓`
-        : lang === 'en'
-        ? `Appointment Confirmed (${booking.ticketNumber}) ✓`
-        : `Rendez-vous Confirmé (${booking.ticketNumber}) ✓`;
-    body =
-      lang === 'ar'
-        ? `كرسيك محجوز مع ${booking.barberName} بتاريخ ${booking.date} الساعة ${booking.timeSlot}.`
-        : `Votre créneau est réservé avec ${booking.barberName} le ${booking.date} à ${booking.timeSlot}.`;
+    title = pickLang(lang, {
+      ar: `تم تأكيد موعدك (${booking.ticketNumber}) ✓`,
+      fr: `Rendez-vous Confirmé (${booking.ticketNumber}) ✓`,
+      amz: `ⵉⵜⵜⵓⵙⵙⵏⵜⵎ ⵓⵙⵉⵀⵍ ⵏⵏⴽ (${booking.ticketNumber}) ✓`,
+      en: `Appointment Confirmed (${booking.ticketNumber}) ✓`,
+      es: `Cita confirmada (${booking.ticketNumber}) ✓`,
+    });
+    body = pickLang(lang, {
+      ar: `كرسيك محجوز مع ${booking.barberName} بتاريخ ${booking.date} الساعة ${booking.timeSlot}.`,
+      fr: `Votre créneau est réservé avec ${booking.barberName} le ${booking.date} à ${booking.timeSlot}.`,
+      amz: `ⴰⵙⵉⵀⵍ ⵏⵏⴽ ⵉⵀⵢⵢⴰ ⴷ ${booking.barberName} ⴰⵙⵙ ⵏ ${booking.date} ⴳ ${booking.timeSlot}.`,
+      en: `Your chair is reserved with ${booking.barberName} on ${booking.date} at ${booking.timeSlot}.`,
+      es: `Tu turno está reservado con ${booking.barberName} el ${booking.date} a las ${booking.timeSlot}.`,
+    });
   } else if (booking.status === 'rescheduled') {
     toastType = 'reschedule';
     const nextTime = booking.rescheduledTo
       ? `${booking.rescheduledTo.date} • ${booking.rescheduledTo.time}`
       : `${booking.date} • ${booking.timeSlot}`;
-    title =
-      lang === 'ar'
-        ? `تحديث موعدك (${booking.ticketNumber})`
-        : lang === 'en'
-        ? `Schedule Update (${booking.ticketNumber})`
-        : `Nouvel Horaire Proposé (${booking.ticketNumber})`;
-    body =
-      lang === 'ar'
-        ? `اقترح ${booking.barberName} التوقيت الجديد: ${nextTime}. افتح التذكرة للقبول.`
-        : `${booking.barberName} propose un nouvel horaire : ${nextTime}.`;
+    title = pickLang(lang, {
+      ar: `تحديث موعدك (${booking.ticketNumber})`,
+      fr: `Nouvel Horaire Proposé (${booking.ticketNumber})`,
+      amz: `ⴰⵙⴷⵖⵉ ⵏ ⵓⵙⵉⵀⵍ (${booking.ticketNumber})`,
+      en: `Schedule Update (${booking.ticketNumber})`,
+      es: `Actualización de cita (${booking.ticketNumber})`,
+    });
+    body = pickLang(lang, {
+      ar: `اقترح ${booking.barberName} التوقيت الجديد: ${nextTime}. افتح التذكرة للقبول.`,
+      fr: `${booking.barberName} propose un nouvel horaire : ${nextTime}.`,
+      amz: `ⵉⵙⵙⵓⵜⵔ ${booking.barberName} ⴰⴽⵓⴷ ⴰⵎⴰⵢⵏⵓ : ${nextTime}.`,
+      en: `${booking.barberName} suggested a new time: ${nextTime}. Open ticket to confirm.`,
+      es: `${booking.barberName} propuso nuevo horario: ${nextTime}. Abre el ticket.`,
+    });
   } else if (booking.status === 'completed') {
     toastType = 'success';
-    title =
-      lang === 'ar'
-        ? `تم تأكيد حضورك +1 نقطة ولاء (${booking.ticketNumber}) 🏆`
-        : lang === 'en'
-        ? `Visit Verified +1 Loyalty Point (${booking.ticketNumber}) 🏆`
-        : `Visite Confirmée +1 Point Fidélité (${booking.ticketNumber}) 🏆`;
-    body =
-      lang === 'ar'
-        ? `شكراً لزيارتك! تم تحديث رصيد نقاط الولاء وسجل الزيارات الخاص بك.`
-        : `Merci pour votre visite ! Votre progression fidélité a été mise à jour.`;
+    title = pickLang(lang, {
+      ar: `تم تأكيد حضورك +1 نقطة ولاء (${booking.ticketNumber}) 🏆`,
+      fr: `Visite Confirmée +1 Point Fidélité (${booking.ticketNumber}) 🏆`,
+      amz: `ⵜⵉⵔⵣⵉ ⵜⵜⵓⵙⵙⵏⵜⵎ +1 ⵏ ⵜⵖⵓⵏⵉ (${booking.ticketNumber}) 🏆`,
+      en: `Visit Verified +1 Loyalty Point (${booking.ticketNumber}) 🏆`,
+      es: `Visita verificada +1 punto fidelidad (${booking.ticketNumber}) 🏆`,
+    });
+    body = pickLang(lang, {
+      ar: 'شكراً لزيارتك! تم تحديث رصيد نقاط الولاء وسجل الزيارات الخاص بك.',
+      fr: 'Merci pour votre visite ! Votre progression fidélité a été mise à jour.',
+      amz: 'ⵜⴰⵏⵎⵎⵉⵔⵜ ⵖⴼ ⵜⵉⵔⵣⵉ ⵏⵏⴽ! ⵉⵙⴷⵖⴰ ⵓⵙⵡⵉⵔ ⵏ ⵜⵖⵓⵏⵉ ⵏⵏⴽ.',
+      en: 'Thank you for visiting! Your loyalty points balance and visit history are updated.',
+      es: '¡Gracias por tu visita! Tus puntos e historial de fidelidad han sido actualizados.',
+    });
   } else if (booking.status === 'rejected' || booking.status === 'cancelled') {
     toastType = 'warning';
-    title =
-      lang === 'ar'
-        ? `إشعار بخصوص التذكرة (${booking.ticketNumber})`
-        : `Mise à jour du ticket (${booking.ticketNumber})`;
+    title = pickLang(lang, {
+      ar: `إشعار بخصوص التذكرة (${booking.ticketNumber})`,
+      fr: `Mise à jour du ticket (${booking.ticketNumber})`,
+      amz: `ⴰⵏⵖⵎⵉⵙ ⵖⴼ ⵜⴼⵔⴽⵉⵜ (${booking.ticketNumber})`,
+      en: `Ticket Update (${booking.ticketNumber})`,
+      es: `Aviso sobre el ticket (${booking.ticketNumber})`,
+    });
     body =
       booking.adminNotes ||
-      (lang === 'ar' ? 'تغيرت حالة التذكرة. اضغط لمراجعة التفاصيل.' : 'Le statut de votre réservation a changé.');
+      pickLang(lang, {
+        ar: 'تغيرت حالة التذكرة. اضغط لمراجعة التفاصيل.',
+        fr: 'Le statut de votre réservation a changé.',
+        amz: 'ⵉⵏⴼⵍ ⵡⴰⴷⴷⴰⴷ ⵏ ⵓⵙⵉⵀⵍ ⵏⵏⴽ.',
+        en: 'Your booking status changed. Tap to view details.',
+        es: 'El estado de tu reserva ha cambiado.',
+      });
   } else {
     return;
   }
@@ -173,16 +203,20 @@ function checkUpcomingAppointmentReminders(bookings: AppointmentBooking[], lang:
       if (hasNotifiedEvent(reminderKey)) return;
       markEventNotified(reminderKey);
 
-      const title =
-        lang === 'ar'
-          ? `تذكير بموعدك في صالون بومليك (${b.ticketNumber}) ⏰`
-          : lang === 'en'
-          ? `Salon Boumlik Reminder (${b.ticketNumber}) ⏰`
-          : `Rappel Salon Boumlik (${b.ticketNumber}) ⏰`;
-      const body =
-        lang === 'ar'
-          ? `موعدك مع ${b.barberName} اليوم بعد ${diffMinutes} دقيقة (${b.timeSlot}). مرحباً بك!`
-          : `Votre rendez-vous avec ${b.barberName} est dans ${diffMinutes} min (${b.timeSlot}).`;
+      const title = pickLang(lang, {
+        ar: `تذكير بموعدك في صالون بومليك (${b.ticketNumber}) ⏰`,
+        fr: `Rappel Salon Boumlik (${b.ticketNumber}) ⏰`,
+        amz: `ⴰⵙⴽⵜⵉ ⵏ ⵓⵙⵉⵀⵍ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ (${b.ticketNumber}) ⏰`,
+        en: `Salon Boumlik Reminder (${b.ticketNumber}) ⏰`,
+        es: `Recordatorio Salon Boumlik (${b.ticketNumber}) ⏰`,
+      });
+      const body = pickLang(lang, {
+        ar: `موعدك مع ${b.barberName} اليوم بعد ${diffMinutes} دقيقة (${b.timeSlot}). مرحباً بك!`,
+        fr: `Votre rendez-vous avec ${b.barberName} est dans ${diffMinutes} min (${b.timeSlot}).`,
+        amz: `ⴰⵙⵉⵀⵍ ⵏⵏⴽ ⴷ ${b.barberName} ⵉⵍⵍⴰ ⴳ ${diffMinutes} ⵜⵓⵙⴷⵉⴷⵜ (${b.timeSlot}).`,
+        en: `Your appointment with ${b.barberName} is in ${diffMinutes} min (${b.timeSlot}).`,
+        es: `Tu cita con ${b.barberName} es en ${diffMinutes} min (${b.timeSlot}).`,
+      });
 
       sendDualAlert(title, {
         body,
@@ -257,16 +291,21 @@ export function useClientAppointmentReminders(lang: Language): void {
           if (!hasNotifiedEvent(eventKey)) {
             markEventNotified(eventKey);
             sendDualAlert(
-              lang === 'ar'
-                ? '🪙 تحديث رصيد نقاط الولاء!'
-                : lang === 'en'
-                ? '🪙 Loyalty Points Updated!'
-                : '🪙 Points de Fidélité Mis à Jour !',
+              pickLang(lang, {
+                ar: '🪙 تحديث رصيد نقاط الولاء!',
+                fr: '🪙 Points de Fidélité Mis à Jour !',
+                amz: '🪙 ⵉⵙⴷⵖⴰ ⵓⵎⵉⴹⴰⵏ ⵏ ⵜⵖⵓⵏⵉ!',
+                en: '🪙 Loyalty Points Updated!',
+                es: '🪙 ¡Puntos de fidelidad actualizados!',
+              }),
               {
-                body:
-                  lang === 'ar'
-                    ? `${delta > 0 ? `+${delta}` : delta} نقطة — رصيدك الحالي: ${currentPts} نقطة.`
-                    : `${delta > 0 ? `+${delta}` : delta} pts — Nouveau solde : ${currentPts} pts.`,
+                body: pickLang(lang, {
+                  ar: `${delta > 0 ? `+${delta}` : delta} نقطة — رصيدك الحالي: ${currentPts} نقطة.`,
+                  fr: `${delta > 0 ? `+${delta}` : delta} pts — Nouveau solde : ${currentPts} pts.`,
+                  amz: `${delta > 0 ? `+${delta}` : delta} pts — ⴰⵎⵉⴹⴰⵏ : ${currentPts} pts.`,
+                  en: `${delta > 0 ? `+${delta}` : delta} pts — New balance: ${currentPts} pts.`,
+                  es: `${delta > 0 ? `+${delta}` : delta} pts — Nuevo saldo: ${currentPts} pts.`,
+                }),
                 type: 'success',
                 tag: `sb-points-${profile.id}-${currentPts}`,
                 data: { url: `/#track=${encodeURIComponent(profile.normalizedPhone)}` },

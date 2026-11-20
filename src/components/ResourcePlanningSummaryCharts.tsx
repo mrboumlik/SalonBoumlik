@@ -16,6 +16,8 @@ import { BarChart3, Clock, TrendingUp, Users, AlertCircle } from 'lucide-react';
 import { AppointmentBooking, CustomerReview } from '../types';
 import { TEAM_MEMBERS, INITIAL_REVIEWS } from '../data/barbershopData';
 import { ALL_SALON_CONFIGURABLE_HOURS } from '../utils/barberScheduleStore';
+import { useLanguage } from '../context/LanguageContext';
+import { pickLang } from '../utils/i18n';
 
 interface ResourcePlanningSummaryChartsProps {
   bookings: AppointmentBooking[];
@@ -65,6 +67,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
   role = 'master',
   ownBarberId = 'all',
 }) => {
+  const { lang } = useLanguage();
   const [period, setPeriod] = useState<PeriodWindow>('30d');
   const [barberScope, setBarberScope] = useState<string>(
     role === 'barber' ? ownBarberId : 'all'
@@ -205,10 +208,12 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
             )
           : Number(barber.rating || 5);
 
+      const displayName = barber.name[lang] || barber.name.ar || barber.name.fr;
+
       return {
         id: barber.id,
-        name: barber.name.ar.split(' ')[0],
-        fullName: barber.name.ar,
+        name: displayName.split(' ')[0],
+        fullName: displayName,
         color: barber.themeColor || '#D97706',
         completedCount,
         upcomingCount,
@@ -219,7 +224,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
         avgRating,
       };
     });
-  }, [periodFilteredBookings, reviews, role, ownBarberId]);
+  }, [periodFilteredBookings, reviews, role, ownBarberId, lang]);
 
   // Executive KPIs derived from datasets
   const summaryStats = useMemo(() => {
@@ -261,10 +266,13 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
 
   const periodLabel =
     period === '7d'
-      ? 'آخر 7 أيام'
+      ? pickLang(lang, { ar: 'آخر 7 أيام', fr: '7 derniers jours', amz: '7 ⵡⵓⵙⵙⴰⵏ', en: 'Last 7 Days', es: 'Últimos 7 días' })
       : period === '30d'
-      ? 'آخر 30 يوماً'
-      : 'كامل السجل';
+      ? pickLang(lang, { ar: 'آخر 30 يوماً', fr: '30 derniers jours', amz: '30 ⵡⵓⵙⵙⴰⵏ', en: 'Last 30 Days', es: 'Últimos 30 días' })
+      : pickLang(lang, { ar: 'كامل السجل', fr: 'Tout l’historique', amz: 'ⴰⴽⴽʷ ⵓⵎⵣⵔⵓⵢ', en: 'All Time', es: 'Todo el historial' });
+
+  const isRtl = lang === 'ar';
+  const dirAttr = isRtl ? 'rtl' : 'ltr';
 
   return (
     <div className="space-y-5">
@@ -273,10 +281,24 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
         <div>
           <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-amber-400" />
-            <span>ملخص وتخطيط الموارد • Resource Planning Summary</span>
+            <span>
+              {pickLang(lang, {
+                ar: 'ملخص وتخطيط الموارد',
+                fr: 'Synthèse & Planification des Ressources',
+                amz: 'ⴰⵙⴳⵣⵍ ⴷ ⵓⵖⴰⵡⴰⵙ ⵏ ⵜⵡⵓⵔⵉ',
+                en: 'Resource Planning Summary',
+                es: 'Resumen de Planificación de Recursos',
+              })}
+            </span>
           </h3>
           <p className="text-[11px] text-zinc-400 mt-0.5">
-            تحليل ساعات الذروة ومقارنة أداء الحلاقين لتوزيع المناوبات وتقليل ضغط الانتظار ({periodLabel})
+            {pickLang(lang, {
+              ar: `تحليل ساعات الذروة ومقارنة أداء الحلاقين لتوزيع المناوبات وتقليل ضغط الانتظار (${periodLabel})`,
+              fr: `Analyse des heures de pointe et performance des barbiers pour optimiser les créneaux (${periodLabel})`,
+              amz: `ⴰⵙⴼⵙⵉ ⵏ ⵜⵙⵔⴰⴳⵉⵏ ⵏ ⵓⵎⵓⴷⴷⵓ ⴷ ⵜⵡⵓⵔⵉ ⵏ ⵉⵎⵣⵣⴰⴳⵏ (${periodLabel})`,
+              en: `Peak hour demand analysis and barber performance comparison (${periodLabel})`,
+              es: `Análisis de horas pico y rendimiento de barberos (${periodLabel})`,
+            })}
           </p>
         </div>
 
@@ -285,9 +307,9 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
           <div className="inline-flex rounded-xl bg-zinc-950 border border-zinc-800 p-0.5 text-[11px] font-bold">
             {(
               [
-                { id: '7d', label: '7 أيام' },
-                { id: '30d', label: '30 يوماً' },
-                { id: 'all', label: 'الكل' },
+                { id: '7d', label: pickLang(lang, { ar: '7 أيام', fr: '7 jours', amz: '7 ⵡⵓⵙⵙⴰⵏ', en: '7 Days', es: '7 días' }) },
+                { id: '30d', label: pickLang(lang, { ar: '30 يوماً', fr: '30 jours', amz: '30 ⵡⵓⵙⵙⴰⵏ', en: '30 Days', es: '30 días' }) },
+                { id: 'all', label: pickLang(lang, { ar: 'الكل', fr: 'Tout', amz: 'ⴰⴽⴽʷ', en: 'All', es: 'Todo' }) },
               ] as const
             ).map((opt) => (
               <button
@@ -310,13 +332,27 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
             <select
               value={barberScope}
               onChange={(e) => setBarberScope(e.target.value)}
-              aria-label="تصفية ساعات الذروة حسب الحلاق"
+              aria-label={pickLang(lang, {
+                ar: 'تصفية ساعات الذروة حسب الحلاق',
+                fr: 'Filtrer les heures de pointe par barbier',
+                amz: 'ⵙⵜⵉ ⵜⵉⵙⵔⴰⴳⵉⵏ ⵙ ⵓⵎⵣⵣⴰⴳ',
+                en: 'Filter peak hours by barber',
+                es: 'Filtrar horas pico por barbero',
+              })}
               className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-500"
             >
-              <option value="all">جميع الحلاقين (الصالون)</option>
+              <option value="all">
+                {pickLang(lang, {
+                  ar: 'جميع الحلاقين (الصالون)',
+                  fr: 'Tous les barbiers (Salon)',
+                  amz: 'ⴰⴽⴽʷ ⵉⵎⵣⵣⴰⴳⵏ',
+                  en: 'All Barbers (Salon)',
+                  es: 'Todos los barberos',
+                })}
+              </option>
               {TEAM_MEMBERS.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name.ar}
+                  {m.name[lang] || m.name.ar || m.name.fr}
                 </option>
               ))}
             </select>
@@ -328,41 +364,65 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-1">
           <span className="text-[11px] font-bold text-zinc-400 block">
-            ساعة الذروة الأعلى طلباً
+            {pickLang(lang, {
+              ar: 'ساعة الذروة الأعلى طلباً',
+              fr: 'Heure de pointe',
+              amz: 'ⵜⴰⵙⵔⴰⴳⵜ ⵜⴰⵎⵇⵔⴰⵏⵜ',
+              en: 'Peak Demand Hour',
+              es: 'Hora pico',
+            })}
           </span>
           <div className="text-2xl font-black text-amber-400 font-mono tabular-nums" dir="ltr">
             {summaryStats.peakHourRow ? summaryStats.peakHourRow.hour : '—'}
           </div>
           <span className="text-[11px] text-zinc-400 font-mono tabular-nums block">
             {summaryStats.peakHourRow
-              ? `${summaryStats.peakHourRow.activeDemand} حجز (${summaryStats.peakHourRow.sharePct}% من الطلب)`
-              : 'لا توجد بيانات كافية'}
+              ? pickLang(lang, {
+                  ar: `${summaryStats.peakHourRow.activeDemand} حجز (${summaryStats.peakHourRow.sharePct}% من الطلب)`,
+                  fr: `${summaryStats.peakHourRow.activeDemand} RDV (${summaryStats.peakHourRow.sharePct}% de la demande)`,
+                  amz: `${summaryStats.peakHourRow.activeDemand} ⵉⵎⵓⵄⵉⴷⵏ (${summaryStats.peakHourRow.sharePct}%)`,
+                  en: `${summaryStats.peakHourRow.activeDemand} bookings (${summaryStats.peakHourRow.sharePct}% share)`,
+                  es: `${summaryStats.peakHourRow.activeDemand} citas (${summaryStats.peakHourRow.sharePct}%)`,
+                })
+              : pickLang(lang, { ar: 'لا توجد بيانات كافية', fr: 'Données insuffisantes', amz: 'ⵓⵔ ⵍⵍⵉⵏ ⵉⵙⴼⴽⴰ', en: 'Not enough data', es: 'Sin datos suficientes' })}
           </span>
         </div>
 
         <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-1">
           <span className="text-[11px] font-bold text-zinc-400 block">
-            إجمالي الطلب الفعّال ({periodLabel})
+            {pickLang(lang, {
+              ar: `إجمالي الطلب الفعّال (${periodLabel})`,
+              fr: `Demande active (${periodLabel})`,
+              amz: `ⴰⵎⴰⵜⴰⵢ ⵏ ⵉⵎⵓⵄⵉⴷⵏ (${periodLabel})`,
+              en: `Active Demand (${periodLabel})`,
+              es: `Demanda activa (${periodLabel})`,
+            })}
           </span>
           <div className="text-2xl font-black text-white font-mono tabular-nums">
             {summaryStats.activeTotal}
           </div>
           <span className="text-[11px] text-emerald-400 font-mono tabular-nums block">
-            {summaryStats.completedTotal} مكتمل ({summaryStats.completionRatePct}%)
-            {summaryStats.flexibleCount > 0 ? ` · ${summaryStats.flexibleCount} مرن` : ''}
+            {summaryStats.completedTotal} {pickLang(lang, { ar: 'مكتمل', fr: 'terminés', amz: 'ⵉⵎⴷⵏ', en: 'completed', es: 'completadas' })} ({summaryStats.completionRatePct}%)
+            {summaryStats.flexibleCount > 0 ? ` · ${summaryStats.flexibleCount} ${pickLang(lang, { ar: 'مرن', fr: 'flexibles', amz: 'ⵉⵏⵓⵥⵓⵕⵏ', en: 'flexible', es: 'flexibles' })}` : ''}
           </span>
         </div>
 
         <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-1">
           <span className="text-[11px] font-bold text-zinc-400 block">
-            الإيرادات المحققة (المكتملة)
+            {pickLang(lang, {
+              ar: 'الإيرادات المحققة (المكتملة)',
+              fr: 'Revenus réalisés (terminés)',
+              amz: 'ⵉⴷⵔⵉⵎⵏ ⵉⵜⵜⵓⵙⴽⵔⵏ',
+              en: 'Realized Revenue (Completed)',
+              es: 'Ingresos realizados',
+            })}
           </span>
           <div className="text-2xl font-black text-emerald-400 font-mono tabular-nums">
             {summaryStats.revenueTotal.toLocaleString('en-US')}{' '}
             <span className="text-xs font-bold">MAD</span>
           </div>
           <span className="text-[11px] text-zinc-400 font-mono tabular-nums block">
-            متوسط التذكرة:{' '}
+            {pickLang(lang, { ar: 'متوسط التذكرة:', fr: 'Ticket moyen :', amz: 'ⴰⵏⴰⵎⵎⴰⵙ:', en: 'Avg ticket:', es: 'Ticket medio:' })}{' '}
             {summaryStats.completedTotal > 0
               ? Math.round(summaryStats.revenueTotal / summaryStats.completedTotal)
               : 0}{' '}
@@ -372,7 +432,13 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
 
         <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-1">
           <span className="text-[11px] font-bold text-zinc-400 block">
-            أعلى حلاق أداءً في الفترة
+            {pickLang(lang, {
+              ar: 'أعلى حلاق أداءً في الفترة',
+              fr: 'Meilleur barbier de la période',
+              amz: 'ⴰⵎⵣⵣⴰⴳ ⴰⵎⵓⴼⴰⵢ',
+              en: 'Top Performing Barber',
+              es: 'Mejor barbero del período',
+            })}
           </span>
           <div className="text-xl font-black text-white truncate">
             {summaryStats.topBarber && summaryStats.topBarber.totalHandled > 0
@@ -381,8 +447,8 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
           </div>
           <span className="text-[11px] text-amber-300 font-mono tabular-nums block">
             {summaryStats.topBarber && summaryStats.topBarber.totalHandled > 0
-              ? `${summaryStats.topBarber.completedCount} مكتمل · ${summaryStats.topBarber.revenueMAD.toLocaleString('en-US')} MAD`
-              : 'بانتظار حجوزات'}
+              ? `${summaryStats.topBarber.completedCount} ${pickLang(lang, { ar: 'مكتمل', fr: 'terminés', amz: 'ⵉⵎⴷⵏ', en: 'completed', es: 'completadas' })} · ${summaryStats.topBarber.revenueMAD.toLocaleString('en-US')} MAD`
+              : pickLang(lang, { ar: 'بانتظار حجوزات', fr: 'En attente de RDV', amz: 'ⴰⵔ ⵉⵜⵜⵕⴰⵊⵓ', en: 'Awaiting bookings', es: 'Esperando citas' })}
           </span>
         </div>
       </div>
@@ -395,15 +461,29 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
             <div>
               <h4 className="text-sm font-black text-white flex items-center gap-2">
                 <Clock className="w-4 h-4 text-amber-400" />
-                <span>توزيع ساعات الذروة • Peak Booking Hours</span>
+                <span>
+                  {pickLang(lang, {
+                    ar: 'توزيع ساعات الذروة',
+                    fr: 'Distribution des heures de pointe',
+                    amz: 'ⴰⴱⴹⴰⵢ ⵏ ⵜⵙⵔⴰⴳⵉⵏ ⵏ ⵓⵎⵓⴷⴷⵓ',
+                    en: 'Peak Booking Hours',
+                    es: 'Distribución de horas pico',
+                  })}
+                </span>
               </h4>
               <p className="text-[11px] text-zinc-400 mt-0.5">
-                كثافة الحجوزات حسب الساعة لتحديد أوقات الاستراحة والضغط العالي
+                {pickLang(lang, {
+                  ar: 'كثافة الحجوزات حسب الساعة لتحديد أوقات الاستراحة والضغط العالي',
+                  fr: 'Densité des réservations par heure pour planifier pauses et affluence',
+                  amz: 'ⵜⵉⵥⵥⵉⵜ ⵏ ⵉⵎⵓⵄⵉⴷⵏ ⵙ ⵜⵙⵔⴰⴳⵜ',
+                  en: 'Hourly booking density to schedule breaks and manage peak traffic',
+                  es: 'Densidad horaria para planificar descansos y horas pico',
+                })}
               </p>
             </div>
             {summaryStats.peakHourRow && (
               <span className="text-[11px] font-mono font-bold text-red-400 tabular-nums">
-                الذروة: {summaryStats.peakHourRow.hour} ({summaryStats.peakHourRow.activeDemand})
+                {pickLang(lang, { ar: 'الذروة:', fr: 'Pointe :', amz: 'ⴰⴼⵍⵍⴰ:', en: 'Peak:', es: 'Pico:' })} {summaryStats.peakHourRow.hour} ({summaryStats.peakHourRow.activeDemand})
               </span>
             )}
           </div>
@@ -411,7 +491,15 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
           {summaryStats.activeTotal === 0 ? (
             <div className="h-[270px] flex flex-col items-center justify-center text-center text-zinc-500 text-xs gap-2">
               <AlertCircle className="w-6 h-6 text-zinc-600" />
-              <p>لا توجد حجوزات نشطة ضمن الفترة المحددة لعرض مخطط ساعات الذروة.</p>
+              <p>
+                {pickLang(lang, {
+                  ar: 'لا توجد حجوزات نشطة ضمن الفترة المحددة لعرض مخطط ساعات الذروة.',
+                  fr: 'Aucune réservation active sur cette période pour afficher les heures de pointe.',
+                  amz: 'ⵓⵔ ⵍⵍⵉⵏ ⵉⵎⵓⵄⵉⴷⵏ ⵉⵔⵎⵉⴷⵏ ⴳ ⵓⵣⵎⵣ ⴰⴷ.',
+                  en: 'No active bookings in this period to display peak hours.',
+                  es: 'No hay reservas activas en este período.',
+                })}
+              </p>
             </div>
           ) : (
             <div className="h-[270px] w-full" dir="ltr">
@@ -445,21 +533,29 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                       if (!active || !payload || !payload.length) return null;
                       const d = payload[0].payload;
                       return (
-                        <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-700 shadow-xl text-xs space-y-1 text-right" dir="rtl">
+                        <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-700 shadow-xl text-xs space-y-1 text-start" dir={dirAttr}>
                           <div className="font-mono font-black text-amber-400 flex items-center justify-between gap-4">
-                            <span>الساعة {d.hour}</span>
+                            <span>{pickLang(lang, { ar: `الساعة ${d.hour}`, fr: `Heure ${d.hour}`, amz: `ⵜⴰⵙⵔⴰⴳⵜ ${d.hour}`, en: `Hour ${d.hour}`, es: `Hora ${d.hour}` })}</span>
                             {d.isPeak && (
-                              <span className="text-red-400 text-[10px]">وقت الذروة</span>
+                              <span className="text-red-400 text-[10px]">
+                                {pickLang(lang, { ar: 'وقت الذروة', fr: 'Heure de pointe', amz: 'ⴰⴼⵍⵍⴰ', en: 'Peak', es: 'Pico' })}
+                              </span>
                             )}
                           </div>
                           <div className="text-zinc-200 font-mono tabular-nums">
-                            إجمالي الطلب النشط: <strong>{d.activeDemand}</strong> ({d.sharePct}%)
+                            {pickLang(lang, { ar: 'إجمالي الطلب النشط:', fr: 'Demande active :', amz: 'ⴰⵎⴰⵜⴰⵢ:', en: 'Active demand:', es: 'Demanda activa:' })} <strong>{d.activeDemand}</strong> ({d.sharePct}%)
                           </div>
                           <div className="text-emerald-400 font-mono tabular-nums text-[11px]">
-                            مكتمل: {d.completed} · مؤكد: {d.confirmed} · معلق: {d.pending}
+                            {pickLang(lang, {
+                              ar: `مكتمل: ${d.completed} · مؤكد: ${d.confirmed} · معلق: ${d.pending}`,
+                              fr: `Terminés : ${d.completed} · Confirmés : ${d.confirmed} · Attente : ${d.pending}`,
+                              amz: `ⵉⵎⴷⵏ: ${d.completed} · ⵉⵙⵏⵜⵎⵏ: ${d.confirmed} · ⵓⵔ ⵜⴰ: ${d.pending}`,
+                              en: `Done: ${d.completed} · Confirmed: ${d.confirmed} · Pending: ${d.pending}`,
+                              es: `Hechas: ${d.completed} · Confirmadas: ${d.confirmed} · Pend.: ${d.pending}`,
+                            })}
                           </div>
                           <div className="text-zinc-400 font-mono tabular-nums text-[11px]">
-                            إيرادات هذه الساعة: {d.revenueMAD.toLocaleString('en-US')} MAD
+                            {pickLang(lang, { ar: 'إيرادات هذه الساعة:', fr: 'Revenus :', amz: 'ⵉⴷⵔⵉⵎⵏ:', en: 'Hour revenue:', es: 'Ingresos:' })} {d.revenueMAD.toLocaleString('en-US')} MAD
                           </div>
                         </div>
                       );
@@ -467,7 +563,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                   />
                   <Bar
                     dataKey="activeDemand"
-                    name="عدد الحجوزات"
+                    name={pickLang(lang, { ar: 'عدد الحجوزات', fr: 'Réservations', amz: 'ⵉⵎⵓⵄⵉⴷⵏ', en: 'Bookings', es: 'Reservas' })}
                     radius={[6, 6, 0, 0]}
                     maxBarSize={34}
                   >
@@ -493,16 +589,22 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
           {summaryStats.peakHourRow && (
             <div className="pt-2 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-400">
               <span>
-                أكثر ساعة ازدحاماً:{' '}
+                {pickLang(lang, { ar: 'أكثر ساعة ازدحاماً:', fr: 'Heure la plus chargée :', amz: 'ⵜⴰⵙⵔⴰⴳⵜ ⵉⵛⵛⵓⵕⵏ:', en: 'Busiest hour:', es: 'Hora más ocupada:' })}{' '}
                 <strong className="font-mono text-red-400" dir="ltr">
                   {summaryStats.peakHourRow.hour}
                 </strong>{' '}
-                (يفضل تواجد كامل الفريق دون استراحات)
+                {pickLang(lang, {
+                  ar: '(يفضل تواجد كامل الفريق دون استراحات)',
+                  fr: '(équipe complète recommandée sans pauses)',
+                  amz: '(ⵉⵅⵚⵚⴰ ⴰⴽⴽʷ ⵉⵎⵣⵣⴰⴳⵏ ⴰⴷ ⵉⵍⵉⵏ)',
+                  en: '(full team recommended without breaks)',
+                  es: '(equipo completo recomendado sin descansos)',
+                })}
               </span>
               {summaryStats.quietestOpenRow &&
                 summaryStats.quietestOpenRow.hour !== summaryStats.peakHourRow.hour && (
                   <span>
-                    الوقت الأهدأ للاستراحة:{' '}
+                    {pickLang(lang, { ar: 'الوقت الأهدأ للاستراحة:', fr: 'Créneau calme pour pause :', amz: 'ⴰⴽⵓⴷ ⵉⵔⵙⴰⵏ:', en: 'Quietest break slot:', es: 'Hora tranquila:' })}{' '}
                     <strong className="font-mono text-emerald-400" dir="ltr">
                       {summaryStats.quietestOpenRow.hour}
                     </strong>
@@ -518,10 +620,24 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
             <div>
               <h4 className="text-sm font-black text-white flex items-center gap-2">
                 <Users className="w-4 h-4 text-emerald-400" />
-                <span>أداء الحلاقين • Barber Performance</span>
+                <span>
+                  {pickLang(lang, {
+                    ar: 'أداء الحلاقين',
+                    fr: 'Performance des Barbiers',
+                    amz: 'ⵜⴰⵡⵓⵔⵉ ⵏ ⵉⵎⵣⵣⴰⴳⵏ',
+                    en: 'Barber Performance',
+                    es: 'Rendimiento de Barberos',
+                  })}
+                </span>
               </h4>
               <p className="text-[11px] text-zinc-400 mt-0.5">
-                مقارنة المواعيد المكتملة والقادمة والعائد أو الالتزام لكل حلاق
+                {pickLang(lang, {
+                  ar: 'مقارنة المواعيد المكتملة والقادمة والعائد أو الالتزام لكل حلاق',
+                  fr: 'Comparaison des visites terminées, à venir, revenus et assiduité par barbier',
+                  amz: 'ⴰⵙⵎⵣⴰⵣⴰⵍ ⵏ ⵉⵎⵓⵄⵉⴷⵏ ⴷ ⵉⴷⵔⵉⵎⵏ ⵉ ⴽⵓ ⴰⵎⵣⵣⴰⴳ',
+                  en: 'Compare completed visits, upcoming volume, revenue, and reliability',
+                  es: 'Comparación de citas, ingresos y puntualidad por barbero',
+                })}
               </p>
             </div>
 
@@ -535,7 +651,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                المواعيد والدخل
+                {pickLang(lang, { ar: 'المواعيد والدخل', fr: 'Visites & Revenus', amz: 'ⵉⵎⵓⵄⵉⴷⵏ ⴷ ⵉⴷⵔⵉⵎⵏ', en: 'Volume & Revenue', es: 'Citas e Ingresos' })}
               </button>
               <button
                 type="button"
@@ -546,7 +662,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                الالتزام والتقييم
+                {pickLang(lang, { ar: 'الالتزام والتقييم', fr: 'Assiduité & Note', amz: 'ⴰⵙⵏⵜⵎ ⴷ ⵓⵙⵜⴰⵍ', en: 'Reliability & Rating', es: 'Puntualidad y Nota' })}
               </button>
             </div>
           </div>
@@ -592,7 +708,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                       if (!active || !payload || !payload.length) return null;
                       const d = payload[0].payload;
                       return (
-                        <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-700 shadow-xl text-xs space-y-1 text-right" dir="rtl">
+                        <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-700 shadow-xl text-xs space-y-1 text-start" dir={dirAttr}>
                           <div className="font-black text-white flex items-center gap-1.5">
                             <span
                               className="w-2.5 h-2.5 rounded-full inline-block"
@@ -601,16 +717,16 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                             <span>{d.fullName}</span>
                           </div>
                           <div className="text-emerald-400 font-mono tabular-nums">
-                            المكتملة: <strong>{d.completedCount}</strong>
+                            {pickLang(lang, { ar: 'المكتملة:', fr: 'Terminés :', amz: 'ⵉⵎⴷⵏ:', en: 'Completed:', es: 'Completadas:' })} <strong>{d.completedCount}</strong>
                           </div>
                           <div className="text-blue-400 font-mono tabular-nums">
-                            القادمة / قيد المراجعة: <strong>{d.upcomingCount}</strong>
+                            {pickLang(lang, { ar: 'القادمة / قيد المراجعة:', fr: 'À venir / en attente :', amz: 'ⴷ-ⵉⴷⴷⴰⵏ:', en: 'Upcoming / pending:', es: 'Próximas / pend.:' })} <strong>{d.upcomingCount}</strong>
                           </div>
                           <div className="text-amber-300 font-mono tabular-nums">
-                            الأرباح: <strong>{d.revenueMAD.toLocaleString('en-US')} MAD</strong>
+                            {pickLang(lang, { ar: 'الأرباح:', fr: 'Revenus :', amz: 'ⵉⴷⵔⵉⵎⵏ:', en: 'Revenue:', es: 'Ingresos:' })} <strong>{d.revenueMAD.toLocaleString('en-US')} MAD</strong>
                           </div>
                           <div className="text-zinc-400 font-mono tabular-nums text-[11px]">
-                            متوسط التذكرة: {d.avgTicketMAD} MAD · التقييم {d.avgRating}★
+                            {pickLang(lang, { ar: 'متوسط التذكرة:', fr: 'Ticket moyen :', amz: 'ⴰⵏⴰⵎⵎⴰⵙ:', en: 'Avg ticket:', es: 'Media:' })} {d.avgTicketMAD} MAD · {d.avgRating}★
                           </div>
                         </div>
                       );
@@ -625,7 +741,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                   <Bar
                     yAxisId="left"
                     dataKey="completedCount"
-                    name="زيارات مكتملة"
+                    name={pickLang(lang, { ar: 'زيارات مكتملة', fr: 'Terminés', amz: 'ⵉⵎⴷⵏ', en: 'Completed', es: 'Completadas' })}
                     fill="#10B981"
                     radius={[5, 5, 0, 0]}
                     maxBarSize={26}
@@ -633,7 +749,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                   <Bar
                     yAxisId="left"
                     dataKey="upcomingCount"
-                    name="قادمة / معلقة"
+                    name={pickLang(lang, { ar: 'قادمة / معلقة', fr: 'À venir / Attente', amz: 'ⴷ-ⵉⴷⴷⴰⵏ', en: 'Upcoming', es: 'Próximas' })}
                     fill="#3B82F6"
                     radius={[5, 5, 0, 0]}
                     maxBarSize={26}
@@ -642,7 +758,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                     yAxisId="right"
                     type="monotone"
                     dataKey="revenueMAD"
-                    name="الإيرادات (MAD)"
+                    name={pickLang(lang, { ar: 'الإيرادات (MAD)', fr: 'Revenus (MAD)', amz: 'ⵉⴷⵔⵉⵎⵏ (MAD)', en: 'Revenue (MAD)', es: 'Ingresos (MAD)' })}
                     stroke="#F59E0B"
                     strokeWidth={2.5}
                     dot={{ r: 4, fill: '#F59E0B', strokeWidth: 2, stroke: '#09090b' }}
@@ -689,16 +805,16 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                       if (!active || !payload || !payload.length) return null;
                       const d = payload[0].payload;
                       return (
-                        <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-700 shadow-xl text-xs space-y-1 text-right" dir="rtl">
+                        <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-700 shadow-xl text-xs space-y-1 text-start" dir={dirAttr}>
                           <div className="font-black text-white">{d.fullName}</div>
                           <div className="text-emerald-400 font-mono tabular-nums">
-                            نسبة الالتزام بالحضور: <strong>{d.reliabilityPct}%</strong>
+                            {pickLang(lang, { ar: 'نسبة الالتزام بالحضور:', fr: 'Taux de présence :', amz: 'ⴰⵜⵉⴳ ⵏ ⵜⵉⵍⵉⵜ:', en: 'Attendance reliability:', es: 'Asistencia:' })} <strong>{d.reliabilityPct}%</strong>
                           </div>
                           <div className="text-amber-300 font-mono tabular-nums">
-                            تقييم الزبناء: <strong>{d.avgRating} / 5.0 ★</strong>
+                            {pickLang(lang, { ar: 'تقييم الزبناء:', fr: 'Note clients :', amz: 'ⴰⵙⵜⴰⵍ:', en: 'Client rating:', es: 'Valoración:' })} <strong>{d.avgRating} / 5.0 ★</strong>
                           </div>
                           <div className="text-zinc-400 font-mono tabular-nums text-[11px]">
-                            إجمالي المواعيد: {d.totalHandled}
+                            {pickLang(lang, { ar: 'إجمالي المواعيد:', fr: 'Total RDV :', amz: 'ⴰⵎⴰⵜⴰⵢ:', en: 'Total bookings:', es: 'Total citas:' })} {d.totalHandled}
                           </div>
                         </div>
                       );
@@ -713,7 +829,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                   <Bar
                     yAxisId="left"
                     dataKey="reliabilityPct"
-                    name="نسبة الالتزام (%)"
+                    name={pickLang(lang, { ar: 'نسبة الالتزام (%)', fr: 'Assiduité (%)', amz: 'ⴰⵙⵏⵜⵎ (%)', en: 'Reliability (%)', es: 'Puntualidad (%)' })}
                     radius={[5, 5, 0, 0]}
                     maxBarSize={34}
                   >
@@ -725,7 +841,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                     yAxisId="right"
                     type="monotone"
                     dataKey="avgRating"
-                    name="تقييم الزبناء (من 5)"
+                    name={pickLang(lang, { ar: 'تقييم الزبناء (من 5)', fr: 'Note clients (/5)', amz: 'ⴰⵙⵜⴰⵍ (/5)', en: 'Client Rating (/5)', es: 'Nota (/5)' })}
                     stroke="#FBBF24"
                     strokeWidth={2.5}
                     dot={{ r: 4, fill: '#FBBF24', stroke: '#09090b', strokeWidth: 2 }}
@@ -760,23 +876,31 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
         <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
           <h4 className="text-sm font-black text-white flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-amber-400" />
-            <span>جدول مقارنة الفريق لتوزيع الموارد ({periodLabel})</span>
+            <span>
+              {pickLang(lang, {
+                ar: `جدول مقارنة الفريق لتوزيع الموارد (${periodLabel})`,
+                fr: `Tableau comparatif d’équipe (${periodLabel})`,
+                amz: `ⵜⴰⴼⵍⵡⵉⵜ ⵏ ⵓⵙⵎⵣⴰⵣⴰⵍ ⵏ ⵜⵔⴰⴱⴱⵓⵜ (${periodLabel})`,
+                en: `Team Comparison Table (${periodLabel})`,
+                es: `Tabla comparativa del equipo (${periodLabel})`,
+              })}
+            </span>
           </h4>
           <span className="text-[11px] font-mono text-zinc-400 tabular-nums">
-            {barberPerformanceData.length} حلاقين
+            {barberPerformanceData.length} {pickLang(lang, { ar: 'حلاقين', fr: 'barbiers', amz: 'ⵉⵎⵣⵣⴰⴳⵏ', en: 'barbers', es: 'barberos' })}
           </span>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-xs text-right border-collapse">
+          <table className="w-full text-xs text-start border-collapse">
             <thead>
               <tr className="border-b border-zinc-800 text-[11px] text-zinc-400">
-                <th className="py-2 px-2 font-bold">الحلاق</th>
-                <th className="py-2 px-2 font-bold text-center">مكتملة</th>
-                <th className="py-2 px-2 font-bold text-center">قادمة / معلقة</th>
-                <th className="py-2 px-2 font-bold text-center">الالتزام</th>
-                <th className="py-2 px-2 font-bold text-center">التقييم</th>
-                <th className="py-2 px-2 font-bold text-left">الأرباح (MAD)</th>
+                <th className="py-2 px-2 font-bold">{pickLang(lang, { ar: 'الحلاق', fr: 'Barbier', amz: 'ⴰⵎⵣⵣⴰⴳ', en: 'Barber', es: 'Barbero' })}</th>
+                <th className="py-2 px-2 font-bold text-center">{pickLang(lang, { ar: 'مكتملة', fr: 'Terminés', amz: 'ⵉⵎⴷⵏ', en: 'Done', es: 'Hechas' })}</th>
+                <th className="py-2 px-2 font-bold text-center">{pickLang(lang, { ar: 'قادمة / معلقة', fr: 'À venir', amz: 'ⴷ-ⵉⴷⴷⴰⵏ', en: 'Upcoming', es: 'Próximas' })}</th>
+                <th className="py-2 px-2 font-bold text-center">{pickLang(lang, { ar: 'الالتزام', fr: 'Assiduité', amz: 'ⴰⵙⵏⵜⵎ', en: 'Reliability', es: 'Puntualidad' })}</th>
+                <th className="py-2 px-2 font-bold text-center">{pickLang(lang, { ar: 'التقييم', fr: 'Note', amz: 'ⴰⵙⵜⴰⵍ', en: 'Rating', es: 'Nota' })}</th>
+                <th className="py-2 px-2 font-bold text-end">{pickLang(lang, { ar: 'الأرباح (MAD)', fr: 'Revenus (MAD)', amz: 'ⵉⴷⵔⵉⵎⵏ (MAD)', en: 'Revenue (MAD)', es: 'Ingresos (MAD)' })}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/70 font-mono tabular-nums">
@@ -797,7 +921,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                   <td className="py-2.5 px-2 text-center text-amber-300">
                     {row.avgRating.toFixed(1)} ★
                   </td>
-                  <td className="py-2.5 px-2 text-left text-emerald-300 font-black">
+                  <td className="py-2.5 px-2 text-end text-emerald-300 font-black">
                     {row.revenueMAD.toLocaleString('en-US')} MAD
                   </td>
                 </tr>

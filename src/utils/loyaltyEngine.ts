@@ -142,12 +142,14 @@ export interface LoyaltyPointRewardTier {
     fr: string;
     en: string;
     es: string;
+    amz?: string;
   };
   description: {
     ar: string;
     fr: string;
     en: string;
     es: string;
+    amz?: string;
   };
 }
 
@@ -161,12 +163,14 @@ export const LOYALTY_POINT_TIERS: LoyaltyPointRewardTier[] = [
       fr: 'Remise 10 MAD',
       en: '10 MAD Discount',
       es: '10 MAD dto.',
+      amz: 'ⴰⵙⵙⵏⵇⵙ 10 MAD',
     },
     description: {
       ar: 'صالح لأي خدمة في زيارتك القادمة',
       fr: 'Valable sur toute prestation',
       en: 'Valid on any future service',
       es: 'Válido en cualquier servicio',
+      amz: 'ⵉⵖⵓⴷⴰ ⵉ ⴽⵓ ⵜⴰⵡⵓⵔⵉ ⵉⴷⴷⴰⵏ',
     },
   },
   {
@@ -178,12 +182,14 @@ export const LOYALTY_POINT_TIERS: LoyaltyPointRewardTier[] = [
       fr: 'Remise 30 MAD',
       en: '30 MAD Discount',
       es: '30 MAD dto.',
+      amz: 'ⴰⵙⵙⵏⵇⵙ 30 MAD',
     },
     description: {
       ar: 'تخفيض مميز على الحلاقة أو العناية',
       fr: 'Réduction coupe ou soin',
       en: 'Discount on haircut or care',
       es: 'Descuento en corte o cuidado',
+      amz: 'ⴰⵙⵙⵏⵇⵙ ⵉⵥⵍⵉⵏ ⵖⴼ ⵜⴽⵔⴹⴰ',
     },
   },
   {
@@ -195,12 +201,14 @@ export const LOYALTY_POINT_TIERS: LoyaltyPointRewardTier[] = [
       fr: 'Remise VIP 70 MAD',
       en: '70 MAD VIP Discount',
       es: '70 MAD dto. VIP',
+      amz: 'ⴰⵙⵙⵏⵇⵙ VIP 70 MAD',
     },
     description: {
       ar: 'يغطي باقة الحلاقة واللحية الكاملة',
       fr: 'Couvre un forfait coupe + barbe',
       en: 'Covers full haircut & beard combo',
       es: 'Cubre combo completo corte + barba',
+      amz: 'ⵉⵎⵎⴰⴳⵔ ⵜⴰⴽⵔⴹⴰ + ⵜⴰⵎⴰⵔⵜ',
     },
   },
 ];

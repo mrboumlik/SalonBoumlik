@@ -65,10 +65,10 @@ html.dark .text-gold-metallic {
   height: 7px;
 }
 ::-webkit-scrollbar-track {
-  background: #F1F5F9;
+  background: #F5F5F4;
 }
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: #D6D3D1;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -76,29 +76,29 @@ html.dark .text-gold-metallic {
 }
 
 html.dark ::-webkit-scrollbar-track {
-  background: #0B0D11;
+  background: #0B0C10;
 }
 html.dark ::-webkit-scrollbar-thumb {
-  background: #252830;
+  background: #27272A;
 }
 html.dark ::-webkit-scrollbar-thumb:hover {
-  background: #CFA032;
+  background: #D97706;
 }
 
 /* Themes Definition (High-Contrast Light & Signature Dark) */
 html body {
-  background-color: #F8FAFC;
+  background-color: #FAF9F6;
   color: #0F172A;
 }
 
 html.dark body,
 html.theme-gold body {
-  background-color: #050507;
+  background-color: #0B0C10;
   color: #F4F4F5;
 }
 
 html.dark.theme-charcoal body {
-  background-color: #0E1015;
+  background-color: #111318;
   color: #F4F4F5;
 }
 
@@ -213,8 +213,26 @@ html.dark.theme-charcoal body {
 
 @media (prefers-reduced-motion: reduce) {
   .wizard-step-next,
-  .wizard-step-prev {
+  .wizard-step-prev,
+  .lang-switch-transition {
     animation: none;
   }
 }
+
+/* Smooth GPU-composited text crossfade when toggling Navbar languages */
+@keyframes langTextSwap {
+  0% {
+    opacity: 0.4;
+    transform: translate3d(0, -3px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.lang-switch-transition {
+  animation: langTextSwap 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 

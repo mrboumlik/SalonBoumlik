@@ -1,14 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Star, 
   MessageSquarePlus, 
   CheckCircle2, 
-  Sparkles, 
+  ChevronLeft,
+  ChevronRight,
   X,
-  Send,
   QrCode,
-  ExternalLink,
-  ShieldCheck
+  ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { INITIAL_REVIEWS, SERVICES, SALON_INFO, TEAM_MEMBERS } from '../data/barbershopData';
@@ -16,11 +15,14 @@ import { CustomerReview } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { useSalonProfileSettings } from '../utils/salonSettingsStore';
 import { submitBarberReview, useFirestoreReviews } from '../utils/reviewsStore';
+import { pickLang } from '../utils/i18n';
 
 export const ReviewsSection: React.FC = () => {
-  const { lang, t } = useLanguage();
+  const { lang, isRtl } = useLanguage();
   const salonSettings = useSalonProfileSettings();
   const { reviews: firestoreReviews } = useFirestoreReviews();
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const [activeSlideIndex, setActiveSlideIndex] = useState(0);
 
   const [localCustomReviews, setLocalCustomReviews] = useState<CustomerReview[]>(() => {
     try {
@@ -116,6 +118,34 @@ export const ReviewsSection: React.FC = () => {
     if (filterRating === 'all') return true;
     return r.rating === filterRating;
   });
+
+  const displayedCarouselReviews = filteredReviews.slice(0, 9);
+
+  const handleCarouselScroll = () => {
+    const el = carouselRef.current;
+    if (!el || displayedCarouselReviews.length === 0) return;
+    const stepWidth = el.scrollWidth / displayedCarouselReviews.length;
+    if (stepWidth <= 0) return;
+    const rawIdx = Math.round(Math.abs(el.scrollLeft) / stepWidth);
+    setActiveSlideIndex(Math.max(0, Math.min(displayedCarouselReviews.length - 1, rawIdx)));
+  };
+
+  const scrollCarouselBy = (direction: -1 | 1) => {
+    const el = carouselRef.current;
+    if (!el) return;
+    const cardWidth = Math.max(260, el.clientWidth * 0.85);
+    const delta = (isRtl ? -direction : direction) * cardWidth;
+    el.scrollBy({ left: delta, behavior: 'smooth' });
+  };
+
+  const scrollToReviewSlide = (idx: number) => {
+    const el = carouselRef.current;
+    if (!el || displayedCarouselReviews.length === 0) return;
+    const stepWidth = el.scrollWidth / displayedCarouselReviews.length;
+    const targetLeft = (isRtl ? -1 : 1) * stepWidth * idx;
+    el.scrollTo({ left: targetLeft, behavior: 'smooth' });
+    setActiveSlideIndex(idx);
+  };
 
   const GOOGLE_REVIEW_URL = salonSettings.googleReviewUrl;
 
@@ -222,9 +252,13 @@ export const ReviewsSection: React.FC = () => {
                   </div>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-zinc-400 font-medium mt-0.5">
-                  {lang === 'ar'
-                    ? 'التقييم الرسمي في Google Maps • صالون بومليك تارودانت'
-                    : 'Note d’excellence sur Google Maps • Salon Boumlik Taroudant'}
+                  {pickLang(lang, {
+                    ar: 'التقييم الرسمي في Google Maps • صالون بومليك تارودانت',
+                    fr: 'Note d’excellence sur Google Maps • Salon Boumlik Taroudant',
+                    amz: 'ⵜⴰⵏⵏⴰⵢⵜ ⵜⴰⵎⴰⴷⴷⵓⴷⵜ ⴳ Google Maps • Salon Boumlik',
+                    en: 'Official Google Maps Rating • Salon Boumlik Taroudant',
+                    es: 'Calificación oficial en Google Maps • Salon Boumlik Taroudant',
+                  })}
                 </p>
               </div>
             </div>
@@ -263,7 +297,13 @@ export const ReviewsSection: React.FC = () => {
           {/* Rating filter pills */}
           <div className="flex items-center justify-between gap-3 pt-4 text-xs">
             <span className="text-slate-600 dark:text-zinc-400 font-medium hidden sm:inline">
-              {lang === 'ar' ? 'تصفية حسب التقييم:' : 'Filtrer par note :'}
+              {pickLang(lang, {
+                ar: 'تصفية حسب التقييم:',
+                fr: 'Filtrer par note :',
+                amz: 'ⵙⵜⵢ ⵙ ⵜⴰⵏⵏⴰⵢⵜ :',
+                en: 'Filter by rating:',
+                es: 'Filtrar por nota:',
+              })}
             </span>
             <div className="flex items-center gap-1.5 overflow-x-auto">
               <button
@@ -274,7 +314,14 @@ export const ReviewsSection: React.FC = () => {
                     : 'text-slate-600 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white'
                 }`}
               >
-                {lang === 'ar' ? 'الكل' : 'Tous'} ({reviews.length})
+                {pickLang(lang, {
+                  ar: 'الكل',
+                  fr: 'Tous',
+                  amz: 'ⴰⴽⴽⵯ',
+                  en: 'All',
+                  es: 'Todos',
+                })}{' '}
+                ({reviews.length})
               </button>
               {[5, 4].map((r) => (
                 <button
@@ -294,9 +341,49 @@ export const ReviewsSection: React.FC = () => {
           </div>
         </div>
 
-        {/* Reviews Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl mx-auto">
-          {filteredReviews.slice(0, 6).map((rev) => {
+        {/* Mobile Carousel Controls (Prev / Next & Counter) */}
+        {displayedCarouselReviews.length > 1 && (
+          <div className="flex md:hidden items-center justify-between gap-3 max-w-6xl mx-auto mb-3 px-1">
+            <span className="text-xs font-bold text-slate-600 dark:text-zinc-400">
+              {pickLang(lang, {
+                ar: 'اسحب لليسار أو اليمين لاستعراض الآراء',
+                fr: 'Glissez pour voir les avis',
+                amz: 'ⵙⵙⵓⵜⵍ ⵉ ⵜⵏⵏⴰⵢⵉⵏ',
+                en: 'Swipe to browse testimonials',
+                es: 'Desliza para ver opiniones',
+              })}
+            </span>
+            <div className="flex items-center gap-1.5" dir="ltr">
+              <button
+                type="button"
+                onClick={() => scrollCarouselBy(-1)}
+                aria-label="Previous testimonial"
+                className="min-h-[38px] min-w-[38px] rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-white flex items-center justify-center shadow-2xs active:scale-95 cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-[11px] font-mono font-bold text-slate-700 dark:text-zinc-300 px-1.5 tabular-nums">
+                {activeSlideIndex + 1}/{displayedCarouselReviews.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => scrollCarouselBy(1)}
+                aria-label="Next testimonial"
+                className="min-h-[38px] min-w-[38px] rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-white flex items-center justify-center shadow-2xs active:scale-95 cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Horizontal Scrollable Carousel on Mobile / Multi-Column Grid on Desktop */}
+        <div
+          ref={carouselRef}
+          onScroll={handleCarouselScroll}
+          className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-3.5 md:gap-4 max-w-6xl mx-auto overflow-x-auto md:overflow-visible snap-x snap-mandatory scroll-smooth pb-3 md:pb-0 -mx-4 px-4 md:mx-auto md:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {displayedCarouselReviews.map((rev, idx) => {
             const authorName = rev.author;
             const cityName = typeof rev.city === 'object' ? (rev.city as any)[lang] || rev.city.fr : rev.city;
             const commentText = typeof rev.comment === 'object' ? (rev.comment as any)[lang] || rev.comment.fr : rev.comment;
@@ -305,22 +392,24 @@ export const ReviewsSection: React.FC = () => {
             return (
               <div
                 key={rev.id}
-                className="p-5 rounded-2xl bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 shadow-2xs transition-all flex flex-col justify-between space-y-4"
+                className={`snap-start flex-shrink-0 w-[84vw] sm:w-[330px] md:w-auto p-4 sm:p-5 rounded-2xl bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 shadow-2xs transition-all flex flex-col justify-between space-y-3.5 ${
+                  idx >= 6 ? 'md:hidden' : ''
+                }`}
               >
                 <div className="space-y-3">
                   {/* Reviewer Top Bar */}
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center justify-center font-bold text-xs text-slate-900 dark:text-white">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center justify-center font-bold text-xs text-slate-900 dark:text-white flex-shrink-0">
                         {authorName.charAt(0)}
                       </div>
-                      <div>
-                        <h4 className="font-bold text-slate-900 dark:text-white text-xs">{authorName}</h4>
-                        <span className="text-[10px] text-slate-500 dark:text-zinc-400">{cityName}</span>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-slate-900 dark:text-white text-xs truncate">{authorName}</h4>
+                        <span className="text-[10px] text-slate-500 dark:text-zinc-400 truncate block">{cityName}</span>
                       </div>
                     </div>
 
-                    <div className="flex text-amber-500 dark:text-amber-400">
+                    <div className="flex text-amber-500 dark:text-amber-400 flex-shrink-0">
                       {[...Array(rev.rating)].map((_, i) => (
                         <Star key={i} className="w-3 h-3 fill-amber-500 dark:fill-amber-400" />
                       ))}
@@ -328,7 +417,7 @@ export const ReviewsSection: React.FC = () => {
                   </div>
 
                   {/* Comment */}
-                  <p className="text-xs text-slate-700 dark:text-zinc-300 leading-relaxed italic">
+                  <p className="text-xs text-slate-700 dark:text-zinc-300 leading-relaxed italic line-clamp-4 md:line-clamp-none">
                     "{commentText}"
                   </p>
                 </div>
@@ -338,15 +427,42 @@ export const ReviewsSection: React.FC = () => {
                   <span className="text-slate-700 dark:text-zinc-300 font-medium truncate max-w-[165px]">
                     {rev.barberName ? `${rev.barberName.split(' ')[0]} · ` : ''}{serviceStr}
                   </span>
-                  <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400 text-[10px] font-semibold">
+                  <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400 text-[10px] font-semibold flex-shrink-0">
                     <CheckCircle2 className="w-3 h-3" />
-                    <span>{lang === 'ar' ? 'تقييم موثق' : 'Avis vérifié'}</span>
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'تقييم موثق',
+                        fr: 'Avis vérifié',
+                        amz: 'ⵜⴰⵏⵏⴰⵢⵜ ⵉⵜⵜⵓⵙⵙⴷⴰⵏ',
+                        en: 'Verified Review',
+                        es: 'Reseña verificada',
+                      })}
+                    </span>
                   </span>
                 </div>
               </div>
             );
           })}
         </div>
+
+        {/* Mobile Carousel Pagination Dots */}
+        {displayedCarouselReviews.length > 1 && (
+          <div className="flex md:hidden items-center justify-center gap-1.5 mt-3" aria-label="Carousel pagination">
+            {displayedCarouselReviews.map((rev, idx) => (
+              <button
+                key={rev.id}
+                type="button"
+                onClick={() => scrollToReviewSlide(idx)}
+                aria-label={`Slide ${idx + 1}`}
+                className={`h-2 rounded-full transition-all duration-200 cursor-pointer ${
+                  activeSlideIndex === idx
+                    ? 'w-5 bg-amber-500'
+                    : 'w-2 bg-slate-300 dark:bg-zinc-700 hover:bg-slate-400'
+                }`}
+              />
+            ))}
+          </div>
+        )}
 
       </div>
 
@@ -373,12 +489,22 @@ export const ReviewsSection: React.FC = () => {
 
             <div>
               <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                {lang === 'ar' ? 'امسح رمز التقييم على Google' : 'Scannez le QR Code Google'}
+                {pickLang(lang, {
+                  ar: 'امسح رمز التقييم على Google',
+                  fr: 'Scannez le QR Code Google',
+                  amz: 'ⵙⴽⴰⵏⵉ QR Code Google',
+                  en: 'Scan the Google Review QR Code',
+                  es: 'Escanea el QR de Google',
+                })}
               </h3>
               <p className="text-xs text-slate-600 dark:text-zinc-400 mt-1">
-                {lang === 'ar'
-                  ? 'وجه كاميرا هاتفك مباشرة نحو الرمز لإعطاء رأيك في ثوانٍ'
-                  : 'Ouvrez votre appareil photo pour noter Salon Boumlik en un instant'}
+                {pickLang(lang, {
+                  ar: 'وجه كاميرا هاتفك مباشرة نحو الرمز لإعطاء رأيك في ثوانٍ',
+                  fr: 'Ouvrez votre appareil photo pour noter Salon Boumlik en un instant',
+                  amz: 'ⵕⵥⵎ ⵜⴰⴽⴰⵎⵉⵔⴰ ⵏⵏⴽ ⴰⴼⴰⴷ ⴰⴷ ⵜⴼⴽⴷ ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ',
+                  en: 'Point your phone camera at the code to rate Salon Boumlik in seconds',
+                  es: 'Apunta tu cámara para valorar a Salon Boumlik al instante',
+                })}
               </p>
             </div>
 
@@ -398,7 +524,15 @@ export const ReviewsSection: React.FC = () => {
                 rel="noopener noreferrer"
                 className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-lg"
               >
-                <span>{lang === 'ar' ? 'أو افتح الرابط المباشر' : 'Ou Ouvrir le Lien Direct'}</span>
+                <span>
+                  {pickLang(lang, {
+                    ar: 'أو افتح الرابط المباشر',
+                    fr: 'Ou Ouvrir le Lien Direct',
+                    amz: 'ⵏⵖ ⵕⵥⵎ ⴰⵙⵖⵏ ⵓⵙⵔⵉⴷ',
+                    en: 'Or Open Direct Link',
+                    es: 'O abrir enlace directo',
+                  })}
+                </span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>
@@ -421,10 +555,22 @@ export const ReviewsSection: React.FC = () => {
 
             <div>
               <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                {lang === 'ar' ? 'شاركنا رأيك في صالون بومليك' : 'Donnez Votre Avis'}
+                {pickLang(lang, {
+                  ar: 'شاركنا رأيك في صالون بومليك',
+                  fr: 'Donnez Votre Avis',
+                  amz: 'ⴼⴽ ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ ⵖⴼ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ',
+                  en: 'Share Your Review',
+                  es: 'Deja tu reseña',
+                })}
               </h3>
               <p className="text-xs text-slate-600 dark:text-zinc-400 mt-0.5">
-                {lang === 'ar' ? 'رأيك يهمنا لمواصلة تقديم أفضل خدمة رجالية بتارودانت' : 'Votre retour nous aide à perfectionner notre expérience.'}
+                {pickLang(lang, {
+                  ar: 'رأيك يهمنا لمواصلة تقديم أفضل خدمة رجالية بتارودانت',
+                  fr: 'Votre retour nous aide à perfectionner notre expérience.',
+                  amz: 'ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ ⵜⴰⵡⵙ ⴰⵖ ⵉ ⵓⵙⴱⵓⵖⵍⵓ ⵏ ⵜⵏⴰⴼⵓⵜ.',
+                  en: 'Your feedback helps us keep delivering the best service in Taroudant.',
+                  es: 'Tu opinión nos ayuda a mejorar nuestro servicio.',
+                })}
               </p>
             </div>
 
@@ -432,14 +578,26 @@ export const ReviewsSection: React.FC = () => {
               <div className="p-6 text-center text-emerald-600 dark:text-emerald-400 space-y-2">
                 <CheckCircle2 className="w-10 h-10 mx-auto" />
                 <p className="font-bold text-sm">
-                  {lang === 'ar' ? 'شكراً جزيلاً على تقييمك!' : 'Merci pour votre confiance !'}
+                  {pickLang(lang, {
+                    ar: 'شكراً جزيلاً على تقييمك!',
+                    fr: 'Merci pour votre confiance !',
+                    amz: 'ⵜⴰⵏⵎⵎⵉⵔⵜ ⵉ ⵜⵏⵏⴰⵢⵜ ⵏⵏⴽ!',
+                    en: 'Thank you for your review!',
+                    es: '¡Muchas gracias por tu reseña!',
+                  })}
                 </p>
               </div>
             ) : (
               <form onSubmit={handleSubmitReview} className="space-y-4 text-xs">
                 <div>
                   <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1.5">
-                    {lang === 'ar' ? 'الحلاق المعني بالتقييم:' : lang === 'en' ? 'Barber:' : 'Barbier concerné :'}
+                    {pickLang(lang, {
+                      ar: 'الحلاق المعني بالتقييم:',
+                      fr: 'Barbier concerné :',
+                      amz: 'ⴰⵎⴽⵔⴰⴹ:',
+                      en: 'Barber:',
+                      es: 'Barbero:',
+                    })}
                   </label>
                   <div className="grid grid-cols-2 gap-1.5">
                     {TEAM_MEMBERS.map((b) => {
@@ -469,21 +627,33 @@ export const ReviewsSection: React.FC = () => {
 
                 <div>
                   <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
-                    {lang === 'ar' ? 'الاسم الكامل:' : 'Votre nom :'}
+                    {pickLang(lang, {
+                      ar: 'الاسم الكامل:',
+                      fr: 'Votre nom :',
+                      amz: 'ⵉⵙⵎ ⵏⵏⴽ :',
+                      en: 'Full Name:',
+                      es: 'Tu nombre:',
+                    })}
                   </label>
                   <input
                     type="text"
                     value={author}
                     onChange={(e) => setAuthor(e.target.value)}
                     required
-                    placeholder="Ex: Omar Ait"
+                    placeholder="Omar Ait"
                     className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 rounded-xl p-2.5 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-red-500"
                   />
                 </div>
 
                 <div>
                   <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
-                    {lang === 'ar' ? 'المدينة / الحي:' : 'Ville / Quartier :'}
+                    {pickLang(lang, {
+                      ar: 'المدينة / الحي:',
+                      fr: 'Ville / Quartier :',
+                      amz: 'ⵜⴰⵎⴷⵉⵏⵜ / ⴰⵙⵓⵏ :',
+                      en: 'City / Area:',
+                      es: 'Ciudad / Zona:',
+                    })}
                   </label>
                   <input
                     type="text"
@@ -496,7 +666,13 @@ export const ReviewsSection: React.FC = () => {
 
                 <div>
                   <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
-                    {lang === 'ar' ? 'تقييمك بالنجوم:' : 'Votre note :'}
+                    {pickLang(lang, {
+                      ar: 'تقييمك بالنجوم:',
+                      fr: 'Votre note :',
+                      amz: 'ⵜⴰⵏⵏⴰⵢⵜ ⵙ ⵉⵜⵔⴰⵏ :',
+                      en: 'Star Rating:',
+                      es: 'Tu puntuación:',
+                    })}
                   </label>
                   <div className="flex gap-1 text-amber-500 dark:text-amber-400 py-1">
                     {[1, 2, 3, 4, 5].map((star) => (
@@ -518,14 +694,26 @@ export const ReviewsSection: React.FC = () => {
 
                 <div>
                   <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
-                    {lang === 'ar' ? 'تعليقك وتجربتك:' : 'Votre commentaire :'}
+                    {pickLang(lang, {
+                      ar: 'تعليقك وتجربتك:',
+                      fr: 'Votre commentaire :',
+                      amz: 'ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ :',
+                      en: 'Your comment:',
+                      es: 'Tu comentario:',
+                    })}
                   </label>
                   <textarea
                     rows={3}
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     required
-                    placeholder={lang === 'ar' ? 'اكتب رأيك بصراحة...' : 'Partagez votre ressenti...'}
+                    placeholder={pickLang(lang, {
+                      ar: 'اكتب رأيك بصراحة...',
+                      fr: 'Partagez votre ressenti...',
+                      amz: 'ⴰⵔⴰ ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ...',
+                      en: 'Share your experience...',
+                      es: 'Comparte tu experiencia...',
+                    })}
                     className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 rounded-xl p-2.5 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-red-500"
                   />
                 </div>
@@ -536,14 +724,28 @@ export const ReviewsSection: React.FC = () => {
                     onClick={() => setIsModalOpen(false)}
                     className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white cursor-pointer"
                   >
-                    {lang === 'ar' ? 'إلغاء' : 'Annuler'}
+                    {pickLang(lang, {
+                      ar: 'إلغاء',
+                      fr: 'Annuler',
+                      amz: 'ⵙⵔ',
+                      en: 'Cancel',
+                      es: 'Cancelar',
+                    })}
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting}
                     className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold transition-colors cursor-pointer"
                   >
-                    {isSubmitting ? '...' : lang === 'ar' ? 'نشر التقييم' : 'Publier'}
+                    {isSubmitting
+                      ? '...'
+                      : pickLang(lang, {
+                          ar: 'نشر التقييم',
+                          fr: 'Publier',
+                          amz: 'ⵙⵙⵉⴼⴹ',
+                          en: 'Submit',
+                          es: 'Publicar',
+                        })}
                   </button>
                 </div>
               </form>

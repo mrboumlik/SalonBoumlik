@@ -1,4 +1,5 @@
 import { BarberService, SelectedCartItem, PricingEngineResult, HairColorConfig } from '../types';
+import { pickLang } from './i18n';
 
 export interface ServiceDefinition {
   id: string;
@@ -20,6 +21,7 @@ export interface ServiceDefinition {
     es: string;
   };
   popular?: boolean;
+  staffFavorite?: boolean;
 }
 
 export const BASE_SERVICES: ServiceDefinition[] = [
@@ -36,6 +38,7 @@ export const BASE_SERVICES: ServiceDefinition[] = [
     basePrice: 25,
     durationMinutes: 30,
     popular: true,
+    staffFavorite: true,
     description: {
       fr: 'Dégradé américain, ciseaux, fondu à blanc et finitions rasoir.',
       ar: 'تدريج عصري دقيق بالمقص والماكينة مع تحديد الحواف بالموس.',
@@ -57,6 +60,7 @@ export const BASE_SERVICES: ServiceDefinition[] = [
     basePrice: 15,
     durationMinutes: 20,
     popular: true,
+    staffFavorite: true,
     description: {
       fr: 'Sculptage au coupe-choux, serviette chaude et huile de soin.',
       ar: 'تحديد دقيق للحية بالموس الكلاسيكي، فوطة ساخنة وزيت مرطب.',
@@ -158,6 +162,7 @@ export const BASE_SERVICES: ServiceDefinition[] = [
     basePrice: 200,
     durationMinutes: 90,
     popular: true,
+    staffFavorite: true,
     description: {
       fr: 'Infusion de kératine et protéines naturelles brésiliennes sans formol.',
       ar: 'جلسة بروتين وكيراتين برازيلي أصلي لترميم ألياف الشعر وإعطائه لمعاناً.',
@@ -239,6 +244,7 @@ export const BASE_SERVICES: ServiceDefinition[] = [
     basePrice: 40,
     durationMinutes: 25,
     popular: true,
+    staffFavorite: true,
     description: {
       fr: 'Gommage exfoliant en profondeur à la vapeur chaude et serviette aromatique.',
       ar: 'جلسة تقشير عميق بالبخار الساخن مع إزالة الخلايا الميتة بالفوطة العطرية.',
@@ -357,35 +363,83 @@ export function calculateCartPricing({
   if (hasHaircut) {
     if (hasProtein) {
       haircutFinalPrice = 0;
-      haircutDiscountReason = lang === 'ar' ? 'مجاناً مع البروتين (0 DH)' : lang === 'es' ? 'GRATIS con Proteína (0 DH)' : 'GRATUIT avec Protéine (0 DH)';
+      haircutDiscountReason = pickLang(lang, {
+        ar: 'مجاناً مع البروتين (0 DH)',
+        fr: 'GRATUIT avec Protéine (0 DH)',
+        amz: 'ⴼⴰⴱⵓⵔ ⵙ ⵓⴱⵔⵓⵜⵉⵏ (0 DH)',
+        en: 'FREE with Protein (0 DH)',
+        es: 'GRATIS con Proteína (0 DH)',
+      });
       overridesApplied.push('Protein Override: Haircut FREE');
       discountsBreakdown.push({
-        title: lang === 'ar' ? 'حسانة مجانية مع جلسة البروتين' : lang === 'es' ? 'Corte gratis con tratamiento de proteína' : 'Coupe offerte avec le Soin Protéine',
+        title: pickLang(lang, {
+          ar: 'حسانة مجانية مع جلسة البروتين',
+          fr: 'Coupe offerte avec le Soin Protéine',
+          amz: 'ⵜⴰⴽⵔⴹⴰ ⴼⴰⴱⵓⵔ ⵙ ⵓⴱⵔⵓⵜⵉⵏ',
+          en: 'Free Haircut with Protein Treatment',
+          es: 'Corte gratis con tratamiento de proteína',
+        }),
         savedMAD: 25,
       });
     } else if (hasStraightening) {
       haircutFinalPrice = 15;
-      haircutDiscountReason = lang === 'ar' ? 'تخفيض مع الترطيبة (15 DH)' : lang === 'es' ? 'Descuento con Alisado (15 DH)' : 'Tarif réduit avec Défrisage (15 DH)';
+      haircutDiscountReason = pickLang(lang, {
+        ar: 'تخفيض مع الترطيبة (15 DH)',
+        fr: 'Tarif réduit avec Défrisage (15 DH)',
+        amz: 'ⴰⵙⵙⵏⵇⵙ ⵙ ⵜⵔⵟⵉⴱⴰ (15 DH)',
+        en: 'Discount with Relaxing (15 DH)',
+        es: 'Descuento con Alisado (15 DH)',
+      });
       overridesApplied.push('Straightening Override: Haircut 15 DH');
       discountsBreakdown.push({
-        title: lang === 'ar' ? 'تخفيض الحسانة مع الترطيبة (-10 DH)' : lang === 'es' ? 'Descuento en corte con alisado (-10 DH)' : 'Remise coupe avec Défrisage (-10 DH)',
+        title: pickLang(lang, {
+          ar: 'تخفيض الحسانة مع الترطيبة (-10 DH)',
+          fr: 'Remise coupe avec Défrisage (-10 DH)',
+          amz: 'ⴰⵙⵙⵏⵇⵙ ⵏ ⵜⴽⵔⴹⴰ ⵙ ⵜⵔⵟⵉⴱⴰ (-10 DH)',
+          en: 'Haircut discount with Relaxing (-10 DH)',
+          es: 'Descuento en corte con alisado (-10 DH)',
+        }),
         savedMAD: 10,
       });
     } else if (isGreyWhite) {
       haircutFinalPrice = 15;
-      haircutDiscountReason = lang === 'ar' ? 'تخفيض مع الصباغة البيضاء/الرمادية (15 DH)' : lang === 'es' ? 'Descuento con Color Gris/Blanco (15 DH)' : 'Tarif réduit avec Coloration Grise (15 DH)';
+      haircutDiscountReason = pickLang(lang, {
+        ar: 'تخفيض مع الصباغة البيضاء/الرمادية (15 DH)',
+        fr: 'Tarif réduit avec Coloration Grise (15 DH)',
+        amz: 'ⴰⵙⵙⵏⵇⵙ ⵙ ⵓⴽⵍⵓ ⵓⵎⵍⵉⵍ (15 DH)',
+        en: 'Discount with Grey/White Color (15 DH)',
+        es: 'Descuento con Color Gris/Blanco (15 DH)',
+      });
       overridesApplied.push('Grey/White Color Override: Haircut 15 DH');
       discountsBreakdown.push({
-        title: lang === 'ar' ? 'تخفيض الحسانة مع الصباغة الرمادية (-10 DH)' : lang === 'es' ? 'Descuento en corte con tinte blanco (-10 DH)' : 'Remise coupe avec Coloration Grise (-10 DH)',
+        title: pickLang(lang, {
+          ar: 'تخفيض الحسانة مع الصباغة الرمادية (-10 DH)',
+          fr: 'Remise coupe avec Coloration Grise (-10 DH)',
+          amz: 'ⴰⵙⵙⵏⵇⵙ ⵏ ⵜⴽⵔⴹⴰ ⵙ ⵓⴽⵍⵓ (-10 DH)',
+          en: 'Haircut discount with Grey Color (-10 DH)',
+          es: 'Descuento en corte con tinte blanco (-10 DH)',
+        }),
         savedMAD: 10,
       });
     } else if (hasBeard) {
       // Standard Haircut + Beard Combo: 35 MAD instead of 25 + 15 = 40 MAD (5 MAD saving)
       haircutFinalPrice = 20; // 20 + 15 = 35 MAD
-      haircutDiscountReason = lang === 'ar' ? 'عرض باقة حسانة + لحية (35 DH)' : lang === 'es' ? 'Pack Corte + Barba (35 DH)' : 'Combo Coupe + Barbe (35 DH)';
+      haircutDiscountReason = pickLang(lang, {
+        ar: 'عرض باقة حسانة + لحية (35 DH)',
+        fr: 'Combo Coupe + Barbe (35 DH)',
+        amz: 'ⵜⴰⴽⵔⴹⴰ + ⵜⴰⵎⴰⵔⵜ (35 DH)',
+        en: 'Haircut + Beard Combo (35 DH)',
+        es: 'Pack Corte + Barba (35 DH)',
+      });
       comboApplied = 'Haircut + Beard (35 DH)';
       discountsBreakdown.push({
-        title: lang === 'ar' ? 'باقة حسانة + لحية (-5 DH)' : lang === 'es' ? 'Combo Corte + Barba (-5 DH)' : 'Combo Coupe + Barbe (-5 DH)',
+        title: pickLang(lang, {
+          ar: 'باقة حسانة + لحية (-5 DH)',
+          fr: 'Combo Coupe + Barbe (-5 DH)',
+          amz: 'ⵜⴰⴽⵔⴹⴰ + ⵜⴰⵎⴰⵔⵜ (-5 DH)',
+          en: 'Haircut + Beard Combo (-5 DH)',
+          es: 'Combo Corte + Barba (-5 DH)',
+        }),
         savedMAD: 5,
       });
     }
@@ -412,9 +466,21 @@ export function calculateCartPricing({
       orig = 10;
       if (hasHaircut) {
         final = 5;
-        discountStr = lang === 'ar' ? '5 DH مع الحسانة (-5 DH)' : lang === 'es' ? '5 DH con corte (-5 DH)' : '5 DH avec coupe (-5 DH)';
+        discountStr = pickLang(lang, {
+          ar: '5 DH مع الحسانة (-5 DH)',
+          fr: '5 DH avec coupe (-5 DH)',
+          amz: '5 DH ⵙ ⵜⴽⵔⴹⴰ (-5 DH)',
+          en: '5 DH with haircut (-5 DH)',
+          es: '5 DH con corte (-5 DH)',
+        });
         discountsBreakdown.push({
-          title: lang === 'ar' ? 'تخفيض غسيل الشعر (-5 DH)' : lang === 'es' ? 'Descuento lavado con corte (-5 DH)' : 'Remise Lavage avec Coupe (-5 DH)',
+          title: pickLang(lang, {
+            ar: 'تخفيض غسيل الشعر (-5 DH)',
+            fr: 'Remise Lavage avec Coupe (-5 DH)',
+            amz: 'ⴰⵙⵙⵏⵇⵙ ⵏ ⵓⵙⵉⵔⵉⴷ (-5 DH)',
+            en: 'Hair Wash Discount (-5 DH)',
+            es: 'Descuento lavado con corte (-5 DH)',
+          }),
           savedMAD: 5,
         });
       }
@@ -422,9 +488,21 @@ export function calculateCartPricing({
       orig = 15;
       if (hasHaircut) {
         final = 10;
-        discountStr = lang === 'ar' ? '10 DH مع الحسانة (-5 DH)' : lang === 'es' ? '10 DH con corte (-5 DH)' : '10 DH avec coupe (-5 DH)';
+        discountStr = pickLang(lang, {
+          ar: '10 DH مع الحسانة (-5 DH)',
+          fr: '10 DH avec coupe (-5 DH)',
+          amz: '10 DH ⵙ ⵜⴽⵔⴹⴰ (-5 DH)',
+          en: '10 DH with haircut (-5 DH)',
+          es: '10 DH con corte (-5 DH)',
+        });
         discountsBreakdown.push({
-          title: lang === 'ar' ? 'تخفيض الشمع (-5 DH)' : lang === 'es' ? 'Descuento cera con corte (-5 DH)' : 'Remise Cire avec Coupe (-5 DH)',
+          title: pickLang(lang, {
+            ar: 'تخفيض الشمع (-5 DH)',
+            fr: 'Remise Cire avec Coupe (-5 DH)',
+            amz: 'ⴰⵙⵙⵏⵇⵙ ⵏ ⵍⴰⵙⵉⵔ (-5 DH)',
+            en: 'Waxing Discount (-5 DH)',
+            es: 'Descuento cera con corte (-5 DH)',
+          }),
           savedMAD: 5,
         });
       }
@@ -432,9 +510,21 @@ export function calculateCartPricing({
       orig = 15;
       if (hasHaircut) {
         final = 10;
-        discountStr = lang === 'ar' ? '10 DH مع الحسانة (-5 DH)' : lang === 'es' ? '10 DH con corte (-5 DH)' : '10 DH avec coupe (-5 DH)';
+        discountStr = pickLang(lang, {
+          ar: '10 DH مع الحسانة (-5 DH)',
+          fr: '10 DH avec coupe (-5 DH)',
+          amz: '10 DH ⵙ ⵜⴽⵔⴹⴰ (-5 DH)',
+          en: '10 DH with haircut (-5 DH)',
+          es: '10 DH con corte (-5 DH)',
+        });
         discountsBreakdown.push({
-          title: lang === 'ar' ? 'تخفيض البروشينغ (-5 DH)' : lang === 'es' ? 'Descuento peinado con corte (-5 DH)' : 'Remise Brushing avec Coupe (-5 DH)',
+          title: pickLang(lang, {
+            ar: 'تخفيض البروشينغ (-5 DH)',
+            fr: 'Remise Brushing avec Coupe (-5 DH)',
+            amz: 'ⴰⵙⵙⵏⵇⵙ ⵏ ⵓⵙⵎⵙⴰⵙ (-5 DH)',
+            en: 'Blowout Discount (-5 DH)',
+            es: 'Descuento peinado con corte (-5 DH)',
+          }),
           savedMAD: 5,
         });
       }

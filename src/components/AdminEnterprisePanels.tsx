@@ -36,6 +36,7 @@ import {
   BarberStaff,
   CrmClientProfile,
   CustomerReview,
+  Language,
   WaitlistEntry,
 } from '../types';
 import { INITIAL_REVIEWS, TEAM_MEMBERS } from '../data/barbershopData';
@@ -66,6 +67,8 @@ import { normalizeMoroccanPhoneDigits } from '../utils/bookingStore';
 import { downloadCrmAccountingCsv } from '../utils/csvExport';
 import { WeeklyWorkloadBarChart } from './WeeklyWorkloadBarChart';
 import { useFirestoreReviews } from '../utils/reviewsStore';
+import { useLanguage } from '../context/LanguageContext';
+import { pickLang } from '../utils/i18n';
 
 /* ============================================================================
  * 1. FINANCIAL & BARBER PERFORMANCE ANALYTICS PANEL
@@ -196,6 +199,7 @@ export const FinancialAnalyticsPanel: React.FC<{
   role?: 'master' | 'barber';
   ownBarberId?: string;
 }> = ({ bookings, role = 'master', ownBarberId = 'all' }) => {
+  const { lang } = useLanguage();
   const { reviews: firestoreReviews } = useFirestoreReviews();
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
@@ -414,6 +418,207 @@ export const FinancialAnalyticsPanel: React.FC<{
       );
     });
 
+  const getBarberDisplayName = (b: BarberStaff) =>
+    b.name[lang] || b.name.ar || b.name.fr;
+
+  const ui = {
+    title: pickLang(lang, {
+      ar: 'تحليلات الأداء والأرباح الشهرية • Analytics',
+      fr: 'Analytique & Revenus Mensuels',
+      amz: 'ⵜⵉⵙⵍⴰⴹ ⵏ ⵜⵡⵓⵔⵉ ⴷ ⵉⴷⵔⵉⵎⵏ ⵏ ⵡⴰⵢⵢⵓⵔ',
+      en: 'Monthly Performance & Revenue Analytics',
+      es: 'Analítica de Rendimiento e Ingresos Mensuales',
+    }),
+    subtitleMaster: pickLang(lang, {
+      ar: 'متابعة أداء كل حلاق على حدة: إجمالي الزيارات المكتملة والإيرادات المحققة خلال الشهر الحالي.',
+      fr: 'Suivi individuel des barbiers : visites confirmées et chiffre d’affaires encaissé ce mois.',
+      amz: 'ⴰⴹⴼⴰⵕ ⵏ ⴽⵓ ⴰⵎⴽⵔⴰⴹ: ⵜⵉⵔⵣⵉⵡⵉⵏ ⵉⵜⵜⵓⵙⴷⵓⵏ ⴷ ⵉⴷⵔⵉⵎⵏ ⵏ ⵡⴰⵢⵢⵓⵔ ⴰⴷ.',
+      en: 'Individual barber tracking: completed visits and earned revenue for the selected month.',
+      es: 'Seguimiento por barbero: visitas completadas e ingresos generados este mes.',
+    }),
+    subtitleBarber: pickLang(lang, {
+      ar: 'ملخص زياراتك المكتملة والأرباح المحققة خلال الشهر الحالي.',
+      fr: 'Résumé de vos visites complétées et de vos revenus sur le mois sélectionné.',
+      amz: 'ⴰⵙⴳⵣⵍ ⵏ ⵜⵔⵣⵉⵡⵉⵏ ⵏⵏⴽ ⵉⵜⵜⵓⵙⴷⵓⵏ ⴷ ⵉⴷⵔⵉⵎⵏ ⵏ ⵡⴰⵢⵢⵓⵔ.',
+      en: 'Summary of your completed visits and earned revenue for the selected month.',
+      es: 'Resumen de tus visitas completadas e ingresos del mes seleccionado.',
+    }),
+    monthLabel: pickLang(lang, { ar: 'الشهر:', fr: 'Mois :', amz: 'ⴰⵢⵢⵓⵔ:', en: 'Month:', es: 'Mes:' }),
+    currentMonthBtn: pickLang(lang, {
+      ar: 'الشهر الحالي',
+      fr: 'Mois en cours',
+      amz: 'ⴰⵢⵢⵓⵔ ⴰⴷ',
+      en: 'Current Month',
+      es: 'Mes actual',
+    }),
+    dailyIncomeTitle: pickLang(lang, {
+      ar: `مداخيل اليوم المكتملة (${todayStr})`,
+      fr: `Revenus complétés du jour (${todayStr})`,
+      amz: `ⵉⴷⵔⵉⵎⵏ ⵏ ⴰⵙⵙ ⴰ (${todayStr})`,
+      en: `Today's Completed Revenue (${todayStr})`,
+      es: `Ingresos completados hoy (${todayStr})`,
+    }),
+    dailyIncomeSub: pickLang(lang, {
+      ar: 'زيارات مكتملة اليوم',
+      fr: 'Visites complétées aujourd’hui',
+      amz: 'ⵜⵉⵔⵣⵉⵡⵉⵏ ⵏ ⴰⵙⵙ ⴰ',
+      en: 'Completed visits today',
+      es: 'Visitas completadas hoy',
+    }),
+    weeklyIncomeTitle: pickLang(lang, {
+      ar: 'مداخيل آخر 7 أيام (الأسبوع)',
+      fr: 'Revenus des 7 derniers jours',
+      amz: 'ⵉⴷⵔⵉⵎⵏ ⵏ 7 ⵓⵙⵙⴰⵏ ⵉⵣⵔⵉⵏ',
+      en: 'Last 7 Days Revenue',
+      es: 'Ingresos últimos 7 días',
+    }),
+    weeklyIncomeSub: pickLang(lang, {
+      ar: `من ${weekStartStr} إلى اليوم`,
+      fr: `Du ${weekStartStr} à aujourd’hui`,
+      amz: `ⵙⴳ ${weekStartStr} ⴰⵔ ⴰⵙⵙ ⴰ`,
+      en: `From ${weekStartStr} to today`,
+      es: `Del ${weekStartStr} a hoy`,
+    }),
+    monthlyIncomeTitle: pickLang(lang, {
+      ar: `أرباح الشهر (${selectedMonth})`,
+      fr: `Revenus du mois (${selectedMonth})`,
+      amz: `ⵉⴷⵔⵉⵎⵏ ⵏ ⵡⴰⵢⵢⵓⵔ (${selectedMonth})`,
+      en: `Monthly Revenue (${selectedMonth})`,
+      es: `Ingresos del mes (${selectedMonth})`,
+    }),
+    fromCompletedVisits: (n: number) =>
+      pickLang(lang, {
+        ar: `من ${n} زيارة مكتملة`,
+        fr: `Sur ${n} visites complétées`,
+        amz: `ⵙⴳ ${n} ⵜⵔⵣⵉⵡⵉⵏ`,
+        en: `From ${n} completed visits`,
+        es: `De ${n} visitas completadas`,
+      }),
+    totalCumTitle: pickLang(lang, {
+      ar: 'الإجمالي التراكمي المكتمل',
+      fr: 'Total cumulé complété',
+      amz: 'ⴰⵎⵓⵜⵜⵉ ⴰⵎⴰⵜⴰⵢ ⵉⵜⵜⵓⵙⴷⵓⵏ',
+      en: 'Cumulative Completed Revenue',
+      es: 'Total acumulado completado',
+    }),
+    fromTotalVisits: (n: number) =>
+      pickLang(lang, {
+        ar: `من ${n} زيارة مكتملة إجمالاً`,
+        fr: `Sur ${n} visites complétées au total`,
+        amz: `ⵙⴳ ${n} ⵜⵔⵣⵉⵡⵉⵏ ⵙ ⵓⵎⴰⵜⴰ`,
+        en: `Across ${n} total completed visits`,
+        es: `De ${n} visitas completadas en total`,
+      }),
+    topPerformersTitle: pickLang(lang, {
+      ar: `أفضل الأداءات • Top Performers (${selectedMonth})`,
+      fr: `Meilleurs Barbiers • Top Performers (${selectedMonth})`,
+      amz: `ⵉⵎⵓⴼⴰⵢⵏ ⵏ ⵜⵡⵓⵔⵉ (${selectedMonth})`,
+      en: `Top Performers (${selectedMonth})`,
+      es: `Mejores Rendimientos (${selectedMonth})`,
+    }),
+    topPerformersSub: pickLang(lang, {
+      ar: 'ترتيب الحلاقين حسب إجمالي الإيرادات المحققة ومؤشر رضا الزبناء للشهر الحالي.',
+      fr: 'Classement des barbiers selon le chiffre d’affaires et l’indice de satisfaction client.',
+      amz: 'ⴰⵙⵜⴰⵢ ⵏ ⵉⵎⴽⵔⴰⴹⵏ ⵙ ⵉⴷⵔⵉⵎⵏ ⴷ ⵓⵙⵓⵜⴳ ⵏ ⵉⵎⵙⴰⵖⵏ.',
+      en: 'Barbers ranked by earned revenue and client satisfaction score for the selected month.',
+      es: 'Clasificación de barberos por ingresos y satisfacción del cliente del mes.',
+    }),
+    sortCombined: pickLang(lang, { ar: 'التصنيف العام', fr: 'Classement global', amz: 'ⴰⵎⴰⵜⴰⵢ', en: 'Overall', es: 'General' }),
+    sortRevenue: pickLang(lang, { ar: 'الأعلى دخلاً', fr: 'Revenus', amz: 'ⵉⴷⵔⵉⵎⵏ', en: 'Top Revenue', es: 'Más ingresos' }),
+    sortSatisfaction: pickLang(lang, { ar: 'رضا الزبناء', fr: 'Satisfaction', amz: 'ⴰⵙⵓⵜⴳ', en: 'Satisfaction', es: 'Satisfacción' }),
+    youBadge: pickLang(lang, { ar: '(أنت)', fr: '(Vous)', amz: '(ⴽⵢⵢⵉ)', en: '(You)', es: '(Tú)' }),
+    visitsAndReliability: (v: number, pct: number) =>
+      pickLang(lang, {
+        ar: `${v} زيارات مكتملة · التزام ${pct}%`,
+        fr: `${v} visites complétées · fiabilité ${pct}%`,
+        amz: `${v} ⵜⵔⵣⵉⵡⵉⵏ · ⴰⵙⴷⵓ ${pct}%`,
+        en: `${v} completed visits · ${pct}% reliability`,
+        es: `${v} visitas · ${pct}% puntualidad`,
+      }),
+    satisfactionLabel: (pct: number) =>
+      pickLang(lang, {
+        ar: `${pct}% رضا الزبناء`,
+        fr: `${pct}% satisfaction`,
+        amz: `${pct}% ⴰⵙⵓⵜⴳ`,
+        en: `${pct}% satisfaction`,
+        es: `${pct}% satisfacción`,
+      }),
+    monthRevLabel: pickLang(lang, {
+      ar: 'إيرادات الشهر المحققة:',
+      fr: 'Chiffre d’affaires réalisé :',
+      amz: 'ⵉⴷⵔⵉⵎⵏ ⵏ ⵡⴰⵢⵢⵓⵔ:',
+      en: 'Monthly Earned Revenue:',
+      es: 'Ingresos del mes:',
+    }),
+    indivTitle: pickLang(lang, {
+      ar: `أداء الحلاقين الفردي لشهر ${selectedMonth} (الزيارات المكتملة والإيرادات)`,
+      fr: `Performance individuelle (${selectedMonth}) — Visites & Revenus`,
+      amz: `ⵜⴰⵡⵓⵔⵉ ⵏ ⴽⵓ ⴰⵎⴽⵔⴰⴹ (${selectedMonth})`,
+      en: `Individual Barber Performance for ${selectedMonth}`,
+      es: `Rendimiento individual del mes ${selectedMonth}`,
+    }),
+    indivSub: pickLang(lang, {
+      ar: 'يحتسب هذا التقرير الزيارات التي تم تأكيد حضورها وإتمامها فعلياً خلال الشهر.',
+      fr: 'Ce rapport comptabilise uniquement les visites dont la présence a été confirmée.',
+      amz: 'ⴰⵏⵇⵇⵉⵙ ⴰⴷ ⵉⵜⵜⵃⵙⴰⴱ ⵖⴰⵙ ⵜⵉⵔⵣⵉⵡⵉⵏ ⵉⵜⵜⵓⵙⴷⵓⵏ.',
+      en: 'This report counts only visits confirmed as completed during the selected month.',
+      es: 'Este informe cuenta únicamente las visitas confirmadas como completadas.',
+    }),
+    totalMonthVisits: pickLang(lang, {
+      ar: 'إجمالي زيارات الشهر:',
+      fr: 'Total visites du mois :',
+      amz: 'ⴰⵎⵓⵜⵜⵉ ⵏ ⵜⵔⵣⵉⵡⵉⵏ:',
+      en: 'Total monthly visits:',
+      es: 'Total de visitas del mes:',
+    }),
+    leaderBadge: pickLang(lang, {
+      ar: '· الأعلى دخلاً',
+      fr: '· Top Revenu',
+      amz: '· ⴰⵎⵣⵡⴰⵔⵓ',
+      en: '· Top Earner',
+      es: '· Mayor ingreso',
+    }),
+    shareOfMonth: (pct: number) =>
+      pickLang(lang, {
+        ar: `${pct}% من دخل الشهر`,
+        fr: `${pct}% du revenu mensuel`,
+        amz: `${pct}% ⵙⴳ ⵡⴰⵢⵢⵓⵔ`,
+        en: `${pct}% of monthly income`,
+        es: `${pct}% del ingreso mensual`,
+      }),
+    completedVisitsCol: pickLang(lang, { ar: 'الزيارات المكتملة', fr: 'Visites complétées', amz: 'ⵜⵉⵔⵣⵉⵡⵉⵏ', en: 'Completed Visits', es: 'Completadas' }),
+    avgTicketCol: pickLang(lang, { ar: 'متوسط الزيارة', fr: 'Panier moyen', amz: 'ⴰⵏⴰⵎⵎⴰⵙ', en: 'Avg. Ticket', es: 'Ticket medio' }),
+    confirmedUpcomingCol: pickLang(lang, { ar: 'مؤكد قادم', fr: 'Confirmés à venir', amz: 'ⵉⵜⵜⵓⵙⴷⵓⵏ ⴷ ⵉⴷⴷⴰⵏ', en: 'Confirmed Next', es: 'Confirmadas' }),
+    topServiceLabel: pickLang(lang, {
+      ar: 'الخدمة الأكثر إنجازاً هذا الشهر:',
+      fr: 'Prestation la plus réalisée ce mois :',
+      amz: 'ⵜⴰⵏⴰⴼⵓⵜ ⵉⵜⵜⵓⴳⴰⵏ ⴱⴰⵀⵔⴰ:',
+      en: 'Most requested service this month:',
+      es: 'Servicio más realizado este mes:',
+    }),
+    topServicesTitle: pickLang(lang, {
+      ar: `الخدمات الأكثر إنجازاً في شهر ${selectedMonth}`,
+      fr: `Prestations les plus demandées (${selectedMonth})`,
+      amz: `ⵜⵉⵏⴰⴼⵓⵜⵉⵏ ⵜⵉⵎⵇⵇⵔⴰⵏⵉⵏ ⴳ ${selectedMonth}`,
+      en: `Top Services in ${selectedMonth}`,
+      es: `Servicios principales en ${selectedMonth}`,
+    }),
+    completedServicesTag: pickLang(lang, {
+      ar: 'الخدمات المكتملة',
+      fr: 'Prestations réalisées',
+      amz: 'ⵜⵉⵏⴰⴼⵓⵜⵉⵏ ⵉⵜⵜⵓⵙⴷⵓⵏ',
+      en: 'Completed Services',
+      es: 'Servicios completados',
+    }),
+    noMonthServices: pickLang(lang, {
+      ar: `لا توجد زيارات مكتملة مسجلة في شهر ${selectedMonth} بعد.`,
+      fr: `Aucune visite complétée enregistrée pour ${selectedMonth}.`,
+      amz: `ⵓⵔ ⵍⵍⵉⵏⵜ ⵜⵔⵣⵉⵡⵉⵏ ⵉⵜⵜⵓⵙⴷⵓⵏ ⴳ ${selectedMonth}.`,
+      en: `No completed visits recorded for ${selectedMonth} yet.`,
+      es: `Aún no hay visitas completadas en ${selectedMonth}.`,
+    }),
+  };
+
   return (
     <div className="space-y-5">
       {/* Analytics Header + Month Picker */}
@@ -421,17 +626,15 @@ export const FinancialAnalyticsPanel: React.FC<{
         <div>
           <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-emerald-400" />
-            <span>تحليلات الأداء والأرباح الشهرية • Analytics</span>
+            <span>{ui.title}</span>
           </h3>
           <p className="text-[11px] text-zinc-400 mt-0.5">
-            {role === 'master'
-              ? 'متابعة أداء كل حلاق على حدة: إجمالي الزيارات المكتملة والإيرادات المحققة خلال الشهر الحالي.'
-              : 'ملخص زياراتك المكتملة والأرباح المحققة خلال الشهر الحالي.'}
+            {role === 'master' ? ui.subtitleMaster : ui.subtitleBarber}
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          <label className="text-[11px] font-bold text-zinc-400">الشهر:</label>
+          <label className="text-[11px] font-bold text-zinc-400">{ui.monthLabel}</label>
           <input
             type="month"
             value={selectedMonth}
@@ -444,81 +647,79 @@ export const FinancialAnalyticsPanel: React.FC<{
               onClick={() => setSelectedMonth(currentMonthPrefix)}
               className="px-2.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-bold cursor-pointer"
             >
-              الشهر الحالي
+              {ui.currentMonthBtn}
             </button>
           )}
         </div>
       </div>
 
-      {/* Top KPI Cards: Daily / Weekly / Monthly / Cumulative Completed */}
+      {/* Top KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="p-4 rounded-2xl bg-zinc-900/90 border border-emerald-500/30 space-y-1">
           <span className="text-[11px] font-bold text-emerald-400 block">
-            مداخيل اليوم المكتملة ({todayStr})
+            {ui.dailyIncomeTitle}
           </span>
           <div className="text-2xl font-black text-white font-mono tabular-nums">
             {dailyCompletedIncome.toLocaleString('en-US')}{' '}
             <span className="text-xs text-emerald-400">MAD</span>
           </div>
-          <span className="text-[10px] text-zinc-400">زيارات مكتملة اليوم</span>
+          <span className="text-[10px] text-zinc-400">{ui.dailyIncomeSub}</span>
         </div>
 
         <div className="p-4 rounded-2xl bg-zinc-900/90 border border-blue-500/30 space-y-1">
           <span className="text-[11px] font-bold text-blue-400 block">
-            مداخيل آخر 7 أيام (الأسبوع)
+            {ui.weeklyIncomeTitle}
           </span>
           <div className="text-2xl font-black text-white font-mono tabular-nums">
             {weeklyCompletedIncome.toLocaleString('en-US')}{' '}
             <span className="text-xs text-blue-400">MAD</span>
           </div>
-          <span className="text-[10px] text-zinc-400">من {weekStartStr} إلى اليوم</span>
+          <span className="text-[10px] text-zinc-400">{ui.weeklyIncomeSub}</span>
         </div>
 
         <div className="p-4 rounded-2xl bg-zinc-900/90 border border-amber-500/35 space-y-1">
           <span className="text-[11px] font-bold text-amber-400 block">
-            أرباح الشهر ({selectedMonth})
+            {ui.monthlyIncomeTitle}
           </span>
           <div className="text-2xl font-black text-white font-mono tabular-nums">
             {monthlyCompletedIncome.toLocaleString('en-US')}{' '}
             <span className="text-xs text-amber-400">MAD</span>
           </div>
           <span className="text-[10px] text-zinc-400">
-            من {monthlyCompletedBookings.length} زيارة مكتملة
+            {ui.fromCompletedVisits(monthlyCompletedBookings.length)}
           </span>
         </div>
 
         <div className="p-4 rounded-2xl bg-zinc-900/90 border border-purple-500/30 space-y-1">
           <span className="text-[11px] font-bold text-purple-400 block">
-            الإجمالي التراكمي المكتمل
+            {ui.totalCumTitle}
           </span>
           <div className="text-2xl font-black text-white font-mono tabular-nums">
             {totalCompletedRevenue.toLocaleString('en-US')}{' '}
             <span className="text-xs text-purple-400">MAD</span>
           </div>
           <span className="text-[10px] text-zinc-400">
-            من {completedBookings.length} زيارة مكتملة إجمالاً
+            {ui.fromTotalVisits(completedBookings.length)}
           </span>
         </div>
       </div>
 
-      {/* TOP PERFORMERS CARD (Current Month Revenue + Client Satisfaction Ranking) */}
+      {/* TOP PERFORMERS CARD */}
       <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-950/25 via-zinc-900/90 to-zinc-950 border border-amber-500/35 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-zinc-800 pb-3">
           <div>
             <h4 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
               <Trophy className="w-4 h-4 text-amber-400" />
-              <span>أفضل الأداءات • Top Performers ({selectedMonth})</span>
+              <span>{ui.topPerformersTitle}</span>
             </h4>
-            <p className="text-[11px] text-zinc-400 mt-0.5">
-              ترتيب الحلاقين حسب إجمالي الإيرادات المحققة ومؤشر رضا الزبناء للشهر الحالي.
-            </p>
+            <p className="text-[11px] text-zinc-400 mt-0.5">{ui.topPerformersSub}</p>
           </div>
 
           <div className="inline-flex rounded-xl bg-zinc-950 border border-zinc-800 p-0.5 text-[11px] font-bold flex-shrink-0">
             {[
-              { id: 'combined', label: 'التصنيف العام' },
-              { id: 'revenue', label: 'الأعلى دخلاً' },
-              { id: 'satisfaction', label: 'رضا الزبناء' },
+              { id: 'combined', label: ui.sortCombined },
+              { id: 'revenue', label: ui.sortRevenue },
+              { id: 'satisfaction', label: ui.sortSatisfaction },
             ].map((opt) => (
               <button
                 key={opt.id}
@@ -550,6 +751,7 @@ export const FinancialAnalyticsPanel: React.FC<{
                 : 'bg-zinc-900 text-zinc-400 border-zinc-700';
             const revPct = Math.round((entry.revenue / maxPerformerRevenue) * 100);
             const hideOtherCash = role === 'barber' && entry.barber.id !== ownBarberId;
+            const displayName = getBarberDisplayName(entry.barber);
 
             return (
               <div
@@ -569,44 +771,44 @@ export const FinancialAnalyticsPanel: React.FC<{
                     </span>
                     <img
                       src={entry.barber.avatar}
-                      alt={entry.barber.name.ar}
+                      alt={displayName}
                       className="w-9 h-9 rounded-xl object-cover border-2 flex-shrink-0"
                       style={{ borderColor: color }}
                     />
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="font-black text-white text-xs sm:text-sm truncate">
-                          {entry.barber.name.ar}
+                          {displayName}
                         </span>
                         {role === 'barber' && entry.barber.id === ownBarberId && (
                           <span className="text-[10px] font-bold text-amber-300">
-                            (أنت)
+                            {ui.youBadge}
                           </span>
                         )}
                       </div>
                       <span className="text-[10px] text-zinc-400 font-mono tabular-nums">
-                        {entry.completedVisits} زيارات مكتملة · التزام {entry.reliabilityPct}%
+                        {ui.visitsAndReliability(entry.completedVisits, entry.reliabilityPct)}
                       </span>
                     </div>
                   </div>
 
                   {/* Client Satisfaction Score */}
-                  <div className="text-left rtl:text-right flex-shrink-0">
+                  <div className="text-end flex-shrink-0">
                     <div className="inline-flex items-center gap-1 font-mono font-black text-xs sm:text-sm text-amber-300 tabular-nums">
                       <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
                       <span>{entry.satisfactionScore.toFixed(1)}</span>
                       <span className="text-[10px] text-zinc-400">/ 5.0</span>
                     </div>
                     <div className="text-[10px] text-emerald-400 font-mono tabular-nums">
-                      {entry.satisfactionPct}% رضا الزبناء
+                      {ui.satisfactionLabel(entry.satisfactionPct)}
                     </div>
                   </div>
                 </div>
 
-                {/* Revenue Progress Bar & Figure */}
+                {/* Revenue Progress Bar */}
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-zinc-400">إيرادات الشهر المحققة:</span>
+                    <span className="text-zinc-400">{ui.monthRevLabel}</span>
                     <span className="font-mono font-black text-emerald-400 tabular-nums">
                       {hideOtherCash
                         ? '— MAD'
@@ -629,25 +831,21 @@ export const FinancialAnalyticsPanel: React.FC<{
         </div>
       </div>
 
-      {/* Weekly Completed Appointments Bar Chart (Team Workload Balance) */}
+      {/* Weekly Completed Appointments Bar Chart */}
       <WeeklyWorkloadBarChart bookings={bookings} todayStr={todayStr} />
 
-      {/* Individual Barber Performance for Current / Selected Month */}
+      {/* Individual Barber Performance */}
       <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/85 border border-zinc-800 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 pb-3">
           <div>
             <h4 className="text-sm font-black text-white flex items-center gap-2">
               <Award className="w-4 h-4 text-amber-400" />
-              <span>
-                أداء الحلاقين الفردي لشهر {selectedMonth} (الزيارات المكتملة والإيرادات)
-              </span>
+              <span>{ui.indivTitle}</span>
             </h4>
-            <p className="text-[11px] text-zinc-400 mt-0.5">
-              يحتسب هذا التقرير الزيارات التي تم تأكيد حضورها وإتمامها فعلياً خلال الشهر.
-            </p>
+            <p className="text-[11px] text-zinc-400 mt-0.5">{ui.indivSub}</p>
           </div>
           <span className="text-[11px] font-mono text-emerald-300 font-bold tabular-nums">
-            إجمالي زيارات الشهر: {monthlyCompletedBookings.length}
+            {ui.totalMonthVisits} {monthlyCompletedBookings.length}
           </span>
         </div>
 
@@ -659,6 +857,7 @@ export const FinancialAnalyticsPanel: React.FC<{
             );
             const isLeader =
               role === 'master' && idx === 0 && stat.revenueGenerated > 0;
+            const barberDisplay = getBarberDisplayName(stat.barber);
 
             return (
               <div
@@ -674,34 +873,35 @@ export const FinancialAnalyticsPanel: React.FC<{
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="font-black text-white text-sm truncate">
-                          {stat.barber.name.ar}
+                          {barberDisplay}
                         </span>
                         {isLeader && (
                           <span className="text-[10px] font-bold text-amber-300">
-                            · الأعلى دخلاً
+                            {ui.leaderBadge}
                           </span>
                         )}
                       </div>
                       <span className="text-[11px] text-zinc-400 font-mono">
-                        {stat.barber.name.fr}
+                        {lang === 'ar' || !stat.barber.role
+                          ? stat.barber.name.fr
+                          : stat.barber.role[lang] || stat.barber.role.fr}
                       </span>
                     </div>
                   </div>
 
-                  <div className="text-left rtl:text-right flex-shrink-0">
+                  <div className="text-end flex-shrink-0">
                     <div className="text-lg font-black text-emerald-400 font-mono tabular-nums">
                       {stat.revenueGenerated.toLocaleString('en-US')}{' '}
                       <span className="text-[11px]">MAD</span>
                     </div>
                     {role === 'master' && (
                       <div className="text-[10px] text-zinc-400 font-mono tabular-nums">
-                        {stat.sharePct}% من دخل الشهر
+                        {ui.shareOfMonth(stat.sharePct)}
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Progress Bar */}
                 <div className="h-2 rounded-full bg-zinc-900 overflow-hidden border border-zinc-800">
                   <div
                     className="h-full rounded-full transition-all duration-500"
@@ -709,11 +909,10 @@ export const FinancialAnalyticsPanel: React.FC<{
                   />
                 </div>
 
-                {/* Clean Tabular Metrics Row */}
                 <div className="grid grid-cols-3 gap-2 pt-1 text-center">
                   <div className="py-1.5 px-2 rounded-xl bg-zinc-900/70 border border-zinc-800/80">
                     <span className="text-[10px] text-zinc-400 block">
-                      الزيارات المكتملة
+                      {ui.completedVisitsCol}
                     </span>
                     <span className="font-mono font-black text-sm text-white tabular-nums">
                       {stat.completedVisits}
@@ -722,7 +921,7 @@ export const FinancialAnalyticsPanel: React.FC<{
 
                   <div className="py-1.5 px-2 rounded-xl bg-zinc-900/70 border border-zinc-800/80">
                     <span className="text-[10px] text-zinc-400 block">
-                      متوسط الزيارة
+                      {ui.avgTicketCol}
                     </span>
                     <span className="font-mono font-black text-sm text-amber-300 tabular-nums">
                       {stat.avgTicketMAD} <span className="text-[10px]">MAD</span>
@@ -731,7 +930,7 @@ export const FinancialAnalyticsPanel: React.FC<{
 
                   <div className="py-1.5 px-2 rounded-xl bg-zinc-900/70 border border-zinc-800/80">
                     <span className="text-[10px] text-zinc-400 block">
-                      مؤكد قادم
+                      {ui.confirmedUpcomingCol}
                     </span>
                     <span className="font-mono font-bold text-xs text-blue-300 tabular-nums">
                       {stat.confirmedUpcomingCount} ({stat.confirmedPipelineRevenue} MAD)
@@ -741,7 +940,7 @@ export const FinancialAnalyticsPanel: React.FC<{
 
                 {stat.topServiceName && (
                   <div className="text-[11px] text-zinc-400 flex items-center justify-between pt-1 border-t border-zinc-800/70">
-                    <span>الخدمة الأكثر إنجازاً هذا الشهر:</span>
+                    <span>{ui.topServiceLabel}</span>
                     <span className="font-bold text-zinc-200 truncate max-w-[60%]">
                       {stat.topServiceName}
                     </span>
@@ -753,19 +952,19 @@ export const FinancialAnalyticsPanel: React.FC<{
         </div>
       </div>
 
-      {/* Top-Selling Services in Selected Month */}
+      {/* Top-Selling Services */}
       <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3">
         <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
           <h4 className="text-sm font-black text-white flex items-center gap-2">
             <Scissors className="w-4 h-4 text-emerald-400" />
-            <span>الخدمات الأكثر إنجازاً في شهر {selectedMonth}</span>
+            <span>{ui.topServicesTitle}</span>
           </h4>
-          <span className="text-[10px] text-zinc-400">Completed Services</span>
+          <span className="text-[10px] text-zinc-400">{ui.completedServicesTag}</span>
         </div>
 
         {topServices.length === 0 ? (
           <p className="text-xs text-zinc-500 py-5 text-center">
-            لا توجد زيارات مكتملة مسجلة في شهر {selectedMonth} بعد.
+            {ui.noMonthServices}
           </p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -796,24 +995,24 @@ export const FinancialAnalyticsPanel: React.FC<{
 /* ============================================================================
  * 2. BARBER SHIFT & BREAK MANAGEMENT PANEL
  * ========================================================================== */
-const WEEKDAY_LABELS: { idx: number; ar: string; fr: string }[] = [
-  { idx: 0, ar: 'الأحد', fr: 'Dim' },
-  { idx: 1, ar: 'الإثنين (عطلة الصالون)', fr: 'Lun (Fermé)' },
-  { idx: 2, ar: 'الثلاثاء', fr: 'Mar' },
-  { idx: 3, ar: 'الأربعاء', fr: 'Mer' },
-  { idx: 4, ar: 'الخميس', fr: 'Jeu' },
-  { idx: 5, ar: 'الجمعة', fr: 'Ven' },
-  { idx: 6, ar: 'السبت', fr: 'Sam' },
-];
+const WEEKDAY_LABELS: Record<number, Record<Language, string>> = {
+  0: { ar: 'الأحد', fr: 'Dimanche', amz: 'ⴰⵙⴰⵎⴰⵙ', en: 'Sunday', es: 'Domingo' },
+  1: { ar: 'الإثنين (عطلة الصالون)', fr: 'Lundi (Fermé)', amz: 'ⴰⵢⵏⴰⵙ (ⵉⵇⵇⵏ)', en: 'Monday (Closed)', es: 'Lunes (Cerrado)' },
+  2: { ar: 'الثلاثاء', fr: 'Mardi', amz: 'ⴰⵙⵉⵏⴰⵙ', en: 'Tuesday', es: 'Martes' },
+  3: { ar: 'الأربعاء', fr: 'Mercredi', amz: 'ⴰⴽⵕⴰⵙ', en: 'Wednesday', es: 'Miércoles' },
+  4: { ar: 'الخميس', fr: 'Jeudi', amz: 'ⴰⴽⵡⴰⵙ', en: 'Thursday', es: 'Jueves' },
+  5: { ar: 'الجمعة', fr: 'Vendredi', amz: 'ⴰⵙⵉⵎⵡⴰⵙ', en: 'Friday', es: 'Viernes' },
+  6: { ar: 'السبت', fr: 'Samedi', amz: 'ⴰⵙⵉⴹⵢⴰⵙ', en: 'Saturday', es: 'Sábado' },
+};
 
-const CALENDAR_WEEK_DAYS: { ar: string; fr: string }[] = [
-  { ar: 'الإثنين', fr: 'Lun' },
-  { ar: 'الثلاثاء', fr: 'Mar' },
-  { ar: 'الأربعاء', fr: 'Mer' },
-  { ar: 'الخميس', fr: 'Jeu' },
-  { ar: 'الجمعة', fr: 'Ven' },
-  { ar: 'السبت', fr: 'Sam' },
-  { ar: 'الأحد', fr: 'Dim' },
+const CALENDAR_WEEK_DAYS: Record<Language, string>[] = [
+  { ar: 'الإثنين', fr: 'Lun', amz: 'ⴰⵢⵏⴰⵙ', en: 'Mon', es: 'Lun' },
+  { ar: 'الثلاثاء', fr: 'Mar', amz: 'ⴰⵙⵉⵏⴰⵙ', en: 'Tue', es: 'Mar' },
+  { ar: 'الأربعاء', fr: 'Mer', amz: 'ⴰⴽⵕⴰⵙ', en: 'Wed', es: 'Mié' },
+  { ar: 'الخميس', fr: 'Jeu', amz: 'ⴰⴽⵡⴰⵙ', en: 'Thu', es: 'Jue' },
+  { ar: 'الجمعة', fr: 'Ven', amz: 'ⴰⵙⵉⵎⵡⴰⵙ', en: 'Fri', es: 'Vie' },
+  { ar: 'السبت', fr: 'Sam', amz: 'ⴰⵙⵉⴹⵢⴰⵙ', en: 'Sat', es: 'Sáb' },
+  { ar: 'الأحد', fr: 'Dim', amz: 'ⴰⵙⴰⵎⴰⵙ', en: 'Sun', es: 'Dom' },
 ];
 
 function formatDateYMD(d: Date): string {
@@ -837,6 +1036,7 @@ export const BarberSchedulePanel: React.FC<{
   role: 'master' | 'barber';
   ownBarberId: string;
 }> = ({ schedules, bookings = [], role, ownBarberId }) => {
+  const { lang } = useLanguage();
   const selectableBarbers =
     role === 'master'
       ? TEAM_MEMBERS
@@ -853,7 +1053,6 @@ export const BarberSchedulePanel: React.FC<{
   const activeConfig =
     schedules[selectedBarberId] || getDefaultBarberSchedule(selectedBarberId);
 
-  // Build 7 calendar days (Monday -> Sunday) for the currently viewed week
   const weekDays = (() => {
     const startMonday = getMondayOfWeekOffset(weekOffset);
     return Array.from({ length: 7 }, (_, i) => {
@@ -872,10 +1071,120 @@ export const BarberSchedulePanel: React.FC<{
     });
   })();
 
+  const ui = {
+    updatedTitle: pickLang(lang, {
+      ar: 'تم تحديث الجدول الأسبوعي ✅',
+      fr: 'Planning hebdomadaire mis à jour ✅',
+      amz: 'ⵉⵜⵜⵓⵙⵎⴰⵢⵏⵓ ⵓⵙⵖⵉⵡⵙ ⵏ ⵉⵎⴰⵍⴰⵙⵙ ✅',
+      en: 'Weekly schedule updated ✅',
+      es: 'Horario semanal actualizado ✅',
+    }),
+    saveErrTitle: pickLang(lang, {
+      ar: 'تعذر حفظ التعديلات',
+      fr: 'Impossible d’enregistrer',
+      amz: 'ⵓⵔ ⵉⵜⵜⵓⵃⴹⵉ ⵓⵙⵏⴼⵍ',
+      en: 'Could not save changes',
+      es: 'No se pudieron guardar los cambios',
+    }),
+    saveErrBody: pickLang(lang, {
+      ar: 'يرجى التحقق من الاتصال والمحاولة مرة أخرى.',
+      fr: 'Veuillez vérifier la connexion et réessayer.',
+      amz: 'ⵙⵙⴼⵇⴷ ⴰⵣⴷⴰⵢ ⵜⴰⵍⵙⴷ.',
+      en: 'Please check your connection and try again.',
+      es: 'Verifica la conexión e inténtalo de nuevo.',
+    }),
+    headerTitle: pickLang(lang, {
+      ar: 'التقويم الأسبوعي المرئي لتوفر الحلاقين والاستراحات',
+      fr: 'Calendrier Hebdomadaire des Disponibilités & Pauses',
+      amz: 'ⴰⵙⵖⵉⵡⵙ ⵏ ⵉⵎⴰⵍⴰⵙⵙ ⵉ ⵜⵍⴻⵍⵍⵉ ⴷ ⵉⵙⵓⵏⴼⵓⵜⵏ',
+      en: 'Visual Weekly Barber Availability & Break Calendar',
+      es: 'Calendario Semanal de Disponibilidad y Pausas',
+    }),
+    headerSub: pickLang(lang, {
+      ar: 'اضغط على أي ساعة في التقويم لحجبها (استراحة/غداء) أو إعادة فتحها فوراً في نظام الحجز.',
+      fr: 'Cliquez sur un créneau pour le bloquer (pause/déjeuner) ou le rouvrir instantanément.',
+      amz: 'ⴰⴷⵔ ⵖⴼ ⴽⵓ ⵜⴰⵙⵔⴰⴳⵜ ⵉ ⵓⵙⵇⵏ ⵏⵖ ⴰⵔⵥⵥⵓⵎ ⵉ ⵓⵙⵔⵓⵙ.',
+      en: 'Click any slot in the grid to block (break/lunch) or reopen it in real time.',
+      es: 'Pulsa cualquier hora para bloquearla (pausa) o reabrirla al instante.',
+    }),
+    prevWeek: pickLang(lang, { ar: 'الأسبوع السابق', fr: 'Semaine préc.', amz: 'ⵉⵎⴰⵍⴰⵙⵙ ⵉⵣⵔⵉⵏ', en: 'Prev Week', es: 'Sem. anterior' }),
+    currWeek: pickLang(lang, { ar: 'الأسبوع الحالي', fr: 'Cette semaine', amz: 'ⵉⵎⴰⵍⴰⵙⵙ ⴰⴷ', en: 'This Week', es: 'Esta semana' }),
+    nextWeek: pickLang(lang, { ar: 'الأسبوع التالي', fr: 'Semaine suiv.', amz: 'ⵉⵎⴰⵍⴰⵙⵙ ⴷ ⵉⴷⴷⴰⵏ', en: 'Next Week', es: 'Sem. siguiente' }),
+    saving: pickLang(lang, { ar: 'جاري الحفظ...', fr: 'Enregistrement...', amz: 'ⴰⵃⵟⵟⵓ...', en: 'Saving...', es: 'Guardando...' }),
+    quickLunchLabel: pickLang(lang, {
+      ar: 'حجب سريع للاستراحة في هذا الأسبوع:',
+      fr: 'Blocage rapide de pause cette semaine :',
+      amz: 'ⴰⵙⵇⵏ ⵉⵣⵔⴱⵏ ⵏ ⵓⵙⵓⵏⴼⵓ ⴳ ⵉⵎⴰⵍⴰⵙⵙ ⴰ:',
+      en: 'Quick weekly break toggle:',
+      es: 'Bloqueo rápido de pausa esta semana:',
+    }),
+    unblockWeek: (p: string) =>
+      pickLang(lang, {
+        ar: `✓ ${p} (إلغاء حجب الأسبوع)`,
+        fr: `✓ ${p} (Débloquer semaine)`,
+        amz: `✓ ${p} (ⵔⵥⵎ ⵉⵎⴰⵍⴰⵙⵙ)`,
+        en: `✓ ${p} (Unblock week)`,
+        es: `✓ ${p} (Desbloquear sem.)`,
+      }),
+    blockWeek: (p: string) =>
+      pickLang(lang, {
+        ar: `⏸ حجب ${p} طوال الأسبوع`,
+        fr: `⏸ Bloquer ${p} la semaine`,
+        amz: `⏸ ⵇⵇⵏ ${p} ⵉⵎⴰⵍⴰⵙⵙ`,
+        en: `⏸ Block ${p} all week`,
+        es: `⏸ Bloquear ${p} toda la sem.`,
+      }),
+    legendAvail: pickLang(lang, { ar: 'متاح', fr: 'Disponible', amz: 'ⵉⵍⵍⴰ', en: 'Available', es: 'Disponible' }),
+    legendBreak: pickLang(lang, { ar: 'استراحة / محجوب', fr: 'Pause / Bloqué', amz: 'ⴰⵙⵓⵏⴼⵓ', en: 'Break / Blocked', es: 'Pausa / Bloqueado' }),
+    legendBooked: pickLang(lang, { ar: 'موعد زبون محجوز', fr: 'Client réservé', amz: 'ⵉⵜⵜⵓⵃⵊⵣ', en: 'Booked Client', es: 'Cita reservada' }),
+    legendOff: pickLang(lang, { ar: 'عطلة / خارج الدوام', fr: 'Fermé / Repos', amz: 'ⵉⵇⵇⵏ / ⵜⴰⵏⴼⵓⵙⵜ', en: 'Off / Closed', es: 'Cerrado / Libre' }),
+    timeCol: pickLang(lang, { ar: 'التوقيت', fr: 'Heure', amz: 'ⵜⴰⵙⵔⴰⴳⵜ', en: 'Time', es: 'Hora' }),
+    todayTag: pickLang(lang, { ar: 'اليوم', fr: 'Auj.', amz: 'ⴰⵙⵙ ⴰ', en: 'Today', es: 'Hoy' }),
+    salonClosedMon: pickLang(lang, { ar: 'عطلة الصالون', fr: 'Salon fermé', amz: 'ⵉⵇⵇⵏ ⵓⵙⴰⵍⵓⵏ', en: 'Salon Closed', es: 'Salón cerrado' }),
+    barberOffBtn: pickLang(lang, { ar: 'عطلة الحلاق ✕', fr: 'Repos barbier ✕', amz: 'ⴰⵙⵓⵏⴼⵓ ✕', en: 'Barber Off ✕', es: 'Libre ✕' }),
+    barberOnBtn: pickLang(lang, { ar: 'متاح للعمل ✓', fr: 'En service ✓', amz: 'ⵉⵜⵜⴰⵡⵓⵔⵉ ✓', en: 'Working ✓', es: 'Trabajando ✓' }),
+    closedCell: pickLang(lang, { ar: 'مغلق', fr: 'Fermé', amz: 'ⵉⵇⵇⵏ', en: 'Closed', es: 'Cerrado' }),
+    outOfHoursCell: pickLang(lang, { ar: 'خارج الدوام', fr: 'Hors horaire', amz: 'ⴱⵕⵕⴰ ⵏ ⵜⵡⵓⵔⵉ', en: 'Off Hours', es: 'Fuera horario' }),
+    dayOffCell: pickLang(lang, { ar: 'يوم عطلة', fr: 'Jour de repos', amz: 'ⴰⵙⵙ ⵏ ⵓⵙⵓⵏⴼⵓ', en: 'Day Off', es: 'Día libre' }),
+    dailyBreakCell: pickLang(lang, { ar: '⏸ استراحة يومية', fr: '⏸ Pause quot.', amz: '⏸ ⴰⵙⵓⵏⴼⵓ ⵏ ⴽⵓ ⴰⵙⵙ', en: '⏸ Daily Break', es: '⏸ Pausa diaria' }),
+    breakCell: pickLang(lang, { ar: '⏸ استراحة', fr: '⏸ Bloqué', amz: '⏸ ⵉⵇⵇⵏ', en: '⏸ Blocked', es: '⏸ Bloqueado' }),
+    availCell: pickLang(lang, { ar: '✓ متاح', fr: '✓ Libre', amz: '✓ ⵉⵍⵍⴰ', en: '✓ Open', es: '✓ Libre' }),
+    dailyBreaksTitle: pickLang(lang, {
+      ar: 'ساعات الاستراحة الدائمة كل يوم (Daily Break)',
+      fr: 'Heures de pause quotidienne récurrente',
+      amz: 'ⵜⵉⵙⵔⴰⴳⵉⵏ ⵏ ⵓⵙⵓⵏⴼⵓ ⵏ ⴽⵓ ⴰⵙⵙ',
+      en: 'Recurring Daily Break Hours',
+      es: 'Horas de pausa diaria recurrente',
+    }),
+    weeklyOffTitle: pickLang(lang, {
+      ar: 'أيام العطلة الأسبوعية المتكررة',
+      fr: 'Jours de repos hebdomadaires récurrents',
+      amz: 'ⵓⵙⵙⴰⵏ ⵏ ⵓⵙⵓⵏⴼⵓ ⵏ ⴽⵓ ⵉⵎⴰⵍⴰⵙⵙ',
+      en: 'Recurring Weekly Off-Days',
+      es: 'Días libres semanales',
+    }),
+    offBadge: pickLang(lang, { ar: 'عطلة', fr: 'Repos', amz: 'ⵉⵇⵇⵏ', en: 'Off', es: 'Libre' }),
+    workBadge: pickLang(lang, { ar: 'عمل', fr: 'Travail', amz: 'ⵜⴰⵡⵓⵔⵉ', en: 'Work', es: 'Activo' }),
+    customOffTitle: pickLang(lang, {
+      ar: 'إضافة تاريخ عطلة مخصص',
+      fr: 'Ajouter une date d’absence spécifique',
+      amz: 'ⵔⵏⵓ ⴰⵣⵎⵣ ⵏ ⵓⵙⵓⵏⴼⵓ',
+      en: 'Add Specific Off Date',
+      es: 'Añadir fecha libre',
+    }),
+    closeDateBtn: pickLang(lang, { ar: 'إغلاق', fr: 'Fermer', amz: 'ⵇⵇⵏ', en: 'Block', es: 'Bloquear' }),
+    noOffDates: pickLang(lang, {
+      ar: 'لا توجد تواريخ عطلة مضافة.',
+      fr: 'Aucune date d’absence enregistrée.',
+      amz: 'ⵓⵔ ⵍⵍⵉⵏ ⵉⵣⵎⴰⵣ ⵏ ⵓⵙⵓⵏⴼⵓ.',
+      en: 'No custom off dates added.',
+      es: 'No hay fechas libres añadidas.',
+    }),
+  };
+
   const persistUpdate = async (next: BarberScheduleConfig, successMsg: string) => {
     setSaving(true);
     try {
-      // Keep date arrays tidy by dropping dates older than 14 days so limits are never reached
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 14);
       const cutoffStr = formatDateYMD(cutoff);
@@ -887,15 +1196,15 @@ export const BarberSchedulePanel: React.FC<{
       };
 
       await saveBarberSchedule(cleaned);
-      sendDualAlert('تم تحديث الجدول الأسبوعي ✅', {
+      sendDualAlert(ui.updatedTitle, {
         body: successMsg,
         type: 'success',
         skipSound: true,
       });
     } catch (err) {
       console.error('Failed to save barber schedule:', err);
-      sendDualAlert('تعذر حفظ التعديلات', {
-        body: 'يرجى التحقق من الاتصال والمحاولة مرة أخرى.',
+      sendDualAlert(ui.saveErrTitle, {
+        body: ui.saveErrBody,
         type: 'warning',
       });
     } finally {
@@ -904,14 +1213,20 @@ export const BarberSchedulePanel: React.FC<{
   };
 
   const handleToggleDateAvailability = (dateStr: string, weekday: number) => {
-    if (weekday === 1) return; // Salon always closed on Monday
+    if (weekday === 1) return;
     const isRecurringOff = activeConfig.offWeekdays.includes(weekday);
     if (isRecurringOff) {
-      // Turn off recurring off-weekday so barber is available on this day
       const nextWeekdays = activeConfig.offWeekdays.filter((d) => d !== weekday);
+      const wName = WEEKDAY_LABELS[weekday]?.[lang] || dateStr;
       persistUpdate(
         { ...activeConfig, offWeekdays: nextWeekdays },
-        `تم تفعيل العمل يوم ${WEEKDAY_LABELS.find((w) => w.idx === weekday)?.ar || dateStr}.`
+        pickLang(lang, {
+          ar: `تم تفعيل العمل يوم ${wName}.`,
+          fr: `Service activé pour ${wName}.`,
+          amz: `ⵜⵜⵓⵔⵥⵎ ⵜⵡⵓⵔⵉ ⴰⵙⵙ ⵏ ${wName}.`,
+          en: `Workday enabled for ${wName}.`,
+          es: `Día laboral activado para ${wName}.`,
+        })
       );
       return;
     }
@@ -922,8 +1237,20 @@ export const BarberSchedulePanel: React.FC<{
     persistUpdate(
       { ...activeConfig, offDates: nextDates },
       exists
-        ? `تم فتح الحجز بتاريخ ${dateStr} بنجاح.`
-        : `تم إغلاق يوم ${dateStr} (عطلة للحلاق).`
+        ? pickLang(lang, {
+            ar: `تم فتح الحجز بتاريخ ${dateStr} بنجاح.`,
+            fr: `Réservations rouvertes le ${dateStr}.`,
+            amz: `ⵉⵜⵜⵓⵔⵥⵎ ⵓⵙⵔⵓⵙ ⴳ ${dateStr}.`,
+            en: `Reopened bookings for ${dateStr}.`,
+            es: `Reservas reabiertas para ${dateStr}.`,
+          })
+        : pickLang(lang, {
+            ar: `تم إغلاق يوم ${dateStr} (عطلة للحلاق).`,
+            fr: `Journée du ${dateStr} marquée comme repos.`,
+            amz: `ⵉⵇⵇⵏ ⴰⵙⵙ ⵏ ${dateStr}.`,
+            en: `Marked ${dateStr} as barber day off.`,
+            es: `Día ${dateStr} marcado como libre.`,
+          })
     );
   };
 
@@ -933,11 +1260,16 @@ export const BarberSchedulePanel: React.FC<{
     const isRecurringBreak = activeConfig.breakSlots.includes(slot);
 
     if (isRecurringBreak && !isSpecificBlocked) {
-      // Prompt clarity: remove recurring break across all days OR block specifically
       const nextBreaks = activeConfig.breakSlots.filter((s) => s !== slot);
       persistUpdate(
         { ...activeConfig, breakSlots: nextBreaks },
-        `تمت إزالة الاستراحة اليومية الدائمة عند الساعة ${slot}.`
+        pickLang(lang, {
+          ar: `تمت إزالة الاستراحة اليومية الدائمة عند الساعة ${slot}.`,
+          fr: `Pause quotidienne de ${slot} supprimée.`,
+          amz: `ⵉⵜⵜⵓⴽⴽⵙ ⵓⵙⵓⵏⴼⵓ ⵏ ${slot}.`,
+          en: `Removed recurring daily break at ${slot}.`,
+          es: `Eliminada la pausa diaria de las ${slot}.`,
+        })
       );
       return;
     }
@@ -949,8 +1281,20 @@ export const BarberSchedulePanel: React.FC<{
     persistUpdate(
       { ...activeConfig, dateSlotBlocks: nextBlocks },
       isSpecificBlocked
-        ? `تمت إعادة فتح الساعة ${slot} بتاريخ ${dateStr}.`
-        : `تم حجب الساعة ${slot} (استراحة/غداء) بتاريخ ${dateStr}.`
+        ? pickLang(lang, {
+            ar: `تمت إعادة فتح الساعة ${slot} بتاريخ ${dateStr}.`,
+            fr: `Créneau ${slot} rouvert le ${dateStr}.`,
+            amz: `ⵉⵜⵜⵓⵔⵥⵎ ${slot} ⴳ ${dateStr}.`,
+            en: `Reopened ${slot} on ${dateStr}.`,
+            es: `Reabierto ${slot} el ${dateStr}.`,
+          })
+        : pickLang(lang, {
+            ar: `تم حجب الساعة ${slot} (استراحة/غداء) بتاريخ ${dateStr}.`,
+            fr: `Créneau ${slot} bloqué (pause) le ${dateStr}.`,
+            amz: `ⵉⵇⵇⵏ ${slot} ⴳ ${dateStr}.`,
+            en: `Blocked ${slot} (break) on ${dateStr}.`,
+            es: `Bloqueado ${slot} (pausa) el ${dateStr}.`,
+          })
     );
   };
 
@@ -970,8 +1314,20 @@ export const BarberSchedulePanel: React.FC<{
     persistUpdate(
       { ...activeConfig, dateSlotBlocks: nextBlocks },
       allBlocked
-        ? `تمت إعادة فتح الساعة ${slot} لجميع أيام هذا الأسبوع.`
-        : `تم حجب الساعة ${slot} للاستراحة طوال كامل الأسبوع المحدد.`
+        ? pickLang(lang, {
+            ar: `تمت إعادة فتح الساعة ${slot} لجميع أيام هذا الأسبوع.`,
+            fr: `Créneau ${slot} rouvert pour toute la semaine.`,
+            amz: `ⵉⵜⵜⵓⵔⵥⵎ ${slot} ⵉ ⵉⵎⴰⵍⴰⵙⵙ ⴰⴽⴽⵯ.`,
+            en: `Reopened ${slot} for all days this week.`,
+            es: `Reabierto ${slot} toda la semana.`,
+          })
+        : pickLang(lang, {
+            ar: `تم حجب الساعة ${slot} للاستراحة طوال الأسبوع المحدد.`,
+            fr: `Créneau ${slot} bloqué toute la semaine.`,
+            amz: `ⵉⵇⵇⵏ ${slot} ⵉ ⵉⵎⴰⵍⴰⵙⵙ ⴰⴽⴽⵯ.`,
+            en: `Blocked ${slot} for the whole selected week.`,
+            es: `Bloqueado ${slot} toda la semana.`,
+          })
     );
   };
 
@@ -982,7 +1338,13 @@ export const BarberSchedulePanel: React.FC<{
       : [...activeConfig.offWeekdays, dayIdx];
     persistUpdate(
       { ...activeConfig, offWeekdays: nextDays },
-      'تم تحديث أيام العطلة الأسبوعية المتكررة للحلاق.'
+      pickLang(lang, {
+        ar: 'تم تحديث أيام العطلة الأسبوعية المتكررة للحلاق.',
+        fr: 'Jours de repos hebdomadaires mis à jour.',
+        amz: 'ⵜⵜⵓⵙⵎⴰⵢⵏⵓⵏ ⵓⵙⵙⴰⵏ ⵏ ⵓⵙⵓⵏⴼⵓ.',
+        en: 'Updated recurring weekly off-days.',
+        es: 'Días libres semanales actualizados.',
+      })
     );
   };
 
@@ -993,7 +1355,13 @@ export const BarberSchedulePanel: React.FC<{
       : [...activeConfig.breakSlots, slot];
     persistUpdate(
       { ...activeConfig, breakSlots: nextBreaks },
-      `تم تحديث الاستراحة اليومية الدائمة (${slot}).`
+      pickLang(lang, {
+        ar: `تم تحديث الاستراحة اليومية الدائمة (${slot}).`,
+        fr: `Pause quotidienne mise à jour (${slot}).`,
+        amz: `ⵉⵜⵜⵓⵙⵎⴰⵢⵏⵓ ⵓⵙⵓⵏⴼⵓ (${slot}).`,
+        en: `Updated recurring daily break (${slot}).`,
+        es: `Pausa diaria actualizada (${slot}).`,
+      })
     );
   };
 
@@ -1004,7 +1372,13 @@ export const BarberSchedulePanel: React.FC<{
     setNewOffDate('');
     persistUpdate(
       { ...activeConfig, offDates: nextDates },
-      `تمت إضافة يوم عطلة (${newOffDate}) ومنع الحجز فيه.`
+      pickLang(lang, {
+        ar: `تمت إضافة يوم عطلة (${newOffDate}) ومنع الحجز فيه.`,
+        fr: `Date d’absence ajoutée (${newOffDate}).`,
+        amz: `ⵉⵜⵜⵓⵔⵏⴰ ⵡⴰⵙⵙ ⵏ ⵓⵙⵓⵏⴼⵓ (${newOffDate}).`,
+        en: `Added off date (${newOffDate}).`,
+        es: `Fecha libre añadida (${newOffDate}).`,
+      })
     );
   };
 
@@ -1012,11 +1386,16 @@ export const BarberSchedulePanel: React.FC<{
     const nextDates = activeConfig.offDates.filter((item) => item !== d);
     persistUpdate(
       { ...activeConfig, offDates: nextDates },
-      `تمت إزالة يوم العطلة (${d}).`
+      pickLang(lang, {
+        ar: `تمت إزالة يوم العطلة (${d}).`,
+        fr: `Date d’absence retirée (${d}).`,
+        amz: `ⵉⵜⵜⵓⴽⴽⵙ ⵡⴰⵙⵙ (${d}).`,
+        en: `Removed off date (${d}).`,
+        es: `Fecha libre eliminada (${d}).`,
+      })
     );
   };
 
-  // Precompute active bookings map for quick lookup in calendar grid
   const barberBookingsMap = new Map<string, AppointmentBooking>();
   bookings.forEach((b) => {
     if (
@@ -1031,17 +1410,15 @@ export const BarberSchedulePanel: React.FC<{
 
   return (
     <div className="space-y-4 text-xs">
-      {/* Top Bar: Barber Selector + Week Navigator */}
+      {/* Top Bar */}
       <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-black text-white flex items-center gap-2">
               <Calendar className="w-4 h-4 text-amber-400" />
-              <span>التقويم الأسبوعي المرئي لتوفر الحلاقين والاستراحات</span>
+              <span>{ui.headerTitle}</span>
             </h3>
-            <p className="text-[11px] text-zinc-400 mt-0.5">
-              اضغط على أي ساعة في التقويم لحجبها (استراحة/غداء) أو إعادة فتحها فوراً في نظام الحجز.
-            </p>
+            <p className="text-[11px] text-zinc-400 mt-0.5">{ui.headerSub}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -1067,14 +1444,14 @@ export const BarberSchedulePanel: React.FC<{
                     className="w-2 h-2 rounded-full flex-shrink-0"
                     style={{ backgroundColor: active ? '#fff' : color }}
                   />
-                  <span>{b.name.ar}</span>
+                  <span>{b.name[lang] || b.name.ar || b.name.fr}</span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Week Range & Navigation Controls */}
+        {/* Week Navigation */}
         <div className="pt-3 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <button
@@ -1082,8 +1459,8 @@ export const BarberSchedulePanel: React.FC<{
               onClick={() => setWeekOffset((w) => w - 1)}
               className="px-3 py-1.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-bold flex items-center gap-1 cursor-pointer"
             >
-              <ChevronRight className="w-3.5 h-3.5" />
-              <span>الأسبوع السابق</span>
+              <ChevronRight className="w-3.5 h-3.5 rtl:rotate-0 ltr:rotate-180" />
+              <span>{ui.prevWeek}</span>
             </button>
             <button
               type="button"
@@ -1094,33 +1471,33 @@ export const BarberSchedulePanel: React.FC<{
                   : 'bg-zinc-950 hover:bg-zinc-800 border-zinc-800 text-zinc-200'
               }`}
             >
-              الأسبوع الحالي
+              {ui.currWeek}
             </button>
             <button
               type="button"
               onClick={() => setWeekOffset((w) => w + 1)}
               className="px-3 py-1.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-bold flex items-center gap-1 cursor-pointer"
             >
-              <span>الأسبوع التالي</span>
-              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>{ui.nextWeek}</span>
+              <ChevronLeft className="w-3.5 h-3.5 rtl:rotate-0 ltr:rotate-180" />
             </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono tabular-nums">
-            <span className="text-zinc-400">
-              {weekDays[0].dateStr} ← {weekDays[6].dateStr}
+            <span className="text-zinc-400" dir="ltr">
+              {weekDays[0].dateStr} → {weekDays[6].dateStr}
             </span>
-            {saving && <span className="text-amber-400 font-sans font-bold">جاري الحفظ...</span>}
+            {saving && <span className="text-amber-400 font-sans font-bold">{ui.saving}</span>}
           </div>
         </div>
       </div>
 
-      {/* Quick Weekly Lunch / Break Batch Bar & Legend */}
+      {/* Quick Weekly Break Bar & Legend */}
       <div className="p-3 rounded-2xl bg-zinc-900/70 border border-zinc-800 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
             <Coffee className="w-3.5 h-3.5" />
-            <span>حجب سريع للاستراحة في هذا الأسبوع:</span>
+            <span>{ui.quickLunchLabel}</span>
           </span>
           {['12:00', '16:00', '17:00'].map((preset) => {
             const openKeys = weekDays
@@ -1141,29 +1518,28 @@ export const BarberSchedulePanel: React.FC<{
                     : 'bg-black/50 border-zinc-700 text-zinc-200 hover:border-amber-500/60'
                 }`}
               >
-                {allBlocked ? `✓ ${preset} (إلغاء حجب الأسبوع)` : `⏸ حجب ${preset} طوال الأسبوع`}
+                {allBlocked ? ui.unblockWeek(preset) : ui.blockWeek(preset)}
               </button>
             );
           })}
         </div>
 
-        {/* Status Legend */}
         <div className="flex flex-wrap items-center gap-3 text-[10px]">
           <span className="flex items-center gap-1 text-emerald-300">
             <span className="w-2.5 h-2.5 rounded bg-emerald-600/40 border border-emerald-500/60 inline-block" />
-            متاح
+            {ui.legendAvail}
           </span>
           <span className="flex items-center gap-1 text-red-300">
             <span className="w-2.5 h-2.5 rounded bg-red-900/60 border border-red-500/60 inline-block" />
-            استراحة / محجوب
+            {ui.legendBreak}
           </span>
           <span className="flex items-center gap-1 text-blue-300">
             <span className="w-2.5 h-2.5 rounded bg-blue-900/60 border border-blue-500/60 inline-block" />
-            موعد زبون محجوز
+            {ui.legendBooked}
           </span>
           <span className="flex items-center gap-1 text-zinc-400">
             <span className="w-2.5 h-2.5 rounded bg-zinc-800 border border-zinc-700 inline-block" />
-            عطلة / خارج الدوام
+            {ui.legendOff}
           </span>
         </div>
       </div>
@@ -1174,8 +1550,8 @@ export const BarberSchedulePanel: React.FC<{
           <table className="w-full min-w-[760px] border-collapse text-center">
             <thead>
               <tr className="bg-zinc-950 border-b border-zinc-800">
-                <th className="p-3 text-right font-black text-zinc-400 w-24 border-l border-zinc-800/80">
-                  التوقيت
+                <th className="p-3 text-start font-black text-zinc-400 w-24 border-e border-zinc-800/80">
+                  {ui.timeCol}
                 </th>
                 {weekDays.map((day) => {
                   const isMondayClosed = day.weekday === 1;
@@ -1187,18 +1563,18 @@ export const BarberSchedulePanel: React.FC<{
                   return (
                     <th
                       key={day.dateStr}
-                      className={`p-2.5 border-l border-zinc-800/70 align-top ${
+                      className={`p-2.5 border-e border-zinc-800/70 align-top ${
                         isToday ? 'bg-amber-500/10' : ''
                       }`}
                     >
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-center gap-1">
                           <span className={`font-black text-xs ${isToday ? 'text-amber-300' : 'text-white'}`}>
-                            {day.label.ar}
+                            {day.label[lang] || day.label.ar}
                           </span>
                           {isToday && (
                             <span className="px-1.5 py-0.5 rounded bg-amber-500 text-black text-[9px] font-black">
-                              اليوم
+                              {ui.todayTag}
                             </span>
                           )}
                         </div>
@@ -1208,7 +1584,7 @@ export const BarberSchedulePanel: React.FC<{
 
                         {isMondayClosed ? (
                           <div className="py-1 px-2 rounded-lg bg-red-950/40 border border-red-500/30 text-red-400 text-[10px] font-bold">
-                            عطلة الصالون
+                            {ui.salonClosedMon}
                           </div>
                         ) : (
                           <button
@@ -1221,7 +1597,7 @@ export const BarberSchedulePanel: React.FC<{
                                 : 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/50'
                             }`}
                           >
-                            {isBarberOff ? 'عطلة الحلاق ✕' : 'متاح للعمل ✓'}
+                            {isBarberOff ? ui.barberOffBtn : ui.barberOnBtn}
                           </button>
                         )}
                       </div>
@@ -1236,7 +1612,7 @@ export const BarberSchedulePanel: React.FC<{
                 <tr key={slot} className="border-b border-zinc-800/60 last:border-b-0 hover:bg-zinc-900/40">
                   <td
                     dir="ltr"
-                    className="p-2.5 font-mono font-black text-xs text-zinc-300 bg-zinc-950/70 border-l border-zinc-800/80 tabular-nums"
+                    className="p-2.5 font-mono font-black text-xs text-zinc-300 bg-zinc-950/70 border-e border-zinc-800/80 tabular-nums"
                   >
                     {slot}
                   </td>
@@ -1253,14 +1629,14 @@ export const BarberSchedulePanel: React.FC<{
                       return (
                         <td
                           key={`${day.dateStr}-${slot}`}
-                          className="p-1.5 border-l border-zinc-800/60 bg-zinc-950/40"
+                          className="p-1.5 border-e border-zinc-800/60 bg-zinc-950/40"
                         >
                           <div className="py-2 rounded-lg text-[10px] text-zinc-600 font-medium">
                             {isMonday
-                              ? 'مغلق'
+                              ? ui.closedCell
                               : !inSalonHours
-                              ? 'خارج الدوام'
-                              : 'يوم عطلة'}
+                              ? ui.outOfHoursCell
+                              : ui.dayOffCell}
                           </div>
                         </td>
                       );
@@ -1276,7 +1652,7 @@ export const BarberSchedulePanel: React.FC<{
                       return (
                         <td
                           key={`${day.dateStr}-${slot}`}
-                          className="p-1.5 border-l border-zinc-800/60"
+                          className="p-1.5 border-e border-zinc-800/60"
                         >
                           <div
                             className="py-2 px-1.5 rounded-lg bg-blue-950/70 border border-blue-500/50 text-blue-200 text-[10px] font-bold truncate"
@@ -1288,10 +1664,12 @@ export const BarberSchedulePanel: React.FC<{
                       );
                     }
 
+                    const barberDisp = activeBarber.name[lang] || activeBarber.name.ar || activeBarber.name.fr;
+
                     return (
                       <td
                         key={`${day.dateStr}-${slot}`}
-                        className="p-1.5 border-l border-zinc-800/60"
+                        className="p-1.5 border-e border-zinc-800/60"
                       >
                         <button
                           type="button"
@@ -1304,17 +1682,17 @@ export const BarberSchedulePanel: React.FC<{
                           }`}
                           title={
                             isRecurringBreak
-                              ? `استراحة يومية (${slot}) — اضغط لفتحها يومياً`
+                              ? `${slot}`
                               : isSpecificBlock
-                              ? `محجوب بتاريخ ${day.dateStr} — اضغط لإعادة الفتح`
-                              : `متاح مع ${activeBarber.name.ar} — اضغط لحظره للاستراحة`
+                              ? `${slot} (${day.dateStr})`
+                              : `${barberDisp} — ${slot}`
                           }
                         >
                           {isBlocked
                             ? isRecurringBreak
-                              ? '⏸ استراحة يومية'
-                              : '⏸ استراحة'
-                            : '✓ متاح'}
+                              ? ui.dailyBreakCell
+                              : ui.breakCell
+                            : ui.availCell}
                         </button>
                       </td>
                     );
@@ -1326,13 +1704,10 @@ export const BarberSchedulePanel: React.FC<{
         </div>
       </div>
 
-      {/* Bottom Rule Helpers: Recurring Daily Breaks + Recurring Weekly Off-Days + Specific Date Off */}
+      {/* Bottom Rule Helpers */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Recurring Daily Break Hours */}
         <div className="p-4 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-2.5">
-          <div className="font-bold text-amber-300">
-            ساعات الاستراحة الدائمة كل يوم (Daily Break)
-          </div>
+          <div className="font-bold text-amber-300">{ui.dailyBreaksTitle}</div>
           <div className="grid grid-cols-3 gap-1.5">
             {ALL_SALON_CONFIGURABLE_HOURS.map((slot) => {
               const isBlocked = activeConfig.breakSlots.includes(slot);
@@ -1355,41 +1730,37 @@ export const BarberSchedulePanel: React.FC<{
           </div>
         </div>
 
-        {/* Weekly Off Days */}
         <div className="p-4 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-2.5">
-          <div className="font-bold text-amber-300">
-            أيام العطلة الأسبوعية المتكررة
-          </div>
+          <div className="font-bold text-amber-300">{ui.weeklyOffTitle}</div>
           <div className="grid grid-cols-2 gap-1.5">
-            {WEEKDAY_LABELS.map((w) => {
-              const isOff = activeConfig.offWeekdays.includes(w.idx) || w.idx === 1;
+            {[0, 1, 2, 3, 4, 5, 6].map((dayIdx) => {
+              const isOff = activeConfig.offWeekdays.includes(dayIdx) || dayIdx === 1;
               return (
                 <button
-                  key={w.idx}
+                  key={dayIdx}
                   type="button"
-                  disabled={w.idx === 1 || saving}
-                  onClick={() => handleToggleWeekday(w.idx)}
+                  disabled={dayIdx === 1 || saving}
+                  onClick={() => handleToggleWeekday(dayIdx)}
                   className={`py-1.5 px-2 rounded-lg border text-[11px] font-bold flex items-center justify-between transition-all ${
-                    w.idx === 1
+                    dayIdx === 1
                       ? 'bg-red-950/40 border-red-500/40 text-red-400 cursor-not-allowed opacity-80'
                       : isOff
                       ? 'bg-amber-500/20 border-amber-500 text-amber-300 cursor-pointer'
                       : 'bg-black/40 border-zinc-800 text-zinc-300 hover:border-zinc-600 cursor-pointer'
                   }`}
                 >
-                  <span className="truncate">{w.ar}</span>
-                  <span>{isOff ? 'عطلة' : 'عمل'}</span>
+                  <span className="truncate">{WEEKDAY_LABELS[dayIdx]?.[lang] || WEEKDAY_LABELS[dayIdx]?.ar}</span>
+                  <span>{isOff ? ui.offBadge : ui.workBadge}</span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Custom Future Off-Date Adder */}
         <div className="p-4 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-2.5">
           <div className="font-bold text-white flex items-center gap-2">
             <CalendarOff className="w-4 h-4 text-red-400" />
-            <span>إضافة تاريخ عطلة مخصص</span>
+            <span>{ui.customOffTitle}</span>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -1406,12 +1777,12 @@ export const BarberSchedulePanel: React.FC<{
               className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>إغلاق</span>
+              <span>{ui.closeDateBtn}</span>
             </button>
           </div>
           <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
             {activeConfig.offDates.length === 0 ? (
-              <span className="text-[11px] text-zinc-500">لا توجد تواريخ عطلة مضافة.</span>
+              <span className="text-[11px] text-zinc-500">{ui.noOffDates}</span>
             ) : (
               activeConfig.offDates.map((d) => (
                 <span
@@ -1444,6 +1815,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
   crmMap: Record<string, CrmClientProfile>;
   onOpenClientTracking?: (query: string) => void;
 }> = ({ bookings, crmMap, onOpenClientTracking }) => {
+  const { lang } = useLanguage();
   const [search, setSearch] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'vip' | 'loyalty' | 'banned'>('all');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -1467,11 +1839,28 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
     setBusyId(c.id);
     try {
       await toggleClientVip(c.phoneDisplay, c.clientName, crmMap);
-      sendDualAlert(c.isVip ? 'تمت إزالة وسم VIP' : 'تمت ترقية الزبون إلى VIP 👑', {
-        body: `${c.clientName} (${c.phoneDisplay})`,
-        type: 'success',
-        skipSound: true,
-      });
+      sendDualAlert(
+        c.isVip
+          ? pickLang(lang, {
+              ar: 'تمت إزالة وسم VIP',
+              fr: 'Badge VIP retiré',
+              amz: 'ⵉⵜⵜⵓⴽⴽⵙ VIP',
+              en: 'VIP Badge Removed',
+              es: 'Insignia VIP eliminada',
+            })
+          : pickLang(lang, {
+              ar: 'تمت ترقية الزبون إلى VIP 👑',
+              fr: 'Client promu VIP 👑',
+              amz: 'ⵉⵜⵜⵓⵙⵎⵓⵇⵇⵍ ⵖⵔ VIP 👑',
+              en: 'Client Upgraded to VIP 👑',
+              es: 'Cliente ascendido a VIP 👑',
+            }),
+        {
+          body: `${c.clientName} (${c.phoneDisplay})`,
+          type: 'success',
+          skipSound: true,
+        }
+      );
     } finally {
       setBusyId(null);
     }
@@ -1481,21 +1870,34 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
     setBusyId(c.id);
     try {
       await redeemClientFreeWash(c.phoneDisplay, c.clientName, crmMap);
-      sendDualAlert('تم تسجيل مكافأة الغسل المجاني 🎁', {
-        body: `تم منح غسل شعر مجاني للزبون ${c.clientName}.`,
-        type: 'success',
-        skipSound: true,
-      });
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'تم تسجيل مكافأة الغسل المجاني 🎁',
+          fr: 'Shampoing gratuit enregistré 🎁',
+          amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⵙⵉⵔⴷ ⴼⴰⴱⵓⵔ 🎁',
+          en: 'Free Wash Reward Recorded 🎁',
+          es: 'Lavado gratis registrado 🎁',
+        }),
+        {
+          body: `${c.clientName}`,
+          type: 'success',
+          skipSound: true,
+        }
+      );
     } finally {
       setBusyId(null);
     }
   };
 
   const handleCustomDiscount = async (c: typeof clients[number]) => {
-    const val = window.prompt(
-      `أدخل قيمة تخفيض الولاء بالدرهم (MAD) للزبون ${c.clientName} (أدخل 0 لإلغاء التخفيض):`,
-      String(c.customDiscountMAD || 10)
-    );
+    const promptTxt = pickLang(lang, {
+      ar: `أدخل قيمة تخفيض الولاء بالدرهم (MAD) للزبون ${c.clientName} (أدخل 0 لإلغاء التخفيض):`,
+      fr: `Entrez la réduction fidélité (MAD) pour ${c.clientName} (0 pour annuler) :`,
+      amz: `ⵙⵙⴽⵛⵎ ⴰⵙⵉⴷⵔ (MAD) ⵉ ${c.clientName} (0 ⵉ ⵓⵙⵔⵓⵙ) :`,
+      en: `Enter loyalty discount in MAD for ${c.clientName} (0 to clear):`,
+      es: `Introduce el descuento de fidelidad en MAD para ${c.clientName} (0 para anular):`,
+    });
+    const val = window.prompt(promptTxt, String(c.customDiscountMAD || 10));
     if (val === null) return;
     const amount = Number(val);
     if (!Number.isFinite(amount) || amount < 0) return;
@@ -1506,14 +1908,32 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
         c.phoneDisplay,
         c.clientName,
         amount,
-        amount > 0 ? `🎁 تخفيض خاص (${amount} MAD)` : '',
+        amount > 0 ? `🎁 -${amount} MAD` : '',
         crmMap
       );
-      sendDualAlert('تم تحديث تخفيض الولاء ✅', {
-        body: amount > 0 ? `تم تفعيل تخفيض -${amount} MAD للزبون ${c.clientName}.` : 'تم إلغاء التخفيض الخاص.',
-        type: 'success',
-        skipSound: true,
-      });
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'تم تحديث تخفيض الولاء ✅',
+          fr: 'Réduction fidélité mise à jour ✅',
+          amz: 'ⵉⵜⵜⵓⵙⵎⴰⵢⵏⵓ ⵓⵙⵉⴷⵔ ✅',
+          en: 'Loyalty Discount Updated ✅',
+          es: 'Descuento actualizado ✅',
+        }),
+        {
+          body:
+            amount > 0
+              ? `-${amount} MAD (${c.clientName})`
+              : pickLang(lang, {
+                  ar: 'تم إلغاء التخفيض الخاص.',
+                  fr: 'Réduction annulée.',
+                  amz: 'ⵉⵜⵜⵓⴽⴽⵙ ⵓⵙⵉⴷⵔ.',
+                  en: 'Custom discount cleared.',
+                  es: 'Descuento eliminado.',
+                }),
+          type: 'success',
+          skipSound: true,
+        }
+      );
     } finally {
       setBusyId(null);
     }
@@ -1527,14 +1947,45 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
         c.phoneDisplay,
         c.clientName,
         nextBanned,
-        nextBanned ? 'حظر يدوي من لوحة التحكم' : 'تم رفع الحظر يدوياً من طرف الإدارة',
+        nextBanned
+          ? pickLang(lang, {
+              ar: 'حظر يدوي من لوحة التحكم',
+              fr: 'Blocage manuel par l’administration',
+              amz: 'ⴰⵙⵇⵏ ⵙⴳ ⵜⴼⵍⵡⵉⵜ ⵏ ⵓⵙⵡⵓⴷⴷⵓ',
+              en: 'Manual blacklist from Admin Dashboard',
+              es: 'Bloqueo manual desde el panel',
+            })
+          : pickLang(lang, {
+              ar: 'تم رفع الحظر يدوياً من طرف الإدارة',
+              fr: 'Débloqué manuellement par l’administration',
+              amz: 'ⵉⵜⵜⵓⴽⴽⵙ ⵓⵙⵇⵏ ⵙⴳ ⵜⵎⵙⵙⵓⴳⵓⵔⵜ',
+              en: 'Manually unbanned by Admin',
+              es: 'Desbloqueado manualmente por Admin',
+            }),
         crmMap
       );
-      sendDualAlert(nextBanned ? 'تم إدراج الرقم في القائمة السوداء 🚫' : 'تم رفع الحظر بنجاح ✅', {
-        body: `${c.clientName} (${c.phoneDisplay})`,
-        type: nextBanned ? 'warning' : 'success',
-        skipSound: true,
-      });
+      sendDualAlert(
+        nextBanned
+          ? pickLang(lang, {
+              ar: 'تم إدراج الرقم في القائمة السوداء 🚫',
+              fr: 'Numéro ajouté à la liste noire 🚫',
+              amz: 'ⵉⵜⵜⵓⵔⵏⴰ ⵓⵟⵟⵓⵏ ⵖⵔ ⵜⵍⴳⴰⵎⵜ ⵜⴰⴱⵔⴽⴰⵏⵜ 🚫',
+              en: 'Number Blacklisted 🚫',
+              es: 'Número bloqueado 🚫',
+            })
+          : pickLang(lang, {
+              ar: 'تم رفع الحظر بنجاح ✅',
+              fr: 'Client débloqué avec succès ✅',
+              amz: 'ⵉⵜⵜⵓⴽⴽⵙ ⵓⵙⵇⵏ ✅',
+              en: 'Client Unbanned ✅',
+              es: 'Cliente desbloqueado ✅',
+            }),
+        {
+          body: `${c.clientName} (${c.phoneDisplay})`,
+          type: nextBanned ? 'warning' : 'success',
+          skipSound: true,
+        }
+      );
     } finally {
       setBusyId(null);
     }
@@ -1542,35 +1993,127 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
 
   const handleExportCsv = () => {
     if (clients.length === 0) {
-      sendDualAlert('لا توجد بيانات للتصدير', {
-        body: 'يرجى التأكد من وجود سجلات زبناء مطابقة قبل تصدير ملف CSV.',
-        type: 'warning',
-        skipSound: true,
-      });
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'لا توجد بيانات للتصدير',
+          fr: 'Aucune donnée à exporter',
+          amz: 'ⵓⵔ ⵍⵍⵉⵏ ⵉⵙⴼⴽⴰ',
+          en: 'No Data to Export',
+          es: 'Sin datos para exportar',
+        }),
+        {
+          body: pickLang(lang, {
+            ar: 'يرجى التأكد من وجود سجلات زبناء مطابقة قبل تصدير ملف CSV.',
+            fr: 'Vérifiez qu’il existe des fiches clients correspondant au filtre.',
+            amz: 'ⵙⵙⴼⵇⴷ ⵉⴼⵉⵍⴰⵡⵏ ⵏ ⵉⵎⵙⴰⵖⵏ.',
+            en: 'Ensure matching client records exist before exporting CSV.',
+            es: 'Asegúrate de tener clientes antes de exportar.',
+          }),
+          type: 'warning',
+          skipSound: true,
+        }
+      );
       return;
     }
 
     const result = downloadCrmAccountingCsv(clients);
-    sendDualAlert('تم تصدير سجل CRM والمحاسبة بنجاح ✓', {
-      body: `${result.clientCount} زبون · ${result.rowCount} سجل حجز/إيراد (${result.completedRevenueMAD} MAD مكتمل)`,
-      type: 'success',
-      skipSound: true,
-    });
+    sendDualAlert(
+      pickLang(lang, {
+        ar: 'تم تصدير سجل CRM والمحاسبة بنجاح ✓',
+        fr: 'Export CSV CRM & Comptabilité réussi ✓',
+        amz: 'ⵉⵜⵜⵓⵙⵉⴼⴹ CSV ⵏ CRM ✓',
+        en: 'CRM & Accounting CSV Exported ✓',
+        es: 'CSV de CRM y contabilidad exportado ✓',
+      }),
+      {
+        body: `${result.clientCount} · ${result.rowCount} (${result.completedRevenueMAD} MAD)`,
+        type: 'success',
+        skipSound: true,
+      }
+    );
+  };
+
+  const ui = {
+    title: pickLang(lang, {
+      ar: 'سجل الزبناء، برنامج الولاء والقائمة السوداء (CRM)',
+      fr: 'Clients CRM, Fidélité, VIP & Liste Noire',
+      amz: 'ⵉⵎⵙⴰⵖⵏ CRM, ⵜⴰⵖⵓⵏⵉ ⴷ ⵜⵍⴳⴰⵎⵜ ⵜⴰⴱⵔⴽⴰⵏⵜ',
+      en: 'Client CRM, Loyalty, VIP & Blacklist',
+      es: 'Clientes CRM, Fidelidad, VIP y Lista Negra',
+    }),
+    subtitle: pickLang(lang, {
+      ar: 'تتبع تلقائي لعدد الزيارات عبر رقم الهاتف، مكافأة الغسل المجاني في الزيارة 5، وحظر تلقائي بعد تغيّبين (2 No-Shows) مع إمكانية رفع الحظر يدوياً.',
+      fr: 'Suivi automatique par téléphone, récompense au 5e passage et blocage automatique après 2 absences (No-Shows) avec levée manuelle.',
+      amz: 'ⴰⴹⴼⴰⵕ ⵏ ⵜⵔⵣⵉⵡⵉⵏ ⵙ ⵓⵟⵟⵓⵏ ⵏ ⵜⵉⵍⵉⴼⵓⵏ ⴷ ⵓⵙⵉⵔⴷ ⴼⴰⴱⵓⵔ ⴳ ⵜⵉⵙ 5.',
+      en: 'Automatic visit tracking by phone, free wash milestone at visit 5, and auto-blacklist after 2 no-shows with manual override.',
+      es: 'Seguimiento automático por teléfono, lavado gratis en la visita 5 y bloqueo tras 2 ausencias.',
+    }),
+    exportCsv: pickLang(lang, {
+      ar: 'تصدير CSV',
+      fr: 'Exporter CSV',
+      amz: 'ⵙⵉⴼⴹ CSV',
+      en: 'Export CSV',
+      es: 'Exportar CSV',
+    }),
+    searchPlaceholder: pickLang(lang, {
+      ar: 'بحث باسم الزبون أو رقم الهاتف...',
+      fr: 'Rechercher par nom ou téléphone...',
+      amz: 'ⵔⵣⵓ ⵙ ⵢⵉⵙⵎ ⵏⵖ ⵓⵟⵟⵓⵏ...',
+      en: 'Search by client name or phone...',
+      es: 'Buscar por nombre o teléfono...',
+    }),
+    filterAll: pickLang(lang, { ar: 'الكل', fr: 'Tous', amz: 'ⴰⴽⴽⵯ', en: 'All', es: 'Todos' }),
+    filterVip: 'VIP 👑',
+    filterLoyalty: pickLang(lang, { ar: 'مكافآت الولاء 🎁', fr: 'Fidélité 🎁', amz: 'ⵜⴰⵖⵓⵏⵉ 🎁', en: 'Loyalty 🎁', es: 'Fidelidad 🎁' }),
+    filterBanned: pickLang(lang, { ar: 'القائمة السوداء 🚫', fr: 'Liste noire 🚫', amz: 'ⵜⴰⵍⴳⴰⵎⵜ ⵜⴰⴱⵔⴽⴰⵏⵜ 🚫', en: 'Blacklist 🚫', es: 'Bloqueados 🚫' }),
+    empty: pickLang(lang, {
+      ar: 'لا توجد ملفات زبناء مطابقة للبحث.',
+      fr: 'Aucun profil client correspondant.',
+      amz: 'ⵓⵔ ⵍⵍⵉⵏ ⵉⵎⵙⴰⵖⵏ.',
+      en: 'No matching client profiles found.',
+      es: 'No se encontraron clientes.',
+    }),
+    bannedBadge: pickLang(lang, { ar: '🚫 محظور', fr: '🚫 Bloqué', amz: '🚫 ⵉⵇⵇⵏ', en: '🚫 Blacklisted', es: '🚫 Bloqueado' }),
+    freeWashBadge: pickLang(lang, { ar: '🎁 مستحق لغسل مجاني', fr: '🎁 Shampoing offert dû', amz: '🎁 ⴰⵙⵉⵔⴷ ⴼⴰⴱⵓⵔ', en: '🎁 Free Wash Earned', es: '🎁 Lavado gratis' }),
+    qrBtn: pickLang(lang, { ar: 'QR الملف', fr: 'QR Profil', amz: 'QR ⵏ ⵓⵎⵙⴰⵖ', en: 'Profile QR', es: 'QR Perfil' }),
+    visitsCol: pickLang(lang, { ar: 'الزيارات المؤكدة', fr: 'Visites validées', amz: 'ⵜⵉⵔⵣⵉⵡⵉⵏ', en: 'Verified Visits', es: 'Visitas' }),
+    spendCol: pickLang(lang, { ar: 'إجمالي الإنفاق', fr: 'Total dépensé', amz: 'ⵜⴰⵎⵙⴰⵖⵜ', en: 'Lifetime Spend', es: 'Gasto total' }),
+    noShowCol: pickLang(lang, { ar: 'التغيب (No-Show)', fr: 'Absences (No-Show)', amz: 'ⴰⵏⴼⴰⵍ (No-Show)', en: 'No-Shows', es: 'Ausencias' }),
+    activeDiscount: (amt: number) =>
+      pickLang(lang, {
+        ar: `🎁 تخفيض ولاء مفعل تلقائياً بالحجز القادم: -${amt} MAD`,
+        fr: `🎁 Réduction auto sur le prochain RDV : -${amt} MAD`,
+        amz: `🎁 ⴰⵙⵉⴷⵔ ⵉⵜⵜⵓⵙⵎⵔⴰⵙⵏ ⴳ ⵓⵙⵉⵀⵍ ⴷ ⵉⴷⴷⴰⵏ: -${amt} MAD`,
+        en: `🎁 Auto loyalty discount on next booking: -${amt} MAD`,
+        es: `🎁 Descuento automático en la próxima cita: -${amt} MAD`,
+      }),
+    removeVip: pickLang(lang, { ar: 'إزالة VIP', fr: 'Retirer VIP', amz: 'ⴽⴽⵙ VIP', en: 'Remove VIP', es: 'Quitar VIP' }),
+    upgradeVip: pickLang(lang, { ar: 'ترقية VIP', fr: 'Passer VIP', amz: 'ⵙⵎⵓⵇⵇⵍ VIP', en: 'Make VIP', es: 'Hacer VIP' }),
+    freeWashBtn: (n: number) =>
+      pickLang(lang, {
+        ar: `غسل مجاني (${n})`,
+        fr: `Shampoing (${n})`,
+        amz: `ⴰⵙⵉⵔⴷ (${n})`,
+        en: `Free Wash (${n})`,
+        es: `Lavado (${n})`,
+      }),
+    discountBtn: pickLang(lang, { ar: 'تخفيض MAD', fr: 'Réduc. MAD', amz: 'ⴰⵙⵉⴷⵔ MAD', en: 'Discount MAD', es: 'Descuento MAD' }),
+    unbanBtn: pickLang(lang, { ar: 'رفع الحظر', fr: 'Débloquer', amz: 'ⵔⵥⵎ', en: 'Unban', es: 'Desbloquear' }),
+    banBtn: pickLang(lang, { ar: 'حظر الرقم', fr: 'Bloquer', amz: 'ⵇⵇⵏ', en: 'Blacklist', es: 'Bloquear' }),
+    trackBtn: pickLang(lang, { ar: 'التتبع', fr: 'Suivi', amz: 'ⴰⴹⴼⴰⵕ', en: 'Track', es: 'Seguir' }),
   };
 
   return (
     <div className="space-y-4 text-xs">
-      {/* Header + Filter Controls */}
+      {/* Header */}
       <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-black text-white flex items-center gap-2">
               <Award className="w-4 h-4 text-amber-400" />
-              <span>سجل الزبناء، برنامج الولاء والقائمة السوداء (CRM)</span>
+              <span>{ui.title}</span>
             </h3>
-            <p className="text-[11px] text-zinc-400 mt-0.5">
-              تتبع تلقائي لعدد الزيارات عبر رقم الهاتف، مكافأة الغسل المجاني في الزيارة 5، وحظر تلقائي بعد تغيّبين (2 No-Shows) مع إمكانية رفع الحظر يدوياً.
-            </p>
+            <p className="text-[11px] text-zinc-400 mt-0.5">{ui.subtitle}</p>
           </div>
 
           <button
@@ -1578,10 +2121,9 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
             onClick={handleExportCsv}
             disabled={clients.length === 0}
             className="min-h-[38px] px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-500/45 text-emerald-300 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
-            title="تنزيل نسخة احتياطية CSV لسجل حجوزات الزبناء وسجلات الإيرادات للمحاسبة"
           >
             <Download className="w-4 h-4" />
-            <span>تصدير CSV • Export CSV</span>
+            <span>{ui.exportCsv}</span>
             <span className="font-mono text-[10px] opacity-85 tabular-nums">
               ({clients.length})
             </span>
@@ -1590,22 +2132,22 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
 
         <div className="flex flex-col sm:flex-row gap-2.5 items-center justify-between">
           <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-zinc-500 absolute start-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="بحث باسم الزبون أو رقم الهاتف..."
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+              placeholder={ui.searchPlaceholder}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl ps-9 pe-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
             />
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
             {[
-              { id: 'all', label: 'الكل' },
-              { id: 'vip', label: 'VIP 👑' },
-              { id: 'loyalty', label: 'مكافآت الولاء 🎁' },
-              { id: 'banned', label: 'القائمة السوداء 🚫' },
+              { id: 'all', label: ui.filterAll },
+              { id: 'vip', label: ui.filterVip },
+              { id: 'loyalty', label: ui.filterLoyalty },
+              { id: 'banned', label: ui.filterBanned },
             ].map((pill) => (
               <button
                 key={pill.id}
@@ -1627,7 +2169,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
       {/* Client Cards */}
       {clients.length === 0 ? (
         <div className="p-8 text-center rounded-2xl bg-zinc-900/50 border border-zinc-800 text-zinc-400">
-          لا توجد ملفات زبناء مطابقة للبحث.
+          {ui.empty}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1655,12 +2197,12 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                       )}
                       {c.isBanned && (
                         <span className="px-2 py-0.5 rounded-full bg-red-600/30 border border-red-500/60 text-red-200 text-[10px] font-bold">
-                          🚫 محظور (Blacklisted)
+                          {ui.bannedBadge}
                         </span>
                       )}
                       {c.eligibleFreeWashes > 0 && (
                         <span className="px-2 py-0.5 rounded-full bg-emerald-600/25 border border-emerald-400/50 text-emerald-300 text-[10px] font-bold">
-                          🎁 مستحق لغسل مجاني
+                          {ui.freeWashBadge}
                         </span>
                       )}
                     </div>
@@ -1684,10 +2226,9 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                         })
                       }
                       className="px-2.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                      title="عرض وتوليد رمز QR الفريد لملف الزبون"
                     >
                       <QrCode className="w-4 h-4" />
-                      <span>QR الملف</span>
+                      <span>{ui.qrBtn}</span>
                     </button>
 
                     <a
@@ -1702,26 +2243,25 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                   </div>
                 </div>
 
-                {/* Metrics Row */}
                 {(() => {
-                  const loyalty = computeLoyaltyProgress(c.verifiedVisits, 'ar');
+                  const loyalty = computeLoyaltyProgress(c.verifiedVisits, lang);
                   return (
                     <>
                       <div className="grid grid-cols-3 gap-2 text-center">
                         <div className="p-2 rounded-xl bg-black/50 border border-zinc-800">
-                          <span className="text-[10px] text-zinc-400 block">الزيارات المؤكدة</span>
+                          <span className="text-[10px] text-zinc-400 block">{ui.visitsCol}</span>
                           <span className="font-mono font-black text-amber-300 text-sm tabular-nums">
                             {c.verifiedVisits}
                           </span>
                         </div>
                         <div className="p-2 rounded-xl bg-black/50 border border-zinc-800">
-                          <span className="text-[10px] text-zinc-400 block">إجمالي الإنفاق</span>
+                          <span className="text-[10px] text-zinc-400 block">{ui.spendCol}</span>
                           <span className="font-mono font-black text-emerald-300 text-sm tabular-nums">
                             {c.lifetimeSpendMAD} MAD
                           </span>
                         </div>
                         <div className="p-2 rounded-xl bg-black/50 border border-zinc-800">
-                          <span className="text-[10px] text-zinc-400 block">التغيب (No-Show)</span>
+                          <span className="text-[10px] text-zinc-400 block">{ui.noShowCol}</span>
                           <span
                             className={`font-mono font-black text-sm tabular-nums ${
                               c.noShowCount >= 2
@@ -1736,7 +2276,6 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                         </div>
                       </div>
 
-                      {/* Multi-tier Milestone Pills */}
                       <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
                         {loyalty.tiers.map((tier) => (
                           <span
@@ -1763,7 +2302,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                   <div className="p-2 rounded-xl bg-black/40 border border-zinc-800/80 text-[11px] space-y-0.5">
                     {c.customDiscountMAD > 0 && (
                       <div className="text-emerald-300 font-bold">
-                        🎁 تخفيض ولاء مفعل تلقائياً بالحجز القادم: -{c.customDiscountMAD} MAD
+                        {ui.activeDiscount(c.customDiscountMAD)}
                       </div>
                     )}
                     {c.rewardNote && <div className="text-amber-300">{c.rewardNote}</div>}
@@ -1773,7 +2312,6 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                   </div>
                 )}
 
-                {/* Action Buttons */}
                 <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-zinc-800/80">
                   <button
                     type="button"
@@ -1786,7 +2324,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                     }`}
                   >
                     <Star className="w-3 h-3" />
-                    <span>{c.isVip ? 'إزالة VIP' : 'ترقية VIP'}</span>
+                    <span>{c.isVip ? ui.removeVip : ui.upgradeVip}</span>
                   </button>
 
                   <button
@@ -1796,7 +2334,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                     className="px-2.5 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                   >
                     <Gift className="w-3 h-3" />
-                    <span>غسل مجاني ({c.freeWashesRedeemed})</span>
+                    <span>{ui.freeWashBtn(c.freeWashesRedeemed)}</span>
                   </button>
 
                   <button
@@ -1806,7 +2344,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                     className="px-2.5 py-1.5 rounded-lg bg-blue-950/60 hover:bg-blue-900 border border-blue-500/40 text-blue-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                   >
                     <Sparkles className="w-3 h-3" />
-                    <span>تخفيض MAD</span>
+                    <span>{ui.discountBtn}</span>
                   </button>
 
                   <button
@@ -1822,12 +2360,12 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                     {c.isBanned ? (
                       <>
                         <UserCheck className="w-3 h-3" />
-                        <span>رفع الحظر (Unban)</span>
+                        <span>{ui.unbanBtn}</span>
                       </>
                     ) : (
                       <>
                         <Ban className="w-3 h-3" />
-                        <span>حظر الرقم</span>
+                        <span>{ui.banBtn}</span>
                       </>
                     )}
                   </button>
@@ -1836,10 +2374,9 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                       type="button"
                       onClick={() => onOpenClientTracking(c.phoneDisplay || c.normalizedPhone || c.id)}
                       className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                      title="فتح نافذة تتبع الزبون مباشرة"
                     >
                       <ExternalLink className="w-3 h-3 text-amber-400" />
-                      <span>التتبع</span>
+                      <span>{ui.trackBtn}</span>
                     </button>
                   )}
                 </div>
@@ -1849,7 +2386,6 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
         </div>
       )}
 
-      {/* Client Profile QR Modal */}
       <ClientQrModal
         client={qrTargetClient}
         onClose={() => setQrTargetClient(null)}
@@ -1867,9 +2403,49 @@ export const WaitlistManagementPanel: React.FC<{
   role: 'master' | 'barber';
   ownBarberId: string;
 }> = ({ entries, role, ownBarberId }) => {
+  const { lang } = useLanguage();
   const visible = entries.filter((e) =>
     role === 'master' ? true : e.barberId === ownBarberId
   );
+
+  const ui = {
+    title: pickLang(lang, {
+      ar: 'قائمة الانتظار الذكية (Smart Waitlist)',
+      fr: 'Liste d’Attente Intelligente (Waitlist)',
+      amz: 'ⵜⴰⵍⴳⴰⵎⵜ ⵏ ⵓⴳⴰⵏⵉ ⵜⴰⵎⵉⵖⵉⵙⵜ',
+      en: 'Smart Waitlist Queue',
+      es: 'Lista de Espera Inteligente',
+    }),
+    subtitle: pickLang(lang, {
+      ar: 'الزبناء المسجلون عند امتلاء المواعيد. راسلهم عبر واتساب فور إلغاء أو شغور أي مقعد!',
+      fr: 'Clients inscrits lorsque le planning est complet. Contactez-les sur WhatsApp dès qu’un créneau se libère.',
+      amz: 'ⵉⵎⵙⴰⵖⵏ ⵉⵣⵎⵎⴻⵎⵏ ⵎⴰ ⵉⵜⵜⵓⵃⵊⵣ ⵓⵙⴰⵍⵓⵏ. ⴰⵣⵏ ⴰⵙⵏ ⴳ ⵡⴰⵜⵙⴰⴱ.',
+      en: 'Clients queued when slots are full. Message them via WhatsApp when a seat opens!',
+      es: 'Clientes en espera cuando los horarios están llenos. Contáctalos por WhatsApp si queda hueco.',
+    }),
+    waitingBadge: (n: number) =>
+      pickLang(lang, {
+        ar: `${n} في الانتظار`,
+        fr: `${n} en attente`,
+        amz: `${n} ⴳ ⵓⴳⴰⵏⵉ`,
+        en: `${n} waiting`,
+        es: `${n} en espera`,
+      }),
+    empty: pickLang(lang, {
+      ar: 'لا يوجد أي زبناء في قائمة الانتظار حالياً.',
+      fr: 'Aucun client en liste d’attente actuellement.',
+      amz: 'ⵓⵔ ⵉⵍⵍⵉ ⵓⵎⵙⴰⵖ ⴳ ⵓⴳⴰⵏⵉ.',
+      en: 'No clients currently on the waitlist.',
+      es: 'No hay clientes en la lista de espera.',
+    }),
+    statusWaiting: pickLang(lang, { ar: 'في الانتظار', fr: 'En attente', amz: 'ⴳ ⵓⴳⴰⵏⵉ', en: 'Waiting', es: 'En espera' }),
+    statusNotified: pickLang(lang, { ar: 'تم التواصل معه', fr: 'Contacté', amz: 'ⵉⵜⵜⵓⵙⵉⵡⵍ', en: 'Contacted', es: 'Contactado' }),
+    statusConverted: pickLang(lang, { ar: 'تم الحجز ✓', fr: 'Converti ✓', amz: 'ⵉⵜⵜⵓⵃⵊⵣ ✓', en: 'Booked ✓', es: 'Reservado ✓' }),
+    statusCancelled: pickLang(lang, { ar: 'ملغى', fr: 'Annulé', amz: 'ⵉⵜⵜⵓⵙⵔ', en: 'Cancelled', es: 'Cancelado' }),
+    waBtn: pickLang(lang, { ar: 'إخبار عبر واتساب', fr: 'Notifier WhatsApp', amz: 'ⴰⵣⵏ ⴳ ⵡⴰⵜⵙⴰⴱ', en: 'Notify WhatsApp', es: 'Avisar WhatsApp' }),
+    convertedBtn: pickLang(lang, { ar: 'تم التحويل لحجز', fr: 'Marquer réservé', amz: 'ⵉⵜⵜⵓⵙⵏⴼⵍ ⵉ ⵓⵙⵉⵀⵍ', en: 'Mark Booked', es: 'Convertido a cita' }),
+    deleteTitle: pickLang(lang, { ar: 'حذف', fr: 'Supprimer', amz: 'ⴽⴽⵙ', en: 'Delete', es: 'Eliminar' }),
+  };
 
   return (
     <div className="space-y-4 text-xs">
@@ -1877,26 +2453,30 @@ export const WaitlistManagementPanel: React.FC<{
         <div>
           <h3 className="text-sm font-black text-white flex items-center gap-2">
             <ListPlus className="w-4 h-4 text-blue-400" />
-            <span>قائمة الانتظار الذكية (Smart Waitlist)</span>
+            <span>{ui.title}</span>
           </h3>
-          <p className="text-[11px] text-zinc-400 mt-0.5">
-            الزبناء المسجلون عند امتلاء المواعيد. راسلهم عبر واتساب فور إلغاء أو شغور أي مقعد!
-          </p>
+          <p className="text-[11px] text-zinc-400 mt-0.5">{ui.subtitle}</p>
         </div>
         <span className="px-3 py-1 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 font-bold">
-          {visible.filter((e) => e.status === 'waiting').length} في الانتظار
+          {ui.waitingBadge(visible.filter((e) => e.status === 'waiting').length)}
         </span>
       </div>
 
       {visible.length === 0 ? (
         <div className="p-8 text-center rounded-2xl bg-zinc-900/50 border border-zinc-800 text-zinc-400">
-          لا يوجد أي زبناء في قائمة الانتظار حالياً.
+          {ui.empty}
         </div>
       ) : (
         <div className="space-y-2.5">
           {visible.map((entry) => {
             const clientWa = formatMoroccanWhatsAppNumber(entry.clientPhone);
-            const waText = `مرحباً ${entry.clientName}، معك صالون بومليك! توفر الآن مكان شاغر بتاريخ ${entry.date} مع ${entry.barberName} (توقيتك المفضل: ${entry.preferredTime}). هل ترغب في تأكيد الحجز الآن؟`;
+            const waText = pickLang(lang, {
+              ar: `مرحباً ${entry.clientName}، معك صالون بومليك! توفر الآن مكان شاغر بتاريخ ${entry.date} مع ${entry.barberName} (توقيتك المفضل: ${entry.preferredTime}). هل ترغب في تأكيد الحجز الآن؟`,
+              fr: `Bonjour ${entry.clientName}, ici Salon Boumlik ! Un créneau vient de se libérer le ${entry.date} avec ${entry.barberName} (heure souhaitée : ${entry.preferredTime}). Souhaitez-vous confirmer le rendez-vous ?`,
+              amz: `Azul ${entry.clientName}, ⵙⴳ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ ! ⵉⵍⵍⴰ ⵓⵎⴽⴰⵏ ⴰⵙⵙ ⵏ ${entry.date} ⴷ ${entry.barberName} (${entry.preferredTime}). ⵉⵙ ⵜⵔⵉⴷ ⴰⴷ ⵜⵙⴷⵓⴷ ⴰⵙⵉⵀⵍ ?`,
+              en: `Hello ${entry.clientName}, this is Salon Boumlik! A spot just opened on ${entry.date} with ${entry.barberName} (preferred time: ${entry.preferredTime}). Would you like to confirm now?`,
+              es: `Hola ${entry.clientName}, te contactamos de Salon Boumlik. Quedó libre una cita el ${entry.date} con ${entry.barberName} (hora: ${entry.preferredTime}). ¿Quieres confirmarla?`,
+            });
             return (
               <div
                 key={entry.id}
@@ -1920,12 +2500,12 @@ export const WaitlistManagementPanel: React.FC<{
                       }`}
                     >
                       {entry.status === 'waiting'
-                        ? 'في الانتظار'
+                        ? ui.statusWaiting
                         : entry.status === 'notified'
-                        ? 'تم التواصل معه'
+                        ? ui.statusNotified
                         : entry.status === 'converted'
-                        ? 'تم الحجز ✓'
-                        : 'ملغى'}
+                        ? ui.statusConverted
+                        : ui.statusCancelled}
                     </span>
                   </div>
                   <div className="text-[11px] text-zinc-300 flex flex-wrap items-center gap-3">
@@ -1948,7 +2528,7 @@ export const WaitlistManagementPanel: React.FC<{
                     className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
-                    <span>إخبار عبر واتساب</span>
+                    <span>{ui.waBtn}</span>
                   </a>
 
                   {entry.status !== 'converted' && (
@@ -1958,7 +2538,7 @@ export const WaitlistManagementPanel: React.FC<{
                       className="px-2.5 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>تم التحويل لحجز</span>
+                      <span>{ui.convertedBtn}</span>
                     </button>
                   )}
 
@@ -1966,7 +2546,7 @@ export const WaitlistManagementPanel: React.FC<{
                     type="button"
                     onClick={() => deleteWaitlistEntry(entry.id)}
                     className="p-1.5 rounded-xl bg-zinc-800 hover:bg-red-950 text-zinc-400 hover:text-red-400 border border-zinc-700 cursor-pointer"
-                    title="حذف"
+                    title={ui.deleteTitle}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -2001,24 +2581,63 @@ function getEffectiveBookingTime(b: AppointmentBooking): string {
     : b.timeSlot;
 }
 
-function formatQueueDelta(slotMinutes: number, nowMinutes: number): {
+function formatQueueDelta(slotMinutes: number, nowMinutes: number, lang: Language): {
   label: string;
   tone: 'now' | 'upcoming' | 'overdue';
 } {
   const diff = slotMinutes - nowMinutes;
   if (diff >= -15 && diff <= 20) {
-    return { label: 'الآن · In Chair / Ready', tone: 'now' };
+    return {
+      label: pickLang(lang, {
+        ar: 'الآن · جاهز',
+        fr: 'Maintenant · Prêt',
+        amz: 'ⴷⵖⵉ · ⵉⵀⵢⵢⴰ',
+        en: 'Now · Ready',
+        es: 'Ahora · Listo',
+      }),
+      tone: 'now',
+    };
   }
   if (diff > 20) {
     const hrs = Math.floor(diff / 60);
     const mins = diff % 60;
-    const text = hrs > 0 ? `بعد ${hrs}س ${mins > 0 ? `${mins}د` : ''}` : `بعد ${mins} دقيقة`;
+    const text =
+      hrs > 0
+        ? pickLang(lang, {
+            ar: `بعد ${hrs}س ${mins > 0 ? `${mins}د` : ''}`,
+            fr: `Dans ${hrs}h ${mins > 0 ? `${mins}m` : ''}`,
+            amz: `ⴷⴼⴼⵉⵔ ${hrs}h ${mins > 0 ? `${mins}m` : ''}`,
+            en: `In ${hrs}h ${mins > 0 ? `${mins}m` : ''}`,
+            es: `En ${hrs}h ${mins > 0 ? `${mins}m` : ''}`,
+          })
+        : pickLang(lang, {
+            ar: `بعد ${mins} دقيقة`,
+            fr: `Dans ${mins} min`,
+            amz: `ⴷⴼⴼⵉⵔ ${mins} min`,
+            en: `In ${mins} min`,
+            es: `En ${mins} min`,
+          });
     return { label: text.trim(), tone: 'upcoming' };
   }
   const lateMins = Math.abs(diff);
   const hrs = Math.floor(lateMins / 60);
   const mins = lateMins % 60;
-  const text = hrs > 0 ? `تجاوز بـ ${hrs}س ${mins > 0 ? `${mins}د` : ''}` : `منذ ${lateMins} دقيقة`;
+  const text =
+    hrs > 0
+      ? pickLang(lang, {
+          ar: `تجاوز بـ ${hrs}س ${mins > 0 ? `${mins}د` : ''}`,
+          fr: `En retard de ${hrs}h ${mins > 0 ? `${mins}m` : ''}`,
+          amz: `ⵉⵣⵔⵉ ${hrs}h ${mins > 0 ? `${mins}m` : ''}`,
+          en: `${hrs}h ${mins > 0 ? `${mins}m ` : ''}overdue`,
+          es: `Retraso ${hrs}h ${mins > 0 ? `${mins}m` : ''}`,
+        })
+      : pickLang(lang, {
+          ar: `منذ ${lateMins} دقيقة`,
+          fr: `Il y a ${lateMins} min`,
+          amz: `ⵣⵉ ${lateMins} min`,
+          en: `${lateMins}m ago`,
+          es: `Hace ${lateMins} min`,
+        });
   return { label: text.trim(), tone: 'overdue' };
 }
 
@@ -2093,10 +2712,10 @@ export const LiveQueuePanel: React.FC<{
   onOpenClientTracking,
   onShowClientQr,
 }) => {
+  const { lang } = useLanguage();
   const [barberFilter, setBarberFilter] = useState<string>('all');
   const [nowDate, setNowDate] = useState<Date>(() => new Date());
 
-  // Refresh live relative timing every 30 seconds
   useEffect(() => {
     const timer = setInterval(() => setNowDate(new Date()), 30000);
     return () => clearInterval(timer);
@@ -2133,7 +2752,6 @@ export const LiveQueuePanel: React.FC<{
     return true;
   }).length;
 
-  // Next in line: prioritize confirmed/earliest active slot near or after current time, else index 0
   const nextInLine =
     queueItems.find((b) => parseSlotToMinutes(getEffectiveBookingTime(b)) >= nowMinutes - 20) ||
     queueItems[0] ||
@@ -2142,37 +2760,81 @@ export const LiveQueuePanel: React.FC<{
   const getBarberColor = (b: AppointmentBooking) =>
     b.barberColor || TEAM_MEMBERS.find((m) => m.id === b.barberId)?.themeColor || '#D97706';
 
+  const ui = {
+    title: pickLang(lang, {
+      ar: 'الطابور المباشر لليوم (Live Queue)',
+      fr: 'File d’Attente en Direct (Live Queue)',
+      amz: 'ⵜⴰⵍⴳⴰⵎⵜ ⵜⵓⵙⵔⵉⴷⵜ ⵏ ⴰⵙⵙ ⴰ',
+      en: "Today's Live Queue",
+      es: 'Cola en Vivo de Hoy',
+    }),
+    subtitle: pickLang(lang, {
+      ar: 'قائمة فورية مرتبة زمنياً لجميع المواعيد النشطة اليوم لمعرفة الزبون التالي في الدور بنظرة واحدة.',
+      fr: 'Liste chronologique en temps réel de tous les rendez-vous actifs du jour.',
+      amz: 'ⵜⴰⵍⴳⴰⵎⵜ ⵉⵜⵜⵓⵙⵎⴰⵢⵏⵓⵏ ⵉ ⵎⴰⵕⵕⴰ ⵉⵙⵉⵀⴰⵍ ⵏ ⴰⵙⵙ ⴰ.',
+      en: 'Chronological real-time list of active appointments today to spot who is next.',
+      es: 'Lista en tiempo real de todas las citas activas de hoy por orden horario.',
+    }),
+    currTime: pickLang(lang, { ar: 'الوقت الحالي:', fr: 'Heure actuelle :', amz: 'ⵜⴰⵙⵔⴰⴳⵜ:', en: 'Current time:', es: 'Hora actual:' }),
+    waitingLbl: pickLang(lang, { ar: 'في الانتظار:', fr: 'En attente :', amz: 'ⴳ ⵓⴳⴰⵏⵉ:', en: 'Waiting:', es: 'En espera:' }),
+    doneTodayLbl: pickLang(lang, { ar: 'منجز اليوم:', fr: 'Terminés auj. :', amz: 'ⵉⵜⵜⵓⴳⴰⵏ ⴰⵙⵙ ⴰ:', en: 'Done today:', es: 'Hechos hoy:' }),
+    allBarbers: pickLang(lang, { ar: 'جميع الحلاقين', fr: 'Tous les barbiers', amz: 'ⵎⴰⵕⵕⴰ ⵉⵎⴽⵔⴰⴹⵏ', en: 'All Barbers', es: 'Todos' }),
+    nextInLineBadge: pickLang(lang, { ar: 'التالي في الدور · Next in Line', fr: 'Client suivant · Next in Line', amz: 'ⴰⵎⵙⴰⵖ ⴷ ⵉⴷⴷⴰⵏ', en: 'Next in Line', es: 'Siguiente en turno' }),
+    priorityFull: pickLang(lang, { ar: '· أولوية تفادي الانتظار', fr: '· Priorité Coupe-File', amz: '· ⴰⵣⵡⴰⵔ ⵡⴰⵔ ⴰⴳⴰⵏⵉ', en: '· Queue Priority', es: '· Prioridad' }),
+    priorityShort: pickLang(lang, { ar: '· أولوية', fr: '· Priorité', amz: '· ⴰⵣⵡⴰⵔ', en: '· Priority', es: '· Prioridad' }),
+    defaultService: pickLang(lang, { ar: 'حلاقة وعناية', fr: 'Coiffure & soins', amz: 'ⴰⵙⵙⴼⵔⵓ ⴷ ⵓⵎⴽⵔⴰⴹ', en: 'Haircut & Grooming', es: 'Corte y cuidado' }),
+    confirmBtn: pickLang(lang, { ar: 'تأكيد', fr: 'Confirmer', amz: 'ⵙⵙⴷⵓ', en: 'Confirm', es: 'Confirmar' }),
+    attendanceBtn: pickLang(lang, { ar: 'تأكيد الحضور', fr: 'Valider présence', amz: 'ⵙⵙⴷⵓ ⴰⵡⵡⴰⴹ', en: 'Confirm Arrival', es: 'Confirmar llegada' }),
+    presentBtn: pickLang(lang, { ar: 'حضر', fr: 'Présent', amz: 'ⵉⵡⵡⴹ', en: 'Attended', es: 'Asistió' }),
+    cancelBtn: pickLang(lang, { ar: 'إلغاء', fr: 'Annuler', amz: 'ⵙⵔ', en: 'Cancel', es: 'Cancelar' }),
+    trackBtn: pickLang(lang, { ar: 'تتبع', fr: 'Suivre', amz: 'ⴹⴼⵕ', en: 'Track', es: 'Seguir' }),
+    emptyTitle: pickLang(lang, {
+      ar: `لا توجد مواعيد نشطة في الطابور المباشر لليوم (${todayStr})`,
+      fr: `Aucun rendez-vous actif dans la file d’aujourd’hui (${todayStr})`,
+      amz: `ⵓⵔ ⵍⵍⵉⵏ ⵉⵙⵉⵀⴰⵍ ⴰⵙⵙ ⴰ (${todayStr})`,
+      en: `No active appointments in today's queue (${todayStr})`,
+      es: `No hay citas activas en la cola de hoy (${todayStr})`,
+    }),
+    emptySub: pickLang(lang, {
+      ar: 'ستظهر أي حجوزات جديدة أو قادمة لهذا اليوم هنا تلقائياً ومباشرة.',
+      fr: 'Toute nouvelle réservation pour aujourd’hui apparaîtra ici en temps réel.',
+      amz: 'ⴽⵓ ⴰⵙⵉⵀⵍ ⴰⵎⴰⵢⵏⵓ ⵉ ⴰⵙⵙ ⴰ ⵔⴰⴷ ⵉⴱⴰⵏ ⴷⴰ.',
+      en: 'Any new or upcoming appointments for today will appear here automatically.',
+      es: 'Las nuevas reservas para hoy aparecerán aquí automáticamente.',
+    }),
+    statusConfirmed: pickLang(lang, { ar: 'مؤكد', fr: 'Confirmé', amz: 'ⵉⵜⵜⵓⵙⴷⵓ', en: 'Confirmed', es: 'Confirmada' }),
+    statusRescheduled: pickLang(lang, { ar: 'معدل', fr: 'Reporté', amz: 'ⵉⵜⵜⵓⵙⵏⴼⵍ', en: 'Rescheduled', es: 'Reprogramada' }),
+    statusPending: pickLang(lang, { ar: 'معلق', fr: 'En attente', amz: 'ⵉⵜⵜⵓⴳⴰⵏⵉ', en: 'Pending', es: 'Pendiente' }),
+  };
+
   return (
     <div className="space-y-4 text-xs">
-      {/* Compact Header Bar */}
+      {/* Compact Header */}
       <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-black text-white flex items-center gap-2">
               <Users className="w-4 h-4 text-emerald-400" />
-              <span>الطابور المباشر لليوم (Live Queue)</span>
+              <span>{ui.title}</span>
             </h3>
-            <p className="text-[11px] text-zinc-400 mt-0.5">
-              قائمة فورية مرتبة زمنياً لجميع المواعيد النشطة اليوم لمعرفة الزبون التالي في الدور بنظرة واحدة.
-            </p>
+            <p className="text-[11px] text-zinc-400 mt-0.5">{ui.subtitle}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 font-mono tabular-nums text-[11px]">
             <span className="text-zinc-400">
-              الوقت الحالي: <strong className="text-white">{nowTimeLabel}</strong>
+              {ui.currTime} <strong className="text-white">{nowTimeLabel}</strong>
             </span>
             <span className="text-zinc-600" aria-hidden="true">·</span>
             <span className="text-emerald-400 font-bold">
-              في الانتظار: {queueItems.length}
+              {ui.waitingLbl} {queueItems.length}
             </span>
             <span className="text-zinc-600" aria-hidden="true">·</span>
             <span className="text-zinc-300">
-              منجز اليوم: {completedTodayCount}
+              {ui.doneTodayLbl} {completedTodayCount}
             </span>
           </div>
         </div>
 
-        {/* Master Barber Filter Strip */}
         {role === 'master' && (
           <div className="pt-2.5 border-t border-zinc-800 flex items-center gap-1.5 overflow-x-auto">
             <button
@@ -2184,7 +2846,7 @@ export const LiveQueuePanel: React.FC<{
                   : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
               }`}
             >
-              جميع الحلاقين ({getLiveQueueBookings(bookings, todayStr, 'master', 'all', 'all').length})
+              {ui.allBarbers} ({getLiveQueueBookings(bookings, todayStr, 'master', 'all', 'all').length})
             </button>
             {TEAM_MEMBERS.map((member) => {
               const count = getLiveQueueBookings(
@@ -2215,7 +2877,7 @@ export const LiveQueuePanel: React.FC<{
                     className="w-2 h-2 rounded-full flex-shrink-0"
                     style={{ backgroundColor: active ? '#FFFFFF' : color }}
                   />
-                  <span>{member.name.ar}</span>
+                  <span>{member.name[lang] || member.name.ar || member.name.fr}</span>
                   <span className="font-mono opacity-80">({count})</span>
                 </button>
               );
@@ -2228,7 +2890,7 @@ export const LiveQueuePanel: React.FC<{
       {nextInLine && (() => {
         const effTime = getEffectiveBookingTime(nextInLine);
         const slotMins = parseSlotToMinutes(effTime);
-        const delta = formatQueueDelta(slotMins, nowMinutes);
+        const delta = formatQueueDelta(slotMins, nowMinutes, lang);
         const bColor = getBarberColor(nextInLine);
         const crm = crmMap[getCrmDocId(nextInLine.clientPhone)];
         const isPriority = /تفادي الانتظار|Coupe-File|Queue Avoidance/i.test(
@@ -2239,7 +2901,7 @@ export const LiveQueuePanel: React.FC<{
           <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/50 via-zinc-900 to-zinc-900 border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="space-y-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-emerald-300">
-                <span>التالي في الدور · Next in Line</span>
+                <span>{ui.nextInLineBadge}</span>
                 <span className="text-zinc-600" aria-hidden="true">·</span>
                 <span className="font-mono tabular-nums text-white">{effTime}</span>
                 <span className="text-zinc-600" aria-hidden="true">·</span>
@@ -2255,7 +2917,7 @@ export const LiveQueuePanel: React.FC<{
                 )}
                 {isPriority && (
                   <span className="text-[11px] font-bold text-cyan-300">
-                    · أولوية تفادي الانتظار
+                    {ui.priorityFull}
                   </span>
                 )}
               </div>
@@ -2272,8 +2934,8 @@ export const LiveQueuePanel: React.FC<{
                 </span>
                 <span aria-hidden="true">·</span>
                 <span className="truncate max-w-xs">
-                  {(nextInLine.cartItemsSummary || []).map((i) => i.name).join('، ') ||
-                    'حلاقة وعناية'}
+                  {(nextInLine.cartItemsSummary || []).map((i) => i.name).join(' · ') ||
+                    ui.defaultService}
                 </span>
               </div>
               {nextInLine.clientNotes && (
@@ -2291,7 +2953,7 @@ export const LiveQueuePanel: React.FC<{
                   className="min-h-[40px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>تأكيد</span>
+                  <span>{ui.confirmBtn}</span>
                 </button>
               )}
 
@@ -2306,7 +2968,7 @@ export const LiveQueuePanel: React.FC<{
                 ) : (
                   <Award className="w-3.5 h-3.5" />
                 )}
-                <span>تأكيد الحضور</span>
+                <span>{ui.attendanceBtn}</span>
               </button>
 
               {onOpenClientTracking && (
@@ -2316,7 +2978,7 @@ export const LiveQueuePanel: React.FC<{
                   className="min-h-[40px] px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-100 font-bold text-xs flex items-center gap-1 cursor-pointer"
                 >
                   <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
-                  <span>تتبع</span>
+                  <span>{ui.trackBtn}</span>
                 </button>
               )}
             </div>
@@ -2324,23 +2986,19 @@ export const LiveQueuePanel: React.FC<{
         );
       })()}
 
-      {/* Compact Real-Time Queue List */}
+      {/* Compact Queue List */}
       {queueItems.length === 0 ? (
         <div className="p-10 text-center rounded-2xl bg-zinc-900/50 border border-zinc-800 space-y-2">
           <Clock className="w-8 h-8 text-zinc-600 mx-auto" />
-          <p className="text-sm font-bold text-zinc-300">
-            لا توجد مواعيد نشطة في الطابور المباشر لليوم ({todayStr})
-          </p>
-          <p className="text-[11px] text-zinc-500">
-            ستظهر أي حجوزات جديدة أو قادمة لهذا اليوم هنا تلقائياً ومباشرة.
-          </p>
+          <p className="text-sm font-bold text-zinc-300">{ui.emptyTitle}</p>
+          <p className="text-[11px] text-zinc-500">{ui.emptySub}</p>
         </div>
       ) : (
         <div className="rounded-2xl bg-zinc-900/75 border border-zinc-800 overflow-hidden divide-y divide-zinc-800/80">
           {queueItems.map((booking, index) => {
             const effTime = getEffectiveBookingTime(booking);
             const slotMins = parseSlotToMinutes(effTime);
-            const delta = formatQueueDelta(slotMins, nowMinutes);
+            const delta = formatQueueDelta(slotMins, nowMinutes, lang);
             const isNext = nextInLine?.id === booking.id;
             const barberColor = getBarberColor(booking);
             const crm = crmMap[getCrmDocId(booking.clientPhone)];
@@ -2349,7 +3007,7 @@ export const LiveQueuePanel: React.FC<{
             );
             const servicesLabel =
               (booking.cartItemsSummary || []).map((s) => s.name).join(' · ') ||
-              'خدمة حلاقة';
+              ui.defaultService;
 
             return (
               <div
@@ -2358,9 +3016,7 @@ export const LiveQueuePanel: React.FC<{
                   isNext ? 'bg-emerald-950/20' : 'hover:bg-zinc-800/40'
                 }`}
               >
-                {/* Left / Main Queue Row Data */}
                 <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
-                  {/* Position + Time */}
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span
                       className={`w-7 h-7 rounded-lg font-mono font-black text-xs tabular-nums flex items-center justify-center border ${
@@ -2371,7 +3027,7 @@ export const LiveQueuePanel: React.FC<{
                     >
                       #{index + 1}
                     </span>
-                    <div className="text-left rtl:text-right min-w-[60px]">
+                    <div className="text-start min-w-[60px]">
                       <div className="font-mono font-black text-sm text-white tabular-nums">
                         {effTime}
                       </div>
@@ -2389,7 +3045,6 @@ export const LiveQueuePanel: React.FC<{
                     </div>
                   </div>
 
-                  {/* Client + Ticket + Barber + Services */}
                   <div className="min-w-0 flex-1 space-y-0.5">
                     <div className="flex flex-wrap items-center gap-1.5 text-xs">
                       <span className="font-black text-white truncate">
@@ -2400,7 +3055,7 @@ export const LiveQueuePanel: React.FC<{
                       )}
                       {isPriority && (
                         <span className="text-[10px] font-bold text-cyan-300">
-                          · أولوية
+                          {ui.priorityShort}
                         </span>
                       )}
                       <span className="text-zinc-600" aria-hidden="true">·</span>
@@ -2418,10 +3073,10 @@ export const LiveQueuePanel: React.FC<{
                         }`}
                       >
                         {booking.status === 'confirmed'
-                          ? 'مؤكد'
+                          ? ui.statusConfirmed
                           : booking.status === 'rescheduled'
-                          ? 'معدل'
-                          : 'معلق'}
+                          ? ui.statusRescheduled
+                          : ui.statusPending}
                       </span>
                     </div>
 
@@ -2448,7 +3103,6 @@ export const LiveQueuePanel: React.FC<{
                   </div>
                 </div>
 
-                {/* Compact Quick Actions */}
                 <div className="flex flex-wrap items-center gap-1.5 flex-shrink-0">
                   {booking.status === 'pending' && (
                     <button
@@ -2456,10 +3110,9 @@ export const LiveQueuePanel: React.FC<{
                       disabled={busyId === booking.id}
                       onClick={() => onConfirm(booking.id)}
                       className="min-h-[36px] px-2.5 py-1 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                      title="قبول وتأكيد الموعد"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>تأكيد</span>
+                      <span>{ui.confirmBtn}</span>
                     </button>
                   )}
 
@@ -2468,14 +3121,13 @@ export const LiveQueuePanel: React.FC<{
                     disabled={busyId === booking.id}
                     onClick={() => onMarkCompleted(booking)}
                     className="min-h-[36px] px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                    title="تأكيد الحضور وإتمام الموعد (+1 ولاء)"
                   >
                     {busyId === booking.id ? (
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                     ) : (
                       <Award className="w-3.5 h-3.5" />
                     )}
-                    <span>حضر</span>
+                    <span>{ui.presentBtn}</span>
                   </button>
 
                   <button
@@ -2483,10 +3135,9 @@ export const LiveQueuePanel: React.FC<{
                     disabled={busyId === booking.id}
                     onClick={() => onQuickCancel(booking)}
                     className="min-h-[36px] px-2.5 py-1 rounded-lg bg-red-950/70 hover:bg-red-600 border border-red-500/40 text-red-200 hover:text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                    title="إلغاء الموعد بنقرة واحدة"
                   >
                     <XCircle className="w-3.5 h-3.5" />
-                    <span>إلغاء</span>
+                    <span>{ui.cancelBtn}</span>
                   </button>
 
                   <button
@@ -2503,7 +3154,6 @@ export const LiveQueuePanel: React.FC<{
                       })
                     }
                     className="min-h-[36px] px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                    title="عرض رمز QR للزبون"
                   >
                     <QrCode className="w-3.5 h-3.5" />
                   </button>
@@ -2513,7 +3163,6 @@ export const LiveQueuePanel: React.FC<{
                       type="button"
                       onClick={() => onOpenClientTracking(booking.clientPhone)}
                       className="min-h-[36px] px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                      title="فتح نافذة تتبع الزبون"
                     >
                       <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
                     </button>

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr" class="dark scroll-smooth">
+<html lang="ar" dir="rtl" class="scroll-smooth">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,10 +9,10 @@
     <meta property="og:description" content="Salon Boumlik - Men's Services Only. Taroudant, Rue Bir Anzarane. Réservation et devis sur WhatsApp au 0635392503." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="theme-color" content="#08090C" />
+    <meta name="theme-color" content="#FAF9F6" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Boumlik" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
@@ -22,12 +22,12 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Amiri:wght@400;700&family=Noto+Sans+Tifinagh&display=swap" rel="stylesheet">
 
-    <!-- Theme bootstrap (prevents flash before React mounts) -->
+    <!-- Theme bootstrap (Light Mode default, prevents flash before React mounts) -->
     <script>
       (function () {
         try {
           var saved = localStorage.getItem('salon_boumlik_theme');
-          var isDark = saved !== 'minimal_light';
+          var isDark = saved === 'luxury_gold' || saved === 'charcoal';
           var root = document.documentElement;
           root.classList.toggle('dark', isDark);
           root.style.colorScheme = isDark ? 'dark' : 'light';
@@ -108,7 +108,7 @@
     }
     </script>
   </head>
-  <body class="bg-slate-50 dark:bg-[#08090C] text-slate-900 dark:text-zinc-100 antialiased selection:bg-amber-500/30 selection:text-amber-900 dark:selection:text-amber-200 min-h-screen">
+  <body class="bg-[#FAF9F6] dark:bg-[#0B0C10] text-slate-900 dark:text-zinc-100 antialiased selection:bg-amber-500/25 selection:text-amber-900 dark:selection:text-amber-200 min-h-screen">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

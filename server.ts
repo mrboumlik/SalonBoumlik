@@ -54,7 +54,7 @@ interface VapidKeyPair {
 }
 
 function loadOrGenerateVapidKeys(): VapidKeyPair {
-  const envPub = stripQuotes(process.env.VAPID_PUBLIC_KEY);
+  const envPub = stripQuotes(process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY);
   const envPriv = stripQuotes(process.env.VAPID_PRIVATE_KEY);
   if (envPub && envPriv) {
     return { publicKey: envPub, privateKey: envPriv };
@@ -294,9 +294,100 @@ async function startServer() {
   if (!IS_PRODUCTION) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false, ws: false },
       appType: 'spa',
     });
+
+    // HMR is disabled in AI Studio; Vite 8 still injects /@vite/client and unconditionally
+    // opens a WebSocket on port 24678. Serve a clean zero-WebSocket shim before vite.middlewares.
+    const viteClientNoHmrShim = [
+      'import "/node_modules/vite/dist/client/env.mjs";',
+      '',
+      'const sheetsMap = new Map();',
+      'const linkSheetsMap = new Map();',
+      'if (typeof document !== "undefined") {',
+      '  document.querySelectorAll("style[data-vite-dev-id]").forEach((el) => {',
+      '    const id = el.getAttribute("data-vite-dev-id");',
+      '    if (id) sheetsMap.set(id, el);',
+      '  });',
+      '  document.querySelectorAll("link[rel=\\"stylesheet\\"][data-vite-dev-id]").forEach((el) => {',
+      '    const id = el.getAttribute("data-vite-dev-id");',
+      '    if (id) linkSheetsMap.set(id, el);',
+      '  });',
+      '}',
+      '',
+      'let lastInsertedStyle;',
+      'function updateStyle(id, content) {',
+      '  if (typeof document === "undefined" || linkSheetsMap.has(id)) return;',
+      '  let style = sheetsMap.get(id);',
+      '  if (!style) {',
+      '    style = document.createElement("style");',
+      '    style.setAttribute("type", "text/css");',
+      '    style.setAttribute("data-vite-dev-id", id);',
+      '    style.textContent = content;',
+      '    const nonceEl = document.querySelector("meta[property=csp-nonce]");',
+      '    const nonce = nonceEl && nonceEl.getAttribute("nonce");',
+      '    if (nonce) style.setAttribute("nonce", nonce);',
+      '    if (!lastInsertedStyle) {',
+      '      document.head.appendChild(style);',
+      '      setTimeout(() => { lastInsertedStyle = void 0; }, 0);',
+      '    } else {',
+      '      lastInsertedStyle.insertAdjacentElement("afterend", style);',
+      '    }',
+      '    lastInsertedStyle = style;',
+      '  } else if (style.textContent !== content) {',
+      '    style.textContent = content;',
+      '  }',
+      '  sheetsMap.set(id, style);',
+      '}',
+      '',
+      'function removeStyle(id) {',
+      '  if (typeof document === "undefined") return;',
+      '  if (linkSheetsMap.has(id)) {',
+      '    document.querySelectorAll(`link[rel="stylesheet"][data-vite-dev-id="${CSS.escape(id)}"]`).forEach((el) => el.remove());',
+      '    linkSheetsMap.delete(id);',
+      '  }',
+      '  const style = sheetsMap.get(id);',
+      '  if (style) {',
+      '    style.remove();',
+      '    sheetsMap.delete(id);',
+      '  }',
+      '}',
+      '',
+      'function createHotContext() {',
+      '  return {',
+      '    data: {},',
+      '    accept() {},',
+      '    acceptExports() {},',
+      '    dispose() {},',
+      '    prune() {},',
+      '    decline() {},',
+      '    invalidate() {},',
+      '    on() {},',
+      '    off() {},',
+      '    send() {},',
+      '  };',
+      '}',
+      '',
+      'function injectQuery(url, queryToInject) {',
+      '  if (url[0] !== "." && url[0] !== "/") return url;',
+      '  const pathname = url.replace(/[?#].*$/, "");',
+      '  const { search, hash } = new URL(url, "http://vite.dev");',
+      '  return `${pathname}?${queryToInject}${search ? "&" + search.slice(1) : ""}${hash || ""}`;',
+      '}',
+      '',
+      'const BaseElement = typeof HTMLElement !== "undefined" ? HTMLElement : class {};',
+      'class ErrorOverlay extends BaseElement {}',
+      '',
+      'export { ErrorOverlay, createHotContext, injectQuery, removeStyle, updateStyle };',
+    ].join('\n');
+
+    app.get('/@vite/client', (_req, res) => {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.send(viteClientNoHmrShim);
+    });
+
     app.use(vite.middlewares);
   } else {
     const distDir = path.join(__dirname, 'dist');

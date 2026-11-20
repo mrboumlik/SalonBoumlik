@@ -32,6 +32,7 @@ import {
 } from '../utils/calendar';
 import { useLanguage } from '../context/LanguageContext';
 import { createNewBooking } from '../utils/bookingStore';
+import { pickLang } from '../utils/i18n';
 
 interface BookingModalProps {
   isOpen: boolean;
@@ -109,7 +110,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     // Services selection check (default to haircut if none selected)
     const activeServices = selectedServices.length > 0 ? selectedServices : [SERVICES[0]];
 
-    const defaultClientName = lang === 'ar' ? 'زبون محترم' : lang === 'amz' ? 'ⴰⵎⵣⴷⴰⵖ' : 'Client';
+    const defaultClientName = pickLang(lang, {
+      ar: 'زبون محترم',
+      fr: 'Client',
+      amz: 'ⴰⵎⵣⴷⴰⵖ',
+      en: 'Client',
+      es: 'Cliente',
+    });
     const finalClientName = clientName.trim() || defaultClientName;
     const finalClientPhone = clientPhone.trim() || '';
 
@@ -158,7 +165,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+    <div
+      dir={isRtl ? 'rtl' : 'ltr'}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+    >
       <div className="bg-[#0C0E14] border border-amber-500/40 rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl relative max-h-[92vh] overflow-y-auto">
         
         {/* Close Button */}
@@ -179,17 +189,25 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
             <div>
               <span className="text-xs font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-                {lang === 'ar' ? 'تم تسجيل طلب الموعد بنجاح' : lang === 'amz' ? 'ⵉⵎⵓⵙⵙⵓ ⵏ ⵓⵙⵔⵓⵙ ⵉⵙⵎⴷ' : 'Demande Enregistrée'}
+                {pickLang(lang, {
+                  ar: 'تم تسجيل طلب الموعد بنجاح',
+                  fr: 'Demande Enregistrée',
+                  amz: 'ⵉⵎⵓⵙⵙⵓ ⵏ ⵓⵙⵔⵓⵙ ⵉⵙⵎⴷ',
+                  en: 'Booking Request Saved',
+                  es: 'Solicitud Registrada',
+                })}
               </span>
               <h3 className="text-2xl sm:text-3xl font-extrabold text-white font-display mt-2">
                 {confirmedBooking.clientName}
               </h3>
               <p className="text-xs sm:text-sm text-zinc-300 mt-1 max-w-md mx-auto">
-                {lang === 'ar'
-                  ? 'تم تجهيز تفاصيل الموعد. يمكنك إرسالها مباشرة للحلاق ونسخ الإشعار لسي حسن عبر الواتساب أو الإيميل.'
-                  : lang === 'amz'
-                  ? 'ⵜⴰⴱⵔⴰⵜ ⵏ ⵡⴰⵜⵙⴰⴱ ⵜⵍⵍⴰ ⵖⵔ ⵓⵎⴽⵕⴰⴹ ⴷ ⵃⴰⵙⴰⵏ.'
-                  : 'Votre demande a été préparée. Envoyez-la directement sur WhatsApp et avisez Hassan.'}
+                {pickLang(lang, {
+                  ar: 'تم تجهيز تفاصيل الموعد. يمكنك إرسالها مباشرة للحلاق ونسخ الإشعار لسي حسن عبر الواتساب أو الإيميل.',
+                  fr: 'Votre demande a été préparée. Envoyez-la directement sur WhatsApp et avisez Hassan.',
+                  amz: 'ⵜⴰⴱⵔⴰⵜ ⵏ ⵡⴰⵜⵙⴰⴱ ⵜⵍⵍⴰ ⵖⵔ ⵓⵎⴽⵕⴰⴹ ⴷ ⵃⴰⵙⴰⵏ.',
+                  en: 'Your booking request is ready. Send it directly on WhatsApp and notify Hassan.',
+                  es: 'Tu solicitud está lista. Envíala directamente por WhatsApp y avisa a Hassan.',
+                })}
               </p>
             </div>
 
@@ -216,42 +234,90 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <span className="leading-relaxed">{t.vipReservationNotice}</span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="grid grid-cols-2 gap-3 text-xs text-start">
                 <div>
                   <span className="text-zinc-400">
-                    {lang === 'ar' ? 'التاريخ :' : lang === 'amz' ? 'ⴰⵙⴰⴽⵓⴷ :' : 'Date :'}
+                    {pickLang(lang, {
+                      ar: 'التاريخ :',
+                      fr: 'Date :',
+                      amz: 'ⴰⵙⴰⴽⵓⴷ :',
+                      en: 'Date:',
+                      es: 'Fecha:',
+                    })}
                   </span>
                   <div className="font-semibold text-white mt-0.5">{confirmedBooking.date}</div>
                 </div>
                 <div>
                   <span className="text-zinc-400">
-                    {lang === 'ar' ? 'التوقيت :' : lang === 'amz' ? 'ⴰⴽⵓⴷ :' : 'Heure :'}
+                    {pickLang(lang, {
+                      ar: 'التوقيت :',
+                      fr: 'Heure :',
+                      amz: 'ⴰⴽⵓⴷ :',
+                      en: 'Time:',
+                      es: 'Hora:',
+                    })}
                   </span>
                   <div className="font-semibold text-amber-300 mt-0.5">{confirmedBooking.timeSlot}</div>
                 </div>
                 <div>
                   <span className="text-zinc-400">
-                    {lang === 'ar' ? 'الحلاق المختار :' : lang === 'amz' ? 'ⴰⵎⴽⵕⴰⴹ :' : 'Barbier choisi :'}
+                    {pickLang(lang, {
+                      ar: 'الحلاق المختار :',
+                      fr: 'Barbier choisi :',
+                      amz: 'ⴰⵎⴽⵕⴰⴹ :',
+                      en: 'Selected Barber:',
+                      es: 'Barbero elegido:',
+                    })}
                   </span>
                   <div className="font-semibold text-white mt-0.5">{confirmedBooking.barberName}</div>
                 </div>
                 <div>
                   <span className="text-zinc-400">
-                    {lang === 'ar' ? 'اختيار المشروب :' : lang === 'amz' ? 'ⵜⵉⵙⵉⵜ :' : 'Boisson :'}
+                    {pickLang(lang, {
+                      ar: 'اختيار المشروب :',
+                      fr: 'Boisson :',
+                      amz: 'ⵜⵉⵙⵉⵜ :',
+                      en: 'Drink:',
+                      es: 'Bebida:',
+                    })}
                   </span>
                   <div className="font-semibold text-amber-300 mt-0.5">
                     {confirmedBooking.drinkPreference === 'coffee'
-                      ? (lang === 'ar' ? '☕ قهوة' : lang === 'amz' ? '☕ ⵜⴰⴽⴰⴼⵉⵜ' : '☕ Café')
+                      ? pickLang(lang, {
+                          ar: '☕ قهوة',
+                          fr: '☕ Café',
+                          amz: '☕ ⵜⴰⴽⴰⴼⵉⵜ',
+                          en: '☕ Coffee',
+                          es: '☕ Café',
+                        })
                       : confirmedBooking.drinkPreference === 'tea'
-                      ? (lang === 'ar' ? '🍃 أتاي فقط' : lang === 'amz' ? '🍃 ⴰⵜⴰⵢ' : '🍃 Thé')
-                      : (lang === 'ar' ? '🚫 والو' : lang === 'amz' ? '🚫 ⵡⴰⵍⵓ' : '🚫 Rien')}
+                      ? pickLang(lang, {
+                          ar: '🍃 أتاي فقط',
+                          fr: '🍃 Thé',
+                          amz: '🍃 ⴰⵜⴰⵢ',
+                          en: '🍃 Tea',
+                          es: '🍃 Té',
+                        })
+                      : pickLang(lang, {
+                          ar: '🚫 والو',
+                          fr: '🚫 Rien',
+                          amz: '🚫 ⵡⴰⵍⵓ',
+                          en: '🚫 None',
+                          es: '🚫 Nada',
+                        })}
                   </div>
                 </div>
               </div>
 
-              <div className="border-t border-zinc-800 pt-3">
+              <div className="border-t border-zinc-800 pt-3 text-start">
                 <span className="text-xs text-zinc-400">
-                  {lang === 'ar' ? 'الخدمات المحددة :' : lang === 'amz' ? 'ⵜⵉⵡⵓⵔⵉⵡⵉⵏ :' : 'Prestations sélectionnées :'}
+                  {pickLang(lang, {
+                    ar: 'الخدمات المحددة :',
+                    fr: 'Prestations sélectionnées :',
+                    amz: 'ⵜⵉⵡⵓⵔⵉⵡⵉⵏ :',
+                    en: 'Selected services:',
+                    es: 'Servicios seleccionados:',
+                  })}
                 </span>
                 <div className="flex flex-wrap gap-1.5 mt-1.5">
                   {confirmedBooking.services.map((s) => (
@@ -289,16 +355,20 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     <MessageCircle className="w-5 h-5 fill-white" />
                     <span>
                       {isHassan
-                        ? (lang === 'ar'
-                            ? `إرسال الحجز لسي حسان (المالك وخبير الحلاقة) على الواتساب`
-                            : lang === 'amz'
-                            ? `ⴰⵣⵏ ⴳ ⵡⴰⵜⵙⴰⴱ ⵉ ⵃⴰⵙⴰⵏ (0635392503)`
-                            : `Envoyer la réservation à Hassan (Fondateur) sur WhatsApp`)
-                        : (lang === 'ar'
-                            ? `1. إرسال الحجز للحلاق ${confirmedBooking.barberName} على الواتساب`
-                            : lang === 'amz'
-                            ? `1. ⴰⵣⵏ ⴳ ⵡⴰⵜⵙⴰⴱ ⵉ ${confirmedBooking.barberName}`
-                            : `1. Envoyer la réservation à ${confirmedBooking.barberName} sur WhatsApp`)}
+                        ? pickLang(lang, {
+                            ar: 'إرسال الحجز لسي حسان (المالك وخبير الحلاقة) على الواتساب',
+                            fr: 'Envoyer la réservation à Hassan (Fondateur) sur WhatsApp',
+                            amz: 'ⴰⵣⵏ ⴳ ⵡⴰⵜⵙⴰⴱ ⵉ ⵃⴰⵙⴰⵏ (0635392503)',
+                            en: 'Send booking to Hassan (Founder) on WhatsApp',
+                            es: 'Enviar reserva a Hassan (Fundador) por WhatsApp',
+                          })
+                        : pickLang(lang, {
+                            ar: `1. إرسال الحجز للحلاق ${confirmedBooking.barberName} على الواتساب`,
+                            fr: `1. Envoyer la réservation à ${confirmedBooking.barberName} sur WhatsApp`,
+                            amz: `1. ⴰⵣⵏ ⴳ ⵡⴰⵜⵙⴰⴱ ⵉ ${confirmedBooking.barberName}`,
+                            en: `1. Send booking to ${confirmedBooking.barberName} on WhatsApp`,
+                            es: `1. Enviar reserva a ${confirmedBooking.barberName} por WhatsApp`,
+                          })}
                     </span>
                   </a>
 
@@ -315,11 +385,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     >
                       <Sparkles className="w-4 h-4 text-amber-400" />
                       <span>
-                        {lang === 'ar'
-                          ? `2. إرسال إشعار لسي حسن (المالك - 0635392503) لمتابعة الحجز`
-                          : lang === 'amz'
-                          ? `2. ⴰⵣⵏ ⵜⴰⵏⵏⴰⵢⵜ ⵉ ⵃⴰⵙⴰⵏ (ⴰⵎⵙⴱⴷⴰⴷ - 0635392503)`
-                          : `2. Notifier Hassan (Propriétaire - 0635392503) pour suivi`}
+                        {pickLang(lang, {
+                          ar: '2. إرسال إشعار لسي حسن (المالك - 0635392503) لمتابعة الحجز',
+                          fr: '2. Notifier Hassan (Propriétaire - 0635392503) pour suivi',
+                          amz: '2. ⴰⵣⵏ ⵜⴰⵏⵏⴰⵢⵜ ⵉ ⵃⴰⵙⴰⵏ (ⴰⵎⵙⴱⴷⴰⴷ - 0635392503)',
+                          en: '2. Notify Hassan (Owner - 0635392503) for follow-up',
+                          es: '2. Avisar a Hassan (Propietario - 0635392503) para seguimiento',
+                        })}
                       </span>
                     </a>
                   )}
@@ -349,11 +421,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <div className="flex items-center justify-center gap-1.5 text-[11px] text-emerald-400 pt-1">
                     <Check className="w-3.5 h-3.5" />
                     <span>
-                      {lang === 'ar'
-                        ? 'تم حفظ تفاصيل التذكرة محلياً في جهازك لضمان عدم ضياع الموعد'
-                        : lang === 'amz'
-                        ? 'ⵜⵜⵓⵃⴹⴰⵏ ⵉⵏⵖⵎⵉⵙⵏ ⴳ ⵓⵎⵙⵙⵓⴷⵙ ⵏⵏⴽ'
-                        : 'Réservation sécurisée et enregistrée localement sur votre appareil'}
+                      {pickLang(lang, {
+                        ar: 'تم حفظ تفاصيل التذكرة محلياً في جهازك لضمان عدم ضياع الموعد',
+                        fr: 'Réservation sécurisée et enregistrée localement sur votre appareil',
+                        amz: 'ⵜⵜⵓⵃⴹⴰⵏ ⵉⵏⵖⵎⵉⵙⵏ ⴳ ⵓⵎⵙⵙⵓⴷⵙ ⵏⵏⴽ',
+                        en: 'Booking secured and saved locally on your device',
+                        es: 'Reserva asegurada y guardada en tu dispositivo',
+                      })}
                     </span>
                   </div>
                 </div>
@@ -364,7 +438,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               onClick={handleResetAndClose}
               className="px-6 py-2 rounded-xl bg-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold cursor-pointer"
             >
-              {lang === 'ar' ? 'إغلاق' : lang === 'amz' ? 'ⵔⴳⵍ' : lang === 'en' ? 'Close' : 'Fermer'}
+              {pickLang(lang, {
+                ar: 'إغلاق',
+                fr: 'Fermer',
+                amz: 'ⵔⴳⵍ',
+                en: 'Close',
+                es: 'Cerrar',
+              })}
             </button>
 
           </div>
@@ -376,7 +456,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <Scissors className="w-5 h-5" />
               </div>
               <h3 className="text-xl sm:text-2xl font-black text-white font-display">
-                {lang === 'ar' ? 'طلب موعد وتسعيرة واتساب' : lang === 'amz' ? 'ⴰⵙⵔⵓⵙ ⵏ ⵓⵎⴰⴳⴰⵔ ⴷ ⵡⴰⵜⵉⴳ' : 'Réservation & Devis WhatsApp'}
+                {pickLang(lang, {
+                  ar: 'طلب موعد وتسعيرة واتساب',
+                  fr: 'Réservation & Devis WhatsApp',
+                  amz: 'ⴰⵙⵔⵓⵙ ⵏ ⵓⵎⴰⴳⴰⵔ ⴷ ⵡⴰⵜⵉⴳ',
+                  en: 'WhatsApp Booking & Quote',
+                  es: 'Reserva y Presupuesto WhatsApp',
+                })}
               </h3>
               <p className="text-xs text-zinc-400 mt-1">
                 {t.selectServicesSubtitle}
@@ -452,7 +538,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     <span>2. {t.formBarberChoice} *</span>
                   </label>
                   <span className="text-[10px] text-red-400 font-bold uppercase">
-                    {lang === 'ar' ? 'إجباري' : lang === 'amz' ? 'ⵉⵇⵇⴰⵏ ⴷ' : lang === 'en' ? 'Mandatory' : 'Obligatoire'}
+                    {pickLang(lang, {
+                      ar: 'إجباري',
+                      fr: 'Obligatoire',
+                      amz: 'ⵉⵇⵇⴰⵏ ⴷ',
+                      en: 'Mandatory',
+                      es: 'Obligatorio',
+                    })}
                   </span>
                 </div>
 
@@ -509,9 +601,21 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                       <div className="overflow-hidden">
                         <div className="text-xs font-bold text-white truncate">{b.name[lang] || b.name.fr}</div>
                         <div className="text-[9px] text-amber-400 truncate">
-                          {b.isOwner 
-                            ? (lang === 'ar' ? 'المالك' : lang === 'amz' ? 'ⴰⵎⵙⴱⴷⴰⴷ' : 'Owner')
-                            : (lang === 'ar' ? 'حلاق' : lang === 'amz' ? 'ⴰⵎⴽⵕⴰⴹ' : 'Barber')}
+                          {b.isOwner
+                            ? pickLang(lang, {
+                                ar: 'المالك',
+                                fr: 'Propriétaire',
+                                amz: 'ⴰⵎⵙⴱⴷⴰⴷ',
+                                en: 'Owner',
+                                es: 'Propietario',
+                              })
+                            : pickLang(lang, {
+                                ar: 'حلاق',
+                                fr: 'Barbier',
+                                amz: 'ⴰⵎⴽⵕⴰⴹ',
+                                en: 'Barber',
+                                es: 'Barbero',
+                              })}
                         </div>
                       </div>
                     </button>
@@ -583,16 +687,22 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               <div className="space-y-3 pt-2 border-t border-zinc-800/80">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-zinc-200 uppercase tracking-wider">
-                    {lang === 'ar' 
-                      ? '6. بيانات الزبون ومعلومات الاتصال' 
-                      : lang === 'amz' 
-                      ? '6. ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵓⵎⵣⴷⴰⵖ' 
-                      : lang === 'en' 
-                      ? '6. Client Contact Details' 
-                      : '6. Coordonnées du Client'}
+                    {pickLang(lang, {
+                      ar: '6. بيانات الزبون ومعلومات الاتصال',
+                      fr: '6. Coordonnées du Client',
+                      amz: '6. ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵓⵎⵣⴷⴰⵖ',
+                      en: '6. Client Contact Details',
+                      es: '6. Datos de Contacto',
+                    })}
                   </label>
                   <span className="text-[10px] text-zinc-400">
-                    {lang === 'ar' ? 'سريعة واختيارية' : 'Optionnel / Rapide'}
+                    {pickLang(lang, {
+                      ar: 'سريعة واختيارية',
+                      fr: 'Optionnel / Rapide',
+                      amz: 'ⵙ ⵜⵉⵣⵣⵍⴰ',
+                      en: 'Quick & Optional',
+                      es: 'Rápido y opcional',
+                    })}
                   </span>
                 </div>
 
@@ -669,13 +779,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <div className="text-center text-[11px] text-zinc-400 mt-2 flex items-center justify-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                   <span>
-                    {lang === 'ar'
-                      ? 'إرسال مباشر إلى واتساب حسن (0635392503) مع ملخص الطلب'
-                      : lang === 'amz'
-                      ? 'ⵓⵙⵔⵉⴷ ⵖⵔ ⵡⴰⵜⵙⴰⴱ ⵏ ⵃⴰⵙⴰⵏ (0635392503)'
-                      : lang === 'en'
-                      ? 'Direct WhatsApp to Hassan (0635392503) with full booking summary'
-                      : 'Direct WhatsApp à Hassan (0635392503) avec récapitulatif complet'}
+                    {pickLang(lang, {
+                      ar: 'إرسال مباشر إلى واتساب حسن (0635392503) مع ملخص الطلب',
+                      fr: 'Direct WhatsApp à Hassan (0635392503) avec récapitulatif complet',
+                      amz: 'ⵓⵙⵔⵉⴷ ⵖⵔ ⵡⴰⵜⵙⴰⴱ ⵏ ⵃⴰⵙⴰⵏ (0635392503)',
+                      en: 'Direct WhatsApp to Hassan (0635392503) with full booking summary',
+                      es: 'WhatsApp directo a Hassan (0635392503) con resumen completo',
+                    })}
                   </span>
                 </div>
               </div>

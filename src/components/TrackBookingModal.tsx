@@ -28,10 +28,14 @@ import {
   Award,
   Star,
   Gift,
-  Coins
+  Coins,
+  QrCode,
+  ScanLine
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
+import QRCode from 'qrcode';
 import { useLanguage } from '../context/LanguageContext';
+import { buildBookingCheckInQrPayload, parseScannedQrResult } from '../utils/clientQr';
 import { 
   subscribeToBookings,
   getAllBookings,
@@ -61,14 +65,110 @@ import { buildClientTicketWhatsAppMessage } from '../utils/whatsappAutomation';
 import { CIH_BANK_DETAILS, processCihReceiptFile } from '../utils/cihReceipt';
 import { CihBankLogo } from './CihBankLogo';
 import { LoyaltyProgressCard } from './LoyaltyProgressCard';
-import { AppointmentBooking, BookingStatus } from '../types';
+import { AppointmentBooking, BookingStatus, Language } from '../types';
 import { SALON_INFO } from '../data/barbershopData';
+import { pickLang } from '../utils/i18n';
 
 interface TrackBookingModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialSearch?: string;
 }
+
+const CheckInQrPassBox: React.FC<{ booking: AppointmentBooking; lang: Language }> = ({
+  booking,
+  lang,
+}) => {
+  const [qrUrl, setQrUrl] = useState<string>('');
+
+  useEffect(() => {
+    let active = true;
+    const payload = buildBookingCheckInQrPayload({
+      ticketNumber: booking.ticketNumber,
+      checkInToken: booking.checkInToken,
+    });
+    QRCode.toDataURL(payload, {
+      width: 200,
+      margin: 1,
+      color: { dark: '#09090B', light: '#FFFFFF' },
+    })
+      .then((url) => {
+        if (active) setQrUrl(url);
+      })
+      .catch(console.error);
+    return () => {
+      active = false;
+    };
+  }, [booking.ticketNumber, booking.checkInToken]);
+
+  if (booking.status === 'cancelled' || booking.status === 'rejected') {
+    return null;
+  }
+
+  return (
+    <div className="p-3 rounded-xl bg-black/60 border border-emerald-500/35 flex items-center justify-between gap-3">
+      <div className="space-y-1 text-xs min-w-0">
+        <div className="font-black text-emerald-300 flex items-center gap-1.5">
+          <ScanLine className="w-4 h-4 shrink-0" />
+          <span>
+            {pickLang(lang, {
+              ar: 'رمز الوصول السريع (Check-In QR)',
+              fr: 'QR Code Check-In (Arrivée Rapide)',
+              amz: 'ⴰⵙⵏⵉ ⵏ ⵓⴽⵛⵓⵎ (Check-In QR)',
+              en: 'Fast Arrival Check-In QR',
+              es: 'QR Check-In de Llegada Rápida',
+            })}
+          </span>
+        </div>
+        <p className="text-[11px] text-zinc-400 leading-relaxed">
+          {booking.checkedInAt
+            ? pickLang(lang, {
+                ar: '✓ تم تسجيل وصولك بالصالون بنجاح!',
+                fr: '✓ Arrivée enregistrée au salon !',
+                amz: '✓ ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⴽⵛⵓⵎ ⵏⵏⴽ!',
+                en: '✓ Your arrival has been checked in!',
+                es: '✓ ¡Llegada registrada con éxito!',
+              })
+            : pickLang(lang, {
+                ar: 'أظهر هذا الرمز للحلاق عند وصولك لتسجيل الحضور فوراً.',
+                fr: 'Présentez ce QR au barbier à votre arrivée pour un check-in instantané.',
+                amz: 'ⵙⵙⴽⵏ QR ⴰⴷ ⵉ ⵓⵎⴽⵕⴰⴹ ⵉⵖ ⵜⵍⴽⵎⴷ.',
+                en: 'Show this QR code to your barber upon arrival for instant check-in.',
+                es: 'Muestra este QR a tu barbero al llegar para registrarte al instante.',
+              })}
+        </p>
+        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+          {booking.checkInToken && (
+            <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-zinc-900 border border-zinc-700 text-amber-300">
+              {booking.checkInToken}
+            </span>
+          )}
+          {booking.checkedInAt && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-bold">
+              {pickLang(lang, {
+                ar: 'وصلت للصالون ✓',
+                fr: 'Arrivé ✓',
+                amz: 'ⵉⵍⴽⵎ ✓',
+                en: 'Checked In ✓',
+                es: 'Registrado ✓',
+              })}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {qrUrl ? (
+        <div className="p-1.5 bg-white rounded-xl shrink-0 shadow-md">
+          <img src={qrUrl} alt={`Check-In QR ${booking.ticketNumber}`} className="w-20 h-20 block" />
+        </div>
+      ) : (
+        <div className="w-20 h-20 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
+          <QrCode className="w-6 h-6 text-zinc-500" />
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
   isOpen,
@@ -193,10 +293,20 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
       if (result.granted) {
         playNotificationSound();
         showToast(
-          lang === 'ar' ? 'تم تفعيل الإشعارات بنجاح • صالون بومليك' : 'Notifications Activées • Salon Boumlik',
-          lang === 'ar'
-            ? 'ستصلك تنبيهات موثوقة عند تأكيد الموعد، تعديل التوقيت، أو تحديث نقاط الولاء.'
-            : 'Vous recevrez des alertes fiables pour vos confirmations, horaires et points.',
+          pickLang(lang, {
+            ar: 'تم تفعيل الإشعارات بنجاح • صالون بومليك',
+            fr: 'Notifications Activées • Salon Boumlik',
+            amz: 'ⵉⵏⵖⵎⵉⵙⵏ ⵕⵥⵎⵏ • Salon Boumlik',
+            en: 'Notifications Enabled • Salon Boumlik',
+            es: 'Notificaciones Activadas • Salon Boumlik',
+          }),
+          pickLang(lang, {
+            ar: 'ستصلك تنبيهات موثوقة عند تأكيد الموعد، تعديل التوقيت، أو تحديث نقاط الولاء.',
+            fr: 'Vous recevrez des alertes fiables pour vos confirmations, horaires et points.',
+            amz: 'ⴰⴷ ⵜⴰⵎⵥⴷ ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵉⵙⵉⵀⴰⵍⵏ ⴷ ⵜⵏⵇⵇⵉⴹⵉⵏ ⵏⵏⴽ.',
+            en: 'You will receive live alerts for confirmations, reschedules, and loyalty points.',
+            es: 'Recibirás alertas en vivo de confirmaciones, cambios y puntos.',
+          }),
           'success'
         );
       }
@@ -208,10 +318,20 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     if (perm === 'granted') {
       playNotificationSound();
       showToast(
-        lang === 'ar' ? 'تم تفعيل الإشعارات بنجاح • صالون بومليك' : 'Notifications Activées • Salon Boumlik',
-        lang === 'ar'
-          ? 'ستصلك تنبيهات موثوقة بأي تحديث بخصوص موعدك وتجهيز الكرسي.'
-          : 'Vous recevrez des alertes fiables pour les mises à jour de votre créneau.',
+        pickLang(lang, {
+          ar: 'تم تفعيل الإشعارات بنجاح • صالون بومليك',
+          fr: 'Notifications Activées • Salon Boumlik',
+          amz: 'ⵉⵏⵖⵎⵉⵙⵏ ⵕⵥⵎⵏ • Salon Boumlik',
+          en: 'Notifications Enabled • Salon Boumlik',
+          es: 'Notificaciones Activadas • Salon Boumlik',
+        }),
+        pickLang(lang, {
+          ar: 'ستصلك تنبيهات موثوقة بأي تحديث بخصوص موعدك وتجهيز الكرسي.',
+          fr: 'Vous recevrez des alertes fiables pour les mises à jour de votre créneau.',
+          amz: 'ⴰⴷ ⵜⴰⵎⵥⴷ ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵓⵙⵉⵀⵍ ⵏⵏⴽ.',
+          en: 'You will receive real-time updates for your booking status.',
+          es: 'Recibirás actualizaciones de tu cita en tiempo real.',
+        }),
         'success'
       );
     }
@@ -241,27 +361,50 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
       // Create off-screen scanner instance for file decoding
       const html5Qr = new Html5Qrcode('qr-temp-scanner-hidden');
       const decodedText = await html5Qr.scanFile(file, true);
-      
-      let ticket = decodedText.trim();
-      if (decodedText.includes('track=')) {
-        ticket = decodeURIComponent(decodedText.split('track=')[1].split('&')[0]).trim();
-      }
+      const parsed = parseScannedQrResult(decodedText);
+      const ticket = parsed.query || decodedText.trim();
 
       setSearchTerm(ticket);
       performSearch(ticket);
       sendDualAlert(
-        lang === 'ar' ? 'تم مسح صورة الـ QR بنجاح!' : 'QR Code analysé avec succès !',
+        pickLang(lang, {
+          ar: 'تم مسح صورة الـ QR بنجاح!',
+          fr: 'QR Code analysé avec succès !',
+          amz: 'ⵉⵜⵜⵓⵙⴽⴰⵏⴰ ⵓⵏⴳⴰⵍ QR!',
+          en: 'QR Code scanned successfully!',
+          es: '¡Código QR escaneado con éxito!',
+        }),
         {
-          body: `${lang === 'ar' ? 'تم استخراج التذكرة:' : 'Ticket:'} ${ticket}`,
+          body: `${pickLang(lang, {
+            ar: 'تم استخراج التذكرة:',
+            fr: 'Ticket :',
+            amz: 'ⵜⵉⴽⵉ:',
+            en: 'Ticket:',
+            es: 'Ticket:',
+          })} ${ticket}`,
           type: 'success',
         }
       );
     } catch (err: any) {
       console.error('Error scanning uploaded QR image:', err);
-      const errMsg = lang === 'ar'
-        ? 'لم يتم العثور على رمز QR صالح في الصورة المرفوعة. تأكد من وضوح الصورة.'
-        : 'Impossible de lire le code QR sur cette image. Veuillez réessayer.';
-      showToast(lang === 'ar' ? 'تعذر قراءة رمز QR' : 'Lecture QR impossible', errMsg, 'warning');
+      const errMsg = pickLang(lang, {
+        ar: 'لم يتم العثور على رمز QR صالح في الصورة المرفوعة. تأكد من وضوح الصورة.',
+        fr: 'Impossible de lire le code QR sur cette image. Veuillez réessayer.',
+        amz: 'ⵓⵔ ⵉⵜⵜⵢⴰⴼⴰ ⵓⵏⴳⴰⵍ QR ⵉⵖⵓⴷⴰⵏ ⴳ ⵜⵡⵍⴰⴼⵜ ⴰⴷ.',
+        en: 'No valid QR code found in the uploaded image. Please check image clarity.',
+        es: 'No se encontró un código QR válido en la imagen.',
+      });
+      showToast(
+        pickLang(lang, {
+          ar: 'تعذر قراءة رمز QR',
+          fr: 'Lecture QR impossible',
+          amz: 'ⵓⵔ ⵉⵣⵎⵉⵔ ⴰⴷ ⵉⵖⵔ QR',
+          en: 'Unable to read QR code',
+          es: 'No se pudo leer el QR',
+        }),
+        errMsg,
+        'warning'
+      );
     } finally {
       // Reset input value so same file can be chosen again if needed
       if (e.target) e.target.value = '';
@@ -294,10 +437,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           (decodedText) => {
             if (isStopped) return;
             isStopped = true;
-            let ticket = decodedText.trim();
-            if (decodedText.includes('track=')) {
-              ticket = decodeURIComponent(decodedText.split('track=')[1].split('&')[0]).trim();
-            }
+            const parsed = parseScannedQrResult(decodedText);
+            const ticket = parsed.query || decodedText.trim();
             setSearchTerm(ticket);
             performSearch(ticket);
             if (html5Qr && html5Qr.isScanning) {
@@ -312,7 +453,14 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
       } catch (err: any) {
         console.error('Html5Qrcode client scanner error:', err);
         setClientScannerError(
-          err?.message || (lang === 'ar' ? 'تعذر فتح الكاميرا. يرجى السماح بالإذن في المتصفح.' : 'Impossible d’accéder à la caméra.')
+          err?.message ||
+            pickLang(lang, {
+              ar: 'تعذر فتح الكاميرا. يرجى السماح بالإذن في المتصفح.',
+              fr: 'Impossible d’accéder à la caméra.',
+              amz: 'ⵓⵔ ⵉⵣⵎⵉⵔ ⴰⴷ ⵉⵕⵥⵎ ⵜⴰⴽⴰⵎⵉⵔⴰ.',
+              en: 'Unable to open camera. Please allow camera permission.',
+              es: 'No se pudo abrir la cámara. Permite el acceso en el navegador.',
+            })
         );
       }
     }, 250);
@@ -354,25 +502,51 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
       const processed = await processCihReceiptFile(file);
       await updateBookingCihReceipt(bookingId, processed);
       sendDualAlert(
-        lang === 'ar' ? 'تم رفع إيصال CIH وحفظه بنجاح ✅' : 'Reçu CIH envoyé avec succès ✅',
+        pickLang(lang, {
+          ar: 'تم رفع إيصال CIH وحفظه بنجاح ✅',
+          fr: 'Reçu CIH envoyé avec succès ✅',
+          amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⵙⵉⵍⵖ ⵏ CIH ✅',
+          en: 'CIH Receipt Uploaded Successfully ✅',
+          es: 'Recibo CIH subido con éxito ✅',
+        }),
         {
-          body: lang === 'ar'
-            ? 'تم ربط الإيصال بتذكرتك وظهوره مباشرة في لوحة الصالون.'
-            : 'Votre reçu est maintenant visible instantanément par le salon.',
+          body: pickLang(lang, {
+            ar: 'تم ربط الإيصال بتذكرتك وظهوره مباشرة في لوحة الصالون.',
+            fr: 'Votre reçu est maintenant visible instantanément par le salon.',
+            amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⴳ ⵜⴼⵍⵡⵉⵜ ⵏ ⵓⵙⴰⵍⵓⵏ.',
+            en: 'Your receipt is now visible on the salon dashboard.',
+            es: 'Tu recibo ya es visible en el panel del salón.',
+          }),
           type: 'success',
         }
       );
     } catch (err) {
       console.error('Post-booking CIH receipt upload failed:', err);
       setCihUploadError(
-        lang === 'ar'
-          ? 'تعذر حفظ الإيصال حالياً. يرجى المحاولة مرة أخرى.'
-          : 'Impossible d’enregistrer le reçu pour le moment.'
+        pickLang(lang, {
+          ar: 'تعذر حفظ الإيصال حالياً. يرجى المحاولة مرة أخرى.',
+          fr: 'Impossible d’enregistrer le reçu pour le moment.',
+          amz: 'ⵓⵔ ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⵙⵉⵍⵖ ⵖⵉⵍⴰⴷ.',
+          en: 'Could not save the receipt right now. Please try again.',
+          es: 'No se pudo guardar el recibo ahora. Inténtalo de nuevo.',
+        })
       );
       sendDualAlert(
-        lang === 'ar' ? 'تعذر رفع الإيصال' : 'Erreur d’envoi du reçu',
+        pickLang(lang, {
+          ar: 'تعذر رفع الإيصال',
+          fr: 'Erreur d’envoi du reçu',
+          amz: 'ⴰⵣⴳⴰⵍ ⴳ ⵓⵙⵉⵍⵖ',
+          en: 'Receipt upload failed',
+          es: 'Error al subir recibo',
+        }),
         {
-          body: lang === 'ar' ? 'يرجى التحقق من الاتصال والمحاولة مجدداً.' : 'Veuillez réessayer.',
+          body: pickLang(lang, {
+            ar: 'يرجى التحقق من الاتصال والمحاولة مجدداً.',
+            fr: 'Veuillez réessayer.',
+            amz: 'ⴰⵔⵎ ⵜⵉⴽⴽⵍⵜ ⵢⴰⴹⵏ.',
+            en: 'Please check your connection and try again.',
+            es: 'Verifica tu conexión e inténtalo de nuevo.',
+          }),
           type: 'warning',
         }
       );
@@ -387,17 +561,41 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
       await clientRescheduleResponse(bookingId, accepted);
       if (accepted) {
         sendDualAlert(
-          lang === 'ar' ? 'تم قبول الموعد الجديد وقفل الكرسي ✅' : 'Nouvel horaire accepté ✅',
+          pickLang(lang, {
+            ar: 'تم قبول الموعد الجديد وقفل الكرسي ✅',
+            fr: 'Nouvel horaire accepté ✅',
+            amz: 'ⴰⴽⵓⴷ ⴰⵎⴰⵢⵏⵓ ⵉⵜⵜⵓⵙⵙⴷⴰ ✅',
+            en: 'New Time Accepted ✅',
+            es: 'Nuevo horario aceptado ✅',
+          }),
           {
-            body: lang === 'ar' ? 'تم تأكيد موعدك بالتوقيت الجديد بنجاح في صالون بومليك.' : 'Votre créneau est confirmé avec succès.',
+            body: pickLang(lang, {
+              ar: 'تم تأكيد موعدك بالتوقيت الجديد بنجاح في صالون بومليك.',
+              fr: 'Votre créneau est confirmé avec succès.',
+              amz: 'ⴰⵙⵉⵀⵍ ⵏⵏⴽ ⵉⵜⵜⵓⵙⵙⴷⴰ ⴳ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ.',
+              en: 'Your booking is confirmed at Salon Boumlik.',
+              es: 'Tu cita está confirmada en Salon Boumlik.',
+            }),
             type: 'success',
           }
         );
       } else {
         sendDualAlert(
-          lang === 'ar' ? 'تم رفض الموعد وتحرير الوقت' : 'Rendez-vous annulé',
+          pickLang(lang, {
+            ar: 'تم رفض الموعد وتحرير الوقت',
+            fr: 'Rendez-vous annulé',
+            amz: 'ⴰⵙⵉⵀⵍ ⵉⵜⵜⵓⵙⵔ',
+            en: 'Booking Declined & Released',
+            es: 'Cita rechazada y cancelada',
+          }),
           {
-            body: lang === 'ar' ? 'تم إلغاء الموعد وتحرير الكرسي لزبائن آخرين.' : 'Le créneau a été libéré.',
+            body: pickLang(lang, {
+              ar: 'تم إلغاء الموعد وتحرير الكرسي لزبائن آخرين.',
+              fr: 'Le créneau a été libéré.',
+              amz: 'ⴰⴽⵓⴷ ⵉⵜⵜⵓⵙⵍⵍⵉ ⵉ ⵉⵎⵙⴰⵖⵏ ⵢⴰⴹⵏ.',
+              en: 'The slot has been released for other clients.',
+              es: 'El turno ha sido liberado.',
+            }),
             type: 'warning',
           }
         );
@@ -405,9 +603,21 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     } catch (err) {
       console.error('Failed to respond to reschedule:', err);
       sendDualAlert(
-        lang === 'ar' ? 'تعذر تحديث الموعد' : 'Erreur de mise à jour',
+        pickLang(lang, {
+          ar: 'تعذر تحديث الموعد',
+          fr: 'Erreur de mise à jour',
+          amz: 'ⴰⵣⴳⴰⵍ ⴳ ⵓⵙⴷⵖⵉ',
+          en: 'Update failed',
+          es: 'Error al actualizar',
+        }),
         {
-          body: lang === 'ar' ? 'يرجى المحاولة مرة أخرى.' : 'Veuillez réessayer.',
+          body: pickLang(lang, {
+            ar: 'يرجى المحاولة مرة أخرى.',
+            fr: 'Veuillez réessayer.',
+            amz: 'ⴰⵔⵎ ⵜⵉⴽⴽⵍⵜ ⵢⴰⴹⵏ.',
+            en: 'Please try again.',
+            es: 'Inténtalo de nuevo.',
+          }),
           type: 'warning',
         }
       );
@@ -415,18 +625,43 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
   };
 
   const handleClientCancel = async (booking: AppointmentBooking) => {
-    const confirmMsg = lang === 'ar'
-      ? 'هل أنت متأكد من رغبتك في إلغاء هذا الموعد وتحرير الوقت لزبون آخر؟'
-      : 'Êtes-vous sûr de vouloir annuler ce rendez-vous ?';
+    const confirmMsg = pickLang(lang, {
+      ar: 'هل أنت متأكد من رغبتك في إلغاء هذا الموعد وتحرير الوقت لزبون آخر؟',
+      fr: 'Êtes-vous sûr de vouloir annuler ce rendez-vous ?',
+      amz: 'ⵉⵙ ⵜⵔⵉⴷ ⴰⴷ ⵜⵙⵔⴷ ⴰⵙⵉⵀⵍ ⴰⴷ?',
+      en: 'Are you sure you want to cancel this appointment?',
+      es: '¿Seguro que deseas cancelar esta cita?',
+    });
     if (window.confirm(confirmMsg)) {
       try {
-        await cancelClientBooking(booking.id, 'قام الزبون بإلغاء الموعد عبر صفحة التتبع.');
+        await cancelClientBooking(
+          booking.id,
+          pickLang(lang, {
+            ar: 'قام الزبون بإلغاء الموعد عبر صفحة التتبع.',
+            fr: 'Annulé par le client depuis la page de suivi.',
+            amz: 'ⵉⵙⵔ ⵓⵎⵙⴰⵖ ⴰⵙⵉⵀⵍ ⵙⴳ ⵜⴼⵍⵡⵉⵜ ⵏ ⵓⴹⴼⴰⵕ.',
+            en: 'Cancelled by client from the booking tracker.',
+            es: 'Cancelado por el cliente desde el seguimiento.',
+          })
+        );
       } catch (err) {
         console.error('Failed to cancel booking:', err);
         sendDualAlert(
-          lang === 'ar' ? 'تعذر إلغاء الموعد' : 'Erreur d’annulation',
+          pickLang(lang, {
+            ar: 'تعذر إلغاء الموعد',
+            fr: 'Erreur d’annulation',
+            amz: 'ⴰⵣⴳⴰⵍ ⴳ ⵓⵙⵔ',
+            en: 'Cancellation failed',
+            es: 'Error al cancelar',
+          }),
           {
-            body: lang === 'ar' ? 'يرجى المحاولة مرة أخرى.' : 'Veuillez réessayer.',
+            body: pickLang(lang, {
+              ar: 'يرجى المحاولة مرة أخرى.',
+              fr: 'Veuillez réessayer.',
+              amz: 'ⴰⵔⵎ ⵜⵉⴽⴽⵍⵜ ⵢⴰⴹⵏ.',
+              en: 'Please try again.',
+              es: 'Inténtalo de nuevo.',
+            }),
             type: 'warning',
           }
         );
@@ -441,7 +676,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-600/20 border border-emerald-400/50 text-emerald-300 font-bold text-xs">
             <Award className="w-3.5 h-3.5" />
             <span>
-              {lang === 'ar' ? 'تمت الخدمة بنجاح ✓' : lang === 'es' ? 'Servicio completado ✓' : 'Prestation Terminée ✓'}
+              {pickLang(lang, {
+                ar: 'تمت الخدمة بنجاح ✓',
+                fr: 'Prestation Terminée ✓',
+                amz: 'ⵜⴰⵡⵓⵔⵉ ⵜⵎⴷⴰ ✓',
+                en: 'Service Completed ✓',
+                es: 'Servicio completado ✓',
+              })}
             </span>
           </div>
         );
@@ -450,7 +691,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-xs">
             <CheckCircle2 className="w-3.5 h-3.5" />
             <span>
-              {lang === 'ar' ? 'تم تأكيد وقبول الموعد' : lang === 'es' ? 'Reserva confirmada' : 'Rendez-vous Confirmé'}
+              {pickLang(lang, {
+                ar: 'تم تأكيد وقبول الموعد',
+                fr: 'Rendez-vous Confirmé',
+                amz: 'ⴰⵙⵉⵀⵍ ⵉⵜⵜⵓⵙⵙⴷⴰ',
+                en: 'Booking Confirmed',
+                es: 'Reserva confirmada',
+              })}
             </span>
           </div>
         );
@@ -459,7 +706,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-400 font-bold text-xs animate-pulse">
             <Clock3 className="w-3.5 h-3.5" />
             <span>
-              {lang === 'ar' ? 'اقتراح توقيت جديد (بانتظار موافقتك)' : lang === 'es' ? 'Nuevo horario propuesto' : 'Hora Réaménagée (En attente)'}
+              {pickLang(lang, {
+                ar: 'اقتراح توقيت جديد (بانتظار موافقتك)',
+                fr: 'Horaire Réaménagé (En attente)',
+                amz: 'ⴰⵙⵙⵓⵎⵔ ⵏ ⵓⴽⵓⴷ ⴰⵎⴰⵢⵏⵓ',
+                en: 'New Time Proposed (Pending)',
+                es: 'Nuevo horario propuesto',
+              })}
             </span>
           </div>
         );
@@ -468,7 +721,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/15 border border-orange-500/40 text-orange-300 font-bold text-xs">
             <AlertCircle className="w-3.5 h-3.5" />
             <span>
-              {lang === 'ar' ? 'تغيب عن الموعد (No-Show)' : 'Absence (No-Show)'}
+              {pickLang(lang, {
+                ar: 'تغيب عن الموعد (No-Show)',
+                fr: 'Absence (No-Show)',
+                amz: 'ⵓⵔ ⵉⴷⴷⵉ (No-Show)',
+                en: 'Missed (No-Show)',
+                es: 'Ausencia (No-Show)',
+              })}
             </span>
           </div>
         );
@@ -477,7 +736,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-400 font-bold text-xs">
             <XCircle className="w-3.5 h-3.5 text-zinc-500" />
             <span>
-              {lang === 'ar' ? 'موعد ملغى وتم تحرير الكرسي' : lang === 'es' ? 'Cita cancelada' : 'Rendez-vous Annulé'}
+              {pickLang(lang, {
+                ar: 'موعد ملغى وتم تحرير الكرسي',
+                fr: 'Rendez-vous Annulé',
+                amz: 'ⴰⵙⵉⵀⵍ ⵉⵜⵜⵓⵙⵔ',
+                en: 'Appointment Cancelled',
+                es: 'Cita cancelada',
+              })}
             </span>
           </div>
         );
@@ -486,7 +751,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 font-bold text-xs">
             <XCircle className="w-3.5 h-3.5" />
             <span>
-              {lang === 'ar' ? 'الموعد غير متاح' : lang === 'es' ? 'Cita cancelada/no disponible' : 'Demande Non Disponible'}
+              {pickLang(lang, {
+                ar: 'الموعد غير متاح',
+                fr: 'Demande Non Disponible',
+                amz: 'ⴰⴽⵓⴷ ⵓⵔ ⵉⵍⵍⵉ',
+                en: 'Slot Unavailable',
+                es: 'No disponible',
+              })}
             </span>
           </div>
         );
@@ -495,11 +766,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/15 border border-purple-400/40 text-purple-300 font-bold text-xs">
             <Clock className="w-3.5 h-3.5" />
             <span>
-              {lang === 'ar'
-                ? 'وقت مرن — الحلاق يختار لك أفضل توقيت متاح'
-                : lang === 'en'
-                ? 'Flexible Time — Barber Assigning Optimal Slot'
-                : 'Horaire flexible — Le barbier attribue votre créneau'}
+              {pickLang(lang, {
+                ar: 'وقت مرن — الحلاق يختار لك أفضل توقيت متاح',
+                fr: 'Horaire flexible — Le barbier attribue votre créneau',
+                amz: 'ⴰⴽⵓⴷ ⴰⵍⴰⵡⴰⵏ — ⴰⵎⴽⵕⴰⴹ ⴰⴷ ⵉⴼⵔⵏ',
+                en: 'Flexible Time — Barber Assigning Optimal Slot',
+                es: 'Horario flexible — Asignación del barbero',
+              })}
             </span>
           </div>
         );
@@ -509,7 +782,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold text-xs animate-pulse">
             <Clock className="w-3.5 h-3.5" />
             <span>
-              {lang === 'ar' ? 'قيد المراجعة وتجهيز الكرسي' : lang === 'es' ? 'Pendiente de confirmación' : 'En Attente de Validation'}
+              {pickLang(lang, {
+                ar: 'قيد المراجعة وتجهيز الكرسي',
+                fr: 'En Attente de Validation',
+                amz: 'ⴳ ⵓⵎⵏⵉⴷ ⵏ ⵓⵙⵙⴷⵓ',
+                en: 'Pending Confirmation',
+                es: 'Pendiente de confirmación',
+              })}
             </span>
           </div>
         );
@@ -602,19 +881,26 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
       });
       setRedeemFeedback({
         type: 'success',
-        message:
-          lang === 'ar'
-            ? `تم استبدال ${tier.pointsCost} نقطة بنجاح! خصم -${tier.discountMAD} MAD جاهز وسيُطبق تلقائياً في حجزك القادم.`
-            : lang === 'en'
-            ? `Redeemed ${tier.pointsCost} pts! -${tier.discountMAD} MAD discount is now active for your next booking.`
-            : lang === 'es'
-            ? `¡Canjeados ${tier.pointsCost} pts! Descuento de -${tier.discountMAD} MAD activo para tu próxima reserva.`
-            : `${tier.pointsCost} pts échangés ! Une remise de -${tier.discountMAD} MAD s'appliquera à votre prochaine réservation.`,
+        message: pickLang(lang, {
+          ar: `تم استبدال ${tier.pointsCost} نقطة بنجاح! خصم -${tier.discountMAD} MAD جاهز وسيُطبق تلقائياً في حجزك القادم.`,
+          fr: `${tier.pointsCost} pts échangés ! Une remise de -${tier.discountMAD} MAD s'appliquera à votre prochaine réservation.`,
+          amz: `ⵙⵏⴼⵍⵏ ${tier.pointsCost} ⵏ ⵜⵏⵇⵇⵉⴹⵉⵏ! ⴰⵙⵙⵏⵇⵙ -${tier.discountMAD} MAD ⵉⵀⵢⵢⴰ ⵉ ⵓⵙⵉⵀⵍ ⵉⴷⴷⴰⵏ.`,
+          en: `Redeemed ${tier.pointsCost} pts! -${tier.discountMAD} MAD discount is now active for your next booking.`,
+          es: `¡Canjeados ${tier.pointsCost} pts! Descuento de -${tier.discountMAD} MAD activo para tu próxima reserva.`,
+        }),
       });
     } catch (err: any) {
       setRedeemFeedback({
         type: 'error',
-        message: err?.message || (lang === 'ar' ? 'تعذر استبدال النقاط حالياً.' : 'Échec de l’échange.'),
+        message:
+          err?.message ||
+          pickLang(lang, {
+            ar: 'تعذر استبدال النقاط حالياً.',
+            fr: 'Échec de l’échange.',
+            amz: 'ⵓⵔ ⵉⵣⵎⵉⵔ ⴰⴷ ⵉⵙⵏⴼⵍ ⵜⵉⵏⵇⵇⵉⴹⵉⵏ ⵖⵉⵍⴰ.',
+            en: 'Unable to redeem points right now.',
+            es: 'No se pudieron canjear los puntos ahora.',
+          }),
       });
     } finally {
       setRedeemingTierId(null);
@@ -714,16 +1000,31 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                 title="Scanner le QR code du ticket avec la caméra"
               >
                 <Camera className="w-4 h-4 text-blue-400" />
-                <span>{lang === 'ar' ? 'مسح الكاميرا' : lang === 'es' ? 'Cámara QR' : 'Scanner Caméra'}</span>
+                <span>
+                  {pickLang(lang, {
+                    ar: 'مسح الكاميرا',
+                    fr: 'Scanner Caméra',
+                    amz: 'ⴰⵙⴽⴰⵏⵉ ⵙ ⵜⴽⴰⵎⵉⵔⴰ',
+                    en: 'Camera Scan',
+                    es: 'Cámara QR',
+                  })}
+                </span>
               </button>
 
               {/* Upload QR Image File Button */}
               <label 
                 className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-amber-300 hover:text-white font-bold text-xs rounded-xl border border-zinc-700 transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                title="Charger une image ou capture d'écran du QR code"
               >
                 <Upload className="w-4 h-4 text-amber-400" />
-                <span>{lang === 'ar' ? 'تحميل صورة QR' : lang === 'es' ? 'Subir imagen QR' : 'Uploader Image QR'}</span>
+                <span>
+                  {pickLang(lang, {
+                    ar: 'تحميل صورة QR',
+                    fr: 'Uploader Image QR',
+                    amz: 'ⵙⵙⴽⵛⵎ ⵜⴰⵡⵍⴰⴼⵜ QR',
+                    en: 'Upload QR Image',
+                    es: 'Subir imagen QR',
+                  })}
+                </span>
                 <input
                   type="file"
                   accept="image/*"
@@ -749,7 +1050,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           <div className="mt-2.5 flex items-center justify-between px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-[11px]">
             <span className="text-zinc-400 flex items-center gap-1.5">
               <Bell className="w-3.5 h-3.5 text-amber-400" />
-              <span>{lang === 'ar' ? 'تفعيل رنين وإشعارات الموعد في المتصفح' : 'Alertes sonores & notifications'}</span>
+              <span>
+                {pickLang(lang, {
+                  ar: 'تفعيل رنين وإشعارات الموعد في المتصفح',
+                  fr: 'Alertes sonores & notifications',
+                  amz: 'ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵓⵙⵉⵀⵍ',
+                  en: 'Browser sound & push alerts',
+                  es: 'Alertas y notificaciones',
+                })}
+              </span>
             </span>
             <button
               type="button"
@@ -757,7 +1066,23 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
               className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
             >
               <Bell className="w-3 h-3 text-amber-400" />
-              <span>{notifStatus === 'granted' ? (lang === 'ar' ? 'الإشعارات مفعلة ✓' : 'Activé ✓') : (lang === 'ar' ? '🔔 تفعيل الإشعارات' : '🔔 Activer')}</span>
+              <span>
+                {notifStatus === 'granted'
+                  ? pickLang(lang, {
+                      ar: 'الإشعارات مفعلة ✓',
+                      fr: 'Activé ✓',
+                      amz: 'ⵉⵕⵥⵎ ✓',
+                      en: 'Enabled ✓',
+                      es: 'Activado ✓',
+                    })
+                  : pickLang(lang, {
+                      ar: '🔔 تفعيل الإشعارات',
+                      fr: '🔔 Activer',
+                      amz: '🔔 ⵕⵥⵎ',
+                      en: '🔔 Enable',
+                      es: '🔔 Activar',
+                    })}
+              </span>
             </button>
           </div>
         </div>
@@ -769,7 +1094,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
               <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
                 <div className="flex items-center gap-1.5 text-white font-bold text-sm">
                   <Camera className="w-4 h-4 text-blue-400" />
-                  <span>{lang === 'ar' ? 'مسح رمز التذكرة بالكاميرا' : 'Scanner le ticket QR'}</span>
+                  <span>
+                    {pickLang(lang, {
+                      ar: 'مسح رمز التذكرة بالكاميرا',
+                      fr: 'Scanner le ticket QR',
+                      amz: 'ⴰⵙⴽⴰⵏⵉ ⵏ QR ⵙ ⵜⴽⴰⵎⵉⵔⴰ',
+                      en: 'Scan Ticket QR',
+                      es: 'Escanear QR del ticket',
+                    })}
+                  </span>
                 </div>
 
                 <button 
@@ -792,7 +1125,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
               />
 
               <div className="text-[11px] text-zinc-400">
-                <span>{lang === 'ar' ? 'قم بتوجيه الكاميرا الخلفية نحو رمز الـ QR للتذكرة' : 'Visez le QR code avec votre caméra arrière'}</span>
+                <span>
+                  {pickLang(lang, {
+                    ar: 'قم بتوجيه الكاميرا الخلفية نحو رمز الـ QR للتذكرة',
+                    fr: 'Visez le QR code avec votre caméra arrière',
+                    amz: 'ⵙⵙⵡⴰⵍⴰ ⵜⴰⴽⴰⵎⵉⵔⴰ ⵜⴰⵎⴰⴳⵓⵣⵜ ⵖⵔ ⵓⵏⴳⴰⵍ QR',
+                    en: 'Point your rear camera at the ticket QR code',
+                    es: 'Apunta la cámara trasera al código QR del ticket',
+                  })}
+                </span>
               </div>
             </div>
           </div>
@@ -803,7 +1144,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
           {isSyncingFirestore && foundBookings.length === 0 ? (
             <div className="text-center py-8 text-zinc-400 text-xs">
               <RefreshCw className="w-7 h-7 text-amber-400 mx-auto mb-2 animate-spin" />
-              <p>{lang === 'ar' ? 'جاري جلب التذاكر من السحابة...' : 'Synchronisation en cours...'}</p>
+              <p>
+                {pickLang(lang, {
+                  ar: 'جاري جلب التذاكر من السحابة...',
+                  fr: 'Synchronisation en cours...',
+                  amz: 'ⴰⵙⵎⵙⴰⵙⴰ ⵉⵍⵍⴰ ⴳ ⵜⵉⵍⴰⵡⵜ...',
+                  en: 'Syncing bookings from cloud...',
+                  es: 'Sincronizando reservas...',
+                })}
+              </p>
             </div>
           ) : foundBookings.length === 0 && hasSearched && searchedCrmFallback ? (
             <div className="space-y-4">
@@ -833,9 +1182,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   </div>
                 </div>
                 <p className="text-zinc-400">
-                  {lang === 'ar'
-                    ? 'تم التعرف على ملف الزبون بنجاح في برنامج الولاء (لا توجد حجوزات نشطة حالياً).'
-                    : 'Profil client reconnu dans le programme de fidélité (aucune réservation active).'}
+                  {pickLang(lang, {
+                    ar: 'تم التعرف على ملف الزبون بنجاح في برنامج الولاء (لا توجد حجوزات نشطة حالياً).',
+                    fr: 'Profil client reconnu dans le programme de fidélité (aucune réservation active).',
+                    amz: 'ⵉⵜⵜⵓⵙⵙⴰⵏ ⵓⴼⴰⵢⵍⵓ ⵏ ⵓⵎⵙⴰⵖ ⴳ ⵓⵖⴰⵡⴰⵙ ⵏ ⵜⵏⴼⵍⵓⵙⵜ (ⵓⵔ ⵍⵍⵉⵏ ⵉⵙⵉⵀⵍⵏ ⵖⵉⵍⴰ).',
+                    en: 'Client profile recognized in Loyalty Program (no active bookings right now).',
+                    es: 'Perfil de cliente reconocido en el programa de fidelidad (sin citas activas ahora).',
+                  })}
                 </p>
 
               {/* Loyalty Points Balance & Redeem Box inside CRM-only Profile */}
@@ -844,19 +1197,27 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   <div className="flex items-center gap-1.5 font-black text-amber-300">
                     <Coins className="w-4 h-4 text-amber-400" />
                     <span>
-                      {lang === 'ar'
-                        ? 'نقاط الولاء والاستبدال بخصم'
-                        : lang === 'en'
-                        ? 'Loyalty Points & Discounts'
-                        : lang === 'es'
-                        ? 'Puntos de Fidelidad y Descuentos'
-                        : 'Points de Fidélité & Remises'}
+                      {pickLang(lang, {
+                        ar: 'نقاط الولاء والاستبدال بخصم',
+                        fr: 'Points de Fidélité & Remises',
+                        amz: 'ⵜⵉⵏⵇⵇⵉⴹⵉⵏ ⵏ ⵜⵏⴼⵍⵓⵙⵜ ⴷ ⵓⵙⵙⵏⵇⵙ',
+                        en: 'Loyalty Points & Discounts',
+                        es: 'Puntos de Fidelidad y Descuentos',
+                      })}
                     </span>
                   </div>
                   <div className="font-mono font-black text-amber-400 text-sm tabular-nums">
                     {pointsSummary.pointsBalance} pts
                     <span className="text-[10px] text-zinc-400 font-normal ms-1.5">
-                      (+{pointsSummary.pointsPerVisit}/{lang === 'ar' ? 'زيارة' : 'visite'})
+                      (+{pointsSummary.pointsPerVisit}/
+                      {pickLang(lang, {
+                        ar: 'زيارة',
+                        fr: 'visite',
+                        amz: 'ⵜⵉⵔⵣⴰ',
+                        en: 'visit',
+                        es: 'visita',
+                      })}
+                      )
                     </span>
                   </div>
                 </div>
@@ -864,11 +1225,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                 {pointsSummary.activeDiscountMAD > 0 && (
                   <div className="px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-bold flex items-center justify-between">
                     <span>
-                      {lang === 'ar'
-                        ? 'رصيد خصم نشط للحجز القادم:'
-                        : lang === 'en'
-                        ? 'Active discount ready for next booking:'
-                        : 'Crédit remise actif pour votre prochain RDV :'}
+                      {pickLang(lang, {
+                        ar: 'رصيد خصم نشط للحجز القادم:',
+                        fr: 'Crédit remise actif pour votre prochain RDV :',
+                        amz: 'ⴰⵙⵙⵏⵇⵙ ⵉⵜⵜⵓⵕⵥⵎⵏ ⵉ ⵓⵙⵉⵀⵍ ⵉⴷⴷⴰⵏ:',
+                        en: 'Active discount ready for next booking:',
+                        es: 'Descuento activo para tu próxima cita:',
+                      })}
                     </span>
                     <span className="font-mono font-black tabular-nums">-{pointsSummary.activeDiscountMAD} MAD</span>
                   </div>
@@ -916,12 +1279,20 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                           {isBusy
                             ? '...'
                             : canRedeem
-                            ? lang === 'ar'
-                              ? `استبدل الآن ← ${tier.label.ar}`
-                              : `Redeem ${tier.label[langKey]}`
-                            : lang === 'ar'
-                            ? `تحتاج ${tier.pointsCost - pointsSummary.pointsBalance} نقطة`
-                            : `${tier.pointsCost - pointsSummary.pointsBalance} pts manquants`}
+                            ? pickLang(lang, {
+                                ar: `استبدل الآن ← ${tier.label.ar}`,
+                                fr: `Échanger ${tier.label[langKey]}`,
+                                amz: `ⵙⵏⴼⵍ ${tier.label.fr}`,
+                                en: `Redeem ${tier.label[langKey]}`,
+                                es: `Canjear ${tier.label[langKey]}`,
+                              })
+                            : pickLang(lang, {
+                                ar: `تحتاج ${tier.pointsCost - pointsSummary.pointsBalance} نقطة`,
+                                fr: `${tier.pointsCost - pointsSummary.pointsBalance} pts manquants`,
+                                amz: `ⵉⵅⵚⵚⴰ ⴽ ${tier.pointsCost - pointsSummary.pointsBalance} pts`,
+                                en: `${tier.pointsCost - pointsSummary.pointsBalance} pts needed`,
+                                es: `Faltan ${tier.pointsCost - pointsSummary.pointsBalance} pts`,
+                              })}
                         </div>
                       </button>
                     );
@@ -956,26 +1327,26 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       <div className="min-w-0">
                         <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
                           <span>
-                            {lang === 'ar'
-                              ? 'برنامج الولاء والمكافآت'
-                              : lang === 'en'
-                              ? 'Loyalty Program'
-                              : lang === 'es'
-                              ? 'Programa de Fidelidad'
-                              : 'Programme de Fidélité'}
+                            {pickLang(lang, {
+                              ar: 'برنامج الولاء والمكافآت',
+                              fr: 'Programme de Fidélité',
+                              amz: 'ⴰⵖⴰⵡⴰⵙ ⵏ ⵜⵏⴼⵍⵓⵙⵜ',
+                              en: 'Loyalty Program',
+                              es: 'Programa de Fidelidad',
+                            })}
                           </span>
                           {crmClientProfile?.isVip && (
                             <span className="text-[11px] font-bold text-amber-300">· 👑 VIP</span>
                           )}
                         </h3>
                         <p className="text-[11px] text-zinc-400 truncate">
-                          {lang === 'ar'
-                            ? `زيارات مؤكدة بالحضور: ${loyaltyProgress.verifiedVisits} · المستوى ${loyaltyProgress.currentTierNumber}`
-                            : lang === 'en'
-                            ? `Verified visits: ${loyaltyProgress.verifiedVisits} · Tier ${loyaltyProgress.currentTierNumber}`
-                            : lang === 'es'
-                            ? `Visitas confirmadas: ${loyaltyProgress.verifiedVisits} · Nivel ${loyaltyProgress.currentTierNumber}`
-                            : `Visites confirmées : ${loyaltyProgress.verifiedVisits} · Palier ${loyaltyProgress.currentTierNumber}`}
+                          {pickLang(lang, {
+                            ar: `زيارات مؤكدة بالحضور: ${loyaltyProgress.verifiedVisits} · المستوى ${loyaltyProgress.currentTierNumber}`,
+                            fr: `Visites confirmées : ${loyaltyProgress.verifiedVisits} · Palier ${loyaltyProgress.currentTierNumber}`,
+                            amz: `ⵜⵉⵔⵣⵉⵡⵉⵏ ⵉⵜⵜⵓⵙⵙⵏⵜⵎⵏ: ${loyaltyProgress.verifiedVisits} · ⴰⵙⵡⵉⵔ ${loyaltyProgress.currentTierNumber}`,
+                            en: `Verified visits: ${loyaltyProgress.verifiedVisits} · Tier ${loyaltyProgress.currentTierNumber}`,
+                            es: `Visitas confirmadas: ${loyaltyProgress.verifiedVisits} · Nivel ${loyaltyProgress.currentTierNumber}`,
+                          })}
                         </p>
                       </div>
                     </div>
@@ -1015,9 +1386,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono tabular-nums">
                       <span>
-                        {lang === 'ar'
-                          ? `المرحلة الحالية (${loyaltyProgress.previousMilestone} ← ${loyaltyProgress.nextMilestone})`
-                          : `Palier actuel (${loyaltyProgress.previousMilestone} → ${loyaltyProgress.nextMilestone})`}
+                        {pickLang(lang, {
+                          ar: `المرحلة الحالية (${loyaltyProgress.previousMilestone} ← ${loyaltyProgress.nextMilestone})`,
+                          fr: `Palier actuel (${loyaltyProgress.previousMilestone} → ${loyaltyProgress.nextMilestone})`,
+                          amz: `ⴰⵙⵡⵉⵔ ⴰⵎⵉⵔⴰⵏ (${loyaltyProgress.previousMilestone} → ${loyaltyProgress.nextMilestone})`,
+                          en: `Current stage (${loyaltyProgress.previousMilestone} → ${loyaltyProgress.nextMilestone})`,
+                          es: `Tramo actual (${loyaltyProgress.previousMilestone} → ${loyaltyProgress.nextMilestone})`,
+                        })}
                       </span>
                       <span className="text-amber-300 font-bold">
                         {loyaltyProgress.stepsInCurrentBracket} / 5
@@ -1082,39 +1457,49 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       <div className="flex items-center gap-1.5 text-emerald-300 font-bold">
                         <Gift className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
                         <span>
-                          {lang === 'ar'
-                            ? `مبروك! أكملت ${loyaltyProgress.justUnlockedMilestone} زيارات (${loyaltyProgress.justUnlockedRewardTitle}) — هدفك القادم: ${loyaltyProgress.nextMilestone}!`
-                            : lang === 'en'
-                            ? `Congrats! ${loyaltyProgress.justUnlockedMilestone} visits reached (${loyaltyProgress.justUnlockedRewardTitle}) — Next target: ${loyaltyProgress.nextMilestone}!`
-                            : `Félicitations ! ${loyaltyProgress.justUnlockedMilestone} visites atteintes (${loyaltyProgress.justUnlockedRewardTitle}) — Prochain palier : ${loyaltyProgress.nextMilestone} !`}
+                          {pickLang(lang, {
+                            ar: `مبروك! أكملت ${loyaltyProgress.justUnlockedMilestone} زيارات (${loyaltyProgress.justUnlockedRewardTitle}) — هدفك القادم: ${loyaltyProgress.nextMilestone}!`,
+                            fr: `Félicitations ! ${loyaltyProgress.justUnlockedMilestone} visites atteintes (${loyaltyProgress.justUnlockedRewardTitle}) — Prochain palier : ${loyaltyProgress.nextMilestone} !`,
+                            amz: `ⴰⵢⵢⵓⵣ! ⵜⵍⴽⵎⵜ ${loyaltyProgress.justUnlockedMilestone} ⵏ ⵜⵔⵣⴰ (${loyaltyProgress.justUnlockedRewardTitle}) — ⴰⵙⵡⵉⵔ ⵉⴷⴷⴰⵏ: ${loyaltyProgress.nextMilestone}!`,
+                            en: `Congrats! ${loyaltyProgress.justUnlockedMilestone} visits reached (${loyaltyProgress.justUnlockedRewardTitle}) — Next target: ${loyaltyProgress.nextMilestone}!`,
+                            es: `¡Felicidades! ${loyaltyProgress.justUnlockedMilestone} visitas alcanzadas (${loyaltyProgress.justUnlockedRewardTitle}) — Siguiente objetivo: ${loyaltyProgress.nextMilestone}!`,
+                          })}
                         </span>
                       </div>
                     )}
 
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-zinc-300 font-medium">
-                        {lang === 'ar'
-                          ? `متبقي ${loyaltyProgress.visitsRemaining} ${loyaltyProgress.visitsRemaining === 1 ? 'زيارة مؤكدة واحدة' : 'زيارات مؤكدة'} نحو مكافأة ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`
-                          : lang === 'en'
-                          ? `${loyaltyProgress.visitsRemaining} verified visit(s) away from ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`
-                          : `Plus que ${loyaltyProgress.visitsRemaining} visite(s) confirmée(s) avant le palier ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`}
+                        {pickLang(lang, {
+                          ar: `متبقي ${loyaltyProgress.visitsRemaining} ${loyaltyProgress.visitsRemaining === 1 ? 'زيارة مؤكدة واحدة' : 'زيارات مؤكدة'} نحو مكافأة ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`,
+                          fr: `Plus que ${loyaltyProgress.visitsRemaining} visite(s) confirmée(s) avant le palier ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`,
+                          amz: `ⴰⵔ ⵉⵜⵜⴰⴳⴳⵯⴰ ${loyaltyProgress.visitsRemaining} ⵏ ⵜⵔⵣⴰ ⵉ ⵜⵙⵎⵖⵓⵔⵜ ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`,
+                          en: `${loyaltyProgress.visitsRemaining} verified visit(s) away from ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`,
+                          es: `Faltan ${loyaltyProgress.visitsRemaining} visita(s) confirmada(s) para ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`,
+                        })}
                       </span>
 
                       {(crmClientProfile?.customDiscountMAD ?? 0) > 0 && (
                         <span className="font-mono font-bold text-amber-300 tabular-nums">
-                          {lang === 'ar'
-                            ? `خصم نشط: -${crmClientProfile?.customDiscountMAD} MAD`
-                            : `Remise active : -${crmClientProfile?.customDiscountMAD} MAD`}
+                          {pickLang(lang, {
+                            ar: `خصم نشط: -${crmClientProfile?.customDiscountMAD} MAD`,
+                            fr: `Remise active : -${crmClientProfile?.customDiscountMAD} MAD`,
+                            amz: `ⴰⵙⵙⵏⵇⵙ ⵉⵕⵥⵎⵏ : -${crmClientProfile?.customDiscountMAD} MAD`,
+                            en: `Active discount: -${crmClientProfile?.customDiscountMAD} MAD`,
+                            es: `Descuento activo: -${crmClientProfile?.customDiscountMAD} MAD`,
+                          })}
                         </span>
                       )}
                     </div>
 
                     <p className="text-[10px] text-zinc-500">
-                      {lang === 'ar'
-                        ? 'ملاحظة: تُحتسب نقاط الولاء تلقائياً فقط عند تأكيد حضورك في الصالون.'
-                        : lang === 'en'
-                        ? 'Note: Points are credited strictly after admin attendance confirmation at the salon.'
-                        : 'Note : Les points sont validés uniquement après confirmation de votre présence au salon.'}
+                      {pickLang(lang, {
+                        ar: 'ملاحظة: تُحتسب نقاط الولاء تلقائياً فقط عند تأكيد حضورك في الصالون.',
+                        fr: 'Note : Les points sont validés uniquement après confirmation de votre présence au salon.',
+                        amz: 'ⵜⴰⵎⵍⴰⵢⵜ: ⵜⵉⵏⵇⵇⵉⴹⵉⵏ ⵜⵜⵓⵙⵙⵏⵜⵎⵏ ⵖⴰⵙ ⴷⴼⴼⵉⵔ ⵓⵜⵜⴱⵜ ⵏ ⵓⵍⵍⵓⵖ ⵏⵏⴽ ⴳ ⵓⵙⴰⵍⵓⵏ.',
+                        en: 'Note: Points are credited strictly after admin attendance confirmation at the salon.',
+                        es: 'Nota: Los puntos se acreditan solo tras confirmar tu asistencia en el salón.',
+                      })}
                     </p>
                   </div>
 
@@ -1134,21 +1519,23 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         <div>
                           <div className="text-xs font-black text-white flex items-center gap-1.5">
                             <span>
-                              {lang === 'ar'
-                                ? 'نقاط الولاء • خصم الخدمات القادمة'
-                                : lang === 'en'
-                                ? 'Loyalty Points • Redeem for Discounts'
-                                : lang === 'es'
-                                ? 'Puntos de Fidelidad • Canjear Descuentos'
-                                : 'Points de Fidélité • Échanger contre Remises'}
+                              {pickLang(lang, {
+                                ar: 'نقاط الولاء • خصم الخدمات القادمة',
+                                fr: 'Points de Fidélité • Échanger contre Remises',
+                                amz: 'ⵜⵉⵏⵇⵇⵉⴹⵉⵏ ⵏ ⵜⵏⴼⵍⵓⵙⵜ • ⴰⵙⵙⵏⵇⵙ ⵏ ⵜⵡⵓⵔⵉⵡⵉⵏ',
+                                en: 'Loyalty Points • Redeem for Discounts',
+                                es: 'Puntos de Fidelidad • Canjear Descuentos',
+                              })}
                             </span>
                           </div>
                           <div className="text-[10px] text-zinc-400">
-                            {lang === 'ar'
-                              ? `تكسب +${pointsSummary.pointsPerVisit} نقاط عن كل زيارة مكتملة · المكتسب: ${pointsSummary.pointsEarnedTotal} | المستبدل: ${pointsSummary.pointsRedeemedTotal}`
-                              : lang === 'en'
-                              ? `Earn +${pointsSummary.pointsPerVisit} pts per verified visit · Earned: ${pointsSummary.pointsEarnedTotal} | Redeemed: ${pointsSummary.pointsRedeemedTotal}`
-                              : `+${pointsSummary.pointsPerVisit} pts / visite confirmée · Gagnés : ${pointsSummary.pointsEarnedTotal} | Utilisés : ${pointsSummary.pointsRedeemedTotal}`}
+                            {pickLang(lang, {
+                              ar: `تكسب +${pointsSummary.pointsPerVisit} نقاط عن كل زيارة مكتملة · المكتسب: ${pointsSummary.pointsEarnedTotal} | المستبدل: ${pointsSummary.pointsRedeemedTotal}`,
+                              fr: `+${pointsSummary.pointsPerVisit} pts / visite confirmée · Gagnés : ${pointsSummary.pointsEarnedTotal} | Utilisés : ${pointsSummary.pointsRedeemedTotal}`,
+                              amz: `+${pointsSummary.pointsPerVisit} pts / ⵜⵉⵔⵣⴰ · ⵉⵜⵜⵓⵙⵎⵓⵏⵏ: ${pointsSummary.pointsEarnedTotal} | ⵉⵜⵜⵓⵙⵏⴼⵍⵏ: ${pointsSummary.pointsRedeemedTotal}`,
+                              en: `Earn +${pointsSummary.pointsPerVisit} pts per verified visit · Earned: ${pointsSummary.pointsEarnedTotal} | Redeemed: ${pointsSummary.pointsRedeemedTotal}`,
+                              es: `+${pointsSummary.pointsPerVisit} pts / visita · Ganados: ${pointsSummary.pointsEarnedTotal} | Canjeados: ${pointsSummary.pointsRedeemedTotal}`,
+                            })}
                           </div>
                         </div>
                       </div>
@@ -1165,11 +1552,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       <div className="space-y-1">
                         <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono tabular-nums">
                           <span>
-                            {lang === 'ar'
-                              ? `الهدف القادم للاستبدال: ${pointsSummary.nextTier.pointsCost} نقطة ← خصم -${pointsSummary.nextTier.discountMAD} MAD`
-                              : lang === 'en'
-                              ? `Next reward tier: ${pointsSummary.nextTier.pointsCost} pts → -${pointsSummary.nextTier.discountMAD} MAD off`
-                              : `Prochain palier : ${pointsSummary.nextTier.pointsCost} pts → -${pointsSummary.nextTier.discountMAD} MAD`}
+                            {pickLang(lang, {
+                              ar: `الهدف القادم للاستبدال: ${pointsSummary.nextTier.pointsCost} نقطة ← خصم -${pointsSummary.nextTier.discountMAD} MAD`,
+                              fr: `Prochain palier : ${pointsSummary.nextTier.pointsCost} pts → -${pointsSummary.nextTier.discountMAD} MAD`,
+                              amz: `ⴰⵙⵡⵉⵔ ⵉⴷⴷⴰⵏ: ${pointsSummary.nextTier.pointsCost} pts → -${pointsSummary.nextTier.discountMAD} MAD`,
+                              en: `Next reward tier: ${pointsSummary.nextTier.pointsCost} pts → -${pointsSummary.nextTier.discountMAD} MAD off`,
+                              es: `Próximo nivel: ${pointsSummary.nextTier.pointsCost} pts → -${pointsSummary.nextTier.discountMAD} MAD`,
+                            })}
                           </span>
                           <span className="text-amber-300 font-bold">
                             {pointsSummary.pointsBalance} / {pointsSummary.nextTier.pointsCost}
@@ -1188,11 +1577,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     {pointsSummary.activeDiscountMAD > 0 && (
                       <div className="px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center justify-between gap-2">
                         <span>
-                          {lang === 'ar'
-                            ? '🎟️ لديك رصيد خصم نشط سيُخصم تلقائياً عند الحجز القادم:'
-                            : lang === 'en'
-                            ? '🎟️ Active discount voucher ready for your next booking:'
-                            : '🎟️ Bon de réduction actif pour votre prochain rendez-vous :'}
+                          {pickLang(lang, {
+                            ar: '🎟️ لديك رصيد خصم نشط سيُخصم تلقائياً عند الحجز القادم:',
+                            fr: '🎟️ Bon de réduction actif pour votre prochain rendez-vous :',
+                            amz: '🎟️ ⵜⵍⵍⴰ ⵖⵓⵔⴽ ⵜⵏⴼⵓⵍⵜ ⵏ ⵓⵙⵙⵏⵇⵙ ⵉ ⵓⵙⵉⵀⵍ ⵉⴷⴷⴰⵏ:',
+                            en: '🎟️ Active discount voucher ready for your next booking:',
+                            es: '🎟️ Cupón de descuento activo para tu próxima cita:',
+                          })}
                         </span>
                         <span className="font-mono font-black text-sm tabular-nums">
                           -{pointsSummary.activeDiscountMAD} MAD
@@ -1244,14 +1635,20 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                               {isBusy
                                 ? '...'
                                 : canRedeem
-                                ? lang === 'ar'
-                                  ? 'استبدال النقاط ← خصم فوري'
-                                  : lang === 'en'
-                                  ? 'Redeem Now'
-                                  : 'Échanger maintenant'
-                                : lang === 'ar'
-                                ? `ينقصك ${tier.pointsCost - pointsSummary.pointsBalance} نقطة`
-                                : `${tier.pointsCost - pointsSummary.pointsBalance} pts left`}
+                                ? pickLang(lang, {
+                                    ar: 'استبدال النقاط ← خصم فوري',
+                                    fr: 'Échanger maintenant',
+                                    amz: 'ⵙⵏⴼⵍ ⵖⵉⵍⴰ',
+                                    en: 'Redeem Now',
+                                    es: 'Canjear ahora',
+                                  })
+                                : pickLang(lang, {
+                                    ar: `ينقصك ${tier.pointsCost - pointsSummary.pointsBalance} نقطة`,
+                                    fr: `${tier.pointsCost - pointsSummary.pointsBalance} pts restants`,
+                                    amz: `ⵉⵅⵚⵚⴰ ⴽ ${tier.pointsCost - pointsSummary.pointsBalance} pts`,
+                                    en: `${tier.pointsCost - pointsSummary.pointsBalance} pts left`,
+                                    es: `Faltan ${tier.pointsCost - pointsSummary.pointsBalance} pts`,
+                                  })}
                             </div>
                           </button>
                         );
@@ -1269,11 +1666,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       <span className="text-[11px] font-black text-white flex items-center gap-1.5">
                         <History className="w-3.5 h-3.5 text-amber-400" />
                         <span>
-                          {lang === 'ar'
-                            ? `سجل نقاط الولاء والزيارات المؤكدة (${loyaltyHistoryEntries.length})`
-                            : lang === 'en'
-                            ? `Loyalty History (${loyaltyHistoryEntries.length} verified)`
-                            : `Historique de Fidélité (${loyaltyHistoryEntries.length} validées)`}
+                          {pickLang(lang, {
+                            ar: `سجل نقاط الولاء والزيارات المؤكدة (${loyaltyHistoryEntries.length})`,
+                            fr: `Historique de Fidélité (${loyaltyHistoryEntries.length} validées)`,
+                            amz: `ⴰⵎⵣⵔⵓⵢ ⵏ ⵜⵏⴼⵍⵓⵙⵜ (${loyaltyHistoryEntries.length})`,
+                            en: `Loyalty History (${loyaltyHistoryEntries.length} verified)`,
+                            es: `Historial de Fidelidad (${loyaltyHistoryEntries.length} confirmadas)`,
+                          })}
                         </span>
                       </span>
                       {showLoyaltyHistoryLog ? (
@@ -1286,11 +1685,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     {showLoyaltyHistoryLog && (
                       loyaltyHistoryEntries.length === 0 ? (
                         <div className="p-2.5 rounded-xl bg-black/40 border border-zinc-800 text-[11px] text-zinc-400">
-                          {lang === 'ar'
-                            ? 'لا توجد زيارات مكتملة مسجلة بعد. سيظهر كل موعد مؤكد بالحضور هنا مع توقيت التوثيق.'
-                            : lang === 'en'
-                            ? 'No completed visits logged yet. Once your barber confirms attendance, your timestamped history appears here.'
-                            : 'Aucune visite confirmée enregistrée pour le moment. Votre historique horodaté apparaîtra après votre passage.'}
+                          {pickLang(lang, {
+                            ar: 'لا توجد زيارات مكتملة مسجلة بعد. سيظهر كل موعد مؤكد بالحضور هنا مع توقيت التوثيق.',
+                            fr: 'Aucune visite confirmée enregistrée pour le moment. Votre historique horodaté apparaîtra après votre passage.',
+                            amz: 'ⵓⵔ ⵜⴰ ⵍⵍⵉⵏⵜ ⵜⵔⵣⵉⵡⵉⵏ ⵉⵜⵜⵓⵙⵙⵏⵜⵎⵏ ⵖⵉⵍⴰ.',
+                            en: 'No completed visits logged yet. Once your barber confirms attendance, your timestamped history appears here.',
+                            es: 'Aún no hay visitas completadas registradas.',
+                          })}
                         </div>
                       ) : (
                         <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
@@ -1298,7 +1699,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                             const isMilestoneVisit = visitNumber % 5 === 0;
                             const confirmedDateText = visit.attendanceConfirmedAt
                               ? new Date(visit.attendanceConfirmedAt).toLocaleString(
-                                  lang === 'ar' ? 'ar-MA' : lang === 'en' ? 'en-GB' : 'fr-FR',
+                                  lang === 'ar'
+                                    ? 'ar-MA'
+                                    : lang === 'en'
+                                    ? 'en-GB'
+                                    : lang === 'es'
+                                    ? 'es-ES'
+                                    : 'fr-FR',
                                   {
                                     year: 'numeric',
                                     month: 'short',
@@ -1310,7 +1717,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                               : `${visit.date} • ${visit.timeSlot}`;
                             const serviceLabels =
                               (visit.cartItemsSummary || []).map((i) => i.name).join(' + ') ||
-                              'Prestation Salon';
+                              pickLang(lang, {
+                                ar: 'خدمات الصالون',
+                                fr: 'Prestation Salon',
+                                amz: 'ⵜⵉⵡⵓⵔⵉⵡⵉⵏ ⵏ ⵓⵙⴰⵍⵓⵏ',
+                                en: 'Salon Service',
+                                es: 'Servicio del Salón',
+                              });
 
                             return (
                               <div
@@ -1397,21 +1810,25 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       <Clock3 className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
                       <div>
                         <span className="font-bold text-blue-300 block text-xs">
-                          {lang === 'ar' 
-                            ? '🔔 اقترح الحلاق توقيتاً جديداً لموعدك:' 
-                            : lang === 'es'
-                            ? '🔔 El barbero ha propuesto un nuevo horario:'
-                            : '🔔 Le barbier propose un nouvel horaire :'}
+                          {pickLang(lang, {
+                            ar: '🔔 اقترح الحلاق توقيتاً جديداً لموعدك:',
+                            fr: '🔔 Le barbier propose un nouvel horaire :',
+                            amz: '🔔 ⵉⵙⵓⵎⵔ ⵓⵎⵥⵥⴰⵡ ⴰⴽⵓⴷ ⴰⵎⴰⵢⵏⵓ:',
+                            en: '🔔 The barber suggested a new time:',
+                            es: '🔔 El barbero ha propuesto un nuevo horario:',
+                          })}
                         </span>
                         <p className="font-mono text-sm font-black text-amber-300 mt-1">
                           📅 {booking.rescheduledTo.date} • ⏰ {booking.rescheduledTo.time}
                         </p>
                         <p className="text-[11px] text-zinc-300 mt-1">
-                          {lang === 'ar'
-                            ? 'يرجى قبول التوقيت الجديد لتأكيد الموعد وقفل المقعد، أو الرفض لتحرير الكرسي.'
-                            : lang === 'es'
-                            ? 'Por favor acepte el nuevo horario para confirmar la cita o rechace para liberar el turno.'
-                            : 'Veuillez accepter le nouvel horaire pour confirmer le créneau ou refuser pour libérer la place.'}
+                          {pickLang(lang, {
+                            ar: 'يرجى قبول التوقيت الجديد لتأكيد الموعد وقفل المقعد، أو الرفض لتحرير الكرسي.',
+                            fr: 'Veuillez accepter le nouvel horaire pour confirmer le créneau ou refuser pour libérer la place.',
+                            amz: 'ⵇⴱⵍ ⴰⴽⵓⴷ ⴰⵎⴰⵢⵏⵓ ⵉ ⵓⵙⵏⵜⵎ ⵏ ⵓⵙⵉⵀⵍ ⵏⵖ ⴰⴳⵉ ⴰⴼⴰⴷ ⴰⴷ ⵢⵉⵍⵉ ⵓⵙⴳⵏ.',
+                            en: 'Please accept the new time to confirm your seat, or decline to release the slot.',
+                            es: 'Por favor acepte el nuevo horario para confirmar la cita o rechace para liberar el turno.',
+                          })}
                         </p>
                       </div>
                     </div>
@@ -1422,7 +1839,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950 transition-all cursor-pointer"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{lang === 'ar' ? 'قبول الوقت الجديد' : lang === 'es' ? 'Aceptar nuevo horario' : 'Accepter l\'horaire'}</span>
+                        <span>
+                          {pickLang(lang, {
+                            ar: 'قبول الوقت الجديد',
+                            fr: "Accepter l'horaire",
+                            amz: 'ⵇⴱⵍ ⴰⴽⵓⴷ ⴰⵎⴰⵢⵏⵓ',
+                            en: 'Accept New Time',
+                            es: 'Aceptar nuevo horario',
+                          })}
+                        </span>
                       </button>
 
                       <button
@@ -1430,7 +1855,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         className="w-full py-2 px-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-red-950 transition-all cursor-pointer"
                       >
                         <XCircle className="w-3.5 h-3.5" />
-                        <span>{lang === 'ar' ? 'رفض وإلغاء الموعد' : lang === 'es' ? 'Rechazar y cancelar' : 'Refuser & Annuler'}</span>
+                        <span>
+                          {pickLang(lang, {
+                            ar: 'رفض وإلغاء الموعد',
+                            fr: 'Refuser & Annuler',
+                            amz: 'ⴰⴳⵉ ⴷ ⵓⵙⵔⵓⵙ',
+                            en: 'Decline & Cancel',
+                            es: 'Rechazar y cancelar',
+                          })}
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -1441,7 +1874,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-200 space-y-1">
                     <div className="font-bold flex items-center gap-1.5 text-amber-300 text-[11px]">
                       <MessageCircle className="w-3.5 h-3.5 text-amber-400" />
-                      <span>{lang === 'ar' ? 'ملاحظة خاصة من الحلاق:' : 'Message de confirmation du Barbier :'}</span>
+                      <span>
+                        {pickLang(lang, {
+                          ar: 'ملاحظة خاصة من الحلاق:',
+                          fr: 'Message de confirmation du Barbier :',
+                          amz: 'ⵜⴰⴱⵔⴰⵜ ⵙⴳ ⵓⵎⵥⵥⴰⵡ:',
+                          en: 'Message from Barber:',
+                          es: 'Mensaje del barbero:',
+                        })}
+                      </span>
                     </div>
                     <p className="text-xs text-zinc-200 font-medium leading-relaxed italic">
                       "{booking.adminNotes}"
@@ -1453,7 +1894,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div className="p-2.5 rounded-lg bg-black/40 border border-zinc-800/80">
                     <span className="text-[10px] text-zinc-400 uppercase font-semibold block">
-                      {lang === 'ar' ? 'الزبون' : 'Client'}
+                      {pickLang(lang, {
+                        ar: 'الزبون',
+                        fr: 'Client',
+                        amz: 'ⴰⵎⵙⴰⵖ',
+                        en: 'Client',
+                        es: 'Cliente',
+                      })}
                     </span>
                     <span className="font-bold text-white truncate block">{booking.clientName}</span>
                     <span dir="ltr" className="text-[11px] font-mono text-zinc-400 block">{booking.clientPhone}</span>
@@ -1461,26 +1908,58 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
                   <div className="p-2.5 rounded-lg bg-black/40 border border-zinc-800/80">
                     <span className="text-[10px] text-zinc-400 uppercase font-semibold block">
-                      {lang === 'ar' ? 'الحلاق المختار' : 'Barbier Assigné'}
+                      {pickLang(lang, {
+                        ar: 'الحلاق المختار',
+                        fr: 'Barbier Assigné',
+                        amz: 'ⴰⵎⵥⵥⴰⵡ',
+                        en: 'Assigned Barber',
+                        es: 'Barbero Asignado',
+                      })}
                     </span>
                     <span className="font-bold text-red-400 truncate block">{booking.barberName}</span>
-                    <span className="text-[11px] text-zinc-400 block">{lang === 'ar' ? 'كرسي خاص' : 'Fauteuil réservé'}</span>
+                    <span className="text-[11px] text-zinc-400 block">
+                      {pickLang(lang, {
+                        ar: 'كرسي خاص',
+                        fr: 'Fauteuil réservé',
+                        amz: 'ⴰⵙⵖⵉⵎ ⵉⵜⵜⵓⵃⵣⴰⵏ',
+                        en: 'Reserved Chair',
+                        es: 'Sillón reservado',
+                      })}
+                    </span>
                   </div>
 
                   <div className="p-2.5 rounded-lg bg-black/40 border border-zinc-800/80">
                     <span className="text-[10px] text-zinc-400 uppercase font-semibold block">
-                      {lang === 'ar' ? 'التاريخ المجدول' : 'Date de passage'}
+                      {pickLang(lang, {
+                        ar: 'التاريخ المجدول',
+                        fr: 'Date de passage',
+                        amz: 'ⴰⵙⴰⴽⵓⴷ',
+                        en: 'Scheduled Date',
+                        es: 'Fecha programada',
+                      })}
                     </span>
                     <span className="font-mono font-bold text-white block">{booking.date}</span>
                   </div>
 
                   <div className="p-2.5 rounded-lg bg-black/40 border border-zinc-800/80">
                     <span className="text-[10px] text-zinc-400 uppercase font-semibold block">
-                      {lang === 'ar' ? 'التوقيت المختار' : 'Heure de Passage'}
+                      {pickLang(lang, {
+                        ar: 'التوقيت المختار',
+                        fr: 'Heure de Passage',
+                        amz: 'ⵜⵉⵣⵉ',
+                        en: 'Time Slot',
+                        es: 'Hora seleccionada',
+                      })}
                     </span>
                     <span className="font-mono font-bold text-blue-400 block">
                       {booking.timeSlot === 'FLEXIBLE'
-                        ? (lang === 'ar' ? 'مرن (بانتظار تحديد الحلاق)' : 'Flexible (Choix barbier)')
+                        ? pickLang(lang, {
+                            ar: 'مرن (بانتظار تحديد الحلاق)',
+                            fr: 'Flexible (Choix barbier)',
+                            amz: 'ⴰⴽⵓⴷ ⴰⵍⵡⵡⴰⵖ',
+                            en: 'Flexible (Barber assigned)',
+                            es: 'Flexible (Elige barbero)',
+                          })
                         : booking.timeSlot}
                     </span>
                   </div>
@@ -1489,7 +1968,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                 {/* Cart summary */}
                 <div className="p-3 bg-black/50 rounded-xl border border-zinc-800/80 space-y-2 text-xs">
                   <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block">
-                    {lang === 'ar' ? 'الخدمات المحجوزة' : 'Prestations Demandées'}
+                    {pickLang(lang, {
+                      ar: 'الخدمات المحجوزة',
+                      fr: 'Prestations Demandées',
+                      amz: 'ⵜⵉⵡⵓⵔⵉⵡⵉⵏ ⵉⵜⵜⵓⵙⵓⵜⵔⵏ',
+                      en: 'Booked Services',
+                      es: 'Servicios solicitados',
+                    })}
                   </span>
                   <div className="space-y-1">
                     {(booking.cartItemsSummary || []).map((item, idx) => (
@@ -1501,11 +1986,25 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   </div>
 
                   <div className="pt-2 border-t border-zinc-800 flex justify-between items-center font-bold">
-                    <span className="text-zinc-300">{lang === 'ar' ? 'المجموع النهائي:' : 'Montant Total :'}</span>
+                    <span className="text-zinc-300">
+                      {pickLang(lang, {
+                        ar: 'المجموع النهائي:',
+                        fr: 'Montant Total :',
+                        amz: 'ⴰⵖⵔⵓⴷ ⴰⵎⴳⴳⴰⵔⵓ:',
+                        en: 'Final Total:',
+                        es: 'Importe Total:',
+                      })}
+                    </span>
                     <div className="text-right">
                       {(booking.totalSavingsMAD || 0) > 0 && (
                         <span className="text-[10px] text-emerald-400 block font-normal">
-                          {lang === 'ar' ? `وفّرت: ${booking.totalSavingsMAD} MAD` : `Économie : ${booking.totalSavingsMAD} MAD`}
+                          {pickLang(lang, {
+                            ar: `وفّرت: ${booking.totalSavingsMAD} MAD`,
+                            fr: `Économie : ${booking.totalSavingsMAD} MAD`,
+                            amz: `ⵜⵓⵙⵙⵓⴼⵖⵜ: ${booking.totalSavingsMAD} MAD`,
+                            en: `Saved: ${booking.totalSavingsMAD} MAD`,
+                            es: `Ahorro: ${booking.totalSavingsMAD} MAD`,
+                          })}
                         </span>
                       )}
                       <span className="text-base text-red-500 font-black font-mono">
@@ -1516,11 +2015,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   {booking.clientNotes && (
                     <div className="mt-2 pt-2 border-t border-zinc-800 text-[11px] text-amber-200/95 space-y-0.5">
                       <span className="text-[10px] text-amber-400 font-bold uppercase block">
-                        {lang === 'ar'
-                          ? 'ملاحظات الزبون وتفضيلات الحلاقة:'
-                          : lang === 'en'
-                          ? 'Client Notes & Grooming Preferences:'
-                          : 'Notes Client & Préférences :'}
+                        {pickLang(lang, {
+                          ar: 'ملاحظات الزبون وتفضيلات الحلاقة:',
+                          fr: 'Notes Client & Préférences :',
+                          amz: 'ⵜⵉⵎⵍⴰⵢⵉⵏ ⵏ ⵓⵎⵙⴰⵖ:',
+                          en: 'Client Notes & Grooming Preferences:',
+                          es: 'Notas y Preferencias del Cliente:',
+                        })}
                       </span>
                       <p className="text-zinc-200 leading-relaxed break-words">
                         {booking.clientNotes}
@@ -1531,12 +2032,23 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     <div className="mt-2 pt-2 border-t border-zinc-800 flex items-center justify-between gap-2 text-[11px] text-emerald-300">
                       <span className="flex items-center gap-1.5 font-semibold">
                         <Building2 className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{lang === 'ar' ? 'إيصال تحويل CIH مرفق:' : 'Reçu virement CIH joint :'}</span>
+                        <span>
+                          {pickLang(lang, {
+                            ar: 'إيصال تحويل CIH مرفق:',
+                            fr: 'Reçu virement CIH joint :',
+                            amz: 'ⵜⴰⵏⴼⵓⵍⵜ ⵏ CIH:',
+                            en: 'CIH Transfer Receipt Attached:',
+                            es: 'Recibo CIH adjunto:',
+                          })}
+                        </span>
                       </span>
                       <span className="font-mono text-zinc-200 truncate max-w-[160px]">{booking.cihReceiptName}</span>
                     </div>
                   )}
                 </div>
+
+                {/* Unique Arrival Check-In QR Pass */}
+                <CheckInQrPassBox booking={booking} lang={lang} />
 
                 {/* Post-Booking CIH Payment Info & Receipt Upload (Expandable) */}
                 <div className="rounded-xl bg-black/50 border border-zinc-800 overflow-hidden">
@@ -1551,16 +2063,30 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       <CihBankLogo className="w-7 h-7" />
                       <div className="min-w-0">
                         <span className="text-xs font-bold text-white block truncate">
-                          {lang === 'ar'
-                            ? 'معلومات الأداء البنكي ورفع إيصال CIH'
-                            : lang === 'en'
-                            ? 'CIH Bank Info & Receipt Upload'
-                            : 'Infos Bancaires CIH & Envoi du Reçu'}
+                          {pickLang(lang, {
+                            ar: 'معلومات الأداء البنكي ورفع إيصال CIH',
+                            fr: 'Infos Bancaires CIH & Envoi du Reçu',
+                            amz: 'ⵉⵏⵖⵎⵉⵙⵏ ⵏ CIH ⴷ ⵜⵏⴼⵓⵍⵜ',
+                            en: 'CIH Bank Info & Receipt Upload',
+                            es: 'Datos CIH y Envío de Recibo',
+                          })}
                         </span>
                         <span className="text-[10px] text-zinc-400 block truncate">
                           {booking.cihReceiptName
-                            ? (lang === 'ar' ? 'تم إرفاق الإيصال — اضغط للتحديث' : 'Reçu joint — Appuyez pour modifier')
-                            : (lang === 'ar' ? 'اضغط لعرض رقم الحساب أو رفع الإيصال بعد الحجز' : 'Voir le compte CIH ou envoyer votre reçu')}
+                            ? pickLang(lang, {
+                                ar: 'تم إرفاق الإيصال — اضغط للتحديث',
+                                fr: 'Reçu joint — Appuyez pour modifier',
+                                amz: 'ⵜⴻⵜⵜⵓⵙⴽⵛⵎ ⵜⵏⴼⵓⵍⵜ — ⴰⴷⵔ ⵉ ⵓⵙⵏⴼⵍ',
+                                en: 'Receipt attached — Tap to update',
+                                es: 'Recibo adjunto — Toca para actualizar',
+                              })
+                            : pickLang(lang, {
+                                ar: 'اضغط لعرض رقم الحساب أو رفع الإيصال بعد الحجز',
+                                fr: 'Voir le compte CIH ou envoyer votre reçu',
+                                amz: 'ⵥⵕ ⵓⵟⵟⵓⵏ ⵏ CIH ⵏⵖ ⴰⵣⵏ ⵜⴰⵏⴼⵓⵍⵜ',
+                                en: 'View CIH account or upload receipt',
+                                es: 'Ver cuenta CIH o subir recibo',
+                              })}
                         </span>
                       </div>
                     </div>
@@ -1586,11 +2112,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         <div>
                           <div className="font-black text-white text-xs">CIH Bank — Salon Boumlik</div>
                           <div className="text-[11px] text-emerald-300/90 leading-relaxed">
-                            {lang === 'ar'
-                              ? 'التحويل البنكي CIH (اختياري) - مستحسن لتأكيد الموعد مسبقاً دون الحاجة للتنقل للمحل'
-                              : lang === 'en'
-                              ? 'CIH transfer (optional) — recommended to confirm in advance without visiting the salon.'
-                              : 'Virement CIH (optionnel) — recommandé pour confirmer à l’avance sans vous déplacer au salon.'}
+                            {pickLang(lang, {
+                              ar: 'التحويل البنكي CIH (اختياري) - مستحسن لتأكيد الموعد مسبقاً دون الحاجة للتنقل للمحل',
+                              fr: 'Virement CIH (optionnel) — recommandé pour confirmer à l’avance sans vous déplacer au salon.',
+                              amz: 'ⴰⵙⵉⵡⴹ ⵏ CIH (ⴰⴼⵔⴰⵏ) - ⵉⵜⵜⵓⵙⵓⵜⵔ ⵉ ⵓⵙⵏⵜⵎ ⵏ ⵓⵙⵉⵀⵍ.',
+                              en: 'CIH transfer (optional) — recommended to confirm in advance without visiting the salon.',
+                              es: 'Transferencia CIH (opcional) — recomendada para confirmar por adelantado.',
+                            })}
                           </div>
                         </div>
                       </div>
@@ -1598,7 +2126,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       {/* Account Holder + Account Number with Copy Buttons */}
                       <div className="p-3 rounded-xl bg-black/70 border border-zinc-800 space-y-2.5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-zinc-400 font-semibold text-[11px]">Titulaire :</span>
+                          <span className="text-zinc-400 font-semibold text-[11px]">
+                            {pickLang(lang, {
+                              ar: 'صاحب الحساب:',
+                              fr: 'Titulaire :',
+                              amz: 'ⴱⴰⴱ ⵏ ⵓⵎⵉⴹⴰⵏ:',
+                              en: 'Account Holder:',
+                              es: 'Titular:',
+                            })}
+                          </span>
                           <div className="flex items-center gap-2">
                             <span dir="ltr" className="font-mono font-black text-white text-xs">
                               {CIH_BANK_DETAILS.accountHolder}
@@ -1615,12 +2151,28 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                               {copiedCihField === 'holder' ? (
                                 <>
                                   <Check className="w-3 h-3" />
-                                  <span>{lang === 'ar' ? 'تم النسخ' : 'Copié'}</span>
+                                  <span>
+                                    {pickLang(lang, {
+                                      ar: 'تم النسخ',
+                                      fr: 'Copié',
+                                      amz: 'ⵉⵜⵜⵓⵏⵖⵍ',
+                                      en: 'Copied',
+                                      es: 'Copiado',
+                                    })}
+                                  </span>
                                 </>
                               ) : (
                                 <>
                                   <Copy className="w-3 h-3" />
-                                  <span>{lang === 'ar' ? 'نسخ' : 'Copy'}</span>
+                                  <span>
+                                    {pickLang(lang, {
+                                      ar: 'نسخ',
+                                      fr: 'Copier',
+                                      amz: 'ⵏⵖⵍ',
+                                      en: 'Copy',
+                                      es: 'Copiar',
+                                    })}
+                                  </span>
                                 </>
                               )}
                             </button>
@@ -1629,7 +2181,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
                         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/80">
                           <span className="text-zinc-400 font-semibold text-[11px]">
-                            {lang === 'ar' ? 'رقم الحساب :' : 'رقم الحساب / N° Compte :'}
+                            {pickLang(lang, {
+                              ar: 'رقم الحساب :',
+                              fr: 'N° Compte :',
+                              amz: 'ⵓⵟⵟⵓⵏ ⵏ ⵓⵎⵉⴹⴰⵏ:',
+                              en: 'Account Number:',
+                              es: 'N° Cuenta:',
+                            })}
                           </span>
                           <div className="flex items-center gap-2">
                             <span dir="ltr" className="font-mono font-black text-amber-300 tracking-wider text-xs sm:text-sm">
@@ -1647,12 +2205,28 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                               {copiedCihField === 'account' ? (
                                 <>
                                   <Check className="w-3 h-3" />
-                                  <span>{lang === 'ar' ? 'تم النسخ' : 'Copié'}</span>
+                                  <span>
+                                    {pickLang(lang, {
+                                      ar: 'تم النسخ',
+                                      fr: 'Copié',
+                                      amz: 'ⵉⵜⵜⵓⵏⵖⵍ',
+                                      en: 'Copied',
+                                      es: 'Copiado',
+                                    })}
+                                  </span>
                                 </>
                               ) : (
                                 <>
                                   <Copy className="w-3 h-3" />
-                                  <span>{lang === 'ar' ? 'نسخ' : 'Copy'}</span>
+                                  <span>
+                                    {pickLang(lang, {
+                                      ar: 'نسخ',
+                                      fr: 'Copier',
+                                      amz: 'ⵏⵖⵍ',
+                                      en: 'Copy',
+                                      es: 'Copiar',
+                                    })}
+                                  </span>
                                 </>
                               )}
                             </button>
@@ -1689,24 +2263,40 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         {uploadingCihId === booking.id ? (
                           <>
                             <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
-                            <span>{lang === 'ar' ? 'جاري رفع ومزامنة الإيصال...' : 'Envoi vers le salon...'}</span>
+                            <span>
+                              {pickLang(lang, {
+                                ar: 'جاري رفع ومزامنة الإيصال...',
+                                fr: 'Envoi vers le salon...',
+                                amz: 'ⴰⵙⵙⴽⵛⵎ ⵏ ⵜⵏⴼⵓⵍⵜ...',
+                                en: 'Uploading receipt...',
+                                es: 'Subiendo recibo...',
+                              })}
+                            </span>
                           </>
                         ) : booking.cihReceiptName ? (
                           <>
                             <FileCheck className="w-4 h-4 text-emerald-400" />
                             <span>
-                              {lang === 'ar'
-                                ? 'تحديث أو استبدال إيصال CIH (.jpg, .png, .pdf)'
-                                : 'Mettre à jour le reçu CIH (.jpg, .png, .pdf)'}
+                              {pickLang(lang, {
+                                ar: 'تحديث أو استبدال إيصال CIH (.jpg, .png, .pdf)',
+                                fr: 'Mettre à jour le reçu CIH (.jpg, .png, .pdf)',
+                                amz: 'ⵙⴷⵖⵉ ⵜⴰⵏⴼⵓⵍⵜ CIH (.jpg, .png, .pdf)',
+                                en: 'Update CIH receipt (.jpg, .png, .pdf)',
+                                es: 'Actualizar recibo CIH (.jpg, .png, .pdf)',
+                              })}
                             </span>
                           </>
                         ) : (
                           <>
                             <Upload className="w-4 h-4 text-emerald-400" />
                             <span>
-                              {lang === 'ar'
-                                ? 'رفع إيصال التحويل CIH (.jpg, .png, .pdf)'
-                                : 'Envoyer le reçu CIH (.jpg, .png, .pdf)'}
+                              {pickLang(lang, {
+                                ar: 'رفع إيصال التحويل CIH (.jpg, .png, .pdf)',
+                                fr: 'Envoyer le reçu CIH (.jpg, .png, .pdf)',
+                                amz: 'ⵙⵙⴽⵛⵎ ⵜⴰⵏⴼⵓⵍⵜ CIH (.jpg, .png, .pdf)',
+                                en: 'Upload CIH transfer receipt (.jpg, .png, .pdf)',
+                                es: 'Subir recibo CIH (.jpg, .png, .pdf)',
+                              })}
                             </span>
                           </>
                         )}
@@ -1721,9 +2311,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
                       <a
                         href={`https://wa.me/${SALON_INFO.whatsappNumber}?text=${encodeURIComponent(
-                          lang === 'ar'
-                            ? `مرحباً صالون بومليك، هذا إيصال التحويل البنكي عبر CIH لتأكيد تذكرتي ${booking.ticketNumber} (${booking.clientName} - ${booking.date} الساعة ${booking.timeSlot}).`
-                            : `Bonjour Salon Boumlik, voici mon reçu CIH pour confirmer le ticket ${booking.ticketNumber} (${booking.clientName} - ${booking.date} à ${booking.timeSlot}).`
+                          pickLang(lang, {
+                            ar: `مرحباً صالون بومليك، هذا إيصال التحويل البنكي عبر CIH لتأكيد تذكرتي ${booking.ticketNumber} (${booking.clientName} - ${booking.date} الساعة ${booking.timeSlot}).`,
+                            fr: `Bonjour Salon Boumlik, voici mon reçu CIH pour confirmer le ticket ${booking.ticketNumber} (${booking.clientName} - ${booking.date} à ${booking.timeSlot}).`,
+                            amz: `ⴰⵣⵓⵍ Salon Boumlik, ⵀⴰⵜⵉⵏ ⵜⴰⵏⴼⵓⵍⵜ ⵏ CIH ⵉ ⵜⵉⴽⵉ ${booking.ticketNumber} (${booking.clientName} - ${booking.date} ${booking.timeSlot}).`,
+                            en: `Hello Salon Boumlik, here is my CIH transfer receipt to confirm ticket ${booking.ticketNumber} (${booking.clientName} - ${booking.date} at ${booking.timeSlot}).`,
+                            es: `Hola Salon Boumlik, aquí está mi recibo CIH para confirmar el ticket ${booking.ticketNumber} (${booking.clientName} - ${booking.date} a las ${booking.timeSlot}).`,
+                          })
                         )}`}
                         target="_blank"
                         rel="noopener noreferrer"
@@ -1731,9 +2325,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       >
                         <MessageCircle className="w-3.5 h-3.5" />
                         <span>
-                          {lang === 'ar'
-                            ? 'أو إرسال الإيصال عبر واتساب الصالون مباشرة'
-                            : 'Ou envoyer le reçu sur WhatsApp'}
+                          {pickLang(lang, {
+                            ar: 'أو إرسال الإيصال عبر واتساب الصالون مباشرة',
+                            fr: 'Ou envoyer le reçu sur WhatsApp',
+                            amz: 'ⵏⵖ ⴰⵣⵏ ⵜⴰⵏⴼⵓⵍⵜ ⴳ WhatsApp',
+                            en: 'Or send receipt via Salon WhatsApp',
+                            es: 'O enviar recibo por WhatsApp',
+                          })}
                         </span>
                       </a>
                     </div>
@@ -1751,7 +2349,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     className="inline-flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 font-bold transition-colors"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
-                    <span>{lang === 'ar' ? 'تواصل معنا واتساب حول التذكرة' : 'Contacter le Salon par WhatsApp'}</span>
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'تواصل معنا واتساب حول التذكرة',
+                        fr: 'Contacter le Salon par WhatsApp',
+                        amz: 'ⵏⵢⴰⵍⴽⴰⵎ ⴷⵉⴷⵏⵖ ⴳ WhatsApp',
+                        en: 'Contact Salon on WhatsApp',
+                        es: 'Contactar por WhatsApp',
+                      })}
+                    </span>
                   </a>
 
                   {booking.status !== 'cancelled' && booking.status !== 'rejected' && booking.status !== 'completed' && (
@@ -1760,7 +2366,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-red-950/60 border border-zinc-700 hover:border-red-600/50 text-zinc-300 hover:text-red-400 text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer"
                     >
                       <XCircle className="w-3.5 h-3.5 text-red-500" />
-                      <span>{lang === 'ar' ? 'إلغاء الموعد وتحرير الوقت' : lang === 'es' ? 'Cancelar cita' : 'Annuler le rendez-vous'}</span>
+                      <span>
+                        {pickLang(lang, {
+                          ar: 'إلغاء الموعد وتحرير الوقت',
+                          fr: 'Annuler le rendez-vous',
+                          amz: 'ⵙⵙⵓⵔ ⴰⵙⵉⵀⵍ',
+                          en: 'Cancel Appointment',
+                          es: 'Cancelar cita',
+                        })}
+                      </span>
                     </button>
                   )}
                 </div>
@@ -1781,15 +2395,23 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   <History className="w-4 h-4 text-amber-400 flex-shrink-0" />
                   <div>
                     <span className="font-black text-white block">
-                      {lang === 'ar'
-                        ? `سجل الحجوزات السابق والولاء (${fullClientCrmHistory.length})`
-                        : `Historique Complet & Fidélité CRM (${fullClientCrmHistory.length})`}
+                      {pickLang(lang, {
+                        ar: `سجل الحجوزات السابق والولاء (${fullClientCrmHistory.length})`,
+                        fr: `Historique Complet & Fidélité CRM (${fullClientCrmHistory.length})`,
+                        amz: `ⴰⵎⵣⵔⵓⵢ ⵏ ⵉⵙⵉⵀⵍⵏ (${fullClientCrmHistory.length})`,
+                        en: `Full History & Loyalty (${fullClientCrmHistory.length})`,
+                        es: `Historial Completo y Fidelidad (${fullClientCrmHistory.length})`,
+                      })}
                     </span>
                     <span className="text-[10px] text-zinc-400">
                       {crmClientProfile?.isVip ? '👑 VIP • ' : ''}
-                      {lang === 'ar'
-                        ? `الزيارات المؤكدة: ${loyaltyProgress.verifiedVisits} (${loyaltyProgress.verifiedVisits}/${loyaltyProgress.nextMilestone})`
-                        : `Visites confirmées : ${loyaltyProgress.verifiedVisits} (${loyaltyProgress.verifiedVisits}/${loyaltyProgress.nextMilestone})`}
+                      {pickLang(lang, {
+                        ar: `الزيارات المؤكدة: ${loyaltyProgress.verifiedVisits} (${loyaltyProgress.verifiedVisits}/${loyaltyProgress.nextMilestone})`,
+                        fr: `Visites confirmées : ${loyaltyProgress.verifiedVisits} (${loyaltyProgress.verifiedVisits}/${loyaltyProgress.nextMilestone})`,
+                        amz: `ⵜⵉⵔⵣⵉⵡⵉⵏ: ${loyaltyProgress.verifiedVisits} (${loyaltyProgress.verifiedVisits}/${loyaltyProgress.nextMilestone})`,
+                        en: `Verified visits: ${loyaltyProgress.verifiedVisits} (${loyaltyProgress.verifiedVisits}/${loyaltyProgress.nextMilestone})`,
+                        es: `Visitas confirmadas: ${loyaltyProgress.verifiedVisits} (${loyaltyProgress.verifiedVisits}/${loyaltyProgress.nextMilestone})`,
+                      })}
                     </span>
                   </div>
                 </div>
@@ -1841,14 +2463,28 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
         <div className="p-4 border-t border-zinc-800 bg-zinc-900/60 flex items-center justify-between">
           <span className="text-xs text-zinc-400 flex items-center gap-1.5">
             <RefreshCw className="w-3 h-3 text-emerald-400 animate-spin" />
-            <span>{lang === 'ar' ? 'التحديث التلقائي الفوري مفعّل' : 'Synchronisation directe avec le salon'}</span>
+            <span>
+              {pickLang(lang, {
+                ar: 'التحديث التلقائي الفوري مفعّل',
+                fr: 'Synchronisation directe avec le salon',
+                amz: 'ⴰⵙⴷⵖⵉ ⵓⵙⵔⵉⴷ ⵉⵕⵥⵎ',
+                en: 'Live sync with Salon Boumlik active',
+                es: 'Sincronización en vivo activa',
+              })}
+            </span>
           </span>
 
           <button
             onClick={onClose}
             className="px-4 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold transition-colors"
           >
-            {lang === 'ar' ? 'إغلاق' : 'Fermer'}
+            {pickLang(lang, {
+              ar: 'إغلاق',
+              fr: 'Fermer',
+              amz: 'ⵇⵇⵏ',
+              en: 'Close',
+              es: 'Cerrar',
+            })}
           </button>
         </div>
 

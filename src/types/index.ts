@@ -213,7 +213,80 @@ export interface AppointmentBooking {
   cihReceiptUploadedAt?: string;
   loyaltyRewardApplied?: string;
   attendanceConfirmedAt?: string;
+  checkInToken?: string;
+  checkedInAt?: string;
+  caisseLoggedAt?: string;
+  caisseEntryId?: string;
   createdAt: string;
+}
+
+export type CaisseBarberId =
+  | 'hassan'
+  | 'anouar-arif'
+  | 'lahcen-lhanz'
+  | 'mounir-querdeny';
+
+export type CaisseEntryType =
+  | 'income'
+  | 'expense'
+  | 'float_adjustment'
+  | 'credit_repayment';
+
+export type CaisseCreditStatus = 'none' | 'open' | 'partial' | 'paid';
+
+export interface CaisseEntry {
+  id: string;
+  barberId: CaisseBarberId;
+  barberName: string;
+  type: CaisseEntryType;
+  date: string; // YYYY-MM-DD
+  serviceIds?: string[];
+  serviceNames?: string[];
+  expectedAmountMAD: number;
+  amountPaidMAD: number;
+  creditAmountMAD: number;
+  creditRemainingMAD: number;
+  creditStatus?: CaisseCreditStatus;
+  clientName?: string;
+  clientPhone?: string;
+  expectedRepaymentDate?: string; // YYYY-MM-DD
+  repaidDate?: string; // YYYY-MM-DD
+  repaidAmountMAD?: number;
+  parentCreditEntryId?: string;
+  sourceBookingId?: string;
+  sourceTicketNumber?: string;
+  note?: string;
+  createdByRole: 'master' | 'barber';
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CaisseBarberSetting {
+  id: string;
+  barberId: CaisseBarberId;
+  commissionPercent: number; // default 50
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface CaisseDailySettlement {
+  id: string; // `${barberId}_${date}`
+  barberId: CaisseBarberId;
+  barberName: string;
+  date: string; // YYYY-MM-DD
+  collected: boolean;
+  collectedAmountMAD: number;
+  barberShareMAD: number;
+  shopShareMAD: number;
+  floatMAD: number;
+  expensesMAD: number;
+  carryOverOwedMAD: number;
+  resetCount: number;
+  note?: string;
+  confirmedBy: string;
+  confirmedAt: string;
+  updatedAt: string;
 }
 
 export interface BarberScheduleConfig {

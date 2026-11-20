@@ -64,6 +64,22 @@ function hashStringDeterministic(input: string): string {
 
 export async function fetchVapidPublicKey(): Promise<string | null> {
   if (cachedVapidPublicKey) return cachedVapidPublicKey;
+
+  // 1. Check .env client-side VAPID key if provided via Vite (VITE_VAPID_PUBLIC_KEY)
+  try {
+    const envPublicKey =
+      typeof import.meta !== 'undefined' && import.meta.env
+        ? String(import.meta.env.VITE_VAPID_PUBLIC_KEY || '').trim()
+        : '';
+    if (envPublicKey) {
+      cachedVapidPublicKey = envPublicKey;
+      return envPublicKey;
+    }
+  } catch {
+    // fallback to backend endpoint
+  }
+
+  // 2. Fallback to backend /api/push/vapid-public-key backed by server .env VAPID_PUBLIC_KEY
   try {
     const res = await fetch('/api/push/vapid-public-key');
     if (!res.ok) return null;
@@ -76,6 +92,34 @@ export async function fetchVapidPublicKey(): Promise<string | null> {
   } catch (err) {
     console.warn('Unable to load VAPID public key:', err);
     return null;
+  }
+}
+
+export async function getBrowserPushStatus(): Promise<{
+  supported: boolean;
+  permission: NotificationPermission;
+  subscribed: boolean;
+}> {
+  if (
+    typeof window === 'undefined' ||
+    !('Notification' in window) ||
+    !('serviceWorker' in navigator) ||
+    !('PushManager' in window)
+  ) {
+    return { supported: false, permission: 'default', subscribed: false };
+  }
+
+  const permission = Notification.permission;
+  if (permission !== 'granted') {
+    return { supported: true, permission, subscribed: false };
+  }
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const sub = await registration.pushManager.getSubscription();
+    return { supported: true, permission, subscribed: Boolean(sub) };
+  } catch {
+    return { supported: true, permission, subscribed: false };
   }
 }
 

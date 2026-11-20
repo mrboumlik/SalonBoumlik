@@ -6,6 +6,7 @@ import {
   LoyaltyProgressState,
   POINTS_PER_VISIT,
 } from '../utils/loyaltyEngine';
+import { pickLang } from '../utils/i18n';
 
 interface LoyaltyProgressCardProps {
   clientName?: string;
@@ -80,23 +81,25 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
           <div className="flex items-center gap-2">
             <Award className="w-4 h-4 text-amber-400 flex-shrink-0" />
             <h4 className="text-xs sm:text-sm font-black text-white truncate">
-              {lang === 'ar'
-                ? 'تقدم الولاء • Loyalty Progress'
-                : lang === 'en'
-                ? 'Loyalty Progress'
-                : lang === 'es'
-                ? 'Progreso de Fidelidad'
-                : 'Progression Fidélité'}
+              {pickLang(lang, {
+                ar: 'تقدم الولاء • Loyalty Progress',
+                fr: 'Progression Fidélité',
+                amz: 'ⴰⵙⴰⵍⴰⵢ ⵏ ⵜⵏⴼⵍⵓⵙⵜ',
+                en: 'Loyalty Progress',
+                es: 'Progreso de Fidelidad',
+              })}
             </h4>
           </div>
           <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
             {clientName ? `${clientName} · ` : ''}
             {crmProfile?.isVip ? 'VIP · ' : ''}
-            {lang === 'ar'
-              ? `الرصيد الحالي: ${pointsSummary.pointsBalance} نقطة`
-              : lang === 'en'
-              ? `Current Balance: ${pointsSummary.pointsBalance} pts`
-              : `Solde actuel : ${pointsSummary.pointsBalance} pts`}
+            {pickLang(lang, {
+              ar: `الرصيد الحالي: ${pointsSummary.pointsBalance} نقطة`,
+              fr: `Solde actuel : ${pointsSummary.pointsBalance} pts`,
+              amz: `ⵜⵉⵏⵇⵇⵉⴹⵉⵏ : ${pointsSummary.pointsBalance} pts`,
+              en: `Current Balance: ${pointsSummary.pointsBalance} pts`,
+              es: `Saldo actual: ${pointsSummary.pointsBalance} pts`,
+            })}
           </p>
         </div>
 
@@ -113,11 +116,13 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
           >
             <Gift className="w-3.5 h-3.5" />
             <span>
-              {lang === 'ar'
-                ? 'خدمة مجانية'
-                : lang === 'en'
-                ? 'Free Service'
-                : 'Service Offert'}
+              {pickLang(lang, {
+                ar: 'خدمة مجانية',
+                fr: 'Service Offert',
+                amz: 'ⵜⴰⵏⴰⴼⵓⵜ ⴼⴰⴱⵓⵔ',
+                en: 'Free Service',
+                es: 'Servicio Gratis',
+              })}
             </span>
           </button>
 
@@ -132,11 +137,13 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
           >
             <Coins className="w-3.5 h-3.5" />
             <span>
-              {lang === 'ar'
-                ? 'خصم بالنقاط'
-                : lang === 'en'
-                ? 'Points Reward'
-                : 'Remise Points'}
+              {pickLang(lang, {
+                ar: 'خصم بالنقاط',
+                fr: 'Remise Points',
+                amz: 'ⴰⵙⵉⴷⵔ ⵙ ⵜⵏⵇⵇⵉⴹⵉⵏ',
+                en: 'Points Reward',
+                es: 'Descuento Puntos',
+              })}
             </span>
           </button>
         </div>
@@ -201,7 +208,13 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
               {ringCurrent} / {ringTarget}
             </span>
             <span className="text-[9px] text-zinc-400 font-semibold uppercase tracking-wider">
-              {lang === 'ar' ? 'نقطة' : 'pts'}
+              {pickLang(lang, {
+                ar: 'نقطة',
+                fr: 'pts',
+                amz: 'ⵜⵉⵏⵇⵇⵉⴹⵉⵏ',
+                en: 'pts',
+                es: 'pts',
+              })}
             </span>
           </div>
         </div>
@@ -211,16 +224,20 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
           <div>
             <span className="text-[11px] font-bold text-zinc-400 block">
               {isFreeServiceMode
-                ? lang === 'ar'
-                  ? `الخدمة المجانية التالية (المستوى ${loyaltyProgress.currentTierNumber}):`
-                  : lang === 'en'
-                  ? `Next Free Service (Tier ${loyaltyProgress.currentTierNumber}):`
-                  : `Prochain service offert (Palier ${loyaltyProgress.currentTierNumber}) :`
-                : lang === 'ar'
-                ? 'المكافأة القادمة لاستبدال النقاط:'
-                : lang === 'en'
-                ? 'Next Redeemable Reward Tier:'
-                : 'Prochaine récompense échangeable :'}
+                ? pickLang(lang, {
+                    ar: `الخدمة المجانية التالية (المستوى ${loyaltyProgress.currentTierNumber}):`,
+                    fr: `Prochain service offert (Palier ${loyaltyProgress.currentTierNumber}) :`,
+                    amz: `ⵜⴰⵏⴰⴼⵓⵜ ⴼⴰⴱⵓⵔ ⵉⴷⴷⴰⵏ (ⴰⵙⵡⵉⵔ ${loyaltyProgress.currentTierNumber}) :`,
+                    en: `Next Free Service (Tier ${loyaltyProgress.currentTierNumber}):`,
+                    es: `Próximo servicio gratis (Nivel ${loyaltyProgress.currentTierNumber}):`,
+                  })
+                : pickLang(lang, {
+                    ar: 'المكافأة القادمة لاستبدال النقاط:',
+                    fr: 'Prochaine récompense échangeable :',
+                    amz: 'ⵜⴰⵙⵎⵖⵓⵔⵜ ⵉⴷⴷⴰⵏ :',
+                    en: 'Next Redeemable Reward Tier:',
+                    es: 'Próxima recompensa canjeable:',
+                  })}
             </span>
 
             <div className="text-sm sm:text-base font-black text-amber-300 mt-0.5 break-words">
@@ -233,18 +250,28 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
               <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
               <span>
                 {isFreeServiceMode
-                  ? lang === 'ar'
-                    ? 'مبروك! مكافأتك المجانية جاهزة للمطالبة في الصالون الآن.'
-                    : lang === 'en'
-                    ? 'Congrats! Your free service reward is unlocked and ready!'
-                    : 'Félicitations ! Votre service offert est débloqué !'
+                  ? pickLang(lang, {
+                      ar: 'مبروك! مكافأتك المجانية جاهزة للمطالبة في الصالون الآن.',
+                      fr: 'Félicitations ! Votre service offert est débloqué !',
+                      amz: 'ⵜⴰⵙⵎⵖⵓⵔⵜ ⵏⵏⴽ ⴼⴰⴱⵓⵔ ⵜⵡⵊⴷ ⵖⵉⵍⴰⴷ!',
+                      en: 'Congrats! Your free service reward is unlocked and ready!',
+                      es: '¡Felicidades! Tu servicio gratis está listo para reclamar.',
+                    })
                   : allDiscountTiersUnlocked
-                  ? lang === 'ar'
-                    ? 'لديك نقاط كافية لفتح أعلى خصم (-70 MAD)! يمكنك الاستبدال الآن.'
-                    : 'All discount tiers unlocked! Redeem your reward below.'
-                  : lang === 'ar'
-                  ? 'وصلت للهدف! يمكنك استبدال نقاطك الآن.'
-                  : 'Goal reached! Ready to redeem.'}
+                  ? pickLang(lang, {
+                      ar: 'لديك نقاط كافية لفتح أعلى خصم (-70 MAD)! يمكنك الاستبدال الآن.',
+                      fr: 'Tous les paliers débloqués ! Échangez votre remise ci-dessous.',
+                      amz: 'ⵜⵉⵙⵎⵖⵓⵔⵉⵏ ⴰⴽⴽⵯ ⵕⵥⵎⵏⵜ (-70 MAD)!',
+                      en: 'All discount tiers unlocked! Redeem your reward below.',
+                      es: '¡Todos los descuentos desbloqueados! Canjea abajo.',
+                    })
+                  : pickLang(lang, {
+                      ar: 'وصلت للهدف! يمكنك استبدال نقاطك الآن.',
+                      fr: 'Objectif atteint ! Prêt à échanger.',
+                      amz: 'ⵜⵓⵡⴹⴷ ⴰⵡⵜⵜⴰⵙ! ⵜⵥⴹⴰⵕⴷ ⴰⴷ ⵜⵙⵏⴼⵍⴷ ⵖⵉⵍⴰⴷ.',
+                      en: 'Goal reached! Ready to redeem.',
+                      es: '¡Meta alcanzada! Listo para canjear.',
+                    })}
               </span>
             </div>
           ) : (
@@ -256,10 +283,22 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
                     <span className="text-amber-400 text-sm">{pointsRemaining} نقطة</span>{' '}
                     للحصول على المكافأة
                   </>
+                ) : lang === 'amz' ? (
+                  <>
+                    ⵉⵖⴰⵎⴰ{' '}
+                    <span className="text-amber-400 text-sm">{pointsRemaining} pts</span>{' '}
+                    ⵉ ⵜⵙⵎⵖⵓⵔⵜ
+                  </>
                 ) : lang === 'en' ? (
                   <>
                     <span className="text-amber-400 text-sm">{pointsRemaining} points</span>{' '}
                     until your next reward
+                  </>
+                ) : lang === 'es' ? (
+                  <>
+                    Faltan{' '}
+                    <span className="text-amber-400 text-sm">{pointsRemaining} puntos</span>{' '}
+                    para tu próxima recompensa
                   </>
                 ) : (
                   <>
@@ -271,11 +310,13 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
               </div>
 
               <div className="text-[11px] text-zinc-400">
-                {lang === 'ar'
-                  ? `يعادل ${visitsEquivalent} ${visitsEquivalent === 1 ? 'زيارة مؤكدة واحدة' : 'زيارات مؤكدة'} (+${POINTS_PER_VISIT} نقاط لكل زيارة)`
-                  : lang === 'en'
-                  ? `Equivalent to ${visitsEquivalent} verified ${visitsEquivalent === 1 ? 'visit' : 'visits'} (+${POINTS_PER_VISIT} pts/visit)`
-                  : `Équivalent à ${visitsEquivalent} ${visitsEquivalent === 1 ? 'visite confirmée' : 'visites confirmées'} (+${POINTS_PER_VISIT} pts/visite)`}
+                {pickLang(lang, {
+                  ar: `يعادل ${visitsEquivalent} ${visitsEquivalent === 1 ? 'زيارة مؤكدة واحدة' : 'زيارات مؤكدة'} (+${POINTS_PER_VISIT} نقاط لكل زيارة)`,
+                  fr: `Équivalent à ${visitsEquivalent} ${visitsEquivalent === 1 ? 'visite confirmée' : 'visites confirmées'} (+${POINTS_PER_VISIT} pts/visite)`,
+                  amz: `ⵉⴳⴰ ⴰⵎ ${visitsEquivalent} ⵏ ⵜⵉⵔⵣⴰ (+${POINTS_PER_VISIT} pts/ⵜⵉⵔⵣⵉ)`,
+                  en: `Equivalent to ${visitsEquivalent} verified ${visitsEquivalent === 1 ? 'visit' : 'visits'} (+${POINTS_PER_VISIT} pts/visit)`,
+                  es: `Equivale a ${visitsEquivalent} ${visitsEquivalent === 1 ? 'visita verificada' : 'visitas verificadas'} (+${POINTS_PER_VISIT} pts/visita)`,
+                })}
               </div>
             </div>
           )}
@@ -283,21 +324,36 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
           {/* Clean unboxed Firebase telemetry metadata */}
           <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-[10px] text-zinc-500 font-mono tabular-nums">
             <span>
-              {lang === 'ar'
-                ? `إجمالي المكتسب: ${pointsSummary.pointsEarnedTotal} نقطة`
-                : `Earned: ${pointsSummary.pointsEarnedTotal} pts`}
+              {pickLang(lang, {
+                ar: `إجمالي المكتسب: ${pointsSummary.pointsEarnedTotal} نقطة`,
+                fr: `Gagné : ${pointsSummary.pointsEarnedTotal} pts`,
+                amz: `ⴰⴽⴽⵯ : ${pointsSummary.pointsEarnedTotal} pts`,
+                en: `Earned: ${pointsSummary.pointsEarnedTotal} pts`,
+                es: `Ganado: ${pointsSummary.pointsEarnedTotal} pts`,
+              })}
             </span>
             <span aria-hidden="true">·</span>
             <span>
-              {lang === 'ar'
-                ? `زيارات مؤكدة: ${loyaltyProgress.verifiedVisits}`
-                : `Verified visits: ${loyaltyProgress.verifiedVisits}`}
+              {pickLang(lang, {
+                ar: `زيارات مؤكدة: ${loyaltyProgress.verifiedVisits}`,
+                fr: `Visites vérifiées : ${loyaltyProgress.verifiedVisits}`,
+                amz: `ⵜⵉⵔⵣⵉⵡⵉⵏ : ${loyaltyProgress.verifiedVisits}`,
+                en: `Verified visits: ${loyaltyProgress.verifiedVisits}`,
+                es: `Visitas verificadas: ${loyaltyProgress.verifiedVisits}`,
+              })}
             </span>
             {pointsSummary.activeDiscountMAD > 0 && (
               <>
                 <span aria-hidden="true">·</span>
                 <span className="text-emerald-400 font-bold">
-                  -{pointsSummary.activeDiscountMAD} MAD {lang === 'ar' ? 'نشط' : 'Active'}
+                  -{pointsSummary.activeDiscountMAD} MAD{' '}
+                  {pickLang(lang, {
+                    ar: 'نشط',
+                    fr: 'Actif',
+                    amz: 'ⵉⵔⵎ',
+                    en: 'Active',
+                    es: 'Activo',
+                  })}
                 </span>
               </>
             )}

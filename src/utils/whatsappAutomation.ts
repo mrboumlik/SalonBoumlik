@@ -212,6 +212,8 @@ export function buildAutomatedReminderMessage(
         ? '⏰ Automatic Reminder for your upcoming Salon Boumlik appointment:'
         : lang === 'es'
         ? '⏰ Recordatorio automático de tu próxima cita en Salon Boumlik:'
+        : lang === 'amz'
+        ? '⏰ ⴰⵙⴽⵜⵉ ⵏ ⵓⵙⵉⵀⵍ ⵏⵏⴽ ⴳ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ:'
         : '⏰ Rappel automatique pour votre rendez-vous imminent au Salon Boumlik :';
     return `${prefix}\n\n${baseDetails}`;
   }
