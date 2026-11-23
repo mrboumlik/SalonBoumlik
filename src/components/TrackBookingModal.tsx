@@ -68,6 +68,12 @@ import { LoyaltyProgressCard } from './LoyaltyProgressCard';
 import { AppointmentBooking, BookingStatus, Language } from '../types';
 import { SALON_INFO } from '../data/barbershopData';
 import { pickLang } from '../utils/i18n';
+import { getGiftLabel } from '../utils/pricingEngine';
+import {
+  normalizeSalonWhatsappDigits,
+  useSalonProfileSettings,
+} from '../utils/salonSettingsStore';
+import { submitBarberReview, useFirestoreReviews } from '../utils/reviewsStore';
 
 interface TrackBookingModalProps {
   isOpen: boolean;
@@ -86,6 +92,7 @@ const CheckInQrPassBox: React.FC<{ booking: AppointmentBooking; lang: Language }
     const payload = buildBookingCheckInQrPayload({
       ticketNumber: booking.ticketNumber,
       checkInToken: booking.checkInToken,
+      clientPhone: booking.clientPhone,
     });
     QRCode.toDataURL(payload, {
       width: 200,
@@ -99,7 +106,7 @@ const CheckInQrPassBox: React.FC<{ booking: AppointmentBooking; lang: Language }
     return () => {
       active = false;
     };
-  }, [booking.ticketNumber, booking.checkInToken]);
+  }, [booking.ticketNumber, booking.checkInToken, booking.clientPhone]);
 
   if (booking.status === 'cancelled' || booking.status === 'rejected') {
     return null;
@@ -138,9 +145,16 @@ const CheckInQrPassBox: React.FC<{ booking: AppointmentBooking; lang: Language }
               })}
         </p>
         <div className="flex flex-wrap items-center gap-2 pt-0.5">
-          {booking.checkInToken && (
-            <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-zinc-900 border border-zinc-700 text-amber-300">
-              {booking.checkInToken}
+          {(booking.clientPhone || booking.checkInToken) && (
+            <span dir="ltr" className="font-mono text-[10px] px-2 py-0.5 rounded bg-zinc-900 border border-zinc-700 text-amber-300">
+              ID:{' '}
+              {(() => {
+                const digits = String(booking.clientPhone || '').replace(/\D/g, '');
+                if (digits.startsWith('212') && digits.length >= 11) return `0${digits.slice(3)}`;
+                if (digits.length === 9 && /^[567]/.test(digits)) return `0${digits}`;
+                if (digits.length >= 6) return digits;
+                return booking.checkInToken || '';
+              })()}
             </span>
           )}
           {booking.checkedInAt && (
@@ -176,6 +190,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
   initialSearch = '',
 }) => {
   const { lang, t, isRtl } = useLanguage();
+  const salonSettings = useSalonProfileSettings();
   const [searchTerm, setSearchTerm] = useState(initialSearch);
   const [foundBookings, setFoundBookings] = useState<AppointmentBooking[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
@@ -203,6 +218,60 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     type: 'success' | 'error';
     message: string;
   } | null>(null);
+
+  // Post-visit quick rating state
+  const { reviews: firestoreReviews } = useFirestoreReviews();
+  const [quickRatingsMap, setQuickRatingsMap] = useState<Record<string, number>>({});
+  const [quickCommentsMap, setQuickCommentsMap] = useState<Record<string, string>>({});
+  const [submittingRatingBookingId, setSubmittingRatingBookingId] = useState<string | null>(null);
+
+  const handleSubmitQuickRating = async (booking: AppointmentBooking) => {
+    const ratingVal = quickRatingsMap[booking.id] || 5;
+    const rawComment = (quickCommentsMap[booking.id] || '').trim();
+    const defaultComment = pickLang(lang, {
+      ar: `خدمة ممتازة مع ${booking.barberName} ⭐`,
+      fr: `Très bon service avec ${booking.barberName} ⭐`,
+      amz: `ⵜⴰⵡⵓⵔⵉ ⵉⵖⵓⴷⴰⵏ ⴷ ${booking.barberName} ⭐`,
+      en: `Great experience with ${booking.barberName} ⭐`,
+      es: `Excelente atención con ${booking.barberName} ⭐`,
+    });
+    const serviceLabel =
+      (booking.cartItemsSummary || []).map((i) => i.name).join(' + ') || undefined;
+
+    setSubmittingRatingBookingId(booking.id);
+    try {
+      await submitBarberReview({
+        barberId: booking.barberId,
+        author: booking.clientName || 'Client',
+        serviceName: serviceLabel,
+        rating: ratingVal,
+        comment: rawComment || defaultComment,
+        dateLabel: booking.date,
+        bookingId: booking.id,
+      });
+      showToast(
+        pickLang(lang, {
+          ar: 'شكراً على تقييمك! ⭐',
+          fr: 'Merci pour votre avis ! ⭐',
+          amz: 'ⵜⴰⵏⵎⵎⵉⵔⵜ ⵖⴼ ⵓⵜⵉⴳ ⵏⵏⴽ! ⭐',
+          en: 'Thank you for your feedback! ⭐',
+          es: '¡Gracias por tu valoración! ⭐',
+        }),
+        pickLang(lang, {
+          ar: 'تم حفظ تقييمك للحلاق بنجاح.',
+          fr: 'Votre note a été enregistrée avec succès.',
+          amz: 'ⵉⵜⵜⵓⵃⴹⴰ ⵓⵜⵉⴳ ⵏⵏⴽ.',
+          en: 'Your rating has been saved.',
+          es: 'Tu reseña se ha guardado correctamente.',
+        }),
+        'success'
+      );
+    } catch (err) {
+      console.error('Quick post-visit rating failed:', err);
+    } finally {
+      setSubmittingRatingBookingId(null);
+    }
+  };
 
   const performSearch = (query: string, source: AppointmentBooking[] = liveBookings) => {
     let q = query.trim();
@@ -1980,7 +2049,9 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     {(booking.cartItemsSummary || []).map((item, idx) => (
                       <div key={idx} className="flex justify-between items-center text-zinc-300">
                         <span>• {item.name} {item.discountApplied ? <span className="text-[10px] text-emerald-400">({item.discountApplied})</span> : null}</span>
-                        <span className="font-mono font-bold text-white">{item.finalPrice} MAD</span>
+                        <span className={`font-mono font-bold ${item.finalPrice === 0 ? 'text-emerald-300' : 'text-white'}`}>
+                          {item.finalPrice === 0 ? `🎁 ${getGiftLabel(lang)}` : `${item.finalPrice} MAD`}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -2310,7 +2381,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       </label>
 
                       <a
-                        href={`https://wa.me/${SALON_INFO.whatsappNumber}?text=${encodeURIComponent(
+                        href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}?text=${encodeURIComponent(
                           pickLang(lang, {
                             ar: `مرحباً صالون بومليك، هذا إيصال التحويل البنكي عبر CIH لتأكيد تذكرتي ${booking.ticketNumber} (${booking.clientName} - ${booking.date} الساعة ${booking.timeSlot}).`,
                             fr: `Bonjour Salon Boumlik, voici mon reçu CIH pour confirmer le ticket ${booking.ticketNumber} (${booking.clientName} - ${booking.date} à ${booking.timeSlot}).`,
@@ -2338,10 +2409,137 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   )}
                 </div>
 
+                {/* Post-Visit Quick Rating / Feedback (Shown once appointment is completed) */}
+                {booking.status === 'completed' && (() => {
+                  const existingReview = firestoreReviews.find(
+                    (rev) => rev.bookingId === booking.id
+                  );
+                  const chosenStars = quickRatingsMap[booking.id] ?? 5;
+                  const commentDraft = quickCommentsMap[booking.id] ?? '';
+                  const isBusyRating = submittingRatingBookingId === booking.id;
+
+                  if (existingReview) {
+                    return (
+                      <div className="p-3 rounded-xl bg-emerald-950/35 border border-emerald-500/40 flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2 text-emerald-300 font-bold">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                          <span>
+                            {pickLang(lang, {
+                              ar: 'شكراً على تقييمك لهذه الزيارة!',
+                              fr: 'Merci pour votre avis sur cette visite !',
+                              amz: 'ⵜⴰⵏⵎⵎⵉⵔⵜ ⵖⴼ ⵓⵜⵉⴳ ⵏⵏⴽ!',
+                              en: 'Thanks for rating this visit!',
+                              es: '¡Gracias por valorar esta visita!',
+                            })}
+                          </span>
+                        </div>
+                        <div dir="ltr" className="flex items-center gap-0.5 flex-shrink-0">
+                          {[1, 2, 3, 4, 5].map((st) => (
+                            <Star
+                              key={st}
+                              className={`w-3.5 h-3.5 ${
+                                st <= existingReview.rating
+                                  ? 'text-amber-400 fill-amber-400'
+                                  : 'text-zinc-700'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/35 space-y-2.5 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-black text-amber-200 flex items-center gap-1.5">
+                          <Star className="w-4 h-4 text-amber-400 fill-amber-400 flex-shrink-0" />
+                          <span>
+                            {pickLang(lang, {
+                              ar: `قيّم تجربتك السريعة مع ${booking.barberName}`,
+                              fr: `Notez votre visite avec ${booking.barberName}`,
+                              amz: `ⴰⵡⵙ ⴰⵜⵉⴳ ⵉ ${booking.barberName}`,
+                              en: `Quick Rating for ${booking.barberName}`,
+                              es: `Valora tu visita con ${booking.barberName}`,
+                            })}
+                          </span>
+                        </div>
+                        <div dir="ltr" className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((starNum) => (
+                            <button
+                              key={starNum}
+                              type="button"
+                              onClick={() =>
+                                setQuickRatingsMap((prev) => ({
+                                  ...prev,
+                                  [booking.id]: starNum,
+                                }))
+                              }
+                              aria-label={`${starNum} stars`}
+                              className="p-1 rounded-lg hover:bg-amber-500/20 transition-colors cursor-pointer"
+                            >
+                              <Star
+                                className={`w-5 h-5 transition-transform ${
+                                  starNum <= chosenStars
+                                    ? 'text-amber-400 fill-amber-400 scale-105'
+                                    : 'text-zinc-600'
+                                }`}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="text"
+                          maxLength={240}
+                          value={commentDraft}
+                          onChange={(e) =>
+                            setQuickCommentsMap((prev) => ({
+                              ...prev,
+                              [booking.id]: e.target.value,
+                            }))
+                          }
+                          placeholder={pickLang(lang, {
+                            ar: 'أضف كلمة قصيرة أو ملاحظة (اختياري)...',
+                            fr: 'Un petit commentaire (optionnel)...',
+                            amz: 'ⵜⴰⵏⵏⴰⵢⵜ ⵜⴰⵎⵥⵥⵢⴰⵏⵜ (ⴰⴼⵔⴰⵏ)...',
+                            en: 'Add a quick note (optional)...',
+                            es: 'Comentario breve (opcional)...',
+                          })}
+                          className="flex-1 bg-black/55 border border-zinc-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-400"
+                        />
+                        <button
+                          type="button"
+                          disabled={isBusyRating}
+                          onClick={() => handleSubmitQuickRating(booking)}
+                          className="min-h-[38px] px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-black font-black text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
+                        >
+                          {isBusyRating ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Star className="w-3.5 h-3.5 fill-black" />
+                          )}
+                          <span>
+                            {pickLang(lang, {
+                              ar: 'إرسال التقييم',
+                              fr: 'Envoyer',
+                              amz: 'ⴰⵣⵏ ⴰⵜⵉⴳ',
+                              en: 'Send Rating',
+                              es: 'Enviar',
+                            })}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Direct Help Button & Client-Side Cancellation Action */}
                 <div className="pt-2 border-t border-zinc-800/60 flex flex-wrap items-center justify-between gap-2 text-xs">
                   <a
-                    href={`https://wa.me/${SALON_INFO.whatsappNumber}?text=${encodeURIComponent(
+                    href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}?text=${encodeURIComponent(
                       buildClientTicketWhatsAppMessage(booking, lang)
                     )}`}
                     target="_blank"

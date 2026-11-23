@@ -11,7 +11,11 @@ import {
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
-import { useSalonProfileSettings } from '../utils/salonSettingsStore';
+import {
+  useSalonProfileSettings,
+  formatSalonDisplayPhone,
+  normalizeSalonWhatsappDigits,
+} from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
 
 export const QuickQrModals: React.FC = () => {
@@ -105,8 +109,8 @@ export const QuickQrModals: React.FC = () => {
                 es: 'WhatsApp',
               })}
             </span>
-            <span className="text-[10px] text-stone-500 dark:text-zinc-400 font-mono block">
-              06 35 39 25 03
+            <span dir="ltr" className="text-[10px] text-stone-500 dark:text-zinc-400 font-mono block">
+              {formatSalonDisplayPhone(salonSettings.salonWhatsapp)}
             </span>
           </div>
         </button>
@@ -273,11 +277,11 @@ export const QuickQrModals: React.FC = () => {
                     className="w-48 h-48 object-contain mx-auto rounded-lg"
                   />
                 </div>
-                <p className="text-xs text-stone-600 dark:text-zinc-400 font-mono">
-                  {SALON_INFO.displayPhone}
+                <p dir="ltr" className="text-xs text-stone-600 dark:text-zinc-400 font-mono">
+                  {formatSalonDisplayPhone(salonSettings.salonWhatsapp)}
                 </p>
                 <a
-                  href={`https://wa.me/${SALON_INFO.whatsappNumber}`}
+                  href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors"

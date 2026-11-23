@@ -3,6 +3,7 @@ import {
   TrendingUp,
   Scissors,
   Clock,
+  Clock3,
   Calendar,
   Ban,
   CheckCircle2,
@@ -29,25 +30,38 @@ import {
   RefreshCw,
   Download,
   Trophy,
+  UserPlus,
+  Check,
+  AlertTriangle,
+  X,
+  Camera,
+  ScanLine,
+  Upload,
 } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 import {
   AppointmentBooking,
+  BarberBreakRange,
   BarberScheduleConfig,
   BarberStaff,
   CrmClientProfile,
   CustomerReview,
   Language,
+  StaffRole,
   WaitlistEntry,
 } from '../types';
-import { INITIAL_REVIEWS, TEAM_MEMBERS } from '../data/barbershopData';
+import { INITIAL_REVIEWS } from '../data/barbershopData';
 import {
   ALL_SALON_CONFIGURABLE_HOURS,
   getDefaultBarberSchedule,
   getSalonSlotsForDate,
+  isTimeSlotInBreakRanges,
   saveBarberSchedule,
 } from '../utils/barberScheduleStore';
 import {
+  AggregatedCrmClient,
   buildCrmClientSummaries,
+  deleteSelectedClientRecords,
   grantClientCustomDiscount,
   redeemClientFreeWash,
   setClientBanStatus,
@@ -60,13 +74,26 @@ import {
 import { formatMoroccanWhatsAppNumber } from '../utils/whatsappAutomation';
 import { sendDualAlert } from '../utils/notifications';
 import { computeLoyaltyProgress } from '../utils/loyaltyEngine';
-import { ClientQrTarget } from '../utils/clientQr';
+import {
+  ClientQrTarget,
+  downloadClientsVcf,
+  normalizePhoneForQrId,
+  parseScannedQrResult,
+  scanQrImageFile,
+} from '../utils/clientQr';
 import { ClientQrModal } from './ClientQrModal';
 import { getCrmDocId } from '../utils/crmStore';
-import { normalizeMoroccanPhoneDigits } from '../utils/bookingStore';
+import { getBookingByTicket, normalizeMoroccanPhoneDigits } from '../utils/bookingStore';
 import { downloadCrmAccountingCsv } from '../utils/csvExport';
 import { WeeklyWorkloadBarChart } from './WeeklyWorkloadBarChart';
 import { useFirestoreReviews } from '../utils/reviewsStore';
+import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore';
+import { useBarberRoster } from '../utils/barberRosterStore';
+import { useCaisseEntries } from '../utils/caisseStore';
+import {
+  computeOutstandingCreditsForPhone,
+  useManualClientCredits,
+} from '../utils/creditRegistryStore';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
 
@@ -196,11 +223,14 @@ function computeBarberSatisfactionMetrics(
 
 export const FinancialAnalyticsPanel: React.FC<{
   bookings: AppointmentBooking[];
-  role?: 'master' | 'barber';
+  role?: StaffRole;
   ownBarberId?: string;
 }> = ({ bookings, role = 'master', ownBarberId = 'all' }) => {
   const { lang } = useLanguage();
   const { reviews: firestoreReviews } = useFirestoreReviews();
+  const roster = useBarberRoster();
+  const profilesMap = useBarberProfiles();
+  const mergedBarbers = getMergedBarbers(profilesMap, roster);
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
   const currentMonthPrefix = todayStr.slice(0, 7); // YYYY-MM
@@ -262,8 +292,8 @@ export const FinancialAnalyticsPanel: React.FC<{
   // Individual Barber Performance for the Selected/Current Month
   const visibleBarbers =
     role === 'barber'
-      ? TEAM_MEMBERS.filter((m) => m.id === ownBarberId)
-      : TEAM_MEMBERS;
+      ? mergedBarbers.filter((m) => m.id === ownBarberId)
+      : mergedBarbers;
 
   const monthlyBarberPerformance = visibleBarbers
     .map((barber) => {
@@ -357,7 +387,7 @@ export const FinancialAnalyticsPanel: React.FC<{
       b.status === 'completed' &&
       getEffectiveDateForAnalytics(b).startsWith(selectedMonth)
   );
-  const rawPerformers = TEAM_MEMBERS.map((barber) => {
+  const rawPerformers = mergedBarbers.map((barber) => {
     const firstFr = barber.name.fr.toLowerCase().split(' ')[0];
     const completedItems = allMonthCompleted.filter(
       (b) =>
@@ -1033,20 +1063,25 @@ function getMondayOfWeekOffset(weekOffset: number): Date {
 export const BarberSchedulePanel: React.FC<{
   schedules: Record<string, BarberScheduleConfig>;
   bookings?: AppointmentBooking[];
-  role: 'master' | 'barber';
+  role: StaffRole;
   ownBarberId: string;
 }> = ({ schedules, bookings = [], role, ownBarberId }) => {
   const { lang } = useLanguage();
+  const roster = useBarberRoster();
+  const profilesMap = useBarberProfiles();
+  const mergedBarbers = getMergedBarbers(profilesMap, roster);
   const selectableBarbers =
     role === 'master'
-      ? TEAM_MEMBERS
-      : TEAM_MEMBERS.filter((b) => b.id === ownBarberId);
+      ? mergedBarbers
+      : mergedBarbers.filter((b) => b.id === ownBarberId);
 
   const [selectedBarberId, setSelectedBarberId] = useState<string>(
     selectableBarbers[0]?.id || 'hassan'
   );
   const [weekOffset, setWeekOffset] = useState<number>(0);
   const [newOffDate, setNewOffDate] = useState('');
+  const [breakStartInput, setBreakStartInput] = useState('13:00');
+  const [breakEndInput, setBreakEndInput] = useState('15:00');
   const [saving, setSaving] = useState(false);
 
   const todayStr = formatDateYMD(new Date());
@@ -1396,6 +1431,46 @@ export const BarberSchedulePanel: React.FC<{
     );
   };
 
+  const handleAddBreakRange = () => {
+    if (!breakStartInput || !breakEndInput || breakEndInput <= breakStartInput) {
+      sendDualAlert(ui.saveErrTitle, {
+        body: 'يرجى اختيار وقت نهاية بعد وقت بداية الاستراحة.',
+        type: 'warning',
+      });
+      return;
+    }
+    const existing = activeConfig.breakRanges || [];
+    const nextRange: BarberBreakRange = {
+      id: `br_${Date.now().toString(36)}`,
+      start: breakStartInput,
+      end: breakEndInput,
+    };
+    persistUpdate(
+      { ...activeConfig, breakRanges: [...existing, nextRange] },
+      pickLang(lang, {
+        ar: `تمت إضافة فترة استراحة يومية (${breakStartInput} → ${breakEndInput}).`,
+        fr: `Pause quotidienne ajoutée (${breakStartInput} → ${breakEndInput}).`,
+        amz: `ⵉⵜⵜⵓⵔⵏⴰ ⵓⵙⵓⵏⴼⵓ (${breakStartInput} → ${breakEndInput}).`,
+        en: `Added daily break range (${breakStartInput} → ${breakEndInput}).`,
+        es: `Pausa diaria añadida (${breakStartInput} → ${breakEndInput}).`,
+      })
+    );
+  };
+
+  const handleRemoveBreakRange = (rangeId: string) => {
+    const nextRanges = (activeConfig.breakRanges || []).filter((r) => r.id !== rangeId);
+    persistUpdate(
+      { ...activeConfig, breakRanges: nextRanges },
+      pickLang(lang, {
+        ar: 'تمت إزالة فترة الاستراحة المحددة.',
+        fr: 'Plage de pause supprimée.',
+        amz: 'ⵉⵜⵜⵓⴽⴽⵙ ⵓⵙⵓⵏⴼⵓ.',
+        en: 'Removed scheduled break range.',
+        es: 'Rango de pausa eliminado.',
+      })
+    );
+  };
+
   const barberBookingsMap = new Map<string, AppointmentBooking>();
   bookings.forEach((b) => {
     if (
@@ -1406,7 +1481,8 @@ export const BarberSchedulePanel: React.FC<{
     }
   });
 
-  const activeBarber = TEAM_MEMBERS.find((b) => b.id === selectedBarberId) || TEAM_MEMBERS[0];
+  const activeBarber =
+    mergedBarbers.find((b) => b.id === selectedBarberId) || mergedBarbers[0];
 
   return (
     <div className="space-y-4 text-xs">
@@ -1645,7 +1721,8 @@ export const BarberSchedulePanel: React.FC<{
                     const bookedItem = barberBookingsMap.get(`${day.dateStr}@${slot}`);
                     const key = `${day.dateStr}@${slot}`;
                     const isSpecificBlock = activeConfig.dateSlotBlocks.includes(key);
-                    const isRecurringBreak = activeConfig.breakSlots.includes(slot);
+                    const isRangeBreak = isTimeSlotInBreakRanges(slot, activeConfig.breakRanges || []);
+                    const isRecurringBreak = activeConfig.breakSlots.includes(slot) || isRangeBreak;
                     const isBlocked = isSpecificBlock || isRecurringBreak;
 
                     if (bookedItem) {
@@ -1706,8 +1783,60 @@ export const BarberSchedulePanel: React.FC<{
 
       {/* Bottom Rule Helpers */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="p-4 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-2.5">
+        <div className="p-4 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-3">
           <div className="font-bold text-amber-300">{ui.dailyBreaksTitle}</div>
+
+          {/* Start -> End Daily Break Range Picker */}
+          <div className="p-2.5 rounded-xl bg-black/40 border border-zinc-800 space-y-2">
+            <div className="text-[11px] font-bold text-zinc-300">
+              فترة استراحة يومية (من الساعة ← إلى الساعة):
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5" dir="ltr">
+              <input
+                type="time"
+                value={breakStartInput}
+                onChange={(e) => setBreakStartInput(e.target.value)}
+                className="flex-1 min-w-[92px] bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1 text-xs font-mono text-white"
+              />
+              <span className="text-zinc-400 font-bold">→</span>
+              <input
+                type="time"
+                value={breakEndInput}
+                onChange={(e) => setBreakEndInput(e.target.value)}
+                className="flex-1 min-w-[92px] bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1 text-xs font-mono text-white"
+              />
+              <button
+                type="button"
+                disabled={saving}
+                onClick={handleAddBreakRange}
+                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black text-[11px] flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3 h-3" />
+                <span>إضافة</span>
+              </button>
+            </div>
+            {(activeConfig.breakRanges || []).length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {(activeConfig.breakRanges || []).map((r) => (
+                  <span
+                    key={r.id}
+                    dir="ltr"
+                    className="px-2 py-1 rounded-lg bg-red-950/60 border border-red-500/40 text-red-200 font-mono text-[10px] flex items-center gap-1.5"
+                  >
+                    <span>⏸ {r.start} → {r.end}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveBreakRange(r.id)}
+                      className="text-red-400 hover:text-white cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-3 gap-1.5">
             {ALL_SALON_CONFIGURABLE_HOURS.map((slot) => {
               const isBlocked = activeConfig.breakSlots.includes(slot);
@@ -1816,24 +1945,277 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
   onOpenClientTracking?: (query: string) => void;
 }> = ({ bookings, crmMap, onOpenClientTracking }) => {
   const { lang } = useLanguage();
+  const caisseEntries = useCaisseEntries();
+  const manualCredits = useManualClientCredits();
+  const roster = useBarberRoster();
+
   const [search, setSearch] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'vip' | 'loyalty' | 'banned'>('all');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [qrTargetClient, setQrTargetClient] = useState<ClientQrTarget | null>(null);
+  const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
 
-  const clients = buildCrmClientSummaries(bookings, crmMap).filter((c) => {
+  // Selective Delete + Credit Protection Modal State
+  const [deleteModalClient, setDeleteModalClient] = useState<AggregatedCrmClient | null>(null);
+  const [deleteBookingIds, setDeleteBookingIds] = useState<string[]>([]);
+  const [deleteCrmProfileFlag, setDeleteCrmProfileFlag] = useState<boolean>(false);
+  const [creditOverrideAck, setCreditOverrideAck] = useState<boolean>(false);
+  const [deleteBusy, setDeleteBusy] = useState<boolean>(false);
+  const [detailsClientId, setDetailsClientId] = useState<string | null>(null);
+
+  // CRM QR Scanner Modal State
+  const [isCrmQrOpen, setIsCrmQrOpen] = useState(false);
+  const [crmCameraFacing, setCrmCameraFacing] = useState<'environment' | 'user'>('environment');
+  const [crmQrError, setCrmQrError] = useState<string | null>(null);
+  const [crmQrManualInput, setCrmQrManualInput] = useState('');
+  const [scannedTicketMatch, setScannedTicketMatch] = useState<AppointmentBooking | null>(null);
+
+  const openSelectiveDeleteModal = (client: AggregatedCrmClient) => {
+    setDeleteModalClient(client);
+    setDeleteBookingIds([]);
+    setDeleteCrmProfileFlag(false);
+    setCreditOverrideAck(false);
+  };
+
+  const handleConfirmSelectiveDelete = async () => {
+    if (!deleteModalClient) return;
+    if (deleteBookingIds.length === 0 && !deleteCrmProfileFlag) return;
+    const creditSummary = computeOutstandingCreditsForPhone(
+      deleteModalClient.phoneDisplay || deleteModalClient.normalizedPhone,
+      caisseEntries,
+      manualCredits,
+      roster
+    );
+    if (creditSummary.hasCredit && !creditOverrideAck) return;
+
+    setDeleteBusy(true);
+    try {
+      const targetDocIds = deleteCrmProfileFlag
+        ? deleteModalClient.allDocIds.length > 0
+          ? deleteModalClient.allDocIds
+          : [deleteModalClient.id]
+        : [];
+      const result = await deleteSelectedClientRecords({
+        bookingIds: deleteBookingIds,
+        crmDocIds: targetDocIds,
+      });
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'تم تنفيذ الحذف الانتقائي بنجاح ✓',
+          fr: 'Suppression sélective effectuée ✓',
+          amz: 'ⵉⵜⵜⵓⴽⴽⵙ ⵓⴼⵔⴰⵏ ✓',
+          en: 'Selective deletion completed ✓',
+          es: 'Eliminación selectiva completada ✓',
+        }),
+        {
+          body: pickLang(lang, {
+            ar: `تم حذف ${result.deletedBookings} حجز${result.deletedProfiles > 0 ? ' + ملف CRM' : ''} (الكريدي المفتوح محفوظ بأمان).`,
+            fr: `${result.deletedBookings} RDV supprimé(s)${result.deletedProfiles > 0 ? ' + fiche CRM' : ''} (crédits conservés).`,
+            amz: `${result.deletedBookings} ⵉⵙⵉⵀⴰⵔⵏ ⵜⵜⵓⴽⴽⵙⵏ.`,
+            en: `Removed ${result.deletedBookings} booking(s)${result.deletedProfiles > 0 ? ' + CRM card' : ''} (open credits preserved).`,
+            es: `${result.deletedBookings} cita(s) eliminada(s)${result.deletedProfiles > 0 ? ' + ficha CRM' : ''}.`,
+          }),
+          type: 'success',
+          skipSound: true,
+        }
+      );
+      setDeleteModalClient(null);
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const allClients = buildCrmClientSummaries(bookings, crmMap);
+
+  const clients = allClients.filter((c) => {
     if (filterMode === 'vip' && !c.isVip) return false;
     if (filterMode === 'loyalty' && c.verifiedVisits < 5 && c.eligibleFreeWashes === 0) return false;
     if (filterMode === 'banned' && !c.isBanned) return false;
 
     const q = search.trim().toLowerCase();
     if (!q) return true;
+    const digitsQ = q.replace(/\D/g, '');
     return (
       c.clientName.toLowerCase().includes(q) ||
+      c.nameAliases.some((a) => a.toLowerCase().includes(q)) ||
       c.phoneDisplay.toLowerCase().includes(q) ||
-      c.normalizedPhone.includes(q.replace(/\D/g, ''))
+      (digitsQ.length > 0 && c.normalizedPhone.includes(digitsQ))
     );
   });
+
+  const handleCrmQrDecoded = (rawText: string) => {
+    const trimmed = rawText.trim();
+    if (!trimmed) return;
+    setCrmQrError(null);
+
+    const parsed = parseScannedQrResult(trimmed);
+    const matchedBooking =
+      getBookingByTicket(parsed.query, bookings) ||
+      getBookingByTicket(trimmed, bookings) ||
+      (parsed.checkInToken
+        ? bookings.find(
+            (b) =>
+              b.checkInToken &&
+              b.checkInToken.toLowerCase() === parsed.checkInToken?.toLowerCase()
+          )
+        : undefined);
+
+    const rawCandidates = [
+      parsed.query,
+      parsed.clientId || '',
+      matchedBooking?.clientPhone || '',
+      trimmed,
+    ].filter(Boolean);
+
+    const digitCandidates = Array.from(
+      new Set(
+        rawCandidates
+          .flatMap((val) => [
+            normalizeMoroccanPhoneDigits(val),
+            normalizePhoneForQrId(val),
+            val.replace(/\D/g, ''),
+          ])
+          .filter((d) => d.length >= 6)
+      )
+    );
+
+    const docIdCandidates = new Set(
+      rawCandidates.flatMap((val) => [val, getCrmDocId(val)]).filter(Boolean)
+    );
+
+    const matchedClient = allClients.find((c) => {
+      if (docIdCandidates.has(c.id)) return true;
+      if (c.allDocIds.some((docId) => docIdCandidates.has(docId))) return true;
+      const clientDigits = [
+        c.normalizedPhone,
+        normalizeMoroccanPhoneDigits(c.phoneDisplay),
+        normalizePhoneForQrId(c.phoneDisplay),
+      ].filter((d) => d.length >= 6);
+      if (digitCandidates.some((d) => clientDigits.includes(d))) return true;
+      if (matchedBooking && c.bookings.some((b) => b.id === matchedBooking.id)) return true;
+      return false;
+    });
+
+    if (matchedClient) {
+      setIsCrmQrOpen(false);
+      setCrmQrManualInput('');
+      setCrmQrError(null);
+      setScannedTicketMatch(matchedBooking || null);
+      setDetailsClientId(matchedClient.id);
+      sendDualAlert(
+        pickLang(lang, {
+          ar: `تم فتح ملف الزبون: ${matchedClient.clientName} ✓`,
+          fr: `Profil client ouvert : ${matchedClient.clientName} ✓`,
+          amz: `ⵉⵕⵥⵎ ⵓⴼⵉⵍⴰⵡ ⵏ ${matchedClient.clientName} ✓`,
+          en: `Opened client profile: ${matchedClient.clientName} ✓`,
+          es: `Perfil abierto: ${matchedClient.clientName} ✓`,
+        }),
+        {
+          body: matchedBooking
+            ? `${matchedBooking.ticketNumber} · ${matchedClient.phoneDisplay}`
+            : matchedClient.phoneDisplay,
+          type: 'success',
+          skipSound: true,
+        }
+      );
+      return;
+    }
+
+    const notFoundMsg = pickLang(lang, {
+      ar: 'لم يتم العثور على زبون مطابق لهذا الرمز أو الرقم في سجل CRM.',
+      fr: 'Aucun client trouvé dans le CRM pour ce QR code ou numéro.',
+      amz: 'ⵓⵔ ⵉⵜⵜⵓⴼⴰ ⵓⵎⵙⴰⵖ ⵉⵎⵙⴰⵙⴰⵏ ⴷ QR ⴰⴷ.',
+      en: 'No matching client found in CRM for this QR code or lookup.',
+      es: 'No se encontró ningún cliente en el CRM para este código QR.',
+    });
+    setCrmQrError(notFoundMsg);
+    sendDualAlert(notFoundMsg, { type: 'warning', skipSound: true });
+  };
+
+  const handleCrmQrImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCrmQrError(null);
+    try {
+      const decodedText = await scanQrImageFile(file, 'crm-qr-file-temp');
+      handleCrmQrDecoded(decodedText);
+    } catch {
+      setCrmQrError(
+        pickLang(lang, {
+          ar: 'تعذر قراءة رمز QR من هذه الصورة. جرب صورة أوضح أو أدخل الرقم يدوياً.',
+          fr: 'Impossible de lire le QR depuis cette image. Essayez la saisie manuelle.',
+          amz: 'ⵓⵔ ⵉⵣⵎⵉⵔ ⴰⴷ ⵉⵖⵔ QR ⵙⴳ ⵜⵡⵍⴰⴼⵜ ⴰⴷ.',
+          en: 'Could not read a QR code from this image. Try a clearer image or manual lookup.',
+          es: 'No se pudo leer el QR de la imagen. Prueba la búsqueda manual.',
+        })
+      );
+    } finally {
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleCrmManualLookupSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!crmQrManualInput.trim()) return;
+    handleCrmQrDecoded(crmQrManualInput);
+  };
+
+  useEffect(() => {
+    if (!isCrmQrOpen) return;
+
+    let html5Qr: Html5Qrcode | null = null;
+    let isStopped = false;
+    setCrmQrError(null);
+
+    const timer = setTimeout(async () => {
+      try {
+        const container = document.getElementById('crm-qr-reader-container');
+        if (!container || isStopped) return;
+
+        html5Qr = new Html5Qrcode('crm-qr-reader-container');
+        await html5Qr.start(
+          { facingMode: crmCameraFacing },
+          { fps: 10, qrbox: { width: 230, height: 230 }, aspectRatio: 1.0 },
+          (decodedText) => {
+            if (isStopped) return;
+            isStopped = true;
+            if (html5Qr && html5Qr.isScanning) {
+              html5Qr.stop().then(() => html5Qr?.clear()).catch(() => {});
+            }
+            handleCrmQrDecoded(decodedText);
+          },
+          () => {
+            // frame scan noise
+          }
+        );
+
+        if (isStopped && html5Qr && html5Qr.isScanning) {
+          html5Qr.stop().then(() => html5Qr?.clear()).catch(() => {});
+        }
+      } catch (err: unknown) {
+        if (isStopped) return;
+        const msg = err instanceof Error ? err.message : '';
+        setCrmQrError(
+          msg ||
+            pickLang(lang, {
+              ar: 'تعذر تشغيل الكاميرا — يمكنك رفع صورة QR أو إدخال الرقم/التذكرة يدوياً أدناه.',
+              fr: 'Caméra indisponible — importez une image QR ou saisissez le numéro ci-dessous.',
+              amz: 'ⵜⴰⴽⴰⵎⵉⵕⴰ ⵓⵔ ⵜⵕⵥⵉⵎ — ⵙⵙⴽⵛⵎ QR ⵙ ⵓⴼⵓⵙ ⵏⵖ ⵜⴰⵡⵍⴰⴼⵜ.',
+              en: 'Camera unavailable — upload a QR image or enter phone/ticket manually below.',
+              es: 'Cámara no disponible — sube una imagen QR o busca manualmente abajo.',
+            })
+        );
+      }
+    }, 220);
+
+    return () => {
+      isStopped = true;
+      clearTimeout(timer);
+      if (html5Qr && html5Qr.isScanning) {
+        html5Qr.stop().then(() => html5Qr?.clear()).catch(() => {});
+      }
+    };
+  }, [isCrmQrOpen, crmCameraFacing]);
 
   const handleToggleVip = async (c: typeof clients[number]) => {
     setBusyId(c.id);
@@ -2033,6 +2415,77 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
     );
   };
 
+  const selectedFilteredClients = clients.filter((c) => selectedClientIds.includes(c.id));
+  const allFilteredSelected =
+    clients.length > 0 && selectedFilteredClients.length === clients.length;
+
+  const toggleSelectClient = (clientId: string) => {
+    setSelectedClientIds((prev) =>
+      prev.includes(clientId) ? prev.filter((id) => id !== clientId) : [...prev, clientId]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (allFilteredSelected) {
+      const visibleSet = new Set(clients.map((c) => c.id));
+      setSelectedClientIds((prev) => prev.filter((id) => !visibleSet.has(id)));
+    } else {
+      const merged = new Set([...selectedClientIds, ...clients.map((c) => c.id)]);
+      setSelectedClientIds(Array.from(merged));
+    }
+  };
+
+  const handleExportVcfList = (
+    targetList: typeof clients,
+    exportScope: 'single' | 'selected' | 'filtered' = 'filtered'
+  ) => {
+    const customFilename =
+      exportScope === 'filtered'
+        ? `Salon_Boumlik_Filtered_${filterMode}_${targetList.length}.vcf`
+        : exportScope === 'selected'
+        ? `Salon_Boumlik_Selected_${targetList.length}.vcf`
+        : undefined;
+
+    const exportedCount = downloadClientsVcf(
+      targetList.map((c) => ({
+        id: c.id,
+        clientName: c.clientName,
+        phoneDisplay: c.phoneDisplay,
+        normalizedPhone: c.normalizedPhone,
+        verifiedVisits: c.verifiedVisits,
+        isVip: c.isVip,
+        isBanned: c.isBanned,
+        lifetimeSpendMAD: c.lifetimeSpendMAD,
+      })),
+      customFilename
+    );
+
+    if (exportedCount === 0) {
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'لا توجد أرقام هواتف صالحة للتصدير',
+          fr: 'Aucun numéro valide à exporter',
+          amz: 'ⵓⵔ ⵍⵍⵉⵏ ⵉⵟⵟⵓⵏⵏ',
+          en: 'No valid phone numbers to export',
+          es: 'Sin teléfonos válidos',
+        }),
+        { type: 'warning', skipSound: true }
+      );
+      return;
+    }
+
+    sendDualAlert(
+      pickLang(lang, {
+        ar: `تم تنزيل ملف جهات الاتصال (${exportedCount}) للهاتف ✓`,
+        fr: `Fichier contacts .vcf (${exportedCount}) téléchargé ✓`,
+        amz: `ⵉⵜⵜⵓⵣⴷⵎ ⵓⴼⴰⵢⵍⵓ .vcf (${exportedCount}) ✓`,
+        en: `Contacts file (.vcf) downloaded (${exportedCount}) ✓`,
+        es: `Archivo .vcf descargado (${exportedCount}) ✓`,
+      }),
+      { type: 'success', skipSound: true }
+    );
+  };
+
   const ui = {
     title: pickLang(lang, {
       ar: 'سجل الزبناء، برنامج الولاء والقائمة السوداء (CRM)',
@@ -2054,6 +2507,50 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
       amz: 'ⵙⵉⴼⴹ CSV',
       en: 'Export CSV',
       es: 'Exportar CSV',
+    }),
+    scanQrBtn: pickLang(lang, {
+      ar: 'سكانير QR',
+      fr: 'Scanner QR',
+      amz: 'ⵙⴽⴰⵏⵉⵔ QR',
+      en: 'QR Scanner',
+      es: 'Escáner QR',
+    }),
+    selectAll: pickLang(lang, {
+      ar: 'تحديد الكل',
+      fr: 'Tout sélectionner',
+      amz: 'ⴼⵔⵏ ⴰⴽⴽⵯ',
+      en: 'Select All',
+      es: 'Seleccionar todo',
+    }),
+    deselectAll: pickLang(lang, {
+      ar: 'إلغاء التحديد',
+      fr: 'Tout désélectionner',
+      amz: 'ⵙⵔⵓⵙ ⴰⴼⵔⴰⵏ',
+      en: 'Clear Selection',
+      es: 'Deseleccionar',
+    }),
+    exportVcfSelected: (n: number) =>
+      pickLang(lang, {
+        ar: `حفظ المحدد (.vcf) (${n})`,
+        fr: `Sauver sélection (.vcf) (${n})`,
+        amz: `ⵃⴹⵓ (.vcf) (${n})`,
+        en: `Save Selected (.vcf) (${n})`,
+        es: `Guardar selección (.vcf) (${n})`,
+      }),
+    exportVcfFiltered: (n: number) =>
+      pickLang(lang, {
+        ar: `تصدير الزبناء المفلترين (.vcf) (${n})`,
+        fr: `Exporter filtrés (.vcf) (${n})`,
+        amz: `ⵙⵉⴼⴹ ⵉⵜⵜⵓⴼⵔⵏⵏ (.vcf) (${n})`,
+        en: `Export Filtered Contacts (.vcf) (${n})`,
+        es: `Exportar filtrados (.vcf) (${n})`,
+      }),
+    saveSingleVcf: pickLang(lang, {
+      ar: 'حفظ الرقم (.vcf)',
+      fr: 'Sauver (.vcf)',
+      amz: 'ⵃⴹⵓ (.vcf)',
+      en: 'Save (.vcf)',
+      es: 'Guardar (.vcf)',
     }),
     searchPlaceholder: pickLang(lang, {
       ar: 'بحث باسم الزبون أو رقم الهاتف...',
@@ -2116,18 +2613,68 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
             <p className="text-[11px] text-zinc-400 mt-0.5">{ui.subtitle}</p>
           </div>
 
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            disabled={clients.length === 0}
-            className="min-h-[38px] px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-500/45 text-emerald-300 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
-          >
-            <Download className="w-4 h-4" />
-            <span>{ui.exportCsv}</span>
-            <span className="font-mono text-[10px] opacity-85 tabular-nums">
-              ({clients.length})
-            </span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setCrmQrError(null);
+                setCrmQrManualInput('');
+                setIsCrmQrOpen(true);
+              }}
+              className="min-h-[38px] px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0 shadow-xs"
+            >
+              <ScanLine className="w-4 h-4" />
+              <span>{ui.scanQrBtn}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleExportVcfList(clients, 'filtered')}
+              disabled={clients.length === 0}
+              className="min-h-[38px] px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed border border-amber-500/50 text-amber-300 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>{ui.exportVcfFiltered(clients.length)}</span>
+            </button>
+
+            {selectedFilteredClients.length > 0 && (
+              <button
+                type="button"
+                onClick={() => handleExportVcfList(selectedFilteredClients, 'selected')}
+                className="min-h-[38px] px-3 py-2 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/50 text-blue-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>{ui.exportVcfSelected(selectedFilteredClients.length)}</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleToggleSelectAll}
+              disabled={clients.length === 0}
+              className={`min-h-[38px] px-3 py-2 rounded-xl border font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40 ${
+                allFilteredSelected
+                  ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                  : 'bg-zinc-800 hover:bg-zinc-700 border-zinc-700 text-zinc-200'
+              }`}
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>{allFilteredSelected ? ui.deselectAll : ui.selectAll}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              disabled={clients.length === 0}
+              className="min-h-[38px] px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-500/45 text-emerald-300 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
+            >
+              <Download className="w-4 h-4" />
+              <span>{ui.exportCsv}</span>
+              <span className="font-mono text-[10px] opacity-85 tabular-nums">
+                ({clients.length})
+              </span>
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2.5 items-center justify-between">
@@ -2166,140 +2713,240 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
         </div>
       </div>
 
-      {/* Client Cards */}
+      {/* Compact Client Cards (Click card for Full Details Modal) */}
       {clients.length === 0 ? (
         <div className="p-8 text-center rounded-2xl bg-zinc-900/50 border border-zinc-800 text-zinc-400">
           {ui.empty}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
           {clients.map((c) => {
-            const clientWa = formatMoroccanWhatsAppNumber(c.phoneDisplay);
+            const isSelected = selectedClientIds.includes(c.id);
             return (
               <div
                 key={c.id}
-                className={`p-4 rounded-2xl border space-y-3 ${
-                  c.isBanned
-                    ? 'bg-red-950/20 border-red-500/50'
+                role="button"
+                tabIndex={0}
+                onClick={() => setDetailsClientId(c.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setDetailsClientId(c.id);
+                  }
+                }}
+                className={`px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-all cursor-pointer ${
+                  isSelected
+                    ? 'ring-2 ring-amber-400/70 border-amber-500/60 bg-amber-950/20'
+                    : c.isBanned
+                    ? 'bg-red-950/20 border-red-500/45 hover:border-red-400'
                     : c.isVip
-                    ? 'bg-amber-950/15 border-amber-500/40'
-                    : 'bg-zinc-900/70 border-zinc-800'
+                    ? 'bg-amber-950/15 border-amber-500/35 hover:border-amber-400'
+                    : 'bg-zinc-900/70 border-zinc-800 hover:border-zinc-600'
                 }`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-black text-white text-sm">{c.clientName}</span>
-                      {c.isVip && (
-                        <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[10px] font-bold">
-                          👑 VIP
-                        </span>
-                      )}
-                      {c.isBanned && (
-                        <span className="px-2 py-0.5 rounded-full bg-red-600/30 border border-red-500/60 text-red-200 text-[10px] font-bold">
-                          {ui.bannedBadge}
-                        </span>
-                      )}
-                      {c.eligibleFreeWashes > 0 && (
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-600/25 border border-emerald-400/50 text-emerald-300 text-[10px] font-bold">
-                          {ui.freeWashBadge}
-                        </span>
-                      )}
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleSelectClient(c.id)}
+                    aria-label={c.clientName}
+                    className="w-4 h-4 accent-amber-500 rounded cursor-pointer flex-shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-black text-white text-sm truncate">
+                      {c.clientName}
                     </div>
-                    <span dir="ltr" className="text-[11px] font-mono text-zinc-400 block mt-0.5">
+                    <span dir="ltr" className="text-[11px] font-mono text-zinc-400 block truncate">
                       {c.phoneDisplay}
                     </span>
                   </div>
+                </div>
 
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setQrTargetClient({
-                          id: c.id,
-                          clientName: c.clientName,
-                          phoneDisplay: c.phoneDisplay,
-                          normalizedPhone: c.normalizedPhone,
-                          verifiedVisits: c.verifiedVisits,
-                          isVip: c.isVip,
-                          isBanned: c.isBanned,
-                        })
-                      }
-                      className="px-2.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <QrCode className="w-4 h-4" />
-                      <span>{ui.qrBtn}</span>
-                    </button>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleExportVcfList([c], 'single');
+                    }}
+                    className="min-h-[34px] px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    title={ui.saveSingleVcf}
+                  >
+                    <UserPlus className="w-3.5 h-3.5 text-amber-400" />
+                    <span>.vcf</span>
+                  </button>
 
-                    <a
-                      href={`https://wa.me/${clientWa}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300"
-                      title="WhatsApp"
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setQrTargetClient({
+                        id: c.id,
+                        clientName: c.clientName,
+                        phoneDisplay: c.phoneDisplay,
+                        normalizedPhone: c.normalizedPhone,
+                        verifiedVisits: c.verifiedVisits,
+                        isVip: c.isVip,
+                        isBanned: c.isBanned,
+                      });
+                    }}
+                    className="min-h-[34px] px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    title={ui.qrBtn}
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>QR</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Client Details Modal (Opens when clicking a compact CRM row/card or scanning QR) */}
+      {detailsClientId && (() => {
+        const c = allClients.find((item) => item.id === detailsClientId);
+        if (!c) return null;
+        const clientWa = formatMoroccanWhatsAppNumber(c.phoneDisplay);
+        const clientCreditSummary = computeOutstandingCreditsForPhone(
+          c.phoneDisplay || c.normalizedPhone,
+          caisseEntries,
+          manualCredits,
+          roster
+        );
+        const extraAliases = c.nameAliases.filter(
+          (a) => a.trim().toLowerCase() !== c.clientName.trim().toLowerCase()
+        );
+        const loyalty = computeLoyaltyProgress(c.verifiedVisits, lang);
+
+        return (
+          <div
+            className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs"
+            onClick={() => {
+              setDetailsClientId(null);
+              setScannedTicketMatch(null);
+            }}
+          >
+            <div
+              className="w-full max-w-lg max-h-[88vh] flex flex-col rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden text-xs"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4 border-b border-zinc-800 flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <h4 className="text-base font-black text-white truncate">{c.clientName}</h4>
+                    {c.isVip && (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[10px] font-bold">
+                        👑 VIP
+                      </span>
+                    )}
+                    {c.isBanned && (
+                      <span className="px-2 py-0.5 rounded-full bg-red-600/30 border border-red-500/60 text-red-200 text-[10px] font-bold">
+                        {ui.bannedBadge}
+                      </span>
+                    )}
+                    {c.eligibleFreeWashes > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-600/25 border border-emerald-400/50 text-emerald-300 text-[10px] font-bold">
+                        {ui.freeWashBadge}
+                      </span>
+                    )}
+                    {clientCreditSummary.hasCredit && clientCreditSummary.totalOwedMAD > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-orange-600/25 border border-orange-400/50 text-orange-300 text-[10px] font-bold font-mono tabular-nums">
+                        💳 كريدي: {clientCreditSummary.totalOwedMAD} MAD
+                      </span>
+                    )}
+                  </div>
+                  <div dir="ltr" className="text-xs font-mono text-zinc-400">
+                    {c.phoneDisplay}
+                  </div>
+                  {extraAliases.length > 0 && (
+                    <div className="text-[11px] text-zinc-400">
+                      أسماء مسجلة لنفس الرقم: {extraAliases.join(' · ')}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailsClientId(null);
+                    setScannedTicketMatch(null);
+                  }}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-4 overflow-y-auto space-y-4 flex-1">
+                {scannedTicketMatch && (
+                  <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-400/45 text-amber-200 flex items-center justify-between gap-2 text-[11px]">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ScanLine className="w-4 h-4 text-amber-400 shrink-0" />
+                      <div className="truncate">
+                        <span className="font-black">{scannedTicketMatch.ticketNumber}</span> ·{' '}
+                        <span>{scannedTicketMatch.barberName}</span> ·{' '}
+                        <span dir="ltr" className="font-mono">
+                          {scannedTicketMatch.date} ({scannedTicketMatch.timeSlot})
+                        </span>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-black/40 font-mono text-[10px] uppercase shrink-0">
+                      {scannedTicketMatch.status}
+                    </span>
+                  </div>
+                )}
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="p-2.5 rounded-xl bg-black/50 border border-zinc-800">
+                    <span className="text-[10px] text-zinc-400 block">{ui.visitsCol}</span>
+                    <span className="font-mono font-black text-amber-300 text-sm tabular-nums">
+                      {c.verifiedVisits}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-black/50 border border-zinc-800">
+                    <span className="text-[10px] text-zinc-400 block">{ui.spendCol}</span>
+                    <span className="font-mono font-black text-emerald-300 text-sm tabular-nums">
+                      {c.lifetimeSpendMAD} MAD
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-black/50 border border-zinc-800">
+                    <span className="text-[10px] text-zinc-400 block">{ui.noShowCol}</span>
+                    <span
+                      className={`font-mono font-black text-sm tabular-nums ${
+                        c.noShowCount >= 2
+                          ? 'text-red-400'
+                          : c.noShowCount === 1
+                          ? 'text-orange-400'
+                          : 'text-emerald-400'
+                      }`}
                     >
-                      <MessageCircle className="w-4 h-4" />
-                    </a>
+                      {c.noShowCount} / 2
+                    </span>
                   </div>
                 </div>
 
-                {(() => {
-                  const loyalty = computeLoyaltyProgress(c.verifiedVisits, lang);
-                  return (
-                    <>
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className="p-2 rounded-xl bg-black/50 border border-zinc-800">
-                          <span className="text-[10px] text-zinc-400 block">{ui.visitsCol}</span>
-                          <span className="font-mono font-black text-amber-300 text-sm tabular-nums">
-                            {c.verifiedVisits}
-                          </span>
-                        </div>
-                        <div className="p-2 rounded-xl bg-black/50 border border-zinc-800">
-                          <span className="text-[10px] text-zinc-400 block">{ui.spendCol}</span>
-                          <span className="font-mono font-black text-emerald-300 text-sm tabular-nums">
-                            {c.lifetimeSpendMAD} MAD
-                          </span>
-                        </div>
-                        <div className="p-2 rounded-xl bg-black/50 border border-zinc-800">
-                          <span className="text-[10px] text-zinc-400 block">{ui.noShowCol}</span>
-                          <span
-                            className={`font-mono font-black text-sm tabular-nums ${
-                              c.noShowCount >= 2
-                                ? 'text-red-400'
-                                : c.noShowCount === 1
-                                ? 'text-orange-400'
-                                : 'text-emerald-400'
-                            }`}
-                          >
-                            {c.noShowCount} / 2
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                        {loyalty.tiers.map((tier) => (
-                          <span
-                            key={tier.targetVisits}
-                            className={`px-2 py-0.5 rounded-full font-mono font-bold border tabular-nums ${
-                              tier.unlocked
-                                ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
-                                : tier.isCurrentTarget
-                                ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
-                                : 'bg-black/40 border-zinc-800 text-zinc-500'
-                            }`}
-                          >
-                            {tier.unlocked
-                              ? `✓ ${tier.targetVisits}/${tier.targetVisits}`
-                              : `${c.verifiedVisits}/${tier.targetVisits}`}
-                          </span>
-                        ))}
-                      </div>
-                    </>
-                  );
-                })()}
+                <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                  {loyalty.tiers.map((tier) => (
+                    <span
+                      key={tier.targetVisits}
+                      className={`px-2 py-0.5 rounded-full font-mono font-bold border tabular-nums ${
+                        tier.unlocked
+                          ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
+                          : tier.isCurrentTarget
+                          ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                          : 'bg-black/40 border-zinc-800 text-zinc-500'
+                      }`}
+                    >
+                      {tier.unlocked
+                        ? `✓ ${tier.targetVisits}/${tier.targetVisits}`
+                        : `${c.verifiedVisits}/${tier.targetVisits}`}
+                    </span>
+                  ))}
+                </div>
 
                 {(c.customDiscountMAD > 0 || c.banReason || c.rewardNote) && (
-                  <div className="p-2 rounded-xl bg-black/40 border border-zinc-800/80 text-[11px] space-y-0.5">
+                  <div className="p-2.5 rounded-xl bg-black/40 border border-zinc-800 text-[11px] space-y-0.5">
                     {c.customDiscountMAD > 0 && (
                       <div className="text-emerald-300 font-bold">
                         {ui.activeDiscount(c.customDiscountMAD)}
@@ -2312,7 +2959,45 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                   </div>
                 )}
 
-                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-zinc-800/80">
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-800">
+                  <button
+                    type="button"
+                    onClick={() => handleExportVcfList([c], 'single')}
+                    className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{ui.saveSingleVcf}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setQrTargetClient({
+                        id: c.id,
+                        clientName: c.clientName,
+                        phoneDisplay: c.phoneDisplay,
+                        normalizedPhone: c.normalizedPhone,
+                        verifiedVisits: c.verifiedVisits,
+                        isVip: c.isVip,
+                        isBanned: c.isBanned,
+                      })
+                    }
+                    className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>{ui.qrBtn}</span>
+                  </button>
+
+                  <a
+                    href={`https://wa.me/${clientWa}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>WhatsApp</span>
+                  </a>
+
                   <button
                     type="button"
                     disabled={busyId === c.id}
@@ -2369,28 +3054,445 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                       </>
                     )}
                   </button>
+
                   {onOpenClientTracking && (
                     <button
                       type="button"
-                      onClick={() => onOpenClientTracking(c.phoneDisplay || c.normalizedPhone || c.id)}
+                      onClick={() => {
+                        setDetailsClientId(null);
+                        onOpenClientTracking(c.phoneDisplay || c.normalizedPhone || c.id);
+                      }}
                       className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                     >
                       <ExternalLink className="w-3 h-3 text-amber-400" />
                       <span>{ui.trackBtn}</span>
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    disabled={busyId === c.id}
+                    onClick={() => {
+                      setDetailsClientId(null);
+                      openSelectiveDeleteModal(c);
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 text-rose-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'حذف انتقائي',
+                        fr: 'Supprimer...',
+                        amz: 'ⴽⴽⵙ...',
+                        en: 'Delete...',
+                        es: 'Eliminar...',
+                      })}
+                    </span>
+                  </button>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Selective Client / Booking Deletion Modal with Open Credit Protection */}
+      {deleteModalClient && (() => {
+        const modalCredit = computeOutstandingCreditsForPhone(
+          deleteModalClient.phoneDisplay || deleteModalClient.normalizedPhone,
+          caisseEntries,
+          manualCredits,
+          roster
+        );
+        const canProceed =
+          !deleteBusy &&
+          (deleteBookingIds.length > 0 || deleteCrmProfileFlag) &&
+          (!modalCredit.hasCredit || creditOverrideAck);
+
+        const toggleDeleteBooking = (bId: string) => {
+          setDeleteBookingIds((prev) =>
+            prev.includes(bId) ? prev.filter((id) => id !== bId) : [...prev, bId]
+          );
+        };
+
+        return (
+          <div
+            className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs"
+            onClick={() => !deleteBusy && setDeleteModalClient(null)}
+          >
+            <div
+              className="w-full max-w-lg max-h-[88vh] flex flex-col rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden text-xs"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4 border-b border-zinc-800 flex items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-black text-white flex items-center gap-2">
+                    <Trash2 className="w-4 h-4 text-rose-400" />
+                    <span>حذف انتقائي لسجلات الزبون</span>
+                  </h4>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    {deleteModalClient.clientName} ·{' '}
+                    <span dir="ltr" className="font-mono">
+                      {deleteModalClient.phoneDisplay}
+                    </span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={deleteBusy}
+                  onClick={() => setDeleteModalClient(null)}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-4 overflow-y-auto space-y-4 flex-1">
+                {/* Credit Protection Warning Banner */}
+                {modalCredit.hasCredit && modalCredit.totalOwedMAD > 0 ? (
+                  <div className="p-3.5 rounded-xl bg-rose-950/50 border border-rose-500/60 space-y-2.5 text-rose-100">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <div className="font-black text-orange-300">
+                          ⚠️ تحذير حماية الكريدي: هذا الرقم عليه كريدي غير مدفوع (
+                          <span dir="ltr" className="font-mono">
+                            {modalCredit.totalOwedMAD} MAD
+                          </span>
+                          )
+                        </div>
+                        <ul className="space-y-0.5 text-[11px] text-rose-200 list-disc ps-4">
+                          {modalCredit.creditorBreakdowns.map((cred) => (
+                            <li key={cred.creditorKey}>
+                              {cred.creditorLabel}:{' '}
+                              <strong dir="ltr" className="font-mono">
+                                {cred.amountMAD} MAD
+                              </strong>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="text-[11px] text-rose-200/90 leading-relaxed pt-1">
+                          مبالغ الكريدي المسجلة في لاكيس وسجل الناس لي كانتسالهم محمية ولن تُحذف،
+                          وستبقى مرتبطة برقم الهاتف حتى الأداء.
+                        </p>
+                      </div>
+                    </div>
+
+                    <label className="flex items-start gap-2 p-2.5 rounded-lg bg-black/40 border border-rose-500/40 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={creditOverrideAck}
+                        onChange={(e) => setCreditOverrideAck(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 accent-orange-500 shrink-0 cursor-pointer"
+                      />
+                      <span className="text-[11px] font-bold text-amber-200">
+                        أؤكد أنني اطلعت على وجود الكريدي المفتوح ({modalCredit.totalOwedMAD} MAD)
+                        وأريد تنفيذ الحذف المحدد أسفله فقط.
+                      </span>
+                    </label>
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-emerald-300 text-[11px] flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>لا يوجد أي كريدي مفتوح مسجل على رقم هذا الزبون.</span>
+                  </div>
+                )}
+
+                {/* Individual Bookings Checklist */}
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-black text-white">
+                      1. اختر الحجوزات / التذاكر المراد حذفها ({deleteModalClient.bookings.length}):
+                    </span>
+                    {deleteModalClient.bookings.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDeleteBookingIds(deleteModalClient.bookings.map((b) => b.id))
+                          }
+                          className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 cursor-pointer"
+                        >
+                          تحديد الكل
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDeleteBookingIds(
+                              deleteModalClient.bookings
+                                .filter((b) =>
+                                  ['pending', 'pending_quote', 'cancelled', 'rejected', 'no_show'].includes(
+                                    b.status
+                                  )
+                                )
+                                .map((b) => b.id)
+                            )
+                          }
+                          className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-300 cursor-pointer"
+                        >
+                          المعلقة / الملغاة فقط
+                        </button>
+                        {deleteBookingIds.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteBookingIds([])}
+                            className="px-2 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-400 cursor-pointer"
+                          >
+                            إلغاء التحديد
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {deleteModalClient.bookings.length === 0 ? (
+                    <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[11px]">
+                      لا توجد حجوزات مسجلة تحت هذا الرقم.
+                    </div>
+                  ) : (
+                    <div className="max-h-48 overflow-y-auto space-y-1.5 pe-1">
+                      {deleteModalClient.bookings.map((b) => {
+                        const checked = deleteBookingIds.includes(b.id);
+                        return (
+                          <label
+                            key={b.id}
+                            className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                              checked
+                                ? 'bg-rose-950/35 border-rose-500/50 text-white'
+                                : 'bg-zinc-900/60 border-zinc-800 text-zinc-300 hover:border-zinc-700'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleDeleteBooking(b.id)}
+                                className="w-4 h-4 accent-rose-500 shrink-0 cursor-pointer"
+                              />
+                              <div className="min-w-0">
+                                <div className="font-bold truncate">
+                                  <span className="font-mono text-amber-300">{b.ticketNumber}</span> ·{' '}
+                                  <span>{b.barberName}</span>
+                                </div>
+                                <div className="text-[10px] font-mono text-zinc-400">
+                                  {b.date} · {b.timeSlot} · {b.status}
+                                </div>
+                              </div>
+                            </div>
+                            <span dir="ltr" className="font-mono font-bold text-emerald-300 shrink-0">
+                              {b.finalTotalMAD} MAD
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* CRM Loyalty / Card Deletion Option */}
+                <div className="space-y-1.5 pt-2 border-t border-zinc-800">
+                  <span className="font-black text-white block">
+                    2. ملف الولاء وبطاقة الزبون (CRM):
+                  </span>
+                  <label className="p-3 rounded-xl bg-zinc-900/70 border border-zinc-800 hover:border-rose-500/40 flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={deleteCrmProfileFlag}
+                      onChange={(e) => setDeleteCrmProfileFlag(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-rose-500 shrink-0 cursor-pointer"
+                    />
+                    <div className="space-y-0.5">
+                      <div className="font-bold text-rose-200">
+                        حذف بطاقة الزبون (نقاط الولاء، VIP، وسم التغيب والحظر) من CRM
+                      </div>
+                      <p className="text-[10px] text-zinc-400">
+                        {deleteModalClient.bookings.length > deleteBookingIds.length
+                          ? 'ملاحظة: الحجوزات غير المحددة أعلاه ستُظهر بطاقة أساسية جديدة ما لم تحذفها أيضاً.'
+                          : 'سيتم إزالة البطاقة والبيانات المحددة نهائياً.'}
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-zinc-800 flex items-center justify-end gap-2 bg-zinc-900/50">
+                <button
+                  type="button"
+                  disabled={deleteBusy}
+                  onClick={() => setDeleteModalClient(null)}
+                  className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  disabled={!canProceed}
+                  onClick={handleConfirmSelectiveDelete}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>
+                    {deleteBusy
+                      ? 'جاري الحذف...'
+                      : `تنفيذ الحذف المحدد (${deleteBookingIds.length}${
+                          deleteCrmProfileFlag ? ' + ملف CRM' : ''
+                        })`}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <ClientQrModal
         client={qrTargetClient}
         onClose={() => setQrTargetClient(null)}
         onOpenClientTracking={onOpenClientTracking}
       />
+
+      {/* Dedicated CRM QR Scanner Modal (Camera + File Upload + Manual Lookup Fallback) */}
+      {isCrmQrOpen && (
+        <div
+          className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs"
+          onClick={() => setIsCrmQrOpen(false)}
+        >
+          <div
+            className="w-full max-w-md max-h-[90vh] flex flex-col rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b border-zinc-800 flex items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-black text-white flex items-center gap-2">
+                  <ScanLine className="w-4 h-4 text-amber-400" />
+                  <span>
+                    {pickLang(lang, {
+                      ar: 'سكانير QR للبحث الفوري في سجل الزبناء',
+                      fr: 'Scanner QR — Recherche instantanée CRM',
+                      amz: 'ⵙⴽⴰⵏⵉⵔ QR — ⴰⵔⵣⵣⵓ ⴳ CRM',
+                      en: 'CRM QR Scanner — Instant Client Lookup',
+                      es: 'Escáner QR — Búsqueda en CRM',
+                    })}
+                  </span>
+                </h4>
+                <p className="text-[11px] text-zinc-400 mt-0.5">
+                  {pickLang(lang, {
+                    ar: 'امسح بطاقة الزبون أو تذكرة الحجز لفتح ملفه فوراً.',
+                    fr: 'Scannez le QR client ou ticket pour ouvrir sa fiche.',
+                    amz: 'ⵙⴽⴰⵏⵉ QR ⵏ ⵓⵎⵙⴰⵖ ⵏⵖ ⵜⵉⴽⵉ ⵉ ⵓⵔⵥⴰⵎ ⵏ ⵓⴼⵉⵍⴰⵡ.',
+                    en: 'Scan client QR pass or booking ticket to open profile.',
+                    es: 'Escanea el QR del cliente o ticket para abrir su perfil.',
+                  })}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCrmQrOpen(false)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-3">
+              {/* Camera Viewport */}
+              <div className="rounded-xl bg-black border border-zinc-800 overflow-hidden relative min-h-[220px] flex items-center justify-center">
+                <div id="crm-qr-reader-container" className="w-full" />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCrmCameraFacing((prev) =>
+                      prev === 'environment' ? 'user' : 'environment'
+                    )
+                  }
+                  className="flex-1 min-h-[38px] px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Camera className="w-3.5 h-3.5 text-amber-400" />
+                  <span>
+                    {pickLang(lang, {
+                      ar: 'تبديل الكاميرا',
+                      fr: 'Changer caméra',
+                      amz: 'ⵙⵏⴼⵍ ⵜⴰⴽⴰⵎⵉⵕⴰ',
+                      en: 'Switch Camera',
+                      es: 'Cambiar cámara',
+                    })}
+                  </span>
+                </button>
+
+                <label className="flex-1 min-h-[38px] px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>
+                    {pickLang(lang, {
+                      ar: 'رفع صورة QR',
+                      fr: 'Importer image QR',
+                      amz: 'ⴰⵙⴽⵛⵎ ⵏ QR',
+                      en: 'Upload QR Image',
+                      es: 'Subir imagen QR',
+                    })}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleCrmQrImageUpload}
+                    className="hidden"
+                  />
+                </label>
+                <div id="crm-qr-file-temp" className="hidden" />
+              </div>
+
+              {crmQrError && (
+                <div
+                  role="alert"
+                  className="p-2.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-200 text-[11px] font-semibold"
+                >
+                  {crmQrError}
+                </div>
+              )}
+
+              {/* Safe Fallback: Manual QR text / Phone / Ticket Lookup */}
+              <form
+                onSubmit={handleCrmManualLookupSubmit}
+                className="pt-2 border-t border-zinc-800 space-y-2"
+              >
+                <label className="block text-[11px] font-bold text-zinc-400">
+                  {pickLang(lang, {
+                    ar: 'بديل آمن: الصق رابط QR أو رقم الهاتف أو التذكرة (#SB-...):',
+                    fr: 'Alternative : collez le code QR, téléphone ou ticket (#SB-...) :',
+                    amz: 'ⴰⵙⴽⵛⵎ ⵙ ⵓⴼⵓⵙ: ⵓⵟⵟⵓⵏ ⵏⵖ #SB-... :',
+                    en: 'Fallback: paste QR link, phone number, or ticket (#SB-...):',
+                    es: 'Alternativa: pega el QR, teléfono o ticket (#SB-...):',
+                  })}
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={crmQrManualInput}
+                    onChange={(e) => setCrmQrManualInput(e.target.value)}
+                    placeholder="06... / #SB-..."
+                    className="flex-1 min-h-[38px] bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!crmQrManualInput.trim()}
+                    className="min-h-[38px] px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black font-black text-xs cursor-pointer"
+                  >
+                    {pickLang(lang, {
+                      ar: 'فتح',
+                      fr: 'Ouvrir',
+                      amz: 'ⵕⵥⵎ',
+                      en: 'Open',
+                      es: 'Abrir',
+                    })}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -2400,7 +3502,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
  * ========================================================================== */
 export const WaitlistManagementPanel: React.FC<{
   entries: WaitlistEntry[];
-  role: 'master' | 'barber';
+  role: StaffRole;
   ownBarberId: string;
 }> = ({ entries, role, ownBarberId }) => {
   const { lang } = useLanguage();
@@ -2644,21 +3746,40 @@ function formatQueueDelta(slotMinutes: number, nowMinutes: number, lang: Languag
 export function getLiveQueueBookings(
   bookings: AppointmentBooking[],
   todayStr: string,
-  role: 'master' | 'barber',
+  role: StaffRole,
   ownBarberId: string,
-  barberFilter: string = 'all'
+  barberFilter: string = 'all',
+  nowMinutes?: number
 ): AppointmentBooking[] {
   const ACTIVE_QUEUE_STATUSES = new Set([
     'pending',
+    'flexible_pending',
     'pending_quote',
     'confirmed',
     'rescheduled',
   ]);
 
+  const effectiveNowMin =
+    nowMinutes !== undefined
+      ? nowMinutes
+      : (() => {
+          const d = new Date();
+          return d.getHours() * 60 + d.getMinutes();
+        })();
+
   return bookings
     .filter((b) => {
       if (!ACTIVE_QUEUE_STATUSES.has(b.status)) return false;
       if (getEffectiveBookingDate(b) !== todayStr) return false;
+
+      const effTime = getEffectiveBookingTime(b).trim();
+      if (effTime !== 'FLEXIBLE') {
+        const startMin = parseSlotToMinutes(effTime);
+        if (startMin < 24 * 60) {
+          const dur = Math.max(30, Number(b.totalDurationMinutes) || 60);
+          if (startMin + dur < effectiveNowMin) return false;
+        }
+      }
 
       if (role === 'barber') {
         const matchesSelf =
@@ -2691,7 +3812,7 @@ export const LiveQueuePanel: React.FC<{
   bookings: AppointmentBooking[];
   crmMap: Record<string, CrmClientProfile>;
   todayStr: string;
-  role: 'master' | 'barber';
+  role: StaffRole;
   ownBarberId: string;
   busyId: string | null;
   onConfirm: (bookingId: string) => void;
@@ -2699,6 +3820,9 @@ export const LiveQueuePanel: React.FC<{
   onQuickCancel: (booking: AppointmentBooking) => void;
   onOpenClientTracking?: (query: string) => void;
   onShowClientQr: (client: ClientQrTarget) => void;
+  lateBusyId?: string | null;
+  onPostponeLateToNearest?: (booking: AppointmentBooking) => void;
+  onMoveLateToWaitlist?: (booking: AppointmentBooking) => void;
 }> = ({
   bookings,
   crmMap,
@@ -2711,8 +3835,14 @@ export const LiveQueuePanel: React.FC<{
   onQuickCancel,
   onOpenClientTracking,
   onShowClientQr,
+  lateBusyId,
+  onPostponeLateToNearest,
+  onMoveLateToWaitlist,
 }) => {
   const { lang } = useLanguage();
+  const roster = useBarberRoster();
+  const profilesMap = useBarberProfiles();
+  const mergedBarbers = getMergedBarbers(profilesMap, roster);
   const [barberFilter, setBarberFilter] = useState<string>('all');
   const [nowDate, setNowDate] = useState<Date>(() => new Date());
 
@@ -2758,7 +3888,7 @@ export const LiveQueuePanel: React.FC<{
     null;
 
   const getBarberColor = (b: AppointmentBooking) =>
-    b.barberColor || TEAM_MEMBERS.find((m) => m.id === b.barberId)?.themeColor || '#D97706';
+    b.barberColor || mergedBarbers.find((m) => m.id === b.barberId)?.themeColor || '#D97706';
 
   const ui = {
     title: pickLang(lang, {
@@ -2787,6 +3917,20 @@ export const LiveQueuePanel: React.FC<{
     attendanceBtn: pickLang(lang, { ar: 'تأكيد الحضور', fr: 'Valider présence', amz: 'ⵙⵙⴷⵓ ⴰⵡⵡⴰⴹ', en: 'Confirm Arrival', es: 'Confirmar llegada' }),
     presentBtn: pickLang(lang, { ar: 'حضر', fr: 'Présent', amz: 'ⵉⵡⵡⴹ', en: 'Attended', es: 'Asistió' }),
     cancelBtn: pickLang(lang, { ar: 'إلغاء', fr: 'Annuler', amz: 'ⵙⵔ', en: 'Cancel', es: 'Cancelar' }),
+    nearestSlotBtn: pickLang(lang, {
+      ar: 'تأجيل لأقرب وقت متاح',
+      fr: 'Décaler au plus tôt',
+      amz: 'ⵙⵏⴼⵍ ⵉ ⵡⴰⴽⵓⴷ ⴰⵎⵣⵡⴰⵔⵓ',
+      en: 'Move to Nearest Slot',
+      es: 'Mover al hueco más cercano',
+    }),
+    moveToWaitlistBtn: pickLang(lang, {
+      ar: 'تحويل للطابور',
+      fr: 'Mettre en attente',
+      amz: 'ⵙⵙⵉⴷ ⵉ ⵜⴰⵍⴳⴰⵎⵜ',
+      en: 'Move to Queue',
+      es: 'Pasar a espera',
+    }),
     trackBtn: pickLang(lang, { ar: 'تتبع', fr: 'Suivre', amz: 'ⴹⴼⵕ', en: 'Track', es: 'Seguir' }),
     emptyTitle: pickLang(lang, {
       ar: `لا توجد مواعيد نشطة في الطابور المباشر لليوم (${todayStr})`,
@@ -2848,7 +3992,7 @@ export const LiveQueuePanel: React.FC<{
             >
               {ui.allBarbers} ({getLiveQueueBookings(bookings, todayStr, 'master', 'all', 'all').length})
             </button>
-            {TEAM_MEMBERS.map((member) => {
+            {mergedBarbers.map((member) => {
               const count = getLiveQueueBookings(
                 bookings,
                 todayStr,
@@ -3140,6 +4284,30 @@ export const LiveQueuePanel: React.FC<{
                     <span>{ui.cancelBtn}</span>
                   </button>
 
+                  {onPostponeLateToNearest && (
+                    <button
+                      type="button"
+                      disabled={lateBusyId === booking.id}
+                      onClick={() => onPostponeLateToNearest(booking)}
+                      className="min-h-[36px] px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <Clock3 className="w-3.5 h-3.5" />
+                      <span>{ui.nearestSlotBtn}</span>
+                    </button>
+                  )}
+
+                  {onMoveLateToWaitlist && (
+                    <button
+                      type="button"
+                      disabled={lateBusyId === booking.id}
+                      onClick={() => onMoveLateToWaitlist(booking)}
+                      className="min-h-[36px] px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-sky-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <ListPlus className="w-3.5 h-3.5" />
+                      <span>{ui.moveToWaitlistBtn}</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() =>
@@ -3191,7 +4359,7 @@ export interface DailyCompletedRevenueSummary {
 export function computeDailyCompletedRevenue(
   bookings: AppointmentBooking[],
   todayStr: string,
-  role: 'master' | 'barber',
+  role: StaffRole,
   ownBarberId: string
 ): DailyCompletedRevenueSummary {
   const completedToday = bookings.filter((b) => {

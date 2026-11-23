@@ -10,6 +10,7 @@ import {
 import { INITIAL_REVIEWS, TEAM_MEMBERS } from '../data/barbershopData';
 import { CustomerReview } from '../types';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import { getActiveRosterBarbers } from './barberRosterStore';
 
 const REVIEWS_COLLECTION = 'reviews';
 
@@ -23,6 +24,7 @@ export interface FirestoreReviewRecord {
   rating: number;
   comment: string;
   dateLabel?: string;
+  bookingId?: string;
   verified: boolean;
   createdAt: string;
 }
@@ -110,6 +112,7 @@ function mapDocToCustomerReview(docData: FirestoreReviewRecord): CustomerReview 
     rating: Math.max(1, Math.min(5, Number(docData.rating) || 5)),
     date: docData.dateLabel || docData.createdAt.slice(0, 10),
     comment: docData.comment,
+    bookingId: docData.bookingId,
     verified: Boolean(docData.verified),
     createdAt: docData.createdAt,
   };
@@ -209,16 +212,21 @@ export async function submitBarberReview(input: {
   rating: number;
   comment: string;
   dateLabel?: string;
+  bookingId?: string;
 }): Promise<CustomerReview> {
-  const barber = TEAM_MEMBERS.find((b) => b.id === input.barberId) || TEAM_MEMBERS[0];
+  const rosterMember = getActiveRosterBarbers().find((m) => m.id === input.barberId);
+  const staticBarber = TEAM_MEMBERS.find((b) => b.id === input.barberId) || TEAM_MEMBERS[0];
+  const resolvedBarberId = rosterMember?.id || staticBarber.id;
+  const resolvedBarberName =
+    rosterMember?.nameFr || rosterMember?.nameAr || staticBarber.name.fr || staticBarber.name.ar;
   const id = `rev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const cleanId = id.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 128);
   const createdAt = new Date().toISOString().slice(0, 64);
 
   const payload: FirestoreReviewRecord = {
     id: cleanId,
-    barberId: barber.id.slice(0, 64),
-    barberName: (barber.name.fr || barber.name.ar).slice(0, 100),
+    barberId: resolvedBarberId.slice(0, 64),
+    barberName: resolvedBarberName.slice(0, 100),
     author: input.author.trim().slice(0, 120),
     rating: Math.max(1, Math.min(5, Math.round(Number(input.rating) || 5))),
     comment: input.comment.trim().slice(0, 600),
@@ -234,6 +242,9 @@ export async function submitBarberReview(input: {
   }
   if (input.dateLabel && input.dateLabel.trim()) {
     payload.dateLabel = input.dateLabel.trim().slice(0, 64);
+  }
+  if (input.bookingId && input.bookingId.trim()) {
+    payload.bookingId = input.bookingId.trim().slice(0, 128);
   }
 
   const path = `${REVIEWS_COLLECTION}/${cleanId}`;
@@ -265,9 +276,10 @@ export function computeBarberReviewStats(
   firestoreReviews: CustomerReview[],
   fallbackRating = 5.0
 ): BarberReviewStats {
+  const rosterMember = getActiveRosterBarbers().find((m) => m.id === barberId);
   const barber = TEAM_MEMBERS.find((b) => b.id === barberId);
-  const firstFrName = (barber?.name.fr || '').toLowerCase().split(' ')[0];
-  const firstArName = (barber?.name.ar || '').toLowerCase().split(' ')[0];
+  const firstFrName = (rosterMember?.nameFr || barber?.name.fr || '').toLowerCase().split(' ')[0];
+  const firstArName = (rosterMember?.nameAr || barber?.name.ar || '').toLowerCase().split(' ')[0];
 
   const sourcePool = firestoreReviews.length > 0 ? firestoreReviews : INITIAL_REVIEWS;
 

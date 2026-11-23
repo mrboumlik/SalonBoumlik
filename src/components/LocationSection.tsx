@@ -15,6 +15,11 @@ import {
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
+import {
+  useSalonProfileSettings,
+  formatSalonDisplayPhone,
+  normalizeSalonTelHref,
+} from '../utils/salonSettingsStore';
 
 interface LocationSectionProps {
   onOpenBooking: () => void;
@@ -22,6 +27,7 @@ interface LocationSectionProps {
 
 export const LocationSection: React.FC<LocationSectionProps> = ({ onOpenBooking }) => {
   const { lang, t } = useLanguage();
+  const salonSettings = useSalonProfileSettings();
   const [copied, setCopied] = useState(false);
   const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
 
@@ -170,10 +176,10 @@ export const LocationSection: React.FC<LocationSectionProps> = ({ onOpenBooking 
                 </div>
               </div>
 
-              {/* Action Buttons: Directions & Call Phone 0635392503 */}
+              {/* Action Buttons: Directions & Call Phone */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 <a
-                  href={SALON_INFO.googleMapsDirectionsUrl}
+                  href={salonSettings.googleMapsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 text-zinc-950 font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-400/20 hover:brightness-105 active:scale-95 transition-all text-center"
@@ -183,13 +189,29 @@ export const LocationSection: React.FC<LocationSectionProps> = ({ onOpenBooking 
                 </a>
 
                 <a
-                  href={`tel:${SALON_INFO.phone}`}
+                  href={normalizeSalonTelHref(salonSettings.salonPhone)}
                   className="py-3.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs flex items-center justify-center gap-2 border border-zinc-700 transition-colors text-center"
                 >
                   <Phone className="w-4 h-4 text-amber-400" />
-                  <span>06 35 39 25 03</span>
+                  <span dir="ltr">{formatSalonDisplayPhone(salonSettings.salonPhone)}</span>
                 </a>
               </div>
+
+              {(salonSettings.additionalPhones || []).length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {(salonSettings.additionalPhones || []).map((extraPhone) => (
+                    <a
+                      key={extraPhone}
+                      href={normalizeSalonTelHref(extraPhone)}
+                      dir="ltr"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200 font-mono font-bold text-xs border border-zinc-700 transition-colors"
+                    >
+                      <Phone className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{formatSalonDisplayPhone(extraPhone)}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
 
               {/* Practical tips */}
               <div className="pt-2 border-t border-zinc-800/80 space-y-2 text-xs text-zinc-400">
@@ -311,7 +333,7 @@ export const LocationSection: React.FC<LocationSectionProps> = ({ onOpenBooking 
                   </div>
 
                   <a
-                    href={SALON_INFO.googleMapsDirectionsUrl}
+                    href={salonSettings.googleMapsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-800 transition-colors flex items-center gap-1.5 text-xs font-semibold"
@@ -336,7 +358,7 @@ export const LocationSection: React.FC<LocationSectionProps> = ({ onOpenBooking 
                 {/* Floating GPS Launch Button */}
                 <div className="absolute bottom-4 right-4 z-10">
                   <a
-                    href={SALON_INFO.googleMapsDirectionsUrl}
+                    href={salonSettings.googleMapsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-5 py-3 rounded-2xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-black text-xs sm:text-sm flex items-center gap-2 shadow-2xl hover:scale-105 active:scale-95 transition-all"

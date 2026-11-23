@@ -21,8 +21,10 @@ import {
   Language,
   ShiftRequest,
   ShiftRequestType,
+  StaffRole,
 } from '../types';
-import { TEAM_MEMBERS } from '../data/barbershopData';
+import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore';
+import { useBarberRoster } from '../utils/barberRosterStore';
 import {
   ALL_SALON_CONFIGURABLE_HOURS,
   evaluateBarberDayAvailability,
@@ -45,7 +47,7 @@ interface AdminShiftPlannerPanelProps {
   requests: ShiftRequest[];
   schedules: Record<string, BarberScheduleConfig>;
   bookings: AppointmentBooking[];
-  role: 'master' | 'barber';
+  role: StaffRole;
   ownBarberId: string;
   reviewerName: string;
   todayStr: string;
@@ -159,8 +161,14 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
   todayStr,
 }) => {
   const { lang } = useLanguage();
+  const roster = useBarberRoster();
+  const profilesMap = useBarberProfiles();
+  const mergedBarbers = useMemo(
+    () => getMergedBarbers(profilesMap, roster),
+    [profilesMap, roster]
+  );
   const defaultRequesterId =
-    role === 'barber' ? ownBarberId : TEAM_MEMBERS[1]?.id || TEAM_MEMBERS[0].id;
+    role === 'barber' ? ownBarberId : mergedBarbers[1]?.id || mergedBarbers[0]?.id || 'hassan';
 
   const [barberId, setBarberId] = useState<string>(defaultRequesterId);
   const [weekOffset, setWeekOffset] = useState<number>(0);
@@ -168,8 +176,8 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
   const [targetDate, setTargetDate] = useState<string>(() => getInitialBookingDate());
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [swapWithBarberId, setSwapWithBarberId] = useState<string>(() => {
-    const other = TEAM_MEMBERS.find((b) => b.id !== defaultRequesterId);
-    return other?.id || TEAM_MEMBERS[0].id;
+    const other = mergedBarbers.find((b) => b.id !== defaultRequesterId);
+    return other?.id || mergedBarbers[0]?.id || 'hassan';
   });
   const [swapDate, setSwapDate] = useState<string>('');
   const [reason, setReason] = useState<string>('');
@@ -183,11 +191,11 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
 
   const effectiveBarberId = role === 'barber' ? ownBarberId : barberId;
   const requesterBarber =
-    TEAM_MEMBERS.find((b) => b.id === effectiveBarberId) || TEAM_MEMBERS[0];
+    mergedBarbers.find((b) => b.id === effectiveBarberId) || mergedBarbers[0];
   const requesterBarberLabel = requesterBarber.name[lang] || requesterBarber.name.ar || requesterBarber.name.fr;
   const activeSchedule =
     schedules[effectiveBarberId] || getDefaultBarberSchedule(effectiveBarberId);
-  const colleagueOptions = TEAM_MEMBERS.filter((b) => b.id !== effectiveBarberId);
+  const colleagueOptions = mergedBarbers.filter((b) => b.id !== effectiveBarberId);
 
   const weekDays = useMemo(() => getCalendarWeekDays(weekOffset), [weekOffset]);
   const salonSlotsForTarget = useMemo(() => getSalonSlotsForDate(targetDate), [targetDate]);
@@ -257,7 +265,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
     setBarberId(nextId);
     setSelectedSlots([]);
     if (swapWithBarberId === nextId) {
-      const alt = TEAM_MEMBERS.find((b) => b.id !== nextId);
+      const alt = mergedBarbers.find((b) => b.id !== nextId);
       if (alt) setSwapWithBarberId(alt.id);
     }
   };
@@ -391,7 +399,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
 
     setSubmitting(true);
     try {
-      const swapPartner = TEAM_MEMBERS.find((b) => b.id === swapWithBarberId);
+      const swapPartner = mergedBarbers.find((b) => b.id === swapWithBarberId);
       await createShiftRequest({
         barberId: effectiveBarberId,
         barberName: requesterBarber.name.ar,
@@ -432,7 +440,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                   es: 'Registrada en la cola de aprobación.',
                 })
               : pickLang(lang, {
-                  ar: 'سيراجع المدير العام الطلب ويتم تحديث التوفر في صفحة الحجز فور الموافقة.',
+                  ar: 'سيراجع المشرف العام الطلب ويتم تحديث التوفر في صفحة الحجز فور الموافقة.',
                   fr: 'La direction examinera la demande ; le calendrier sera mis à jour dès approbation.',
                   amz: 'ⴰⴷ ⵜ ⵉⵥⵕ ⵓⵏⵎⵀⴰⵍ ⵉⵙⵎⴰⵢⵏⵓ ⴰⵙⵎⵍⵓⵙⵙⴰⵏ.',
                   en: 'Management will review it and booking availability will sync upon approval.',
@@ -569,7 +577,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
   };
 
   const getBarberColor = (id: string) =>
-    TEAM_MEMBERS.find((m) => m.id === id)?.themeColor || '#D97706';
+    mergedBarbers.find((m) => m.id === id)?.themeColor || '#D97706';
 
   return (
     <div className="space-y-5 text-xs">
@@ -598,7 +606,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
                   es: 'Calendario interactivo para gestionar y aprobar cambios de disponibilidad en tiempo real.',
                 })
               : pickLang(lang, {
-                  ar: 'اضغط على أي يوم أو ساعة في التقويم لتقديم طلب تعديل توفرك أو إجازتك للمدير العام.',
+                  ar: 'اضغط على أي يوم أو ساعة في التقويم لتقديم طلب تعديل توفرك أو إجازتك للمشرف العام.',
                   fr: 'Cliquez sur un jour ou créneau du calendrier pour soumettre une demande de congé ou modification.',
                   amz: 'ⴰⴷⵔ ⵖⴼ ⵡⴰⵙⵙ ⵏⵖ ⵜⴰⵙⵔⴰⴳⵜ ⵉ ⵓⵙⵓⵜⵔ ⵏ ⵓⵙⵓⵏⴼⵓ.',
                   en: 'Click any day or hour in the calendar to submit an availability or leave request.',
@@ -647,7 +655,7 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
 
             {role === 'master' && (
               <div className="flex flex-wrap items-center gap-1.5">
-                {TEAM_MEMBERS.map((b) => {
+                {mergedBarbers.map((b) => {
                   const active = effectiveBarberId === b.id;
                   const color = b.themeColor || '#D97706';
                   return (
@@ -1156,10 +1164,10 @@ export const AdminShiftPlannerPanel: React.FC<AdminShiftPlannerPanelProps> = ({
               const conflicts = req.status === 'pending' ? getBookingConflicts(req) : [];
               const isBusy = busyId === req.id;
               const meta = getRequestTypeMeta(req.requestType, lang);
-              const reqBarberObj = TEAM_MEMBERS.find((m) => m.id === req.barberId);
+              const reqBarberObj = mergedBarbers.find((m) => m.id === req.barberId);
               const reqBarberName = reqBarberObj ? (reqBarberObj.name[lang] || req.barberName) : req.barberName;
               const swapPartnerObj = req.swapWithBarberId
-                ? TEAM_MEMBERS.find((m) => m.id === req.swapWithBarberId)
+                ? mergedBarbers.find((m) => m.id === req.swapWithBarberId)
                 : undefined;
               const swapPartnerName = swapPartnerObj
                 ? swapPartnerObj.name[lang] || req.swapWithBarberName

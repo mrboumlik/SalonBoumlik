@@ -17,12 +17,21 @@ import {
 import { SALON_INFO } from '../data/barbershopData';
 import { createGmailComposeUrl, createWhatsAppUrl } from '../utils/calendar';
 import { useLanguage } from '../context/LanguageContext';
-import { useSalonProfileSettings } from '../utils/salonSettingsStore';
+import {
+  useSalonProfileSettings,
+  formatSalonDisplayPhone,
+  normalizeSalonTelHref,
+  normalizeSalonWhatsappDigits,
+} from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
 
 export const ContactSection: React.FC = () => {
   const { lang, t } = useLanguage();
   const salonSettings = useSalonProfileSettings();
+  const liveDisplayPhone = formatSalonDisplayPhone(salonSettings.salonPhone);
+  const liveWhatsappCompact = formatSalonDisplayPhone(salonSettings.salonWhatsapp).replace(/\s+/g, '');
+  const liveWhatsappDigits = normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp);
+  const liveTelHref = normalizeSalonTelHref(salonSettings.salonPhone);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -51,11 +60,11 @@ export const ContactSection: React.FC = () => {
       es: 'CONTACTO, REDES Y QR',
     }),
     subtitle: pickLang(lang, {
-      ar: 'امسح رموز الاستجابة السريعة الرسمية أو تواصل مع حسن مباشرة عبر الواتساب على الرقم 0635392503.',
-      fr: 'Scannez nos QR codes officiels ou contactez Hassan directement par WhatsApp au 0635392503 ou via Gmail.',
-      amz: 'ⵙⴽⴰⵏ ⴱⴰⵔⴽⵓⴷ ⵏⵏⵖ ⵏⵖ ⵙⴰⵡⵍ ⴷ ⵃⴰⵙⴰⵏ ⴳ ⵡⴰⵜⵙⴰⴱ 0635392503.',
-      en: 'Scan our official QR codes or reach Hassan directly on WhatsApp at 0635392503 or via Gmail.',
-      es: 'Escanea nuestros códigos QR o contacta a Hassan directamente por WhatsApp al 0635392503 o Gmail.',
+      ar: `امسح رموز الاستجابة السريعة الرسمية أو تواصل مع حسن مباشرة عبر الواتساب على الرقم ${liveWhatsappCompact}.`,
+      fr: `Scannez nos QR codes officiels ou contactez Hassan directement par WhatsApp au ${liveWhatsappCompact} ou via Gmail.`,
+      amz: `ⵙⴽⴰⵏ ⴱⴰⵔⴽⵓⴷ ⵏⵏⵖ ⵏⵖ ⵙⴰⵡⵍ ⴷ ⵃⴰⵙⴰⵏ ⴳ ⵡⴰⵜⵙⴰⴱ ${liveWhatsappCompact}.`,
+      en: `Scan our official QR codes or reach Hassan directly on WhatsApp at ${liveWhatsappCompact} or via Gmail.`,
+      es: `Escanea nuestros códigos QR o contacta a Hassan directamente por WhatsApp al ${liveWhatsappCompact} o Gmail.`,
     }),
     zoomQr: pickLang(lang, {
       ar: 'تكبير الباركود',
@@ -163,11 +172,11 @@ export const ContactSection: React.FC = () => {
       es: 'Indica tu consulta (corte, proteína, barba u horario preferido)...',
     }),
     sendWaBtn: pickLang(lang, {
-      ar: 'إرسال عبر واتساب (0635392503)',
-      fr: 'Envoyer par WhatsApp (0635392503)',
-      amz: 'ⴰⵣⵏ ⴳ ⵡⴰⵜⵙⴰⴱ (0635392503)',
-      en: 'Send via WhatsApp (0635392503)',
-      es: 'Enviar por WhatsApp (0635392503)',
+      ar: `إرسال عبر واتساب (${liveWhatsappCompact})`,
+      fr: `Envoyer par WhatsApp (${liveWhatsappCompact})`,
+      amz: `ⴰⵣⵏ ⴳ ⵡⴰⵜⵙⴰⴱ (${liveWhatsappCompact})`,
+      en: `Send via WhatsApp (${liveWhatsappCompact})`,
+      es: `Enviar por WhatsApp (${liveWhatsappCompact})`,
     }),
     sendGmailBtn: pickLang(lang, {
       ar: 'مراسلة عبر Gmail مباشر',
@@ -208,16 +217,14 @@ Salon Boumlik Taroudant`;
     formattedBody
   );
 
-  const handleSendViaWhatsApp = () => {
-    const text = pickLang(lang, {
-      ar: `السلام عليكم سي حسن (صالون بومليك)، معكم ${fullName || 'زبون'}. ${message || 'أرغب في الاستفسار عن الخدمات والمواعيد المتاحة.'}`,
-      fr: `Salam Si Hassan (Salon Boumlik), je m'appelle ${fullName || 'un client'}. ${message || 'Je souhaite avoir des informations sur vos formules et disponibilités.'}`,
-      amz: `Azul Si Hassan (Salon Boumlik), ⵉⵙⵎ ⵉⵏⵓ ${fullName || 'ⴰⵎⵙⴰⵖ'}. ${message || 'ⵔⵉⵖ ⵉⵏⵖⵎⵉⵙⵏ ⵖⴼ ⵜⵡⵓⵔⵉⵡⵉⵏ.'}`,
-      en: `Hello Si Hassan (Salon Boumlik), my name is ${fullName || 'a client'}. ${message || 'I would like information about your services and availability.'}`,
-      es: `Hola Si Hassan (Salon Boumlik), soy ${fullName || 'un cliente'}. ${message || 'Me gustaría consultar sobre servicios y disponibilidad.'}`,
-    });
-    window.open(createWhatsAppUrl(SALON_INFO.whatsappNumber, text), '_blank');
-  };
+  const whatsappInquiryText = pickLang(lang, {
+    ar: `السلام عليكم سي حسن (صالون بومليك)، معكم ${fullName || 'زبون'}. ${message || 'أرغب في الاستفسار عن الخدمات والمواعيد المتاحة.'}`,
+    fr: `Salam Si Hassan (Salon Boumlik), je m'appelle ${fullName || 'un client'}. ${message || 'Je souhaite avoir des informations sur vos formules et disponibilités.'}`,
+    amz: `Azul Si Hassan (Salon Boumlik), ⵉⵙⵎ ⵉⵏⵓ ${fullName || 'ⴰⵎⵙⴰⵖ'}. ${message || 'ⵔⵉⵖ ⵉⵏⵖⵎⵉⵙⵏ ⵖⴼ ⵜⵡⵓⵔⵉⵡⵉⵏ.'}`,
+    en: `Hello Si Hassan (Salon Boumlik), my name is ${fullName || 'a client'}. ${message || 'I would like information about your services and availability.'}`,
+    es: `Hola Si Hassan (Salon Boumlik), soy ${fullName || 'un cliente'}. ${message || 'Me gustaría consultar sobre servicios y disponibilidad.'}`,
+  });
+  const whatsappComposeUrl = createWhatsAppUrl(liveWhatsappDigits, whatsappInquiryText);
 
   const handleSubmitInApp = (e: React.FormEvent) => {
     e.preventDefault();
@@ -236,11 +243,11 @@ Salon Boumlik Taroudant`;
   const qrSocials = [
     {
       title: pickLang(lang, {
-        ar: 'واتساب مباشر (0635392503)',
-        amz: 'ⵡⴰⵜⵙⴰⴱ ⵓⵙⵔⵉⴷ (0635392503)',
-        en: 'Direct WhatsApp (0635392503)',
-        es: 'WhatsApp Directo (0635392503)',
-        fr: 'WhatsApp Direct (0635392503)',
+        ar: `واتساب مباشر (${liveWhatsappCompact})`,
+        amz: `ⵡⴰⵜⵙⴰⴱ ⵓⵙⵔⵉⴷ (${liveWhatsappCompact})`,
+        en: `Direct WhatsApp (${liveWhatsappCompact})`,
+        es: `WhatsApp Directo (${liveWhatsappCompact})`,
+        fr: `WhatsApp Direct (${liveWhatsappCompact})`,
       }),
       subtitle: pickLang(lang, {
         ar: 'امسح الباركود للتواصل مع حسن',
@@ -251,7 +258,7 @@ Salon Boumlik Taroudant`;
       }),
       image: SALON_INFO.media.qrWhatsApp,
       icon: MessageCircle,
-      actionUrl: `https://wa.me/${SALON_INFO.whatsappNumber}`,
+      actionUrl: `https://wa.me/${liveWhatsappDigits}`,
     },
     {
       title: 'Instagram @SalonBoumlik',
@@ -410,14 +417,14 @@ Salon Boumlik Taroudant`;
                 </div>
                 <div className="flex items-center justify-between gap-2 pt-1">
                   <a
-                    href={`tel:${SALON_INFO.phone}`}
+                    href={liveTelHref}
                     className="text-lg font-mono font-black text-amber-700 dark:text-amber-400 hover:underline"
                     dir="ltr"
                   >
-                    06 35 39 25 03
+                    {liveDisplayPhone}
                   </a>
                   <a
-                    href={`https://wa.me/${SALON_INFO.whatsappNumber}`}
+                    href={`https://wa.me/${liveWhatsappDigits}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 transition-colors"
@@ -426,6 +433,21 @@ Salon Boumlik Taroudant`;
                     <span>WhatsApp</span>
                   </a>
                 </div>
+                {(salonSettings.additionalPhones || []).length > 0 && (
+                  <div className="pt-2 border-t border-stone-200/70 dark:border-zinc-800 flex flex-wrap gap-2">
+                    {(salonSettings.additionalPhones || []).map((extraPhone) => (
+                      <a
+                        key={extraPhone}
+                        href={normalizeSalonTelHref(extraPhone)}
+                        dir="ltr"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 text-xs font-mono font-bold text-slate-800 dark:text-zinc-200 hover:border-amber-500/60"
+                      >
+                        <Phone className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                        <span>{formatSalonDisplayPhone(extraPhone)}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Email box */}
@@ -542,14 +564,15 @@ Salon Boumlik Taroudant`;
 
                   <div className="pt-2 border-t border-stone-200 dark:border-zinc-800 space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={handleSendViaWhatsApp}
-                        className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+                      <a
+                        href={whatsappComposeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 active:scale-95 transition-all text-center"
                       >
                         <MessageCircle className="w-4 h-4" />
                         <span>{ui.sendWaBtn}</span>
-                      </button>
+                      </a>
 
                       <a
                         href={gmailComposeUrl}

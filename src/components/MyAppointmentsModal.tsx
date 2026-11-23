@@ -15,6 +15,10 @@ import { AppointmentBooking } from '../types';
 import { downloadIcsFile, createGoogleCalendarUrl, createWhatsAppUrl, createFormattedWhatsAppQuoteMessage, getDrinkLabel } from '../utils/calendar';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
+import {
+  useSalonProfileSettings,
+  normalizeSalonWhatsappDigits,
+} from '../utils/salonSettingsStore';
 
 interface MyAppointmentsModalProps {
   isOpen: boolean;
@@ -32,6 +36,7 @@ export const MyAppointmentsModal: React.FC<MyAppointmentsModalProps> = ({
   onOpenBooking,
 }) => {
   const { lang, t } = useLanguage();
+  const salonSettings = useSalonProfileSettings();
 
   if (!isOpen) return null;
 
@@ -156,7 +161,7 @@ export const MyAppointmentsModal: React.FC<MyAppointmentsModalProps> = ({
                 <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-800/80">
                   <a
                     href={createWhatsAppUrl(
-                      SALON_INFO.whatsappNumber,
+                      normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp),
                       createFormattedWhatsAppQuoteMessage(appt)
                     )}
                     target="_blank"

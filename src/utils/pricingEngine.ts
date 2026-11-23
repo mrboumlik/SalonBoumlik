@@ -1,4 +1,9 @@
-import { BarberService, SelectedCartItem, PricingEngineResult, HairColorConfig } from '../types';
+import {
+  SelectedCartItem,
+  PricingEngineResult,
+  HairColorConfig,
+  ServiceBundleRule,
+} from '../types';
 import { pickLang } from './i18n';
 
 export interface ServiceDefinition {
@@ -327,83 +332,295 @@ export interface PricingInput {
   colorConfig?: HairColorConfig;
   proteinPrice?: number;
   lang?: 'fr' | 'ar' | 'en' | 'amz' | 'es';
+  effectiveServicePrices?: Record<string, number>;
+  specialRuleLabel?: string;
+  hiddenServiceIds?: string[];
+  serviceBundles?: ServiceBundleRule[];
 }
 
 /**
  * Advanced Dynamic Pricing & Discount Engine
- * Evaluates combos, premium overrides, and yields an exact breakdown with savings.
+ * Evaluates hidden services, configurable service bundles, premium overrides, and yields exact savings.
  */
 export function calculateCartPricing({
   selectedIds,
   colorConfig = { tone: 'grey_white', coverage: 'full' },
   proteinPrice = 200,
   lang = 'fr',
+  effectiveServicePrices,
+  specialRuleLabel,
+  hiddenServiceIds = [],
+  serviceBundles,
 }: PricingInput): PricingEngineResult {
-  const hasHaircut = selectedIds.includes('haircut');
-  const hasBeard = selectedIds.includes('beard');
-  const hasWash = selectedIds.includes('wash');
-  const hasWaxing = selectedIds.includes('waxing');
-  const hasBlowout = selectedIds.includes('blowout');
-  const hasStraightening = selectedIds.includes('straightening');
-  const hasProtein = selectedIds.includes('protein');
-  const hasColor = selectedIds.includes('hair-color');
-  const isGreyWhite = hasColor && colorConfig.tone === 'grey_white';
+  const hiddenSet = new Set(hiddenServiceIds || []);
+  const visibleSelectedIds = (selectedIds || []).filter((id) => !hiddenSet.has(id));
+
+  const getPrice = (id: string, fallback: number) => {
+    const val = effectiveServicePrices?.[id];
+    return typeof val === 'number' && Number.isFinite(val) && val >= 0
+      ? Math.round(val)
+      : fallback;
+  };
 
   const items: SelectedCartItem[] = [];
   const discountsBreakdown: { title: string; savedMAD: number }[] = [];
   const overridesApplied: string[] = [];
   let comboApplied: string | undefined = undefined;
 
-  let originalSubtotal = 0;
+  if (specialRuleLabel) {
+    overridesApplied.push(specialRuleLabel);
+  }
 
-  // 1. Determine Haircut Price & Overrides
-  let haircutFinalPrice = 25;
-  let haircutDiscountReason: string | undefined = undefined;
+  // 1. Build base items with effective single-service prices
+  for (const id of visibleSelectedIds) {
+    const serviceDef = BASE_SERVICES.find((s) => s.id === id);
+    if (!serviceDef) continue;
 
-  if (hasHaircut) {
-    if (hasProtein) {
-      haircutFinalPrice = 0;
-      haircutDiscountReason = pickLang(lang, {
-        ar: 'مجاناً مع البروتين (0 DH)',
-        fr: 'GRATUIT avec Protéine (0 DH)',
-        amz: 'ⴼⴰⴱⵓⵔ ⵙ ⵓⴱⵔⵓⵜⵉⵏ (0 DH)',
-        en: 'FREE with Protein (0 DH)',
-        es: 'GRATIS con Proteína (0 DH)',
+    const localizedName = serviceDef.name[lang] || serviceDef.name.fr;
+    let orig = getPrice(id, serviceDef.basePrice);
+    let discountStr: string | undefined = undefined;
+
+    if (id === 'protein') {
+      const effectiveProt = effectiveServicePrices?.protein;
+      orig =
+        typeof effectiveProt === 'number' && effectiveProt !== 200
+          ? effectiveProt
+          : proteinPrice || 200;
+    } else if (id === 'hair-color') {
+      const effectiveColor = effectiveServicePrices?.['hair-color'];
+      orig =
+        typeof effectiveColor === 'number' && effectiveColor !== 150
+          ? effectiveColor
+          : COLOR_PRICES[colorConfig.tone] || 150;
+      const toneLabel = COLOR_LABELS[colorConfig.tone][lang] || COLOR_LABELS[colorConfig.tone].fr;
+      const covLabel = COVERAGE_LABELS[colorConfig.coverage][lang] || COVERAGE_LABELS[colorConfig.coverage].fr;
+      discountStr = `${toneLabel} (${covLabel})`;
+    }
+
+    items.push({
+      serviceId: id,
+      name: localizedName,
+      category: serviceDef.category,
+      originalPrice: orig,
+      finalPrice: orig,
+      discountApplied: discountStr,
+      colorConfig: id === 'hair-color' ? colorConfig : undefined,
+      proteinOption: id === 'protein' ? `${orig} MAD` : undefined,
+    });
+  }
+
+  const findItem = (id: string) => items.find((it) => it.serviceId === id);
+
+  // 2. Apply Bundles & Overrides (when no special Eid/day pricing rule locks rates)
+  if (!specialRuleLabel && items.length >= 2) {
+    const useBundlesList: ServiceBundleRule[] =
+      serviceBundles !== undefined
+        ? serviceBundles
+        : [
+            {
+              id: 'bundle-haircut-protein',
+              labelAr: 'باقة حسانة + بروتين (حسانة مجانية)',
+              labelFr: 'Pack Coupe + Protéine',
+              labelEn: 'Haircut + Protein Pack',
+              serviceIds: ['haircut', 'protein'],
+              bundlePriceMAD: 200,
+              active: true,
+            },
+            {
+              id: 'bundle-haircut-straightening',
+              labelAr: 'باقة حسانة + ترطيبة',
+              labelFr: 'Pack Coupe + Défrisage',
+              labelEn: 'Haircut + Straightening Pack',
+              serviceIds: ['haircut', 'straightening'],
+              bundlePriceMAD: 65,
+              active: true,
+            },
+            {
+              id: 'bundle-haircut-beard',
+              labelAr: 'باقة حسانة + لحية',
+              labelFr: 'Pack Coupe + Barbe',
+              labelEn: 'Haircut + Beard Pack',
+              serviceIds: ['haircut', 'beard'],
+              bundlePriceMAD: 35,
+              active: true,
+            },
+            {
+              id: 'bundle-haircut-wash',
+              labelAr: 'باقة حسانة + غسيل الشعر',
+              labelFr: 'Pack Coupe + Lavage',
+              labelEn: 'Haircut + Wash Pack',
+              serviceIds: ['haircut', 'wash'],
+              bundlePriceMAD: 30,
+              active: true,
+            },
+            {
+              id: 'bundle-haircut-waxing',
+              labelAr: 'باقة حسانة + الشمع',
+              labelFr: 'Pack Coupe + Cire',
+              labelEn: 'Haircut + Waxing Pack',
+              serviceIds: ['haircut', 'waxing'],
+              bundlePriceMAD: 35,
+              active: true,
+            },
+            {
+              id: 'bundle-haircut-blowout',
+              labelAr: 'باقة حسانة + تجفيف وتصفيف',
+              labelFr: 'Pack Coupe + Brushing',
+              labelEn: 'Haircut + Blowout Pack',
+              serviceIds: ['haircut', 'blowout'],
+              bundlePriceMAD: 35,
+              active: true,
+            },
+          ];
+
+    const selectedSet = new Set(items.map((it) => it.serviceId));
+    const consumedServiceIds = new Set<string>();
+    const activeMatchingBundles = useBundlesList
+      .filter(
+        (b) =>
+          b.active !== false &&
+          Array.isArray(b.serviceIds) &&
+          b.serviceIds.length >= 2 &&
+          b.serviceIds.every((sid) => selectedSet.has(sid))
+      )
+      .map((b) => {
+        const standaloneSum = b.serviceIds.reduce((sum, sid) => {
+          return sum + (findItem(sid)?.originalPrice || 0);
+        }, 0);
+        const targetBundlePrice = Math.max(0, Math.round(Number(b.bundlePriceMAD) || 0));
+        const potentialSaving = standaloneSum - targetBundlePrice;
+        return {
+          bundle: b,
+          standaloneSum,
+          targetBundlePrice,
+          potentialSaving,
+        };
+      })
+      .filter((x) => x.potentialSaving > 0)
+      .sort((a, b) => {
+        if (b.bundle.serviceIds.length !== a.bundle.serviceIds.length) {
+          return b.bundle.serviceIds.length - a.bundle.serviceIds.length;
+        }
+        return b.potentialSaving - a.potentialSaving;
       });
-      overridesApplied.push('Protein Override: Haircut FREE');
-      discountsBreakdown.push({
-        title: pickLang(lang, {
-          ar: 'حسانة مجانية مع جلسة البروتين',
-          fr: 'Coupe offerte avec le Soin Protéine',
-          amz: 'ⵜⴰⴽⵔⴹⴰ ⴼⴰⴱⵓⵔ ⵙ ⵓⴱⵔⵓⵜⵉⵏ',
-          en: 'Free Haircut with Protein Treatment',
-          es: 'Corte gratis con tratamiento de proteína',
-        }),
-        savedMAD: 25,
-      });
-    } else if (hasStraightening) {
-      haircutFinalPrice = 15;
-      haircutDiscountReason = pickLang(lang, {
-        ar: 'تخفيض مع الترطيبة (15 DH)',
-        fr: 'Tarif réduit avec Défrisage (15 DH)',
-        amz: 'ⴰⵙⵙⵏⵇⵙ ⵙ ⵜⵔⵟⵉⴱⴰ (15 DH)',
-        en: 'Discount with Relaxing (15 DH)',
-        es: 'Descuento con Alisado (15 DH)',
-      });
-      overridesApplied.push('Straightening Override: Haircut 15 DH');
-      discountsBreakdown.push({
-        title: pickLang(lang, {
-          ar: 'تخفيض الحسانة مع الترطيبة (-10 DH)',
-          fr: 'Remise coupe avec Défrisage (-10 DH)',
-          amz: 'ⴰⵙⵙⵏⵇⵙ ⵏ ⵜⴽⵔⴹⴰ ⵙ ⵜⵔⵟⵉⴱⴰ (-10 DH)',
-          en: 'Haircut discount with Relaxing (-10 DH)',
-          es: 'Descuento en corte con alisado (-10 DH)',
-        }),
-        savedMAD: 10,
-      });
-    } else if (isGreyWhite) {
-      haircutFinalPrice = 15;
-      haircutDiscountReason = pickLang(lang, {
+
+    let haircutDiscountedByPrimaryBundle = false;
+
+    for (const match of activeMatchingBundles) {
+      const { bundle, potentialSaving, targetBundlePrice } = match;
+      const nonHaircutIds = bundle.serviceIds.filter((sid) => sid !== 'haircut');
+      const includesHaircut = bundle.serviceIds.includes('haircut');
+
+      // Non-haircut item in this bundle must not already be consumed by an earlier bundle
+      const nonHaircutConflict = nonHaircutIds.some((sid) => consumedServiceIds.has(sid));
+      if (nonHaircutConflict) continue;
+      if (!includesHaircut && bundle.serviceIds.some((sid) => consumedServiceIds.has(sid))) {
+        continue;
+      }
+
+      // Compute currently remaining price capacity on non-consumed items in this bundle
+      const haircutItem = includesHaircut ? findItem('haircut') : undefined;
+      let savingLeft = potentialSaving;
+
+      // Apply discount cleanly:
+      // 1) If haircut hasn't already absorbed a primary bundle, take from haircut first unless secondary add-on
+      if (
+        includesHaircut &&
+        haircutItem &&
+        !haircutDiscountedByPrimaryBundle &&
+        ['protein', 'straightening', 'beard'].some((p) => nonHaircutIds.includes(p))
+      ) {
+        const deduct = Math.min(haircutItem.finalPrice, savingLeft);
+        if (deduct > 0) {
+          haircutItem.finalPrice -= deduct;
+          savingLeft -= deduct;
+          haircutDiscountedByPrimaryBundle = true;
+          const lbl =
+            lang === 'ar'
+              ? bundle.labelAr
+              : lang === 'en'
+              ? bundle.labelEn || bundle.labelFr || bundle.labelAr
+              : bundle.labelFr || bundle.labelAr;
+          haircutItem.discountApplied = `${lbl} (${targetBundlePrice} DH)`;
+        }
+      }
+
+      // 2) Deduct any remaining saving from the non-haircut partner services in this bundle
+      if (savingLeft > 0) {
+        for (const sid of nonHaircutIds) {
+          if (savingLeft <= 0) break;
+          const targetItem = findItem(sid);
+          if (!targetItem || targetItem.finalPrice <= 0) continue;
+          const deduct = Math.min(targetItem.finalPrice, savingLeft);
+          targetItem.finalPrice -= deduct;
+          savingLeft -= deduct;
+          const lbl =
+            lang === 'ar'
+              ? bundle.labelAr
+              : lang === 'en'
+              ? bundle.labelEn || bundle.labelFr || bundle.labelAr
+              : bundle.labelFr || bundle.labelAr;
+          if (!targetItem.discountApplied) {
+            targetItem.discountApplied = `${lbl} (-${deduct} DH)`;
+          }
+        }
+      }
+
+      // 3) If haircut wasn't discounted yet and saving still remains (e.g. a single add-on bundle like haircut+wash with custom price)
+      if (savingLeft > 0 && includesHaircut && haircutItem && haircutItem.finalPrice > 0) {
+        const deduct = Math.min(haircutItem.finalPrice, savingLeft);
+        haircutItem.finalPrice -= deduct;
+        savingLeft -= deduct;
+        haircutDiscountedByPrimaryBundle = true;
+        const lbl =
+          lang === 'ar'
+            ? bundle.labelAr
+            : lang === 'en'
+            ? bundle.labelEn || bundle.labelFr || bundle.labelAr
+            : bundle.labelFr || bundle.labelAr;
+        if (!haircutItem.discountApplied) {
+          haircutItem.discountApplied = `${lbl} (-${deduct} DH)`;
+        }
+      }
+
+      const actualSaved = potentialSaving - savingLeft;
+      if (actualSaved > 0) {
+        nonHaircutIds.forEach((sid) => consumedServiceIds.add(sid));
+        if (!includesHaircut) {
+          bundle.serviceIds.forEach((sid) => consumedServiceIds.add(sid));
+        }
+
+        const bundleDisplay =
+          lang === 'ar'
+            ? bundle.labelAr
+            : lang === 'en'
+            ? bundle.labelEn || bundle.labelFr || bundle.labelAr
+            : bundle.labelFr || bundle.labelAr;
+
+        if (!comboApplied) {
+          comboApplied = `${bundleDisplay} (${targetBundlePrice} DH)`;
+        }
+        overridesApplied.push(bundleDisplay);
+        discountsBreakdown.push({
+          title: `${bundleDisplay} (-${actualSaved} DH)`,
+          savedMAD: actualSaved,
+        });
+      }
+    }
+
+    // Special grey/white hair-color haircut reduction when haircut isn't already reduced further
+    const haircutItem = findItem('haircut');
+    const hasColor = selectedSet.has('hair-color');
+    if (
+      haircutItem &&
+      hasColor &&
+      colorConfig.tone === 'grey_white' &&
+      haircutItem.finalPrice > 15 &&
+      !haircutDiscountedByPrimaryBundle
+    ) {
+      const saved = haircutItem.finalPrice - 15;
+      haircutItem.finalPrice = 15;
+      haircutItem.discountApplied = pickLang(lang, {
         ar: 'تخفيض مع الصباغة البيضاء/الرمادية (15 DH)',
         fr: 'Tarif réduit avec Coloration Grise (15 DH)',
         amz: 'ⴰⵙⵙⵏⵇⵙ ⵙ ⵓⴽⵍⵓ ⵓⵎⵍⵉⵍ (15 DH)',
@@ -419,141 +636,12 @@ export function calculateCartPricing({
           en: 'Haircut discount with Grey Color (-10 DH)',
           es: 'Descuento en corte con tinte blanco (-10 DH)',
         }),
-        savedMAD: 10,
-      });
-    } else if (hasBeard) {
-      // Standard Haircut + Beard Combo: 35 MAD instead of 25 + 15 = 40 MAD (5 MAD saving)
-      haircutFinalPrice = 20; // 20 + 15 = 35 MAD
-      haircutDiscountReason = pickLang(lang, {
-        ar: 'عرض باقة حسانة + لحية (35 DH)',
-        fr: 'Combo Coupe + Barbe (35 DH)',
-        amz: 'ⵜⴰⴽⵔⴹⴰ + ⵜⴰⵎⴰⵔⵜ (35 DH)',
-        en: 'Haircut + Beard Combo (35 DH)',
-        es: 'Pack Corte + Barba (35 DH)',
-      });
-      comboApplied = 'Haircut + Beard (35 DH)';
-      discountsBreakdown.push({
-        title: pickLang(lang, {
-          ar: 'باقة حسانة + لحية (-5 DH)',
-          fr: 'Combo Coupe + Barbe (-5 DH)',
-          amz: 'ⵜⴰⴽⵔⴹⴰ + ⵜⴰⵎⴰⵔⵜ (-5 DH)',
-          en: 'Haircut + Beard Combo (-5 DH)',
-          es: 'Combo Corte + Barba (-5 DH)',
-        }),
-        savedMAD: 5,
+        savedMAD: saved,
       });
     }
   }
 
-  // Build items array
-  for (const id of selectedIds) {
-    const serviceDef = BASE_SERVICES.find((s) => s.id === id);
-    if (!serviceDef) continue;
-
-    const localizedName = serviceDef.name[lang] || serviceDef.name.fr;
-    let orig = serviceDef.basePrice;
-    let final = serviceDef.basePrice;
-    let discountStr: string | undefined = undefined;
-
-    if (id === 'haircut') {
-      orig = 25;
-      final = haircutFinalPrice;
-      discountStr = haircutDiscountReason;
-    } else if (id === 'beard') {
-      orig = 15;
-      final = 15;
-    } else if (id === 'wash') {
-      orig = 10;
-      if (hasHaircut) {
-        final = 5;
-        discountStr = pickLang(lang, {
-          ar: '5 DH مع الحسانة (-5 DH)',
-          fr: '5 DH avec coupe (-5 DH)',
-          amz: '5 DH ⵙ ⵜⴽⵔⴹⴰ (-5 DH)',
-          en: '5 DH with haircut (-5 DH)',
-          es: '5 DH con corte (-5 DH)',
-        });
-        discountsBreakdown.push({
-          title: pickLang(lang, {
-            ar: 'تخفيض غسيل الشعر (-5 DH)',
-            fr: 'Remise Lavage avec Coupe (-5 DH)',
-            amz: 'ⴰⵙⵙⵏⵇⵙ ⵏ ⵓⵙⵉⵔⵉⴷ (-5 DH)',
-            en: 'Hair Wash Discount (-5 DH)',
-            es: 'Descuento lavado con corte (-5 DH)',
-          }),
-          savedMAD: 5,
-        });
-      }
-    } else if (id === 'waxing') {
-      orig = 15;
-      if (hasHaircut) {
-        final = 10;
-        discountStr = pickLang(lang, {
-          ar: '10 DH مع الحسانة (-5 DH)',
-          fr: '10 DH avec coupe (-5 DH)',
-          amz: '10 DH ⵙ ⵜⴽⵔⴹⴰ (-5 DH)',
-          en: '10 DH with haircut (-5 DH)',
-          es: '10 DH con corte (-5 DH)',
-        });
-        discountsBreakdown.push({
-          title: pickLang(lang, {
-            ar: 'تخفيض الشمع (-5 DH)',
-            fr: 'Remise Cire avec Coupe (-5 DH)',
-            amz: 'ⴰⵙⵙⵏⵇⵙ ⵏ ⵍⴰⵙⵉⵔ (-5 DH)',
-            en: 'Waxing Discount (-5 DH)',
-            es: 'Descuento cera con corte (-5 DH)',
-          }),
-          savedMAD: 5,
-        });
-      }
-    } else if (id === 'blowout') {
-      orig = 15;
-      if (hasHaircut) {
-        final = 10;
-        discountStr = pickLang(lang, {
-          ar: '10 DH مع الحسانة (-5 DH)',
-          fr: '10 DH avec coupe (-5 DH)',
-          amz: '10 DH ⵙ ⵜⴽⵔⴹⴰ (-5 DH)',
-          en: '10 DH with haircut (-5 DH)',
-          es: '10 DH con corte (-5 DH)',
-        });
-        discountsBreakdown.push({
-          title: pickLang(lang, {
-            ar: 'تخفيض البروشينغ (-5 DH)',
-            fr: 'Remise Brushing avec Coupe (-5 DH)',
-            amz: 'ⴰⵙⵙⵏⵇⵙ ⵏ ⵓⵙⵎⵙⴰⵙ (-5 DH)',
-            en: 'Blowout Discount (-5 DH)',
-            es: 'Descuento peinado con corte (-5 DH)',
-          }),
-          savedMAD: 5,
-        });
-      }
-    } else if (id === 'protein') {
-      orig = proteinPrice || 200;
-      final = proteinPrice || 200;
-    } else if (id === 'hair-color') {
-      const tonePrice = COLOR_PRICES[colorConfig.tone] || 150;
-      orig = tonePrice;
-      final = tonePrice;
-      const toneLabel = COLOR_LABELS[colorConfig.tone][lang] || COLOR_LABELS[colorConfig.tone].fr;
-      const covLabel = COVERAGE_LABELS[colorConfig.coverage][lang] || COVERAGE_LABELS[colorConfig.coverage].fr;
-      discountStr = `${toneLabel} (${covLabel})`;
-    }
-
-    originalSubtotal += orig;
-
-    items.push({
-      serviceId: id,
-      name: localizedName,
-      category: serviceDef.category,
-      originalPrice: orig,
-      finalPrice: final,
-      discountApplied: discountStr,
-      colorConfig: id === 'hair-color' ? colorConfig : undefined,
-      proteinOption: id === 'protein' ? `${proteinPrice} MAD` : undefined,
-    });
-  }
-
+  const originalSubtotal = items.reduce((sum, item) => sum + item.originalPrice, 0);
   const finalTotal = items.reduce((sum, item) => sum + item.finalPrice, 0);
   const totalSavings = Math.max(0, originalSubtotal - finalTotal);
 
@@ -567,3 +655,28 @@ export function calculateCartPricing({
     discountsBreakdown,
   };
 }
+
+export function getGiftLabel(
+  lang: 'fr' | 'ar' | 'en' | 'amz' | 'es' = 'ar'
+): string {
+  return pickLang(lang, {
+    ar: 'هدية',
+    fr: 'Offert',
+    en: 'Gift',
+    amz: 'ⵜⵉⴽⴽⵉ',
+    es: 'Regalo',
+  });
+}
+
+export function formatServicePriceLabel(
+  priceMAD: number,
+  lang: 'fr' | 'ar' | 'en' | 'amz' | 'es' = 'ar',
+  unit = 'DH'
+): string {
+  const clean = Math.round(Number(priceMAD) || 0);
+  if (clean <= 0) {
+    return getGiftLabel(lang);
+  }
+  return `${clean} ${unit}`;
+}
+

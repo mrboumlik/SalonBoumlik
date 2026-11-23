@@ -17,7 +17,12 @@ import {
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
-import { useSalonProfileSettings } from '../utils/salonSettingsStore';
+import {
+  useSalonProfileSettings,
+  formatSalonDisplayPhone,
+  normalizeSalonTelHref,
+  normalizeSalonWhatsappDigits,
+} from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
 import heroLogoImage from '../assets/images/regenerated_image_1793760774705.png';
 
@@ -198,9 +203,9 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
               </a>
 
               <a
-                href={`tel:${SALON_INFO.phone}`}
+                href={normalizeSalonTelHref(salonSettings.salonPhone)}
                 aria-label={labels.callAria}
-                title={SALON_INFO.displayPhone}
+                title={formatSalonDisplayPhone(salonSettings.salonPhone)}
                 className="w-10 h-10 rounded-xl bg-stone-100/80 hover:bg-stone-200/90 dark:bg-zinc-900/80 dark:hover:bg-zinc-800 border border-stone-200/80 dark:border-zinc-800/90 hover:border-stone-300 dark:hover:border-zinc-700 text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 flex items-center justify-center transition-all duration-200 active:scale-95"
               >
                 <Phone className="w-4 h-4" />
@@ -245,7 +250,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
             {/* 3. Side-by-Side WhatsApp + Directions Buttons */}
             <div className="grid grid-cols-2 gap-2.5">
               <a
-                href={`https://wa.me/${SALON_INFO.whatsappNumber}`}
+                href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="min-h-[46px] px-4 py-2.5 rounded-2xl bg-white hover:bg-stone-50 dark:bg-zinc-950/80 dark:hover:bg-zinc-900 border border-stone-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors"

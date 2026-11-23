@@ -151,6 +151,7 @@ export interface CustomerReview {
   };
   barberId?: string;
   barberName?: string;
+  bookingId?: string;
   createdAt?: string;
   verified?: boolean;
 }
@@ -217,14 +218,26 @@ export interface AppointmentBooking {
   checkedInAt?: string;
   caisseLoggedAt?: string;
   caisseEntryId?: string;
+  deviceFingerprint?: string;
+  clientIpHash?: string;
+  isAdminWalkIn?: boolean;
   createdAt: string;
 }
 
-export type CaisseBarberId =
-  | 'hassan'
-  | 'anouar-arif'
-  | 'lahcen-lhanz'
-  | 'mounir-querdeny';
+export type CaisseBarberId = string;
+
+export type StaffRole = 'master' | 'barber' | 'caisse';
+
+export type BarberColorKey =
+  | 'amber'
+  | 'blue'
+  | 'emerald'
+  | 'violet'
+  | 'teal'
+  | 'indigo'
+  | 'slate'
+  | 'stone'
+  | 'rose';
 
 export type CaisseEntryType =
   | 'income'
@@ -256,16 +269,27 @@ export interface CaisseEntry {
   sourceBookingId?: string;
   sourceTicketNumber?: string;
   note?: string;
-  createdByRole: 'master' | 'barber';
+  createdByRole: StaffRole;
   createdByName: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CommissionPeriodOverride {
+  id: string;
+  label?: string;
+  scope: 'month' | 'date_range';
+  month?: string; // YYYY-MM
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string; // YYYY-MM-DD
+  commissionPercent: number; // 0..100
 }
 
 export interface CaisseBarberSetting {
   id: string;
   barberId: CaisseBarberId;
   commissionPercent: number; // default 50
+  periodOverrides?: CommissionPeriodOverride[];
   updatedBy: string;
   updatedAt: string;
 }
@@ -283,10 +307,19 @@ export interface CaisseDailySettlement {
   expensesMAD: number;
   carryOverOwedMAD: number;
   resetCount: number;
+  intakeClosed?: boolean;
+  grossIntakeClosedMAD?: number;
+  settlementMode?: 'daily_intake' | 'daily_share';
   note?: string;
   confirmedBy: string;
   confirmedAt: string;
   updatedAt: string;
+}
+
+export interface BarberBreakRange {
+  id: string;
+  start: string; // HH:MM
+  end: string; // HH:MM
 }
 
 export interface BarberScheduleConfig {
@@ -295,6 +328,7 @@ export interface BarberScheduleConfig {
   offWeekdays: number[]; // 0=Sunday, 1=Monday (default off), ..., 6=Saturday
   offDates: string[]; // 'YYYY-MM-DD'
   breakSlots: string[]; // recurring daily break slots e.g. ['12:00']
+  breakRanges?: BarberBreakRange[]; // start-to-end daily break windows e.g. 12:00 -> 13:30
   dateSlotBlocks: string[]; // specific 'YYYY-MM-DD@HH:MM' overrides
   updatedAt: string;
 }
@@ -336,6 +370,9 @@ export interface WaitlistEntry {
 export interface SalonProfileSettings {
   googleMapsUrl: string;
   googleReviewUrl: string;
+  salonPhone?: string;
+  salonWhatsapp?: string;
+  additionalPhones?: string[];
   updatedAt: string;
 }
 
@@ -373,6 +410,194 @@ export interface ShiftRequest {
   reviewerNote?: string;
   reviewedBy?: string;
   reviewedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BarberCustomService {
+  id: string;
+  nameAr: string;
+  nameFr?: string;
+  nameEn?: string;
+  priceMAD: number;
+  durationMinutes: number;
+  active: boolean;
+}
+
+export interface BarberCustomServiceOverride {
+  enabled: boolean;
+  priceMAD: number;
+  durationMinutes?: number;
+}
+
+export interface BarberProfileOverride {
+  id: CaisseBarberId;
+  barberId: CaisseBarberId;
+  avatar?: string;
+  phone?: string;
+  whatsappNumber?: string;
+  instagramHandle?: string;
+  bioAr?: string;
+  bioFr?: string;
+  bioEn?: string;
+  useCustomServices: boolean;
+  customServices: BarberCustomService[];
+  customServiceOverrides?: Record<string, BarberCustomServiceOverride>;
+  customHiddenServiceIds?: string[];
+  customBundles?: ServiceBundleRule[];
+  enableNoWaitOption?: boolean;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface SpecialDayPricingRule {
+  id: string;
+  label: string;
+  active: boolean;
+  scope: 'weekday' | 'date_range';
+  weekdays?: number[]; // 0=Sun..6=Sat
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string; // YYYY-MM-DD
+  mode: 'fixed_prices' | 'delta_mad';
+  servicePrices?: Record<string, number>;
+  barberServicePrices?: Record<string, Record<string, number>>;
+  deltaMAD?: number;
+  targetServiceIds?: string[];
+}
+
+export interface ServiceBundleRule {
+  id: string;
+  labelAr: string;
+  labelFr?: string;
+  labelEn?: string;
+  serviceIds: string[];
+  bundlePriceMAD: number;
+  active: boolean;
+}
+
+export interface ShopPricingConfig {
+  id: string; // 'default'
+  servicePriceOverrides: Record<string, number>;
+  hiddenServiceIds?: string[];
+  serviceBundles?: ServiceBundleRule[];
+  specialRules: SpecialDayPricingRule[];
+  enableNoWaitOption?: boolean;
+  giftWithHaircutBeardServiceId?: string;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface RosterMemberAccount {
+  id: string;
+  nameAr: string;
+  nameFr: string;
+  nameEn?: string;
+  role: StaffRole;
+  status: 'active' | 'archived';
+  pin: string;
+  colorKey: BarberColorKey;
+  sortOrder: number;
+  isOwner?: boolean;
+  defaultAvatar?: string;
+  defaultPhone?: string;
+  defaultWhatsapp?: string;
+  defaultInstagram?: string;
+  replacesBarberId?: string;
+  replacedById?: string;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface CaisseCycleSettlement {
+  id: string; // `${barberId}_${timestamp}`
+  barberId: CaisseBarberId;
+  barberName: string;
+  settledThroughIso: string;
+  settledThroughDate: string;
+  settlementPeriodScope?: 'full_open' | 'month' | 'custom_range';
+  periodStartDate?: string;
+  periodEndDate?: string;
+  totalCollectedMAD: number;
+  barberSharePaidMAD: number;
+  shopShareMAD: number;
+  expensesMAD: number;
+  floatMAD: number;
+  creditsIssuedMAD: number;
+  entryCount: number;
+  note?: string;
+  confirmedBy: string;
+  confirmedAt: string;
+}
+
+export interface CaisseDailyArchive {
+  id: string; // `${barberId}_${YYYY-MM-DD}`
+  barberId: CaisseBarberId;
+  barberName: string;
+  date: string; // YYYY-MM-DD
+  incomeMAD: number;
+  repaymentIncomeMAD: number;
+  expensesMAD: number;
+  floatMAD: number;
+  creditsIssuedMAD: number;
+  entryCount: number;
+  entriesSummary: {
+    id: string;
+    type: CaisseEntryType;
+    amountPaidMAD: number;
+    creditAmountMAD: number;
+    label: string;
+    createdAt: string;
+  }[];
+  archivedAt: string;
+}
+
+export type ManualCreditStatus = 'open' | 'partial' | 'paid';
+
+export interface ClientCreditRecord {
+  id: string;
+  clientName: string;
+  clientPhone: string;
+  normalizedPhone: string;
+  amountOwedMAD: number;
+  originalAmountMAD: number;
+  status: ManualCreditStatus;
+  creditDate?: string;
+  note?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreditDisputeStatus = 'open' | 'reviewed' | 'resolved';
+
+export interface CreditDisputeRecord {
+  id: string;
+  clientName: string;
+  clientPhone: string;
+  normalizedPhone: string;
+  totalOwedSnapshotMAD: number;
+  creditorSummary: string;
+  message: string;
+  targetBarberId?: string;
+  status: CreditDisputeStatus;
+  staffNote?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BarberDailyNote {
+  id: string; // `${barberId}_${YYYY-MM-DD}`
+  barberId: CaisseBarberId;
+  barberName: string;
+  date: string; // YYYY-MM-DD
+  masterNote: string;
+  masterUpdatedBy: string;
+  masterUpdatedAt: string;
+  barberReply?: string;
+  barberRepliedBy?: string;
+  barberRepliedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

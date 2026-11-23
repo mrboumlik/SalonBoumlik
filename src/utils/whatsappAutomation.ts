@@ -60,6 +60,38 @@ export function formatMoroccanWhatsAppNumber(phone: string): string {
 }
 
 /**
+ * Builds a direct WhatsApp reminder link (`https://wa.me/...`) for a client credit record.
+ * Strictly preserves client privacy: shows ONLY amount owed and optional credit date
+ * (never leaks internal staff client aliases or private notes).
+ */
+export function buildCreditWhatsAppReminderUrl(params: {
+  clientPhone?: string;
+  clientName?: string;
+  amountOwedMAD: number;
+  creditDate?: string;
+  creditorName?: string;
+  note?: string;
+  lang?: Language;
+}): string | null {
+  const digits = String(params.clientPhone || '').replace(/\D/g, '');
+  if (digits.length < 6) return null;
+
+  const waPhone = formatMoroccanWhatsAppNumber(params.clientPhone || '');
+  const creditor = (params.creditorName || 'صالون بومليك').trim();
+  const amount = Math.max(0, Math.round(Number(params.amountOwedMAD) || 0));
+  const cleanDate = params.creditDate?.trim() || '';
+
+  const text =
+    params.lang === 'fr'
+      ? `Bonjour, petit rappel amical de Salon Boumlik (${creditor}) concernant votre reste à payer de ${amount} MAD.${cleanDate ? `\nDate du crédit : ${cleanDate}` : ''}\nMerci et à bientôt !`
+      : params.lang === 'en'
+      ? `Hello, friendly reminder from Salon Boumlik (${creditor}) regarding your remaining balance of ${amount} MAD.${cleanDate ? `\nCredit date: ${cleanDate}` : ''}\nThank you!`
+      : `السلام عليكم، تذكير ودي من صالون بومليك (${creditor}) بخصوص المبلغ المستحق (الكريدي): ${amount} درهم.${cleanDate ? `\nتاريخ الكريدي: ${cleanDate}` : ''}\nمرحباً بك في أي وقت!`;
+
+  return `https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`;
+}
+
+/**
  * Dynamically formats full booking details for manual WhatsApp clicks
  * on BOTH client tickets and admin dashboard tickets in the target language.
  */

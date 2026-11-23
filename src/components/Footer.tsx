@@ -15,16 +15,23 @@ import {
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
-import { useSalonProfileSettings } from '../utils/salonSettingsStore';
+import {
+  useSalonProfileSettings,
+  formatSalonDisplayPhone,
+  normalizeSalonTelHref,
+  normalizeSalonWhatsappDigits,
+} from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
 
 import type { HomepageSectionKey } from './DrawerMenu';
+import type { PublicInfoSection } from './PublicInfoModal';
 
 interface FooterProps {
   onOpenBooking: () => void;
   onOpenTrackBooking?: () => void;
   onOpenAdmin?: () => void;
   onNavigateToSection?: (sectionId: HomepageSectionKey) => void;
+  onOpenInfoModal?: (section: PublicInfoSection) => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({
@@ -32,6 +39,7 @@ export const Footer: React.FC<FooterProps> = ({
   onOpenTrackBooking,
   onOpenAdmin,
   onNavigateToSection,
+  onOpenInfoModal,
 }) => {
   const { lang } = useLanguage();
   const salonSettings = useSalonProfileSettings();
@@ -167,6 +175,34 @@ export const Footer: React.FC<FooterProps> = ({
       en: 'Back to top',
       es: 'Subir',
     }),
+    aboutPageLink: pickLang(lang, {
+      ar: 'من نحن',
+      fr: 'À propos',
+      amz: 'ⵖⵉⴼⵏⵖ',
+      en: 'About Us',
+      es: 'Sobre nosotros',
+    }),
+    contactPageLink: pickLang(lang, {
+      ar: 'اتصل بنا',
+      fr: 'Contact',
+      amz: 'ⴰⵎⵢⴰⵡⴰⴹ',
+      en: 'Contact Us',
+      es: 'Contacto',
+    }),
+    privacyLink: pickLang(lang, {
+      ar: 'سياسة الخصوصية',
+      fr: 'Politique de confidentialité',
+      amz: 'ⵜⴰⵙⵔⵜⵉⵜ ⵏ ⵜⵓⵙⵍⵉⴳⵜ',
+      en: 'Privacy Policy',
+      es: 'Política de privacidad',
+    }),
+    termsLink: pickLang(lang, {
+      ar: 'شروط الاستخدام',
+      fr: "Conditions d'utilisation",
+      amz: 'ⵜⵉⴼⴰⴷⵉⵡⵉⵏ ⵏ ⵓⵙⵎⵔⵙ',
+      en: 'Terms of Use',
+      es: 'Términos de uso',
+    }),
   };
 
   return (
@@ -219,11 +255,11 @@ export const Footer: React.FC<FooterProps> = ({
             </a>
 
             <a
-              href={`https://wa.me/${SALON_INFO.whatsappNumber}`}
+              href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}`}
               target="_blank"
               rel="noopener noreferrer"
               className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200/80 dark:hover:bg-zinc-800 text-stone-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 border border-stone-200 dark:border-zinc-800 flex items-center justify-center transition-all duration-200 shadow-2xs"
-              title="WhatsApp 0635392503"
+              title={`WhatsApp ${formatSalonDisplayPhone(salonSettings.salonWhatsapp)}`}
               aria-label="WhatsApp"
             >
               <MessageCircle className="w-4 h-4" />
@@ -371,14 +407,26 @@ export const Footer: React.FC<FooterProps> = ({
               </a>
 
               <a
-                href={`tel:${SALON_INFO.phone}`}
+                href={normalizeSalonTelHref(salonSettings.salonPhone)}
                 className="flex items-center gap-2.5 text-slate-800 dark:text-zinc-200 hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
               >
                 <Phone className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                 <span dir="ltr" className="font-mono font-bold">
-                  {SALON_INFO.displayPhone}
+                  {formatSalonDisplayPhone(salonSettings.salonPhone)}
                 </span>
               </a>
+              {(salonSettings.additionalPhones || []).map((extraPhone) => (
+                <a
+                  key={extraPhone}
+                  href={normalizeSalonTelHref(extraPhone)}
+                  className="flex items-center gap-2.5 text-slate-700 dark:text-zinc-300 hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
+                >
+                  <Phone className="w-3.5 h-3.5 text-stone-500 dark:text-zinc-400 flex-shrink-0" />
+                  <span dir="ltr" className="font-mono font-semibold">
+                    {formatSalonDisplayPhone(extraPhone)}
+                  </span>
+                </a>
+              ))}
 
               <a
                 href={`mailto:${SALON_INFO.email}`}
@@ -393,8 +441,44 @@ export const Footer: React.FC<FooterProps> = ({
           </div>
         </div>
 
-        {/* 4. Sleek Bottom Copyright & Admin Bar */}
-        <div className="mt-7 pt-5 border-t border-stone-200/80 dark:border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px] text-stone-500 dark:text-zinc-400">
+        {/* 4. Public Info Links Bar (About, Contact, Privacy Policy, Terms of Use) */}
+        {onOpenInfoModal && (
+          <nav
+            aria-label={pickLang(lang, {
+              ar: 'معلومات وسياسات الصالون',
+              fr: 'Informations et mentions légales',
+              amz: 'ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵓⵙⴰⵍⵓⵏ',
+              en: 'Salon information and policies',
+              es: 'Información y políticas',
+            })}
+            className="mt-7 pt-5 border-t border-stone-200/80 dark:border-zinc-800/80 flex flex-wrap items-center justify-center sm:justify-start gap-x-5 gap-y-2 text-xs"
+          >
+            {(
+              [
+                { id: 'about', label: labels.aboutPageLink },
+                { id: 'contact', label: labels.contactPageLink },
+                { id: 'privacy', label: labels.privacyLink },
+                { id: 'terms', label: labels.termsLink },
+              ] as { id: PublicInfoSection; label: string }[]
+            ).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onOpenInfoModal(item.id)}
+                className="font-bold text-stone-600 dark:text-zinc-400 hover:text-amber-700 dark:hover:text-amber-400 transition-colors cursor-pointer py-1"
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        )}
+
+        {/* 5. Sleek Bottom Copyright & Admin Bar */}
+        <div
+          className={`${
+            onOpenInfoModal ? 'mt-4 pt-4' : 'mt-7 pt-5'
+          } border-t border-stone-200/80 dark:border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px] text-stone-500 dark:text-zinc-400`}
+        >
           <span>
             © {new Date().getFullYear()} {labels.rights}
           </span>

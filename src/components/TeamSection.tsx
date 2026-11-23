@@ -11,9 +11,12 @@ import {
   MessageCircle,
   ExternalLink,
 } from 'lucide-react';
-import { TEAM_MEMBERS } from '../data/barbershopData';
+import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
+import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore';
+import { useBarberRoster } from '../utils/barberRosterStore';
+import { getBarberIdentityTokens } from '../utils/barberIdentity';
 
 interface TeamSectionProps {
   onSelectBarberToBook: (barberId: string) => void;
@@ -22,6 +25,9 @@ interface TeamSectionProps {
 export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }) => {
   const { lang, t } = useLanguage();
   const [expandedBioId, setExpandedBioId] = useState<string | null>('hassan');
+  const barberRoster = useBarberRoster();
+  const barberProfiles = useBarberProfiles();
+  const mergedTeam = getMergedBarbers(barberProfiles, barberRoster);
 
   return (
     <section
@@ -74,7 +80,7 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
           </div>
 
           <a
-            href="https://www.instagram.com/salonboumlik"
+            href={SALON_INFO.social?.instagram || 'https://www.instagram.com/salonboumlik'}
             target="_blank"
             rel="noopener noreferrer"
             className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer flex-shrink-0"
@@ -86,16 +92,17 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
 
         {/* 4 Team Members Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 items-stretch">
-          {TEAM_MEMBERS.map((barber) => {
+          {mergedTeam.map((barber) => {
             const localizedBarberName = barber.name[lang] || barber.name.fr;
             const firstName = localizedBarberName.split(' ')[0];
             const isBioExpanded = expandedBioId === barber.id;
             const isOwner = Boolean(barber.isOwner);
+            const barberTone = getBarberIdentityTokens(barber.id, barber.name.ar, barber.colorName);
 
             return (
               <div
                 key={barber.id}
-                className={`rounded-2xl overflow-hidden bg-white dark:bg-[#13151B] border transition-all duration-200 flex flex-col justify-between p-5 relative group ${
+                className={`rounded-2xl overflow-hidden bg-white dark:bg-[#13151B] border transition-all duration-200 flex flex-col justify-between p-5 relative group ${barberTone.borderLeftClass} ${
                   isOwner
                     ? 'border-amber-500/80 dark:border-amber-500/50 shadow-sm'
                     : 'border-stone-200 dark:border-zinc-800 hover:border-amber-500/40 shadow-2xs'
@@ -137,8 +144,9 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
 
                   {/* Name & (Founder-Only Role/Experience) */}
                   <div className="text-center space-y-1 mb-3">
-                    <h3 className="text-base font-black text-slate-900 dark:text-white">
-                      {localizedBarberName}
+                    <h3 className="text-base font-black text-slate-900 dark:text-white inline-flex items-center justify-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${barberTone.dotClass}`} />
+                      <span>{localizedBarberName}</span>
                     </h3>
                     {isOwner && barber.role && (
                       <div className="text-xs font-bold text-amber-700 dark:text-amber-400">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   setDoc,
@@ -8,6 +9,7 @@ import {
 import { AppointmentBooking, CrmClientProfile } from '../types';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import {
+  deleteBooking,
   markBookingAttendanceCompleted,
   normalizeMoroccanPhoneDigits,
   updateBookingStatus,
@@ -22,10 +24,27 @@ import { dispatchClientBackgroundPush } from './webPushClient';
 const CRM_COLLECTION = 'crm_clients';
 
 export function getCrmDocId(rawPhone: string): string {
-  const canonical = normalizeMoroccanPhoneDigits(rawPhone);
-  const fallback = rawPhone.replace(/\D/g, '');
+  const cleanedRaw = String(rawPhone || '').replace(/^c_/i, '');
+  const canonical = normalizeMoroccanPhoneDigits(cleanedRaw);
+  const fallback = cleanedRaw.replace(/\D/g, '');
   const key = (canonical || fallback || '00000').replace(/[^a-zA-Z0-9_-]/g, '');
   return `c_${key}`.slice(0, 64);
+}
+
+export function findCrmProfileByPhone(
+  rawPhone: string,
+  crmMap: Record<string, CrmClientProfile> = cachedCrmMap
+): CrmClientProfile | undefined {
+  const canonicalId = getCrmDocId(rawPhone);
+  if (crmMap[canonicalId]) return crmMap[canonicalId];
+  const canonicalDigits = normalizeMoroccanPhoneDigits(rawPhone);
+  if (!canonicalDigits) return undefined;
+  return Object.values(crmMap).find((p) => {
+    const pDigits = normalizeMoroccanPhoneDigits(
+      p.normalizedPhone || p.phoneDisplay || p.id.replace(/^c_/i, '')
+    );
+    return pDigits === canonicalDigits;
+  });
 }
 
 let cachedCrmMap: Record<string, CrmClientProfile> = {};
@@ -88,9 +107,11 @@ export function useCrmClients(): Record<string, CrmClientProfile> {
 
 export interface AggregatedCrmClient {
   id: string;
+  allDocIds: string[];
   normalizedPhone: string;
   phoneDisplay: string;
   clientName: string;
+  nameAliases: string[];
   isVip: boolean;
   noShowCount: number;
   isBanned: boolean;
@@ -116,15 +137,39 @@ export function buildCrmClientSummaries(
 ): AggregatedCrmClient[] {
   const grouped = new Map<string, AggregatedCrmClient>();
 
-  const ensureEntry = (id: string, phoneDisplay: string, normalizedPhone: string, name: string) => {
-    let entry = grouped.get(id);
+  const registerName = (entry: AggregatedCrmClient, candidateName?: string) => {
+    const trimmed = String(candidateName || '').trim();
+    if (!trimmed) return;
+    if (!entry.clientName || entry.clientName === 'Client' || entry.clientName === 'زبون') {
+      entry.clientName = trimmed;
+    }
+    if (!entry.nameAliases.some((n) => n.toLowerCase() === trimmed.toLowerCase())) {
+      entry.nameAliases.push(trimmed);
+    }
+  };
+
+  const ensureEntry = (
+    rawPhoneOrId: string,
+    phoneDisplay: string,
+    normalizedPhone: string,
+    name: string,
+    storedDocId?: string
+  ) => {
+    const canonicalId = getCrmDocId(normalizedPhone || phoneDisplay || rawPhoneOrId);
+    const canonicalDigits =
+      normalizeMoroccanPhoneDigits(normalizedPhone || phoneDisplay || rawPhoneOrId) ||
+      normalizedPhone;
+
+    let entry = grouped.get(canonicalId);
     if (!entry) {
-      const stored = crmMap[id];
+      const stored = crmMap[canonicalId] || (storedDocId ? crmMap[storedDocId] : undefined);
       entry = {
-        id,
-        normalizedPhone: stored?.normalizedPhone || normalizedPhone,
-        phoneDisplay: stored?.phoneDisplay || phoneDisplay,
-        clientName: stored?.clientName || name,
+        id: canonicalId,
+        allDocIds: [],
+        normalizedPhone: canonicalDigits || stored?.normalizedPhone || '',
+        phoneDisplay: stored?.phoneDisplay || phoneDisplay || canonicalDigits,
+        clientName: stored?.clientName || name || 'Client',
+        nameAliases: [],
         isVip: Boolean(stored?.isVip),
         noShowCount: stored?.noShowCount ?? 0,
         isBanned: Boolean(stored?.isBanned),
@@ -143,27 +188,65 @@ export function buildCrmClientSummaries(
         lastVisitDate: '',
         bookings: [],
       };
-      grouped.set(id, entry);
+      registerName(entry, entry.clientName);
+      grouped.set(canonicalId, entry);
     }
+
+    if (storedDocId && !entry.allDocIds.includes(storedDocId)) {
+      entry.allDocIds.push(storedDocId);
+    }
+    if (crmMap[canonicalId] && !entry.allDocIds.includes(canonicalId)) {
+      entry.allDocIds.push(canonicalId);
+    }
+    registerName(entry, name);
     return entry;
   };
 
-  // Seed entries from persisted CRM records first
+  // Seed entries from persisted CRM records first, consolidating any phone variants under ONE unified profile
   Object.values(crmMap).forEach((profile) => {
-    ensureEntry(profile.id, profile.phoneDisplay, profile.normalizedPhone, profile.clientName);
+    const rawKey = profile.normalizedPhone || profile.phoneDisplay || profile.id.replace(/^c_/i, '');
+    const entry = ensureEntry(
+      rawKey,
+      profile.phoneDisplay,
+      normalizeMoroccanPhoneDigits(rawKey) || profile.normalizedPhone,
+      profile.clientName,
+      profile.id
+    );
+    entry.isVip = entry.isVip || Boolean(profile.isVip);
+    entry.isBanned = entry.isBanned || Boolean(profile.isBanned);
+    entry.noShowCount = Math.max(entry.noShowCount, profile.noShowCount ?? 0);
+    entry.freeWashesRedeemed = Math.max(
+      entry.freeWashesRedeemed,
+      profile.freeWashesRedeemed ?? 0
+    );
+    entry.customDiscountMAD = Math.max(
+      entry.customDiscountMAD,
+      profile.customDiscountMAD ?? 0
+    );
+    entry.verifiedVisits = Math.max(entry.verifiedVisits, profile.verifiedVisits ?? 0);
+    entry.loyaltyPoints = Math.max(entry.loyaltyPoints, profile.loyaltyPoints ?? 0);
+    entry.pointsEarnedTotal = Math.max(
+      entry.pointsEarnedTotal,
+      profile.pointsEarnedTotal ?? 0
+    );
+    entry.pointsRedeemedTotal = Math.max(
+      entry.pointsRedeemedTotal,
+      profile.pointsRedeemedTotal ?? 0
+    );
+    if (!entry.banReason && profile.banReason) entry.banReason = profile.banReason;
+    if (!entry.rewardNote && profile.rewardNote) entry.rewardNote = profile.rewardNote;
+    if (profile.phoneDisplay && (!entry.phoneDisplay || profile.phoneDisplay.startsWith('0'))) {
+      entry.phoneDisplay = profile.phoneDisplay;
+    }
   });
 
-  // Aggregate live bookings
+  // Aggregate live bookings strictly by canonical Moroccan phone number
   bookings.forEach((b) => {
     const digits = normalizeMoroccanPhoneDigits(b.clientPhone);
     if (!digits || digits.length < 4) return;
-    const id = getCrmDocId(b.clientPhone);
-    const entry = ensureEntry(id, b.clientPhone, digits, b.clientName);
+    const entry = ensureEntry(b.clientPhone, b.clientPhone, digits, b.clientName);
     entry.bookings.push(b);
 
-    if (!entry.clientName || entry.clientName === 'Client') {
-      entry.clientName = b.clientName;
-    }
     if (!entry.lastVisitDate || b.date > entry.lastVisitDate) {
       entry.lastVisitDate = b.date;
     }
@@ -187,8 +270,27 @@ export function buildCrmClientSummaries(
         : b.date.localeCompare(a.date)
     );
     const canonicalVerified = Math.max(client.verifiedVisits, client.completedCount);
-    const storedProfile = crmMap[client.id];
-    const pointsSummary = computeClientPointsSummary(canonicalVerified, storedProfile);
+    const storedProfile =
+      crmMap[client.id] ||
+      client.allDocIds.map((id) => crmMap[id]).find(Boolean);
+    const pointsSummary = computeClientPointsSummary(canonicalVerified, {
+      ...(storedProfile || {
+        id: client.id,
+        normalizedPhone: client.normalizedPhone,
+        phoneDisplay: client.phoneDisplay,
+        clientName: client.clientName,
+        isVip: client.isVip,
+        noShowCount: client.noShowCount,
+        isBanned: client.isBanned,
+        freeWashesRedeemed: client.freeWashesRedeemed,
+        customDiscountMAD: client.customDiscountMAD,
+        verifiedVisits: client.verifiedVisits,
+        updatedAt: new Date().toISOString(),
+      }),
+      loyaltyPoints: client.loyaltyPoints,
+      pointsEarnedTotal: client.pointsEarnedTotal,
+      pointsRedeemedTotal: client.pointsRedeemedTotal,
+    });
     const earnedWashes = Math.floor(canonicalVerified / 5);
     const eligibleFreeWashes = Math.max(0, earnedWashes - client.freeWashesRedeemed);
     return {
@@ -263,8 +365,7 @@ export async function toggleClientVip(
   clientName: string,
   crmMap: Record<string, CrmClientProfile> = cachedCrmMap
 ): Promise<CrmClientProfile> {
-  const id = getCrmDocId(phone);
-  const existing = crmMap[id];
+  const existing = findCrmProfileByPhone(phone, crmMap);
   const next = buildSanitizedCrmProfile(phone, clientName, { isVip: !existing?.isVip }, existing);
   return persistCrmProfile(next);
 }
@@ -277,8 +378,7 @@ export async function recordClientNoShow(
   booking: AppointmentBooking,
   crmMap: Record<string, CrmClientProfile> = cachedCrmMap
 ): Promise<CrmClientProfile> {
-  const id = getCrmDocId(booking.clientPhone);
-  const existing = crmMap[id];
+  const existing = findCrmProfileByPhone(booking.clientPhone, crmMap);
   const nextNoShows = (existing?.noShowCount ?? 0) + 1;
   const shouldAutoBan = nextNoShows >= 2;
 
@@ -315,8 +415,7 @@ export async function setClientBanStatus(
   reason?: string,
   crmMap: Record<string, CrmClientProfile> = cachedCrmMap
 ): Promise<CrmClientProfile> {
-  const id = getCrmDocId(phone);
-  const existing = crmMap[id];
+  const existing = findCrmProfileByPhone(phone, crmMap);
   const next = buildSanitizedCrmProfile(
     phone,
     clientName,
@@ -339,8 +438,7 @@ export async function redeemClientFreeWash(
   clientName: string,
   crmMap: Record<string, CrmClientProfile> = cachedCrmMap
 ): Promise<CrmClientProfile> {
-  const id = getCrmDocId(phone);
-  const existing = crmMap[id];
+  const existing = findCrmProfileByPhone(phone, crmMap);
   const next = buildSanitizedCrmProfile(
     phone,
     clientName,
@@ -363,8 +461,7 @@ export async function grantClientCustomDiscount(
   note: string,
   crmMap: Record<string, CrmClientProfile> = cachedCrmMap
 ): Promise<CrmClientProfile> {
-  const id = getCrmDocId(phone);
-  const existing = crmMap[id];
+  const existing = findCrmProfileByPhone(phone, crmMap);
   const next = buildSanitizedCrmProfile(
     phone,
     clientName,
@@ -396,8 +493,7 @@ export async function confirmClientAttendance(
   allBookings: AppointmentBooking[],
   crmMap: Record<string, CrmClientProfile> = cachedCrmMap
 ): Promise<ConfirmAttendanceResult> {
-  const clientId = getCrmDocId(booking.clientPhone);
-  const existing = crmMap[clientId];
+  const existing = findCrmProfileByPhone(booking.clientPhone, crmMap);
   const digits = normalizeMoroccanPhoneDigits(booking.clientPhone);
 
   const completedBookingsBefore = digits
@@ -511,7 +607,7 @@ export async function redeemLoyaltyPointsForDiscount(params: {
 }): Promise<CrmClientProfile> {
   const crmMap = params.crmMap ?? cachedCrmMap;
   const id = getCrmDocId(params.phone);
-  const existing = crmMap[id];
+  const existing = findCrmProfileByPhone(params.phone, crmMap);
   const visits = Math.max(params.verifiedVisits ?? 0, existing?.verifiedVisits ?? 0);
   const summary = computeClientPointsSummary(visits, existing);
 
@@ -565,7 +661,7 @@ export async function adjustClientLoyaltyPoints(params: {
 }): Promise<CrmClientProfile> {
   const crmMap = params.crmMap ?? cachedCrmMap;
   const id = getCrmDocId(params.phone);
-  const existing = crmMap[id];
+  const existing = findCrmProfileByPhone(params.phone, crmMap);
   const visits = Math.max(params.verifiedVisits ?? 0, existing?.verifiedVisits ?? 0);
   const summary = computeClientPointsSummary(visits, existing);
 
@@ -618,8 +714,7 @@ export async function consumeClientDiscountOnBooking(
   crmMap: Record<string, CrmClientProfile> = cachedCrmMap
 ): Promise<CrmClientProfile | null> {
   if (usedDiscountMAD <= 0) return null;
-  const id = getCrmDocId(phone);
-  const existing = crmMap[id];
+  const existing = findCrmProfileByPhone(phone, crmMap);
   if (!existing || (existing.customDiscountMAD ?? 0) <= 0) return null;
 
   const remainingDiscount = Math.max(0, (existing.customDiscountMAD ?? 0) - usedDiscountMAD);
@@ -636,4 +731,44 @@ export async function consumeClientDiscountOnBooking(
     existing
   );
   return persistCrmProfile(next);
+}
+
+/**
+ * Selectively deletes chosen booking records and/or CRM profile documents for a client.
+ * Never deletes Caisse entries or open/manual credit records.
+ */
+export async function deleteSelectedClientRecords(params: {
+  bookingIds?: string[];
+  crmDocIds?: string[];
+}): Promise<{ deletedBookings: number; deletedProfiles: number }> {
+  const uniqueBookingIds = Array.from(new Set((params.bookingIds || []).filter(Boolean)));
+  const uniqueCrmDocIds = Array.from(new Set((params.crmDocIds || []).filter(Boolean)));
+
+  let deletedBookings = 0;
+  for (const bId of uniqueBookingIds) {
+    await deleteBooking(bId);
+    deletedBookings += 1;
+  }
+
+  let deletedProfiles = 0;
+  for (const docId of uniqueCrmDocIds) {
+    const path = `${CRM_COLLECTION}/${docId}`;
+    try {
+      await deleteDoc(doc(db, CRM_COLLECTION, docId));
+      deletedProfiles += 1;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  }
+
+  if (deletedProfiles > 0) {
+    const nextCache = { ...cachedCrmMap };
+    uniqueCrmDocIds.forEach((docId) => {
+      delete nextCache[docId];
+    });
+    cachedCrmMap = nextCache;
+    crmListeners.forEach((cb) => cb(nextCache));
+  }
+
+  return { deletedBookings, deletedProfiles };
 }

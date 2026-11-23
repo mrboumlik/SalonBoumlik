@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { BarChart3 } from 'lucide-react';
 import { AppointmentBooking } from '../types';
-import { TEAM_MEMBERS } from '../data/barbershopData';
+import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore';
+import { useBarberRoster } from '../utils/barberRosterStore';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
 
@@ -59,6 +60,12 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
   todayStr,
 }) => {
   const { lang } = useLanguage();
+  const roster = useBarberRoster();
+  const profilesMap = useBarberProfiles();
+  const mergedBarbers = useMemo(
+    () => getMergedBarbers(profilesMap, roster),
+    [profilesMap, roster]
+  );
   const [rangeMode, setRangeMode] = useState<'calendar_week' | 'rolling_7d'>('calendar_week');
 
   const bounds = useMemo(
@@ -73,7 +80,7 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
       return effDate >= bounds.startStr && effDate <= bounds.endStr;
     });
 
-    const perBarber = TEAM_MEMBERS.map((barber) => {
+    const perBarber = mergedBarbers.map((barber) => {
       const count = completedInWeek.filter(
         (b) =>
           b.barberId === barber.id ||
@@ -90,7 +97,7 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
     const maxCount = Math.max(4, ...perBarber.map((item) => item.count));
     // Round Y-axis ceiling to a clean multiple of 2 or 4
     const yMax = maxCount <= 4 ? 4 : Math.ceil(maxCount / 2) * 2;
-    const avgCount = TEAM_MEMBERS.length > 0 ? totalCompleted / TEAM_MEMBERS.length : 0;
+    const avgCount = mergedBarbers.length > 0 ? totalCompleted / mergedBarbers.length : 0;
 
     return {
       perBarber,
@@ -98,7 +105,7 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
       yMax,
       avgCount,
     };
-  }, [bookings, bounds.startStr, bounds.endStr]);
+  }, [bookings, bounds.startStr, bounds.endStr, mergedBarbers]);
 
   const yTicks = [
     chartStats.yMax,
@@ -214,7 +221,12 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
             )}
 
             {/* Vertical Bars */}
-            <div className="relative z-10 h-full grid grid-cols-4 gap-3 sm:gap-6 px-3 sm:px-6 items-end">
+            <div
+              className="relative z-10 h-full grid gap-3 sm:gap-6 px-3 sm:px-6 items-end"
+              style={{
+                gridTemplateColumns: `repeat(${Math.max(1, chartStats.perBarber.length)}, minmax(0, 1fr))`,
+              }}
+            >
               {chartStats.perBarber.map(({ barber, count }) => {
                 const heightPct =
                   chartStats.yMax > 0
@@ -259,7 +271,12 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
         {/* X-Axis Barber Labels */}
         <div className="flex items-start gap-3 mt-2">
           <div className="w-7 flex-shrink-0" />
-          <div className="flex-1 grid grid-cols-4 gap-3 sm:gap-6 px-3 sm:px-6 text-center">
+          <div
+            className="flex-1 grid gap-3 sm:gap-6 px-3 sm:px-6 text-center"
+            style={{
+              gridTemplateColumns: `repeat(${Math.max(1, chartStats.perBarber.length)}, minmax(0, 1fr))`,
+            }}
+          >
             {chartStats.perBarber.map(({ barber, count }) => {
               const sharePct =
                 chartStats.totalCompleted > 0

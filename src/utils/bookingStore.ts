@@ -153,6 +153,15 @@ function buildSanitizedBooking(booking: AppointmentBooking): Record<string, unkn
   if (booking.caisseEntryId && booking.caisseEntryId.trim()) {
     sanitized.caisseEntryId = booking.caisseEntryId.trim().slice(0, 128);
   }
+  if (booking.deviceFingerprint && booking.deviceFingerprint.trim()) {
+    sanitized.deviceFingerprint = booking.deviceFingerprint.trim().slice(0, 128);
+  }
+  if (booking.clientIpHash && booking.clientIpHash.trim()) {
+    sanitized.clientIpHash = booking.clientIpHash.trim().slice(0, 128);
+  }
+  if (typeof booking.isAdminWalkIn === 'boolean') {
+    sanitized.isAdminWalkIn = booking.isAdminWalkIn;
+  }
 
   return sanitized;
 }
@@ -257,13 +266,15 @@ function cleanTicketString(ticket: string): string {
  * Normalizes Moroccan phone numbers across "+212...", "212...", "06...", and spaced formats.
  */
 export function normalizeMoroccanPhoneDigits(rawPhone: string): string {
-  const digits = rawPhone.replace(/\D/g, '');
+  let digits = String(rawPhone || '').replace(/\D/g, '');
   if (!digits) return '';
-  if (digits.startsWith('212') && digits.length >= 12) {
-    return digits.slice(3);
+  if (digits.startsWith('00212') && digits.length >= 13) {
+    digits = digits.slice(5);
+  } else if (digits.startsWith('212') && digits.length >= 11) {
+    digits = digits.slice(3);
   }
   if (digits.startsWith('0') && digits.length >= 10) {
-    return digits.slice(1);
+    digits = digits.slice(1);
   }
   return digits;
 }
@@ -405,7 +416,7 @@ export async function createNewBooking(
     ...bookingData,
     id,
     ticketNumber,
-    checkInToken: bookingData.checkInToken || generateCheckInToken(),
+    checkInToken: bookingData.checkInToken || generateCheckInToken(bookingData.clientPhone),
     status: bookingData.status || 'pending',
     createdAt: new Date().toISOString(),
   };
@@ -602,6 +613,75 @@ export async function assignFlexibleBookingSlot(
         cLang === 'ar'
           ? `اختار لك الحلاق ${updatedBooking.barberName} أفضل وقت متاح: ${cleanDate} الساعة ${cleanTime}. مرحباً بك!`
           : `${updatedBooking.barberName} a sélectionné votre créneau optimal : ${cleanDate} à ${cleanTime}.`,
+    });
+
+    return updatedBooking;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Moves a late-arriving client's booking directly to the nearest open slot for that barber,
+ * immediately freeing up their missed original slot and confirming the new seat.
+ */
+export async function rescheduleBookingToNearestSlot(
+  id: string,
+  targetDate: string,
+  targetTime: string,
+  adminNotes?: string
+): Promise<AppointmentBooking | null> {
+  const path = `${BOOKINGS_COLLECTION}/${id}`;
+  try {
+    const cleanDate = String(targetDate || '').trim().slice(0, 20);
+    const cleanTime = String(targetTime || '').trim().slice(0, 16);
+    const noteText = String(
+      adminNotes ||
+        `بسبب التأخر عن الموعد السابق، تم تأجيل الحجز إلى أقرب وقت متاح (${cleanDate} • ${cleanTime}).`
+    ).slice(0, 500);
+
+    await updateDoc(doc(db, BOOKINGS_COLLECTION, id), {
+      date: cleanDate,
+      timeSlot: cleanTime,
+      status: 'confirmed' as BookingStatus,
+      adminNotes: noteText,
+      rescheduledTo: deleteField(),
+    });
+
+    let targetBooking = memoryCache.find((b) => b.id === id);
+    if (!targetBooking) {
+      const snap = await getDoc(doc(db, BOOKINGS_COLLECTION, id));
+      if (snap.exists()) {
+        targetBooking = snap.data() as AppointmentBooking;
+      }
+    }
+    if (!targetBooking) return null;
+
+    const updatedBooking: AppointmentBooking = {
+      ...targetBooking,
+      date: cleanDate,
+      timeSlot: cleanTime,
+      status: 'confirmed',
+      adminNotes: noteText,
+      rescheduledTo: undefined,
+    };
+    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+
+    const cLang = updatedBooking.clientLanguage || 'ar';
+    void dispatchClientBackgroundPush({
+      clientPhone: updatedBooking.clientPhone,
+      ticketNumber: updatedBooking.ticketNumber,
+      eventType: 'booking_rescheduled',
+      url: `/#track=${encodeURIComponent(updatedBooking.ticketNumber)}`,
+      tag: `sb-booking-${updatedBooking.id}-nearest-${cleanTime}`,
+      title:
+        cLang === 'ar'
+          ? `Salon Boumlik • تأجيل لأقرب وقت متاح (${updatedBooking.ticketNumber})`
+          : `Salon Boumlik • Créneau déplacé (${updatedBooking.ticketNumber})`,
+      body:
+        cLang === 'ar'
+          ? `تم نقل موعدك مع ${updatedBooking.barberName} إلى ${cleanDate} الساعة ${cleanTime}.`
+          : `Votre RDV avec ${updatedBooking.barberName} a été déplacé au ${cleanDate} à ${cleanTime}.`,
     });
 
     return updatedBooking;

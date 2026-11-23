@@ -18,7 +18,14 @@ import {
   COLOR_LABELS,
   COVERAGE_LABELS,
   ServiceDefinition,
+  formatServicePriceLabel,
+  getGiftLabel,
 } from '../utils/pricingEngine';
+import {
+  getVisibleBaseServices,
+  resolveEffectiveServicePrices,
+  useShopPricingConfig,
+} from '../utils/shopPricingStore';
 import { HairColorConfig, PricingEngineResult } from '../types';
 import { pickLang } from '../utils/i18n';
 
@@ -44,10 +51,19 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
   onProceedToBooking,
 }) => {
   const { lang } = useLanguage();
+  const shopPricingConfig = useShopPricingConfig();
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [onlyStaffFavorites, setOnlyStaffFavorites] = useState<boolean>(false);
 
-  const staffFavoritesCount = BASE_SERVICES.filter((s) => Boolean(s.staffFavorite)).length;
+  const nowLocal = new Date();
+  const todayLocalStr = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`;
+  const resolvedTodayPricing = resolveEffectiveServicePrices({
+    dateStr: todayLocalStr,
+    shopConfig: shopPricingConfig,
+  });
+
+  const visibleBaseServices = getVisibleBaseServices(shopPricingConfig);
+  const staffFavoritesCount = visibleBaseServices.filter((s) => Boolean(s.staffFavorite)).length;
 
   const categories = [
     {
@@ -112,7 +128,7 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
     },
   ];
 
-  const filteredServices = BASE_SERVICES.filter((s) => {
+  const filteredServices = visibleBaseServices.filter((s) => {
     if (onlyStaffFavorites && !s.staffFavorite) return false;
     if (activeCategory === 'all') return true;
     if (activeCategory === 'haircut') return s.category === 'haircut' || s.category === 'wash';
@@ -217,10 +233,30 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
       es: `${mins} min`,
     });
 
-  const totalEstimatedDuration = BASE_SERVICES.filter((s) => selectedIds.includes(s.id)).reduce(
-    (sum, s) => sum + s.durationMinutes,
+  const totalEstimatedDuration = visibleBaseServices.filter((s) => selectedIds.includes(s.id)).reduce(
+    (sum, s) => sum + (resolvedTodayPricing.durationMap[s.id] ?? s.durationMinutes),
     0
   );
+
+  const haircutLivePrice = resolvedTodayPricing.priceMap['haircut'] ?? 25;
+  const beardLivePrice = resolvedTodayPricing.priceMap['beard'] ?? 15;
+  const hiddenSet = new Set(shopPricingConfig.hiddenServiceIds || []);
+  const haircutBeardBundle = (shopPricingConfig.serviceBundles || []).find(
+    (b) =>
+      b.active &&
+      b.serviceIds.length === 2 &&
+      b.serviceIds.includes('haircut') &&
+      b.serviceIds.includes('beard')
+  );
+  const comboRegularSum = haircutLivePrice + beardLivePrice;
+  const comboBundlePrice = haircutBeardBundle ? haircutBeardBundle.bundlePriceMAD : 35;
+  const comboSavings = Math.max(0, comboRegularSum - comboBundlePrice);
+  const isDefaultComboActive =
+    !hiddenSet.has('haircut') &&
+    !hiddenSet.has('beard') &&
+    resolvedTodayPricing.activeSpecialRuleLabels.length === 0 &&
+    Boolean(haircutBeardBundle) &&
+    comboSavings > 0;
 
   return (
     <section
@@ -243,35 +279,53 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
             {ui.subtitle}
           </p>
 
-          {/* Compact Combo Highlight */}
-          <div className="mt-4 inline-flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-4 py-2 rounded-2xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-800 text-xs shadow-2xs">
-            <span className="font-bold text-slate-800 dark:text-zinc-200">
-              {
+          {/* Compact Combo Highlight or Active Special Day Pricing Notice */}
+          {resolvedTodayPricing.activeSpecialRuleLabels.length > 0 ? (
+            <div className="mt-4 inline-flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-2xl bg-amber-50 dark:bg-amber-500/15 border border-amber-300/80 dark:border-amber-500/35 text-xs shadow-2xs">
+              <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+              <span className="font-black text-amber-900 dark:text-amber-200">
+                {pickLang(lang, {
+                  ar: 'تسعيرة خاصة مفعلة لليوم:',
+                  fr: 'Tarif spécial du jour actif :',
+                  amz: 'ⴰⵜⵉⴳ ⵓⵣⵍⵉⴳ ⵏ ⵡⴰⵙⵙ :',
+                  en: 'Today’s special pricing active:',
+                  es: 'Tarifa especial de hoy:',
+                })}
+              </span>
+              <span className="font-bold text-amber-700 dark:text-amber-300">
+                {resolvedTodayPricing.activeSpecialRuleLabels.join(' • ')}
+              </span>
+            </div>
+          ) : isDefaultComboActive ? (
+            <div className="mt-4 inline-flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-4 py-2 rounded-2xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-800 text-xs shadow-2xs">
+              <span className="font-bold text-slate-800 dark:text-zinc-200">
                 {
-                  ar: 'باقة الحسانة + اللحية:',
-                  fr: 'Combo Coupe + Barbe :',
-                  en: 'Haircut + Beard Combo:',
-                  amz: 'ⵜⴰⴽⵔⴹⴰ + ⵜⴰⵎⴰⵔⵜ:',
-                  es: 'Combo Corte + Barba:',
-                }[lang]
-              }
-            </span>
-            <span className="font-mono font-bold line-through text-stone-400 dark:text-zinc-500">
-              40 MAD
-            </span>
-            <span className="font-mono font-black text-amber-700 dark:text-amber-400 text-sm">
-              35 MAD
-            </span>
-            <span className="bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-md font-bold text-[10px] border border-emerald-200 dark:border-emerald-500/30">
-              {pickLang(lang, {
-                ar: 'وفر 5 دراهم',
-                fr: '-5 MAD',
-                amz: '-5 MAD',
-                en: 'Save 5 MAD',
-                es: 'Ahorra 5 MAD',
-              })}
-            </span>
-          </div>
+                  {
+                    ar: 'باقة الحسانة + اللحية:',
+                    fr: 'Combo Coupe + Barbe :',
+                    en: 'Haircut + Beard Combo:',
+                    amz: 'ⵜⴰⴽⵔⴹⴰ + ⵜⴰⵎⴰⵔⵜ:',
+                    es: 'Combo Corte + Barba:',
+                  }[lang]
+                }
+              </span>
+              <span className="font-mono font-bold line-through text-stone-400 dark:text-zinc-500">
+                {comboRegularSum} MAD
+              </span>
+              <span className="font-mono font-black text-amber-700 dark:text-amber-400 text-sm">
+                {comboBundlePrice} MAD
+              </span>
+              <span className="bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-md font-bold text-[10px] border border-emerald-200 dark:border-emerald-500/30">
+                {pickLang(lang, {
+                  ar: `وفر ${comboSavings} دراهم`,
+                  fr: `-${comboSavings} MAD`,
+                  amz: `-${comboSavings} MAD`,
+                  en: `Save ${comboSavings} MAD`,
+                  es: `Ahorra ${comboSavings} MAD`,
+                })}
+              </span>
+            </div>
+          ) : null}
         </div>
 
         {/* Dedicated Toggleable Staff Favorites Button + Category Filter Tabs */}
@@ -330,6 +384,13 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
               const isSelected = selectedIds.includes(service.id);
               const name = service.name[lang] || service.name.fr;
               const desc = service.description[lang] || service.description.fr;
+              const resolvedDuration =
+                resolvedTodayPricing.durationMap[service.id] ?? service.durationMinutes;
+              const resolvedBasePrice =
+                resolvedTodayPricing.priceMap[service.id] ?? service.basePrice;
+              const isSpecialToday = resolvedTodayPricing.specialRuleAffectedServiceIds.includes(
+                service.id
+              );
 
               return (
                 <div
@@ -355,9 +416,22 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                               <span>{staffFavoriteBadgeLabel}</span>
                             </span>
                           )}
+                          {isSpecialToday && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100/80 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 text-[10px] font-bold border border-amber-300 dark:border-amber-500/40 whitespace-nowrap">
+                              <span>
+                                {pickLang(lang, {
+                                  ar: 'تسعيرة اليوم',
+                                  fr: 'Tarif du jour',
+                                  amz: 'ⴰⵜⵉⴳ ⵏ ⵡⴰⵙⵙ',
+                                  en: 'Today rate',
+                                  es: 'Tarifa hoy',
+                                })}
+                              </span>
+                            </span>
+                          )}
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-stone-100 dark:bg-zinc-800/90 border border-stone-200 dark:border-zinc-700 text-stone-700 dark:text-zinc-300 text-[11px] font-mono font-semibold whitespace-nowrap">
                             <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-                            <span>{formatDuration(service.durationMinutes)}</span>
+                            <span>{formatDuration(resolvedDuration)}</span>
                           </span>
                         </div>
                       </div>
@@ -510,13 +584,33 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                             es: 'Precio',
                           })}
                     </span>
-                    <span className="font-mono text-lg font-black text-slate-900 dark:text-white">
-                      {service.id === 'hair-color'
-                        ? `${COLOR_PRICES[colorConfig.tone]} MAD`
-                        : service.id === 'protein'
-                        ? `${proteinPrice} MAD`
-                        : `${service.basePrice} MAD`}
-                    </span>
+                    {(() => {
+                      const effectiveCardPrice =
+                        service.id === 'hair-color'
+                          ? resolvedBasePrice !== 150
+                            ? resolvedBasePrice
+                            : COLOR_PRICES[colorConfig.tone]
+                          : service.id === 'protein'
+                          ? resolvedBasePrice !== 200
+                            ? resolvedBasePrice
+                            : proteinPrice
+                          : resolvedBasePrice;
+
+                      if (effectiveCardPrice === 0) {
+                        return (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 font-black text-sm text-emerald-700 dark:text-emerald-300">
+                            <span>🎁</span>
+                            <span>{getGiftLabel(lang)}</span>
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <span className="font-mono text-lg font-black text-slate-900 dark:text-white">
+                          {formatServicePriceLabel(effectiveCardPrice, lang, 'MAD')}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
               );
@@ -618,8 +712,14 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                             {item.originalPrice}
                           </span>
                         )}
-                        <span className="font-mono font-black text-slate-900 dark:text-white text-sm">
-                          {item.finalPrice} MAD
+                        <span
+                          className={`font-mono font-black text-sm ${
+                            item.finalPrice === 0
+                              ? 'text-emerald-700 dark:text-emerald-300'
+                              : 'text-slate-900 dark:text-white'
+                          }`}
+                        >
+                          {item.finalPrice === 0 ? `🎁 ${getGiftLabel(lang)}` : `${item.finalPrice} MAD`}
                         </span>
                         <button
                           type="button"

@@ -3,6 +3,7 @@ import { ChevronDown, HelpCircle, MapPin, CalendarCheck, Scissors, ShieldCheck }
 import { useLanguage } from '../context/LanguageContext';
 import { SALON_INFO } from '../data/barbershopData';
 import { pickLang } from '../utils/i18n';
+import { normalizeSalonWhatsappDigits, useSalonProfileSettings } from '../utils/salonSettingsStore';
 
 type FaqCategory = 'all' | 'booking' | 'services' | 'policies';
 
@@ -156,6 +157,7 @@ const FAQ_ENTRIES: FaqEntry[] = [
 
 export const FAQSection: React.FC = () => {
   const { lang } = useLanguage();
+  const salonSettings = useSalonProfileSettings();
   const [activeCategory, setActiveCategory] = useState<FaqCategory>('all');
   const [openId, setOpenId] = useState<string | null>(FAQ_ENTRIES[0].id);
 
@@ -376,7 +378,7 @@ export const FAQSection: React.FC = () => {
           </div>
 
           <a
-            href={`https://wa.me/${SALON_INFO.whatsappNumber}?text=${encodeURIComponent(
+            href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}?text=${encodeURIComponent(
               pickLang(lang, {
                 ar: 'مرحباً صالون بومليك، لدي سؤال حول الخدمات والحجز في تارودانت:',
                 fr: 'Bonjour Salon Boumlik, j’ai une question concernant vos prestations à Taroudant :',

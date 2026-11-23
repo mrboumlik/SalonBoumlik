@@ -1,6 +1,7 @@
 import QRCode from 'qrcode';
 import { AppointmentBooking, Language } from '../types';
 import { SALON_INFO, TEAM_MEMBERS } from '../data/barbershopData';
+import { getBarberIdentityTokens } from './barberIdentity';
 import { buildBookingCheckInQrPayload } from './clientQr';
 import { pickLang } from './i18n';
 
@@ -60,7 +61,10 @@ export async function downloadTicketAsPng(
 ): Promise<void> {
   const lang = langOverride || booking.clientLanguage || 'ar';
   const barberObj = TEAM_MEMBERS.find((b) => b.id === booking.barberId);
-  const accentColor = booking.barberColor || barberObj?.themeColor || '#D97706';
+  const accentColor =
+    booking.barberColor ||
+    barberObj?.themeColor ||
+    getBarberIdentityTokens(booking.barberId, booking.barberName).accentHex;
 
   const qrPayload = buildBookingCheckInQrPayload(booking);
   const qrDataUrl =
@@ -533,9 +537,21 @@ export async function downloadTicketAsPng(
 
   ctx.fillStyle = '#FBBF24';
   ctx.font = '700 16px sans-serif';
+  const rawPhoneDigits = String(booking.clientPhone || '').replace(/\D/g, '');
+  const phoneDisplayId =
+    rawPhoneDigits.startsWith('212') && rawPhoneDigits.length >= 11
+      ? `0${rawPhoneDigits.slice(3)}`
+      : rawPhoneDigits.length === 9 && /^[567]/.test(rawPhoneDigits)
+      ? `0${rawPhoneDigits}`
+      : rawPhoneDigits;
+  const qrCheckInLabel =
+    phoneDisplayId ||
+    (booking.checkInToken && !booking.checkInToken.startsWith('CHK-')
+      ? booking.checkInToken
+      : '');
   ctx.fillText(
-    booking.checkInToken
-      ? `Check-In QR (${booking.checkInToken}) • Scan at Salon`
+    qrCheckInLabel
+      ? `Check-In ID: ${qrCheckInLabel} • Scan at Salon`
       : 'Scan Check-In QR upon arrival',
     infoX,
     qrBoxY + 184

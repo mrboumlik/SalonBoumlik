@@ -27,12 +27,19 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
-import { TEAM_MEMBERS, SALON_INFO } from '../data/barbershopData';
+import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSalonProfileSettings } from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
-import { BASE_SERVICES, ServiceDefinition } from '../utils/pricingEngine';
+import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore';
+import { useBarberRoster } from '../utils/barberRosterStore';
+import { ServiceDefinition } from '../utils/pricingEngine';
+import {
+  getVisibleBaseServices,
+  resolveEffectiveServicePrices,
+  useShopPricingConfig,
+} from '../utils/shopPricingStore';
 import { BarberStaff, Language } from '../types';
 import { FlagIcon } from './LanguageFlags';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -192,6 +199,20 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   const { lang, setLang, isRtl } = useLanguage();
   const { isDark, setTheme } = useTheme();
   const salonSettings = useSalonProfileSettings();
+  const shopPricingConfig = useShopPricingConfig();
+  const barberRoster = useBarberRoster();
+  const barberProfiles = useBarberProfiles();
+  const mergedBarbers = useMemo(
+    () => getMergedBarbers(barberProfiles, barberRoster),
+    [barberProfiles, barberRoster]
+  );
+
+  const nowLocal = new Date();
+  const todayLocalStr = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`;
+  const resolvedTodayPricing = resolveEffectiveServicePrices({
+    dateStr: todayLocalStr,
+    shopConfig: shopPricingConfig,
+  });
 
   const [expandedCategories, setExpandedCategories] = useState<
     Record<DrawerCategoryKey, boolean>
@@ -221,9 +242,14 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
 
   const trimmedQuery = serviceSearch.trim().toLowerCase();
 
+  const visibleServices = useMemo(
+    () => getVisibleBaseServices(shopPricingConfig),
+    [shopPricingConfig]
+  );
+
   const matchingServices = useMemo(() => {
     if (!trimmedQuery) return [];
-    return BASE_SERVICES.filter((srv) => {
+    return visibleServices.filter((srv) => {
       const searchableChunks = [
         srv.id,
         srv.category,
@@ -240,10 +266,10 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
       ];
       return searchableChunks.some((txt) => txt.toLowerCase().includes(trimmedQuery));
     });
-  }, [trimmedQuery]);
+  }, [trimmedQuery, visibleServices]);
 
   const categorizedServices = useMemo(() => {
-    return BASE_SERVICES.filter((srv) => {
+    return visibleServices.filter((srv) => {
       if (activeServiceGroup === 'all') return true;
       if (activeServiceGroup === 'hair') return srv.category === 'haircut' || srv.category === 'wash';
       if (activeServiceGroup === 'beard') return srv.category === 'beard';
@@ -252,7 +278,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
       if (activeServiceGroup === 'color') return srv.category === 'color';
       return true;
     });
-  }, [activeServiceGroup]);
+  }, [activeServiceGroup, visibleServices]);
 
   const quickLangOptions: { code: Language; label: string }[] = [
     { code: 'ar', label: 'عربي' },
@@ -281,9 +307,10 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   };
 
   const formatServicePrice = (srv: ServiceDefinition) => {
-    if (srv.id === 'protein') return '200+ MAD';
-    if (srv.id === 'hair-color') return '50–150 MAD';
-    return `${srv.basePrice} MAD`;
+    const resolvedPrice = resolvedTodayPricing.priceMap[srv.id] ?? srv.basePrice;
+    if (srv.id === 'protein' && resolvedPrice === 200) return '200+ MAD';
+    if (srv.id === 'hair-color' && resolvedPrice === 150) return '50–150 MAD';
+    return `${resolvedPrice} MAD`;
   };
 
   const formatDuration = (mins: number) =>
@@ -844,7 +871,11 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                             <span className="text-stone-400">•</span>
                             <span className="inline-flex items-center gap-1 text-stone-500 dark:text-zinc-400">
                               <Clock className="w-3 h-3" />
-                              <span>{formatDuration(srv.durationMinutes)}</span>
+                              <span>
+                                {formatDuration(
+                                  resolvedTodayPricing.durationMap[srv.id] ?? srv.durationMinutes
+                                )}
+                              </span>
                             </span>
                           </div>
                         </div>
@@ -1004,7 +1035,9 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                             )}
                           </div>
                           <span className="text-[10px] text-stone-500 dark:text-zinc-400 block truncate">
-                            {formatDuration(srv.durationMinutes)}
+                            {formatDuration(
+                              resolvedTodayPricing.durationMap[srv.id] ?? srv.durationMinutes
+                            )}
                           </span>
                         </div>
                         <span className="font-mono text-xs font-black text-amber-700 dark:text-amber-400 flex-shrink-0">
@@ -1039,7 +1072,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
               subtitle={labels.teamSub}
             >
               <div className="space-y-3">
-                {TEAM_MEMBERS.map((barber: BarberStaff) => {
+                {mergedBarbers.map((barber: BarberStaff) => {
                   const name = barber.name[lang] || barber.name.fr;
                   const bio = barber.bio ? barber.bio[lang] || barber.bio.fr : '';
 

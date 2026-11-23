@@ -13,6 +13,10 @@ service cloud.firestore {
       return id is string && id.size() >= 3 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidBarberSlug(id) {
+      return id is string && id.size() >= 2 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -39,6 +43,7 @@ service cloud.firestore {
         'cihReceiptName', 'cihReceiptPreview', 'cihReceiptUploadedAt',
         'loyaltyRewardApplied', 'attendanceConfirmedAt',
         'checkInToken', 'checkedInAt', 'caisseLoggedAt', 'caisseEntryId',
+        'deviceFingerprint', 'clientIpHash', 'isAdminWalkIn',
         'createdAt'
       ])
       && isValidId(data.id)
@@ -82,16 +87,22 @@ service cloud.firestore {
       && (!('checkedInAt' in data) || (data.checkedInAt is string && data.checkedInAt.size() <= 64))
       && (!('caisseLoggedAt' in data) || (data.caisseLoggedAt is string && data.caisseLoggedAt.size() <= 64))
       && (!('caisseEntryId' in data) || (data.caisseEntryId is string && data.caisseEntryId.size() <= 128))
+      && (!('deviceFingerprint' in data) || (data.deviceFingerprint is string && data.deviceFingerprint.size() <= 128))
+      && (!('clientIpHash' in data) || (data.clientIpHash is string && data.clientIpHash.size() <= 128))
+      && (!('isAdminWalkIn' in data) || data.isAdminWalkIn is bool)
       && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64;
     }
 
     function isValidSalonSettings(data) {
       return data.keys().hasAll(['googleMapsUrl', 'googleReviewUrl', 'updatedAt'])
-      && data.keys().hasOnly(['googleMapsUrl', 'googleReviewUrl', 'updatedAt'])
+      && data.keys().hasOnly(['googleMapsUrl', 'googleReviewUrl', 'salonPhone', 'salonWhatsapp', 'additionalPhones', 'updatedAt'])
       && data.googleMapsUrl is string && data.googleMapsUrl.size() >= 10 && data.googleMapsUrl.size() <= 500
       && data.googleMapsUrl.matches('^https://.*$')
       && data.googleReviewUrl is string && data.googleReviewUrl.size() >= 10 && data.googleReviewUrl.size() <= 500
       && data.googleReviewUrl.matches('^https://.*$')
+      && (!('salonPhone' in data) || (data.salonPhone is string && data.salonPhone.size() <= 40))
+      && (!('salonWhatsapp' in data) || (data.salonWhatsapp is string && data.salonWhatsapp.size() <= 40))
+      && (!('additionalPhones' in data) || (data.additionalPhones is list && data.additionalPhones.size() <= 10))
       && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
     }
 
@@ -102,13 +113,14 @@ service cloud.firestore {
       ])
       && data.keys().hasOnly([
         'id', 'barberId', 'offWeekdays', 'offDates',
-        'breakSlots', 'dateSlotBlocks', 'updatedAt'
+        'breakSlots', 'breakRanges', 'dateSlotBlocks', 'updatedAt'
       ])
       && isValidId(data.id)
-      && data.barberId is string && data.barberId.size() >= 1 && data.barberId.size() <= 64
+      && isValidBarberSlug(data.barberId)
       && data.offWeekdays is list && data.offWeekdays.size() <= 7
       && data.offDates is list && data.offDates.size() <= 60
       && data.breakSlots is list && data.breakSlots.size() <= 20
+      && (!('breakRanges' in data) || (data.breakRanges is list && data.breakRanges.size() <= 20))
       && data.dateSlotBlocks is list && data.dateSlotBlocks.size() <= 100
       && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
     }
@@ -208,7 +220,7 @@ service cloud.firestore {
       && data.keys().hasOnly([
         'id', 'barberId', 'barberName', 'author', 'city',
         'serviceName', 'rating', 'comment', 'dateLabel',
-        'verified', 'createdAt'
+        'bookingId', 'verified', 'createdAt'
       ])
       && isValidId(data.id)
       && data.barberId is string && data.barberId.size() >= 1 && data.barberId.size() <= 64
@@ -219,6 +231,7 @@ service cloud.firestore {
       && data.rating is number && data.rating >= 1 && data.rating <= 5
       && data.comment is string && data.comment.size() >= 1 && data.comment.size() <= 600
       && (!('dateLabel' in data) || (data.dateLabel is string && data.dateLabel.size() <= 64))
+      && (!('bookingId' in data) || (data.bookingId is string && data.bookingId.size() <= 128))
       && data.verified is bool
       && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64;
     }
@@ -265,7 +278,7 @@ service cloud.firestore {
         'createdByRole', 'createdByName', 'createdAt', 'updatedAt'
       ])
       && isValidId(data.id)
-      && data.barberId in ['hassan', 'anouar-arif', 'lahcen-lhanz', 'mounir-querdeny']
+      && isValidBarberSlug(data.barberId)
       && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
       && data.type in ['income', 'expense', 'float_adjustment', 'credit_repayment']
       && data.date is string && data.date.size() >= 8 && data.date.size() <= 20
@@ -285,7 +298,7 @@ service cloud.firestore {
       && (!('sourceBookingId' in data) || (data.sourceBookingId is string && data.sourceBookingId.size() <= 128))
       && (!('sourceTicketNumber' in data) || (data.sourceTicketNumber is string && data.sourceTicketNumber.size() <= 32))
       && (!('note' in data) || (data.note is string && data.note.size() <= 400))
-      && data.createdByRole in ['master', 'barber']
+      && data.createdByRole in ['master', 'barber', 'caisse']
       && data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 100
       && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64
       && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
@@ -296,11 +309,12 @@ service cloud.firestore {
         'id', 'barberId', 'commissionPercent', 'updatedBy', 'updatedAt'
       ])
       && data.keys().hasOnly([
-        'id', 'barberId', 'commissionPercent', 'updatedBy', 'updatedAt'
+        'id', 'barberId', 'commissionPercent', 'periodOverrides', 'updatedBy', 'updatedAt'
       ])
       && isValidId(data.id)
-      && data.barberId in ['hassan', 'anouar-arif', 'lahcen-lhanz', 'mounir-querdeny']
+      && isValidBarberSlug(data.barberId)
       && data.commissionPercent is number && data.commissionPercent >= 0 && data.commissionPercent <= 100
+      && (!('periodOverrides' in data) || (data.periodOverrides is list && data.periodOverrides.size() <= 24))
       && data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 100
       && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
     }
@@ -316,10 +330,11 @@ service cloud.firestore {
         'id', 'barberId', 'barberName', 'date', 'collected',
         'collectedAmountMAD', 'barberShareMAD', 'shopShareMAD',
         'floatMAD', 'expensesMAD', 'carryOverOwedMAD', 'resetCount',
+        'intakeClosed', 'grossIntakeClosedMAD', 'settlementMode',
         'note', 'confirmedBy', 'confirmedAt', 'updatedAt'
       ])
       && isValidId(data.id)
-      && data.barberId in ['hassan', 'anouar-arif', 'lahcen-lhanz', 'mounir-querdeny']
+      && isValidBarberSlug(data.barberId)
       && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
       && data.date is string && data.date.size() >= 8 && data.date.size() <= 20
       && data.collected is bool
@@ -330,9 +345,205 @@ service cloud.firestore {
       && data.expensesMAD is number && data.expensesMAD >= 0 && data.expensesMAD <= 100000
       && data.carryOverOwedMAD is number && data.carryOverOwedMAD >= 0 && data.carryOverOwedMAD <= 100000
       && data.resetCount is number && data.resetCount >= 0 && data.resetCount <= 1000
+      && (!('intakeClosed' in data) || data.intakeClosed is bool)
+      && (!('grossIntakeClosedMAD' in data) || (data.grossIntakeClosedMAD is number && data.grossIntakeClosedMAD >= 0 && data.grossIntakeClosedMAD <= 100000))
+      && (!('settlementMode' in data) || data.settlementMode in ['daily_intake', 'daily_share'])
       && (!('note' in data) || (data.note is string && data.note.size() <= 400))
       && data.confirmedBy is string && data.confirmedBy.size() >= 1 && data.confirmedBy.size() <= 100
       && data.confirmedAt is string && data.confirmedAt.size() >= 10 && data.confirmedAt.size() <= 64
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidBarberProfile(data) {
+      return data.keys().hasAll([
+        'id', 'barberId', 'useCustomServices', 'customServices', 'updatedBy', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'barberId', 'avatar', 'phone', 'whatsappNumber', 'instagramHandle',
+        'bioAr', 'bioFr', 'bioEn',
+        'useCustomServices', 'customServices', 'customServiceOverrides',
+        'customHiddenServiceIds', 'customBundles', 'enableNoWaitOption',
+        'updatedBy', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && isValidBarberSlug(data.barberId)
+      && data.id == data.barberId
+      && (!('avatar' in data) || (data.avatar is string && data.avatar.size() <= 240000))
+      && (!('phone' in data) || (data.phone is string && data.phone.size() <= 40))
+      && (!('whatsappNumber' in data) || (data.whatsappNumber is string && data.whatsappNumber.size() <= 40))
+      && (!('instagramHandle' in data) || (data.instagramHandle is string && data.instagramHandle.size() <= 100))
+      && (!('bioAr' in data) || (data.bioAr is string && data.bioAr.size() <= 500))
+      && (!('bioFr' in data) || (data.bioFr is string && data.bioFr.size() <= 500))
+      && (!('bioEn' in data) || (data.bioEn is string && data.bioEn.size() <= 500))
+      && data.useCustomServices is bool
+      && data.customServices is list && data.customServices.size() <= 30
+      && (!('customServiceOverrides' in data) || data.customServiceOverrides is map)
+      && (!('customHiddenServiceIds' in data) || (data.customHiddenServiceIds is list && data.customHiddenServiceIds.size() <= 40))
+      && (!('customBundles' in data) || (data.customBundles is list && data.customBundles.size() <= 40))
+      && (!('enableNoWaitOption' in data) || data.enableNoWaitOption is bool)
+      && data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 100
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidCaisseCycleSettlement(data) {
+      return data.keys().hasAll([
+        'id', 'barberId', 'barberName', 'settledThroughIso', 'settledThroughDate',
+        'totalCollectedMAD', 'barberSharePaidMAD', 'shopShareMAD',
+        'expensesMAD', 'floatMAD', 'creditsIssuedMAD', 'entryCount',
+        'confirmedBy', 'confirmedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'barberId', 'barberName', 'settledThroughIso', 'settledThroughDate',
+        'settlementPeriodScope', 'periodStartDate', 'periodEndDate',
+        'totalCollectedMAD', 'barberSharePaidMAD', 'shopShareMAD',
+        'expensesMAD', 'floatMAD', 'creditsIssuedMAD', 'entryCount',
+        'note', 'confirmedBy', 'confirmedAt'
+      ])
+      && isValidId(data.id)
+      && isValidBarberSlug(data.barberId)
+      && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
+      && data.settledThroughIso is string && data.settledThroughIso.size() >= 10 && data.settledThroughIso.size() <= 64
+      && data.settledThroughDate is string && data.settledThroughDate.size() >= 8 && data.settledThroughDate.size() <= 20
+      && (!('settlementPeriodScope' in data) || data.settlementPeriodScope in ['full_open', 'month', 'custom_range'])
+      && (!('periodStartDate' in data) || (data.periodStartDate is string && data.periodStartDate.size() <= 20))
+      && (!('periodEndDate' in data) || (data.periodEndDate is string && data.periodEndDate.size() <= 20))
+      && data.totalCollectedMAD is number && data.totalCollectedMAD >= 0 && data.totalCollectedMAD <= 10000000
+      && data.barberSharePaidMAD is number && data.barberSharePaidMAD >= -10000000 && data.barberSharePaidMAD <= 10000000
+      && data.shopShareMAD is number && data.shopShareMAD >= 0 && data.shopShareMAD <= 10000000
+      && data.expensesMAD is number && data.expensesMAD >= 0 && data.expensesMAD <= 10000000
+      && data.floatMAD is number && data.floatMAD >= 0 && data.floatMAD <= 10000000
+      && data.creditsIssuedMAD is number && data.creditsIssuedMAD >= 0 && data.creditsIssuedMAD <= 10000000
+      && data.entryCount is number && data.entryCount >= 0 && data.entryCount <= 100000
+      && (!('note' in data) || (data.note is string && data.note.size() <= 400))
+      && data.confirmedBy is string && data.confirmedBy.size() >= 1 && data.confirmedBy.size() <= 100
+      && data.confirmedAt is string && data.confirmedAt.size() >= 10 && data.confirmedAt.size() <= 64;
+    }
+
+    function isValidCaisseDailyArchive(data) {
+      return data.keys().hasAll([
+        'id', 'barberId', 'barberName', 'date',
+        'incomeMAD', 'repaymentIncomeMAD', 'expensesMAD', 'floatMAD', 'creditsIssuedMAD',
+        'entryCount', 'entriesSummary', 'archivedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'barberId', 'barberName', 'date',
+        'incomeMAD', 'repaymentIncomeMAD', 'expensesMAD', 'floatMAD', 'creditsIssuedMAD',
+        'entryCount', 'entriesSummary', 'archivedAt'
+      ])
+      && isValidId(data.id)
+      && isValidBarberSlug(data.barberId)
+      && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
+      && data.date is string && data.date.size() >= 8 && data.date.size() <= 20
+      && data.incomeMAD is number && data.incomeMAD >= 0 && data.incomeMAD <= 1000000
+      && data.repaymentIncomeMAD is number && data.repaymentIncomeMAD >= 0 && data.repaymentIncomeMAD <= 1000000
+      && data.expensesMAD is number && data.expensesMAD >= 0 && data.expensesMAD <= 1000000
+      && data.floatMAD is number && data.floatMAD >= 0 && data.floatMAD <= 1000000
+      && data.creditsIssuedMAD is number && data.creditsIssuedMAD >= 0 && data.creditsIssuedMAD <= 1000000
+      && data.entryCount is number && data.entryCount >= 0 && data.entryCount <= 5000
+      && data.entriesSummary is list && data.entriesSummary.size() <= 100
+      && data.archivedAt is string && data.archivedAt.size() >= 10 && data.archivedAt.size() <= 64;
+    }
+
+    function isValidShopPricingConfig(data) {
+      return data.keys().hasAll([
+        'id', 'servicePriceOverrides', 'specialRules', 'updatedBy', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'servicePriceOverrides', 'hiddenServiceIds', 'serviceBundles',
+        'specialRules', 'enableNoWaitOption', 'giftWithHaircutBeardServiceId', 'updatedBy', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && data.servicePriceOverrides is map
+      && (!('hiddenServiceIds' in data) || (data.hiddenServiceIds is list && data.hiddenServiceIds.size() <= 40))
+      && (!('serviceBundles' in data) || (data.serviceBundles is list && data.serviceBundles.size() <= 40))
+      && data.specialRules is list && data.specialRules.size() <= 30
+      && (!('enableNoWaitOption' in data) || data.enableNoWaitOption is bool)
+      && (!('giftWithHaircutBeardServiceId' in data) || (data.giftWithHaircutBeardServiceId is string && data.giftWithHaircutBeardServiceId.size() <= 64))
+      && data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 100
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidRosterMember(data) {
+      return data.keys().hasAll([
+        'id', 'nameAr', 'nameFr', 'role', 'status', 'pin',
+        'colorKey', 'sortOrder', 'updatedBy', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'nameAr', 'nameFr', 'nameEn', 'role', 'status', 'pin',
+        'colorKey', 'sortOrder', 'isOwner', 'defaultAvatar',
+        'defaultPhone', 'defaultWhatsapp', 'defaultInstagram',
+        'replacesBarberId', 'replacedById', 'updatedBy', 'updatedAt'
+      ])
+      && isValidBarberSlug(data.id)
+      && data.nameAr is string && data.nameAr.size() >= 1 && data.nameAr.size() <= 80
+      && data.nameFr is string && data.nameFr.size() >= 1 && data.nameFr.size() <= 80
+      && (!('nameEn' in data) || (data.nameEn is string && data.nameEn.size() <= 80))
+      && data.role in ['master', 'barber', 'caisse']
+      && data.status in ['active', 'archived']
+      && data.pin is string && data.pin.size() >= 3 && data.pin.size() <= 32
+      && data.colorKey in ['amber', 'blue', 'emerald', 'violet', 'teal', 'indigo', 'slate', 'stone', 'rose']
+      && data.sortOrder is number && data.sortOrder >= 0 && data.sortOrder <= 1000
+      && (!('isOwner' in data) || data.isOwner is bool)
+      && (!('defaultAvatar' in data) || (data.defaultAvatar is string && data.defaultAvatar.size() <= 240000))
+      && (!('defaultPhone' in data) || (data.defaultPhone is string && data.defaultPhone.size() <= 40))
+      && (!('defaultWhatsapp' in data) || (data.defaultWhatsapp is string && data.defaultWhatsapp.size() <= 40))
+      && (!('defaultInstagram' in data) || (data.defaultInstagram is string && data.defaultInstagram.size() <= 100))
+      && (!('replacesBarberId' in data) || (data.replacesBarberId is string && data.replacesBarberId.size() <= 64))
+      && (!('replacedById' in data) || (data.replacedById is string && data.replacedById.size() <= 64))
+      && data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 100
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidClientCredit(data) {
+      return data.keys().hasAll([
+        'id', 'clientName', 'clientPhone', 'normalizedPhone',
+        'amountOwedMAD', 'originalAmountMAD', 'status',
+        'createdBy', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'clientName', 'clientPhone', 'normalizedPhone',
+        'amountOwedMAD', 'originalAmountMAD', 'status',
+        'creditDate', 'note', 'createdBy', 'createdAt', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 120
+      && data.clientPhone is string && data.clientPhone.size() >= 6 && data.clientPhone.size() <= 40
+      && data.normalizedPhone is string && data.normalizedPhone.size() >= 4 && data.normalizedPhone.size() <= 32
+      && data.amountOwedMAD is number && data.amountOwedMAD >= 0 && data.amountOwedMAD <= 100000
+      && data.originalAmountMAD is number && data.originalAmountMAD >= 0 && data.originalAmountMAD <= 100000
+      && data.status in ['open', 'partial', 'paid']
+      && (!('creditDate' in data) || (data.creditDate is string && data.creditDate.size() <= 20))
+      && (!('note' in data) || (data.note is string && data.note.size() <= 400))
+      && data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 100
+      && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidCreditDispute(data) {
+      return data.keys().hasAll([
+        'id', 'clientName', 'clientPhone', 'normalizedPhone',
+        'totalOwedSnapshotMAD', 'creditorSummary', 'message',
+        'status', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'clientName', 'clientPhone', 'normalizedPhone',
+        'totalOwedSnapshotMAD', 'creditorSummary', 'message',
+        'targetBarberId', 'status', 'staffNote', 'resolvedBy',
+        'resolvedAt', 'createdAt', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 120
+      && data.clientPhone is string && data.clientPhone.size() >= 6 && data.clientPhone.size() <= 40
+      && data.normalizedPhone is string && data.normalizedPhone.size() >= 4 && data.normalizedPhone.size() <= 32
+      && data.totalOwedSnapshotMAD is number && data.totalOwedSnapshotMAD >= 0 && data.totalOwedSnapshotMAD <= 100000
+      && data.creditorSummary is string && data.creditorSummary.size() >= 1 && data.creditorSummary.size() <= 240
+      && data.message is string && data.message.size() >= 1 && data.message.size() <= 600
+      && (!('targetBarberId' in data) || (data.targetBarberId is string && data.targetBarberId.size() <= 64))
+      && data.status in ['open', 'reviewed', 'resolved']
+      && (!('staffNote' in data) || (data.staffNote is string && data.staffNote.size() <= 400))
+      && (!('resolvedBy' in data) || (data.resolvedBy is string && data.resolvedBy.size() <= 100))
+      && (!('resolvedAt' in data) || (data.resolvedAt is string && data.resolvedAt.size() <= 64))
+      && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64
       && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
     }
 
@@ -499,6 +710,144 @@ service cloud.firestore {
         && isValidCaisseSettlement(incoming())
         && incoming().id == settlementId;
       allow delete: if isValidId(settlementId) && request.time != null;
+    }
+
+    // Live editable barber profiles & personal service menus
+    match /barber_profiles/{barberId} {
+      allow get: if isValidId(barberId) && request.time != null;
+      allow list: if request.time != null;
+      allow create, update: if isValidId(barberId)
+        && isValidBarberProfile(incoming())
+        && incoming().id == barberId;
+      allow delete: if isValidId(barberId) && request.time != null;
+    }
+
+    // Master-confirmed cumulative Caisse payout cycle snapshots
+    match /caisse_cycles/{cycleId} {
+      allow get: if isValidId(cycleId) && request.time != null;
+      allow list: if request.time != null;
+      allow create, update: if isValidId(cycleId)
+        && isValidCaisseCycleSettlement(incoming())
+        && incoming().id == cycleId;
+      allow delete: if isValidId(cycleId) && request.time != null;
+    }
+
+    // 03:00 AM business-day Caisse daily archives per barber
+    match /caisse_daily_archives/{archiveId} {
+      allow get: if isValidId(archiveId) && request.time != null;
+      allow list: if request.time != null;
+      allow create, update: if isValidId(archiveId)
+        && isValidCaisseDailyArchive(incoming())
+        && incoming().id == archiveId;
+      allow delete: if isValidId(archiveId) && request.time != null;
+    }
+
+    // Master-Admin-only official salon service pricing, bundles, visibility, & special day/Eid rules
+    match /shop_pricing/{configId} {
+      allow get: if isValidId(configId) && request.time != null;
+      allow list: if request.time != null;
+      allow create, update: if isValidId(configId)
+        && configId == 'default'
+        && isValidShopPricingConfig(incoming())
+        && incoming().id == configId;
+      allow delete: if false;
+    }
+
+    // Dynamic barber & staff roster (passwords, active/archived barbers, shared Caisse account)
+    match /barber_roster/{memberId} {
+      allow get: if isValidId(memberId) && request.time != null;
+      allow list: if request.time != null;
+      allow create, update: if isValidId(memberId)
+        && isValidRosterMember(incoming())
+        && incoming().id == memberId;
+      allow delete: if false;
+    }
+
+    // Master Admin debtor registry ("الناس لي كانتسالهم")
+    match /client_credits/{creditId} {
+      allow get: if isValidId(creditId) && request.time != null;
+      allow list: if request.time != null;
+      allow create: if isValidId(creditId)
+        && isValidClientCredit(incoming())
+        && incoming().id == creditId;
+      allow update: if isValidId(creditId)
+        && isValidClientCredit(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'clientName', 'clientPhone', 'normalizedPhone',
+          'amountOwedMAD', 'originalAmountMAD', 'status',
+          'creditDate', 'note', 'updatedAt'
+        ]);
+      allow delete: if isValidId(creditId) && request.time != null;
+    }
+
+    // Client credit objections & inquiries submitted via booking credit alert
+    match /credit_disputes/{disputeId} {
+      allow get: if isValidId(disputeId) && request.time != null;
+      allow list: if request.time != null;
+      allow create: if isValidId(disputeId)
+        && isValidCreditDispute(incoming())
+        && incoming().id == disputeId
+        && incoming().status == 'open';
+      allow update: if isValidId(disputeId)
+        && isValidCreditDispute(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().normalizedPhone == existing().normalizedPhone
+        && incoming().message == existing().message
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'staffNote', 'resolvedBy', 'resolvedAt', 'updatedAt'
+        ]);
+      allow delete: if isValidId(disputeId) && request.time != null;
+    }
+
+    function isValidBarberDailyNote(data) {
+      return data.keys().hasAll([
+        'id', 'barberId', 'barberName', 'date',
+        'masterNote', 'masterUpdatedBy', 'masterUpdatedAt',
+        'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'barberId', 'barberName', 'date',
+        'masterNote', 'masterUpdatedBy', 'masterUpdatedAt',
+        'barberReply', 'barberRepliedBy', 'barberRepliedAt',
+        'createdAt', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && isValidBarberSlug(data.barberId)
+      && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
+      && data.date is string && data.date.size() >= 8 && data.date.size() <= 20
+      && data.id == data.barberId + '_' + data.date
+      && data.masterNote is string && data.masterNote.size() <= 600
+      && data.masterUpdatedBy is string && data.masterUpdatedBy.size() >= 1 && data.masterUpdatedBy.size() <= 100
+      && data.masterUpdatedAt is string && data.masterUpdatedAt.size() >= 10 && data.masterUpdatedAt.size() <= 64
+      && (!('barberReply' in data) || (data.barberReply is string && data.barberReply.size() <= 600))
+      && (!('barberRepliedBy' in data) || (data.barberRepliedBy is string && data.barberRepliedBy.size() <= 100))
+      && (!('barberRepliedAt' in data) || (data.barberRepliedAt is string && data.barberRepliedAt.size() <= 64))
+      && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
+    // Daily notes written by Master Admin per barber + barber responses
+    match /barber_daily_notes/{noteId} {
+      allow get: if isValidId(noteId) && request.time != null;
+      allow list: if request.time != null;
+      allow create: if isValidId(noteId)
+        && isValidBarberDailyNote(incoming())
+        && incoming().id == noteId;
+      allow update: if isValidId(noteId)
+        && isValidBarberDailyNote(incoming())
+        && incoming().id == existing().id
+        && incoming().barberId == existing().barberId
+        && incoming().date == existing().date
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'masterNote', 'masterUpdatedBy', 'masterUpdatedAt',
+          'barberReply', 'barberRepliedBy', 'barberRepliedAt',
+          'updatedAt'
+        ]);
+      allow delete: if isValidId(noteId) && request.time != null;
     }
   }
 }

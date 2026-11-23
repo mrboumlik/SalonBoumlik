@@ -185,6 +185,20 @@
           "description": "Linked CaisseEntry document ID created after attendance confirmation",
           "maxLength": 128
         },
+        "deviceFingerprint": {
+          "type": "string",
+          "description": "Privacy-safe browser device token used to cap duplicate spam bookings",
+          "maxLength": 128
+        },
+        "clientIpHash": {
+          "type": "string",
+          "description": "One-way hashed network signature for anti-spam rate limiting",
+          "maxLength": 128
+        },
+        "isAdminWalkIn": {
+          "type": "boolean",
+          "description": "True when created directly by Master Admin for walk-in clients bypassing client cap"
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",
@@ -232,6 +246,10 @@
         "breakSlots": {
           "type": "array",
           "description": "Recurring HH:MM slots blocked for breaks"
+        },
+        "breakRanges": {
+          "type": "array",
+          "description": "Start-to-end daily break windows (e.g. 12:00 to 13:30)"
         },
         "dateSlotBlocks": {
           "type": "array",
@@ -422,6 +440,20 @@
           "minLength": 10,
           "maxLength": 500
         },
+        "salonPhone": {
+          "type": "string",
+          "description": "Primary public salon phone number",
+          "maxLength": 40
+        },
+        "salonWhatsapp": {
+          "type": "string",
+          "description": "Primary public salon WhatsApp number",
+          "maxLength": 40
+        },
+        "additionalPhones": {
+          "type": "array",
+          "description": "Optional secondary public salon phone numbers"
+        },
         "updatedAt": {
           "type": "string",
           "format": "date-time",
@@ -571,6 +603,11 @@
           "type": "string",
           "maxLength": 64
         },
+        "bookingId": {
+          "type": "string",
+          "description": "Optional completed booking ID linked to this verified post-visit review",
+          "maxLength": 128
+        },
         "verified": {
           "type": "boolean"
         },
@@ -683,7 +720,9 @@
         },
         "barberId": {
           "type": "string",
-          "enum": ["hassan", "anouar-arif", "lahcen-lhanz", "mounir-querdeny"]
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
         },
         "barberName": {
           "type": "string",
@@ -758,7 +797,7 @@
         },
         "createdByRole": {
           "type": "string",
-          "enum": ["master", "barber"]
+          "enum": ["master", "barber", "caisse"]
         },
         "createdByName": {
           "type": "string",
@@ -805,10 +844,16 @@
         },
         "barberId": {
           "type": "string",
-          "enum": ["hassan", "anouar-arif", "lahcen-lhanz", "mounir-querdeny"]
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
         },
         "commissionPercent": {
           "type": "number"
+        },
+        "periodOverrides": {
+          "type": "array",
+          "description": "Month or date-range specific commission percentage overrides"
         },
         "updatedBy": {
           "type": "string",
@@ -842,7 +887,9 @@
         },
         "barberId": {
           "type": "string",
-          "enum": ["hassan", "anouar-arif", "lahcen-lhanz", "mounir-querdeny"]
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
         },
         "barberName": {
           "type": "string",
@@ -877,6 +924,16 @@
         },
         "resetCount": {
           "type": "number"
+        },
+        "intakeClosed": {
+          "type": "boolean"
+        },
+        "grossIntakeClosedMAD": {
+          "type": "number"
+        },
+        "settlementMode": {
+          "type": "string",
+          "enum": ["daily_intake", "daily_share"]
         },
         "note": {
           "type": "string",
@@ -915,6 +972,513 @@
         "confirmedAt",
         "updatedAt"
       ]
+    },
+    "BarberProfile": {
+      "title": "BarberProfile",
+      "description": "Custom barber avatar, contact numbers, bio, and personal service list",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "barberId": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "avatar": {
+          "type": "string",
+          "maxLength": 240000
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "whatsappNumber": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "instagramHandle": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "bioAr": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "bioFr": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "bioEn": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "useCustomServices": {
+          "type": "boolean"
+        },
+        "customServices": {
+          "type": "array"
+        },
+        "customServiceOverrides": {
+          "type": "object"
+        },
+        "customHiddenServiceIds": {
+          "type": "array"
+        },
+        "customBundles": {
+          "type": "array"
+        },
+        "enableNoWaitOption": {
+          "type": "boolean"
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "barberId",
+        "useCustomServices",
+        "customServices",
+        "updatedBy",
+        "updatedAt"
+      ]
+    },
+    "ShopPricingConfig": {
+      "title": "ShopPricingConfig",
+      "description": "Master-Admin-controlled official shop service price overrides and weekday/Eid special pricing rules",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "servicePriceOverrides": {
+          "type": "object"
+        },
+        "hiddenServiceIds": {
+          "type": "array"
+        },
+        "serviceBundles": {
+          "type": "array"
+        },
+        "specialRules": {
+          "type": "array"
+        },
+        "enableNoWaitOption": {
+          "type": "boolean"
+        },
+        "giftWithHaircutBeardServiceId": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "servicePriceOverrides",
+        "specialRules",
+        "updatedBy",
+        "updatedAt"
+      ]
+    },
+    "CaisseCycleSettlement": {
+      "title": "CaisseCycleSettlement",
+      "description": "Master-confirmed cumulative Caisse payout cycle snapshot closing an open balance",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "barberId": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "barberName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "settledThroughIso": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "settledThroughDate": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "settlementPeriodScope": {
+          "type": "string",
+          "enum": ["full_open", "month", "custom_range"]
+        },
+        "periodStartDate": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "periodEndDate": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "totalCollectedMAD": {
+          "type": "number"
+        },
+        "barberSharePaidMAD": {
+          "type": "number"
+        },
+        "shopShareMAD": {
+          "type": "number"
+        },
+        "expensesMAD": {
+          "type": "number"
+        },
+        "floatMAD": {
+          "type": "number"
+        },
+        "creditsIssuedMAD": {
+          "type": "number"
+        },
+        "entryCount": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "confirmedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "confirmedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "barberId",
+        "barberName",
+        "settledThroughIso",
+        "settledThroughDate",
+        "totalCollectedMAD",
+        "barberSharePaidMAD",
+        "shopShareMAD",
+        "expensesMAD",
+        "floatMAD",
+        "creditsIssuedMAD",
+        "entryCount",
+        "confirmedBy",
+        "confirmedAt"
+      ]
+    },
+    "CaisseDailyArchive": {
+      "title": "CaisseDailyArchive",
+      "description": "Idempotent 03:00 AM business-day Caisse daily archive snapshot per barber",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "barberId": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "barberName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "date": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "incomeMAD": {
+          "type": "number"
+        },
+        "repaymentIncomeMAD": {
+          "type": "number"
+        },
+        "expensesMAD": {
+          "type": "number"
+        },
+        "floatMAD": {
+          "type": "number"
+        },
+        "creditsIssuedMAD": {
+          "type": "number"
+        },
+        "entryCount": {
+          "type": "number"
+        },
+        "entriesSummary": {
+          "type": "array"
+        },
+        "archivedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "barberId",
+        "barberName",
+        "date",
+        "incomeMAD",
+        "repaymentIncomeMAD",
+        "expensesMAD",
+        "floatMAD",
+        "creditsIssuedMAD",
+        "entryCount",
+        "entriesSummary",
+        "archivedAt"
+      ]
+    },
+    "RosterMember": {
+      "title": "RosterMember",
+      "description": "Staff & barber roster account including PIN credentials, status, calm color preset, and shared Caisse user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "nameAr": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "nameFr": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "nameEn": { "type": "string", "maxLength": 80 },
+        "role": { "type": "string", "enum": ["master", "barber", "caisse"] },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "pin": { "type": "string", "minLength": 3, "maxLength": 32 },
+        "colorKey": { "type": "string", "enum": ["amber", "blue", "emerald", "violet", "teal", "indigo", "slate", "stone", "rose"] },
+        "sortOrder": { "type": "number" },
+        "isOwner": { "type": "boolean" },
+        "replacesBarberId": { "type": "string", "maxLength": 64 },
+        "replacedById": { "type": "string", "maxLength": 64 },
+        "updatedBy": { "type": "string", "maxLength": 100 },
+        "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      },
+      "required": ["id", "nameAr", "nameFr", "role", "status", "pin", "colorKey", "sortOrder", "updatedBy", "updatedAt"]
+    },
+    "ClientCredit": {
+      "title": "ClientCredit",
+      "description": "Master Admin credit registry (الناس لي كانتسالهم) tracking outstanding client debts by phone number",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "clientName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "clientPhone": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 40
+        },
+        "normalizedPhone": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 32
+        },
+        "amountOwedMAD": {
+          "type": "number"
+        },
+        "originalAmountMAD": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "partial", "paid"]
+        },
+        "creditDate": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "clientName",
+        "clientPhone",
+        "normalizedPhone",
+        "amountOwedMAD",
+        "originalAmountMAD",
+        "status",
+        "createdBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CreditDispute": {
+      "title": "CreditDispute",
+      "description": "Client inquiry or objection submitted from booking credit alert banner without blocking booking",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "clientName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "clientPhone": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 40
+        },
+        "normalizedPhone": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 32
+        },
+        "totalOwedSnapshotMAD": {
+          "type": "number"
+        },
+        "creditorSummary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600
+        },
+        "targetBarberId": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "reviewed", "resolved"]
+        },
+        "staffNote": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "resolvedBy": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "resolvedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "clientName",
+        "clientPhone",
+        "normalizedPhone",
+        "totalOwedSnapshotMAD",
+        "creditorSummary",
+        "message",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BarberDailyNote": {
+      "title": "BarberDailyNote",
+      "description": "Daily instruction note written by Master Admin for a barber with barber reply",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 3, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "barberId": { "type": "string", "minLength": 2, "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "barberName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "date": { "type": "string", "minLength": 8, "maxLength": 20 },
+        "masterNote": { "type": "string", "maxLength": 600 },
+        "masterUpdatedBy": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "masterUpdatedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "barberReply": { "type": "string", "maxLength": 600 },
+        "barberRepliedBy": { "type": "string", "maxLength": 100 },
+        "barberRepliedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      },
+      "required": [
+        "id",
+        "barberId",
+        "barberName",
+        "date",
+        "masterNote",
+        "masterUpdatedBy",
+        "masterUpdatedAt",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -929,6 +1493,12 @@
         "$ref": "#/entities/BarberSchedule"
       },
       "description": "Barber shift, off-days, and break configuration"
+    },
+    "/barber_profiles/{barberId}": {
+      "schema": {
+        "$ref": "#/entities/BarberProfile"
+      },
+      "description": "Live editable barber profile details, avatar, contact info, and personal service menus"
     },
     "/crm_clients/{clientId}": {
       "schema": {
@@ -983,6 +1553,48 @@
         "$ref": "#/entities/CaisseDailySettlement"
       },
       "description": "Daily Caisse collection status, manual recalculate/reset state, and unpaid barber carry-over records"
+    },
+    "/caisse_cycles/{cycleId}": {
+      "schema": {
+        "$ref": "#/entities/CaisseCycleSettlement"
+      },
+      "description": "Master-confirmed payout cycle snapshots closing accumulated unpaid barber balances"
+    },
+    "/caisse_daily_archives/{archiveId}": {
+      "schema": {
+        "$ref": "#/entities/CaisseDailyArchive"
+      },
+      "description": "03:00 AM daily log archival snapshots preserving completed day summaries without resetting open balances"
+    },
+    "/shop_pricing/{configId}": {
+      "schema": {
+        "$ref": "#/entities/ShopPricingConfig"
+      },
+      "description": "Master-Admin-controlled official shop service prices, bundles, service visibility, and special rules"
+    },
+    "/barber_roster/{memberId}": {
+      "schema": {
+        "$ref": "#/entities/RosterMember"
+      },
+      "description": "Dynamic staff roster accounts, passwords/PINs, active/archived barbers, and shared Caisse register account"
+    },
+    "/client_credits/{creditId}": {
+      "schema": {
+        "$ref": "#/entities/ClientCredit"
+      },
+      "description": "Master Admin manual debtor registry (الناس لي كانتسالهم) synced by normalized phone number"
+    },
+    "/credit_disputes/{disputeId}": {
+      "schema": {
+        "$ref": "#/entities/CreditDispute"
+      },
+      "description": "Client credit disputes and inquiries submitted from the booking alert banner"
+    },
+    "/barber_daily_notes/{noteId}": {
+      "schema": {
+        "$ref": "#/entities/BarberDailyNote"
+      },
+      "description": "Daily notes written by Master Admin per barber with barber replies"
     }
   }
 }

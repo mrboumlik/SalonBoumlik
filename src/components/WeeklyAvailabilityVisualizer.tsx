@@ -53,6 +53,7 @@ interface WeeklyAvailabilityVisualizerProps {
   schedulesMap: Record<string, BarberScheduleConfig>;
   bookings: AppointmentBooking[];
   lang: Language;
+  candidateDurationMinutes?: number;
   onSelectDateAndSlot: (dateStr: string, timeSlot: string) => void;
 }
 
@@ -72,6 +73,7 @@ export const WeeklyAvailabilityVisualizer: React.FC<WeeklyAvailabilityVisualizer
   schedulesMap,
   bookings,
   lang,
+  candidateDurationMinutes = 30,
   onSelectDateAndSlot,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -93,7 +95,13 @@ export const WeeklyAvailabilityVisualizer: React.FC<WeeklyAvailabilityVisualizer
       current.setDate(base.getDate() + i);
       const dateStr = formatLocalYyyyMmDd(current);
       const weekday = current.getDay();
-      const summary = evaluateBarberDayAvailability(barberId, dateStr, schedulesMap, bookings);
+      const summary = evaluateBarberDayAvailability(
+        barberId,
+        dateStr,
+        schedulesMap,
+        bookings,
+        candidateDurationMinutes
+      );
 
       const dayShort =
         lang === 'amz'
@@ -130,7 +138,7 @@ export const WeeklyAvailabilityVisualizer: React.FC<WeeklyAvailabilityVisualizer
         summary,
       };
     });
-  }, [barberId, weekOffset, schedulesMap, bookings, lang, todayStr]);
+  }, [barberId, weekOffset, schedulesMap, bookings, lang, todayStr, candidateDurationMinutes]);
 
   const totalOpenInWeek = useMemo(() => {
     return weekDays.reduce((acc, d) => acc + d.summary.availableSlots.length, 0);
@@ -422,7 +430,15 @@ export const WeeklyAvailabilityVisualizer: React.FC<WeeklyAvailabilityVisualizer
                       <div
                         key={`${day.dateStr}-${hour}`}
                         title={
-                          slotInfo?.reason === 'break'
+                          slotInfo?.reason === 'past'
+                            ? pickLang(lang, {
+                                ar: 'انتهى الوقت',
+                                amz: 'ⵉⵣⵔⵉ ⵡⴰⴽⵓⴷ',
+                                en: 'Time passed',
+                                es: 'Hora pasada',
+                                fr: 'Créneau passé',
+                              })
+                            : slotInfo?.reason === 'break'
                             ? pickLang(lang, {
                                 ar: 'استراحة الحلاق',
                                 amz: 'ⴰⵙⵓⵏⴼⵓ',

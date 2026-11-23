@@ -15,6 +15,7 @@ import {
   Filter, 
   Search, 
   AlertCircle,
+  AlertTriangle,
   TrendingUp,
   Scissors,
   Check,
@@ -35,7 +36,6 @@ import {
   VolumeX,
   Building2,
   MapPin,
-  Send,
   Settings,
   Star,
   ExternalLink,
@@ -51,7 +51,15 @@ import {
   BarChart3,
   Wallet,
   CreditCard,
-  ScanLine
+  ScanLine,
+  ChevronDown,
+  ChevronUp,
+  UserCog,
+  UserPlus,
+  Tag,
+  KeyRound,
+  Eye,
+  MoreHorizontal
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { 
@@ -65,6 +73,7 @@ import {
   updateBookingStatus, 
   updateBookingAdminNote,
   assignFlexibleBookingSlot,
+  rescheduleBookingToNearestSlot,
   deleteBooking,
   matchesUniversalBookingQuery,
   normalizeMoroccanPhoneDigits,
@@ -73,13 +82,8 @@ import {
   markBookingCaisseLogged
 } from '../utils/bookingStore';
 import {
-  getWhatsAppAutomationConfig,
-  saveWhatsAppAutomationConfig,
   buildClientTicketWhatsAppMessage,
-  dispatchAutomatedWhatsAppMessage,
   formatMoroccanWhatsAppNumber,
-  WhatsAppAutomationConfig,
-  WhatsAppProvider,
 } from '../utils/whatsappAutomation';
 import {
   useSalonProfileSettings,
@@ -98,7 +102,7 @@ import {
   confirmClientAttendance,
 } from '../utils/crmStore';
 import { computeLoyaltyProgress, getVerifiedVisitsCount } from '../utils/loyaltyEngine';
-import { useWaitlist } from '../utils/waitlistStore';
+import { useWaitlist, addToWaitlist } from '../utils/waitlistStore';
 import { useShiftRequests } from '../utils/shiftPlannerStore';
 import { useFirestoreReviews } from '../utils/reviewsStore';
 import {
@@ -115,11 +119,27 @@ import { WeeklyWorkloadBarChart } from './WeeklyWorkloadBarChart';
 import { LoyaltyPointsAdminPanel } from './LoyaltyPointsAdminPanel';
 import { ResourcePlanningSummaryCharts } from './ResourcePlanningSummaryCharts';
 import { AdminCaissePanel } from './AdminCaissePanel';
+import { BarberProfileServicesPanel } from './BarberProfileServicesPanel';
+import { MasterShopPricingPanel } from './MasterShopPricingPanel';
+import { MasterTeamAccessPanel } from './MasterTeamAccessPanel';
+import { MasterClientCreditsPanel } from './MasterClientCreditsPanel';
+import { BookingSection } from './BookingSection';
+import { useShopPricingConfig, resolveEffectiveServicePrices } from '../utils/shopPricingStore';
+import { calculateCartPricing } from '../utils/pricingEngine';
+import { getBarberIdentityTokens } from '../utils/barberIdentity';
+import { useBarberRoster, authenticateStaffPin } from '../utils/barberRosterStore';
+import { useBarberProfiles, getMergedBarbers } from '../utils/barberProfileStore';
 import {
   addCaisseEntry,
   resolveCaisseBarberId,
   getCaisseBarberMeta,
+  useCaisseEntries,
 } from '../utils/caisseStore';
+import {
+  computeOutstandingCreditsForPhone,
+  useCreditDisputes,
+  useManualClientCredits,
+} from '../utils/creditRegistryStore';
 import {
   ClientQrTarget,
   parseScannedQrResult,
@@ -127,8 +147,8 @@ import {
 } from '../utils/clientQr';
 import { ClientQrModal } from './ClientQrModal';
 import { AdminQrCheckInGeneratorModal } from './AdminQrCheckInGeneratorModal';
-import { AppointmentBooking, BookingStatus } from '../types';
-import { SALON_INFO, TEAM_MEMBERS } from '../data/barbershopData';
+import { AppointmentBooking, BookingStatus, StaffRole } from '../types';
+import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
 
@@ -139,10 +159,11 @@ interface AdminDashboardProps {
 }
 
 interface StaffSession {
-  barberId: 'all' | 'hassan' | 'anouar-arif' | 'lahcen-lhanz' | 'mounir-querdeny';
+  barberId: string;
   name: string;
-  role: 'master' | 'barber';
+  role: StaffRole;
   title: string;
+  memberId?: string;
 }
 
 const ADMIN_SESSION_STORAGE_KEY = 'salon_boumlik_admin_session_v1';
@@ -152,6 +173,38 @@ interface StoredAdminSession {
   session: StaffSession;
   expiresAt: number; // timestamp
 }
+
+const getLocalTodayDateStr = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const parseBookingStartMinutes = (timeSlot?: string): number => {
+  if (!timeSlot) return 24 * 60 + 1;
+  const clean = timeSlot.trim();
+  if (clean === 'FLEXIBLE') return 24 * 60;
+  const match = clean.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return 24 * 60 + 1;
+  return Number(match[1]) * 60 + Number(match[2]);
+};
+
+const readInitialAdminSession = (): StaffSession | null => {
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
+      if (raw) {
+        const stored: StoredAdminSession = JSON.parse(raw);
+        if (stored && stored.expiresAt > Date.now()) {
+          return stored.session;
+        }
+        localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading admin session:', e);
+  }
+  return null;
+};
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   isOpen,
@@ -165,26 +218,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [lang]);
 
   const [pinInput, setPinInput] = useState('');
-  
+  const initialSessionRef = useRef<StaffSession | null>(readInitialAdminSession());
+
   // Initialize session from localStorage with 7-day expiration check
-  const [session, setSession] = useState<StaffSession | null>(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const raw = localStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
-        if (raw) {
-          const stored: StoredAdminSession = JSON.parse(raw);
-          if (stored && stored.expiresAt > Date.now()) {
-            return stored.session;
-          } else {
-            localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Error reading admin session:', e);
-    }
-    return null;
-  });
+  const [session, setSession] = useState<StaffSession | null>(initialSessionRef.current);
 
   const [pinError, setPinError] = useState(false);
   const [bookings, setBookings] = useState<AppointmentBooking[]>([]);
@@ -213,19 +250,59 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     notificationsEnabledRef.current = notificationsEnabled;
   }, [notificationsEnabled]);
 
-  // Enterprise Workspace View
-  const [workspaceSection, setWorkspaceSection] = useState<
-    'bookings' | 'queue' | 'summary' | 'schedules' | 'shifts' | 'crm' | 'loyalty' | 'analytics' | 'waitlist' | 'caisse'
-  >('bookings');
+  // Enterprise Workspace View — Barbers & Caisse ALWAYS land Caisse-first!
+  type WorkspaceSectionType =
+    | 'bookings'
+    | 'queue'
+    | 'summary'
+    | 'schedules'
+    | 'shifts'
+    | 'crm'
+    | 'loyalty'
+    | 'analytics'
+    | 'waitlist'
+    | 'caisse'
+    | 'profile'
+    | 'pricing'
+    | 'staff'
+    | 'credits';
+
+  const [workspaceSection, setWorkspaceSection] = useState<WorkspaceSectionType>(() =>
+    initialSessionRef.current?.role === 'barber' || initialSessionRef.current?.role === 'caisse'
+      ? 'caisse'
+      : 'bookings'
+  );
+
+  const [expandedBookingIds, setExpandedBookingIds] = useState<Record<string, boolean>>({});
+  const [openBookingActionsId, setOpenBookingActionsId] = useState<string | null>(null);
+  const [showPastTodaySlots, setShowPastTodaySlots] = useState(false);
+  type BookingKpiModalKind =
+    | 'today_all'
+    | 'pending'
+    | 'confirmed'
+    | 'rejected'
+    | 'queue_active'
+    | 'queue_future'
+    | 'queue_done';
+  const [bookingKpiModal, setBookingKpiModal] = useState<BookingKpiModalKind | null>(null);
+  const [deleteTargetBooking, setDeleteTargetBooking] = useState<AppointmentBooking | null>(null);
+  const [deleteBookingCreditAck, setDeleteBookingCreditAck] = useState(false);
+  const [deleteBookingBusy, setDeleteBookingBusy] = useState(false);
 
   // Version 2.0 Live Enterprise Hooks
+  const barberRoster = useBarberRoster();
+  const barberProfiles = useBarberProfiles();
+  const mergedBarbers = getMergedBarbers(barberProfiles, barberRoster);
   const barberSchedules = useBarberSchedules();
   const crmClientsMap = useCrmClients();
   const waitlistEntries = useWaitlist();
   const shiftRequests = useShiftRequests();
   const { reviews: firestoreReviews } = useFirestoreReviews();
+  const caisseEntries = useCaisseEntries();
+  const manualCredits = useManualClientCredits();
+  const creditDisputes = useCreditDisputes();
 
-  // Date Views: 'today' or 'archive'
+  // Date Views: 'today' (Upcoming Queue) or 'archive'
   const [activeTab, setActiveTab] = useState<'today' | 'archive'>('today');
   const [archiveDateFilter, setArchiveDateFilter] = useState<string>('');
 
@@ -257,6 +334,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [caissePromptPaid, setCaissePromptPaid] = useState<string>('');
   const [caissePromptExpected, setCaissePromptExpected] = useState<string>('');
   const [caissePromptHasCredit, setCaissePromptHasCredit] = useState<boolean>(false);
+  const [caissePromptClientName, setCaissePromptClientName] = useState<string>('');
+  const [caissePromptClientPhone, setCaissePromptClientPhone] = useState<string>('');
   const [caissePromptRepayDate, setCaissePromptRepayDate] = useState<string>('');
   const [caissePromptNote, setCaissePromptNote] = useState<string>('');
   const [caissePromptBusy, setCaissePromptBusy] = useState<boolean>(false);
@@ -271,22 +350,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [notesState, setNotesState] = useState<Record<string, string>>({});
   const [savedNoteId, setSavedNoteId] = useState<string | null>(null);
 
-  // WhatsApp Automation (Green-API / UltraMsg) & Google Business Settings
+  // Google Business & Salon Links Settings
   const salonSettings = useSalonProfileSettings();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [waConfig, setWaConfig] = useState<WhatsAppAutomationConfig>(() =>
-    getWhatsAppAutomationConfig()
-  );
-  const [waSavedNotice, setWaSavedNotice] = useState(false);
-  const [sendingReminderId, setSendingReminderId] = useState<string | null>(null);
   const [quickActionBusyId, setQuickActionBusyId] = useState<string | null>(null);
+  const [lateActionBusyId, setLateActionBusyId] = useState<string | null>(null);
   const [flexAssignBusyId, setFlexAssignBusyId] = useState<string | null>(null);
   const [flexCustomTargetId, setFlexCustomTargetId] = useState<string | null>(null);
   const [flexCustomDate, setFlexCustomDate] = useState('');
   const [flexCustomTime, setFlexCustomTime] = useState('16:00');
+  const [isWalkInModalOpen, setIsWalkInModalOpen] = useState(false);
+  const [walkInBarberId, setWalkInBarberId] = useState<string>('hassan');
+  const [walkInServiceIds, setWalkInServiceIds] = useState<string[]>(['haircut']);
+  const shopPricingConfig = useShopPricingConfig();
 
   const [mapsUrlInput, setMapsUrlInput] = useState(salonSettings.googleMapsUrl);
   const [reviewUrlInput, setReviewUrlInput] = useState(salonSettings.googleReviewUrl);
+  const [salonPhoneInput, setSalonPhoneInput] = useState(salonSettings.salonPhone || SALON_INFO.phone);
+  const [salonWhatsappInput, setSalonWhatsappInput] = useState(
+    salonSettings.salonWhatsapp || SALON_INFO.whatsappNumber
+  );
+  const [additionalPhonesText, setAdditionalPhonesText] = useState(
+    (salonSettings.additionalPhones || []).join('\n')
+  );
   const [savingProfileLinks, setSavingProfileLinks] = useState(false);
   const [profileLinksSaved, setProfileLinksSaved] = useState(false);
   const [profileLinksError, setProfileLinksError] = useState<string | null>(null);
@@ -302,9 +388,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   useEffect(() => {
     setMapsUrlInput(salonSettings.googleMapsUrl);
     setReviewUrlInput(salonSettings.googleReviewUrl);
-  }, [salonSettings.googleMapsUrl, salonSettings.googleReviewUrl]);
+    setSalonPhoneInput(salonSettings.salonPhone || SALON_INFO.phone);
+    setSalonWhatsappInput(salonSettings.salonWhatsapp || SALON_INFO.whatsappNumber);
+    setAdditionalPhonesText((salonSettings.additionalPhones || []).join('\n'));
+  }, [
+    salonSettings.googleMapsUrl,
+    salonSettings.googleReviewUrl,
+    salonSettings.salonPhone,
+    salonSettings.salonWhatsapp,
+    salonSettings.additionalPhones,
+  ]);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const [nowClock, setNowClock] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const interval = setInterval(() => setNowClock(new Date()), 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const todayStr = `${nowClock.getFullYear()}-${String(nowClock.getMonth() + 1).padStart(2, '0')}-${String(nowClock.getDate()).padStart(2, '0')}` || getLocalTodayDateStr();
+  const nowMinutes = nowClock.getHours() * 60 + nowClock.getMinutes();
+
+  const walkInShopPricing = resolveEffectiveServicePrices({
+    dateStr: todayStr,
+    shopConfig: shopPricingConfig,
+  });
+  const walkInPricingResult = calculateCartPricing({
+    selectedIds: walkInServiceIds,
+    colorConfig: { tone: 'grey_white', coverage: 'full' },
+    proteinPrice: 200,
+    lang,
+    effectiveServicePrices: walkInShopPricing.priceMap,
+    specialRuleLabel: walkInShopPricing.activeSpecialRuleLabels[0],
+    hiddenServiceIds: shopPricingConfig.hiddenServiceIds,
+    serviceBundles: shopPricingConfig.serviceBundles,
+  });
 
   // Check for newly created bookings pushed by Firestore onSnapshot and trigger dual alert
   const handleSnapshotBookings = (currentList: AppointmentBooking[]) => {
@@ -344,7 +461,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
 
     const matchesCurrentStaffScope = (b: AppointmentBooking) => {
-      if (!session || session.role === 'master') return true;
+      if (!session || session.role === 'master' || session.role === 'caisse') return true;
       return (
         b.barberId === session.barberId ||
         b.barberName.toLowerCase().includes(session.name.toLowerCase().split(' ')[0])
@@ -459,7 +576,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
 
     // Silently keep push subscription synced if permission was already granted by staff
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+    if (
+      session.role !== 'caisse' &&
+      typeof window !== 'undefined' &&
+      'Notification' in window &&
+      Notification.permission === 'granted'
+    ) {
       void registerStaffPushSubscription({
         role: session.role,
         barberId: session.barberId,
@@ -499,7 +621,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (newEntries.length > 0 && notificationsEnabledRef.current) {
       const curLang = langRef.current;
       newEntries
-        .filter((w) => session.role === 'master' || w.barberId === session.barberId)
+        .filter(
+          (w) =>
+            session.role === 'master' ||
+            session.role === 'caisse' ||
+            w.barberId === session.barberId
+        )
         .forEach((w) => {
           sendDualAlert(
             pickLang(curLang, {
@@ -568,12 +695,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       );
       try {
         const cleanTarget = lookup.replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
+        const parsedPhoneDigits = (parsed.checkInToken || lookup).replace(/\D/g, '').slice(-9);
         let matched =
-          bookings.find(
-            (b) =>
+          bookings.find((b) => {
+            const bPhoneDigits = String(b.clientPhone || '').replace(/\D/g, '').slice(-9);
+            return (
               b.ticketNumber.replace(/[^a-zA-Z0-9-]/g, '').toLowerCase() === cleanTarget ||
-              (parsed.checkInToken && b.checkInToken === parsed.checkInToken)
-          ) || null;
+              (parsed.checkInToken && b.checkInToken === parsed.checkInToken) ||
+              (parsedPhoneDigits.length >= 8 && bPhoneDigits === parsedPhoneDigits)
+            );
+          }) || null;
         if (!matched) {
           matched = (await getBookingByTicket(lookup)) || null;
         }
@@ -581,10 +712,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         if (matched) {
           const updated = await checkInBookingByQr(matched.id);
           const resolvedBooking = updated || matched;
+          const bPhoneDigits = String(resolvedBooking.clientPhone || '').replace(/\D/g, '').slice(-9);
           const tokenMatched =
             !parsed.checkInToken ||
             !resolvedBooking.checkInToken ||
-            parsed.checkInToken === resolvedBooking.checkInToken;
+            parsed.checkInToken === resolvedBooking.checkInToken ||
+            (parsedPhoneDigits.length >= 8 && bPhoneDigits === parsedPhoneDigits);
           setCheckInConfirmModal({ booking: resolvedBooking, tokenMatched });
           playNotificationSound();
           sendDualAlert(
@@ -742,46 +875,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   if (!isOpen) return null;
 
-  // RBAC Authentication (Password input type, no exposed PINs in placeholder)
+  // RBAC Authentication via Firestore-backed dynamic roster + emergency recovery
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanPin = pinInput.trim();
+    const matched = authenticateStaffPin(pinInput, barberRoster);
 
-    let newSession: StaffSession | null = null;
-
-    // 1. Hassan (Master Admin): PINs 1994 OR 0635392503
-    if (cleanPin === '1994' || cleanPin === '0635392503' || cleanPin === '212635392503') {
-      newSession = {
-        barberId: 'all',
-        name: 'Hassan ait boumlik',
-        role: 'master',
-        title: 'Master Admin / المؤسس وخبير الحلاقة',
-      };
-    } else if (cleanPin === '1234') {
-      // 2. Anouar (Barber): PIN 1234
-      newSession = {
-        barberId: 'anouar-arif',
-        name: 'Anouar arif',
-        role: 'barber',
-        title: 'Barbier / حلاق',
-      };
-    } else if (cleanPin === '5678') {
-      // 3. Lahcen (Barber): PIN 5678
-      newSession = {
-        barberId: 'lahcen-lhanz',
-        name: 'Lahcen lhanz',
-        role: 'barber',
-        title: 'Barbier / حلاق',
-      };
-    } else if (cleanPin === '1111') {
-      // 4. Mounir (Barber): PIN 1111
-      newSession = {
-        barberId: 'mounir-querdeny',
-        name: 'Mounir querdeny',
-        role: 'barber',
-        title: 'Barbier / حلاق',
-      };
-    }
+    const newSession: StaffSession | null = matched
+      ? {
+          barberId:
+            matched.role === 'master' || matched.role === 'caisse'
+              ? 'all'
+              : matched.barberId || matched.memberId,
+          name: matched.name,
+          role: matched.role,
+          title:
+            matched.role === 'master'
+              ? 'Master Admin / المؤسس وخبير الحلاقة'
+              : matched.role === 'caisse'
+                ? 'لاكيس / Caisse Salon'
+                : 'Barbier / حلاق',
+          memberId: matched.memberId,
+        }
+      : null;
 
     if (newSession) {
       // Persist session for 7 days (7 * 24 * 60 * 60 * 1000 ms)
@@ -791,16 +906,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       };
       try {
         localStorage.setItem(ADMIN_SESSION_STORAGE_KEY, JSON.stringify(stored));
-      } catch (e) {
-        console.warn('Error saving admin session:', e);
+      } catch (err) {
+        console.warn('Error saving admin session:', err);
       }
 
       setSession(newSession);
+      setWorkspaceSection(
+        newSession.role === 'barber' || newSession.role === 'caisse'
+          ? 'caisse'
+          : 'bookings'
+      );
       setPinError(false);
       setPinInput('');
 
       // Silently register push subscription ONLY if staff already granted permission
-      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      if (
+        newSession.role !== 'caisse' &&
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        Notification.permission === 'granted'
+      ) {
         void registerStaffPushSubscription({
           role: newSession.role,
           barberId: newSession.barberId,
@@ -829,13 +954,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Toggle Notifications with explicit user-gesture PushManager subscription & chime
   const handleToggleNotifications = async () => {
     if (!notificationsEnabled) {
-      const subResult = session
-        ? await registerStaffPushSubscription({
-            role: session.role,
-            barberId: session.barberId,
-            staffName: session.name,
-          })
-        : { granted: false, subscribed: false };
+      const subResult =
+        session && session.role !== 'caisse'
+          ? await registerStaffPushSubscription({
+              role: session.role,
+              barberId: session.barberId,
+              staffName: session.name,
+            })
+          : { granted: false, subscribed: false };
 
       setNotificationsEnabled(true);
       try {
@@ -903,7 +1029,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleConfirm = async (id: string) => {
     try {
-      const targetBooking = bookings.find((b) => b.id === id);
       await updateBookingStatus(
         id,
         'confirmed',
@@ -915,36 +1040,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           es: `Confirmado por ${session?.name || 'el salón'}. Tu horario está reservado.`,
         })
       );
-
-      if (targetBooking && waConfig.enabled && waConfig.autoSendOnConfirm) {
-        const res = await dispatchAutomatedWhatsAppMessage(
-          { ...targetBooking, status: 'confirmed' },
-          'confirmation',
-          waConfig
-        );
-        if (res.success) {
-          sendDualAlert(
-            pickLang(lang, {
-              ar: `تم إرسال إشعار واتساب (${res.provider})`,
-              fr: `Notification WhatsApp envoyée (${res.provider})`,
-              amz: `ⵜⵓⵣⵏ ⵜⵓⵣⵉⵏⵜ WhatsApp (${res.provider})`,
-              en: `WhatsApp notification sent (${res.provider})`,
-              es: `Notificación WhatsApp enviada (${res.provider})`,
-            }),
-            {
-              body: pickLang(lang, {
-                ar: `تم إرسال تأكيد الموعد تلقائياً إلى ${targetBooking.clientName}.`,
-                fr: `Confirmation envoyée automatiquement à ${targetBooking.clientName}.`,
-                amz: `ⴰⵙⵏⵜⵎ ⵉⵜⵜⵓⵣⵏ ⵉ ${targetBooking.clientName}.`,
-                en: `Confirmation automatically sent to ${targetBooking.clientName}.`,
-                es: `Confirmación enviada automáticamente a ${targetBooking.clientName}.`,
-              }),
-              type: 'success',
-              skipSound: true,
-            }
-          );
-        }
-      }
     } catch (err) {
       console.error('Failed to confirm booking:', err);
       sendDualAlert(
@@ -966,6 +1061,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           type: 'warning',
         }
       );
+    }
+  };
+
+  const handleConfirmDeleteBooking = async () => {
+    if (!deleteTargetBooking || session?.role !== 'master') return;
+    const creditSummary = computeOutstandingCreditsForPhone(
+      deleteTargetBooking.clientPhone,
+      caisseEntries,
+      manualCredits,
+      barberRoster
+    );
+    if (creditSummary.hasCredit && !deleteBookingCreditAck) {
+      return;
+    }
+    setDeleteBookingBusy(true);
+    try {
+      await deleteBooking(deleteTargetBooking.id);
+      showToast(
+        'تم حذف الموعد بنجاح (سجلات الكريدي والمجر تبقى محفوظة)',
+        'success'
+      );
+      setDeleteTargetBooking(null);
+      setDeleteBookingCreditAck(false);
+    } catch (err) {
+      console.error('Failed to delete booking:', err);
+      sendDualAlert('تعذر حذف الموعد', {
+        body: 'حدث خطأ أثناء حذف الموعد من قاعدة البيانات.',
+        type: 'warning',
+      });
+    } finally {
+      setDeleteBookingBusy(false);
     }
   };
 
@@ -1054,6 +1180,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setCaissePromptPaid(baseTotal > 0 ? String(baseTotal) : '');
     setCaissePromptExpected(baseTotal > 0 ? String(baseTotal) : '');
     setCaissePromptHasCredit(false);
+    setCaissePromptClientName(booking.clientName || '');
+    setCaissePromptClientPhone(booking.clientPhone || '');
     setCaissePromptRepayDate('');
     setCaissePromptNote(
       pickLang(lang, {
@@ -1102,9 +1230,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     const targetBarberId = resolveCaisseBarberId(
       caissePromptBooking.barberId,
-      caissePromptBooking.barberName
+      caissePromptBooking.barberName,
+      barberRoster
     );
-    const barberMeta = getCaisseBarberMeta(targetBarberId);
+    const barberMeta = getCaisseBarberMeta(targetBarberId, barberRoster);
     const serviceIds = (caissePromptBooking.services || [])
       .map((s) => s.id)
       .filter(Boolean);
@@ -1127,8 +1256,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         creditRemainingMAD: creditTotal,
         creditStatus:
           creditTotal > 0 ? (paid > 0 ? 'partial' : 'open') : 'none',
-        clientName: caissePromptBooking.clientName,
-        clientPhone: caissePromptBooking.clientPhone,
+        clientName: caissePromptClientName.trim() || caissePromptBooking.clientName,
+        clientPhone: caissePromptClientPhone.trim() || caissePromptBooking.clientPhone,
         expectedRepaymentDate: caissePromptRepayDate || undefined,
         sourceBookingId: caissePromptBooking.id,
         sourceTicketNumber: caissePromptBooking.ticketNumber,
@@ -1141,7 +1270,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setCaissePromptBooking(null);
 
       const barberLabel =
-        TEAM_MEMBERS.find((m) => m.id === targetBarberId)?.name?.[lang] ||
+        mergedBarbers.find((m) => m.id === targetBarberId)?.name?.[lang] ||
         barberMeta.arName;
 
       sendDualAlert(
@@ -1484,40 +1613,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         date: newDate,
         time: newTime,
       });
-
-      if (waConfig.enabled && waConfig.autoSendOnReschedule) {
-        const res = await dispatchAutomatedWhatsAppMessage(
-          {
-            ...targetBooking,
-            status: 'rescheduled',
-            rescheduledTo: { date: newDate, time: newTime },
-          },
-          'reschedule',
-          waConfig
-        );
-        if (res.success) {
-          sendDualAlert(
-            pickLang(lang, {
-              ar: `تم إرسال إشعار التعديل (${res.provider})`,
-              fr: `Notification de report envoyée (${res.provider})`,
-              amz: `ⵜⵓⵣⵏ ⵜⵓⵣⵉⵏⵜ ⵏ ⵓⵙⵏⴼⵍ (${res.provider})`,
-              en: `Reschedule notice sent (${res.provider})`,
-              es: `Aviso de cambio enviado (${res.provider})`,
-            }),
-            {
-              body: pickLang(lang, {
-                ar: `تم إرسال التوقيت الجديد للزبون ${targetBooking.clientName}.`,
-                fr: `Nouvel horaire envoyé à ${targetBooking.clientName}.`,
-                amz: `ⴰⴽⵓⴷ ⴰⵎⴰⵢⵏⵓ ⵉⵜⵜⵓⵣⵏ ⵉ ${targetBooking.clientName}.`,
-                en: `New time sent to ${targetBooking.clientName}.`,
-                es: `Nuevo horario enviado a ${targetBooking.clientName}.`,
-              }),
-              type: 'success',
-              skipSound: true,
-            }
-          );
-        }
-      }
     } catch (err) {
       console.error('Failed to reschedule booking:', err);
       sendDualAlert(
@@ -1584,19 +1679,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           skipSound: true,
         }
       );
-
-      if (waConfig.enabled && waConfig.autoSendOnConfirm) {
-        await dispatchAutomatedWhatsAppMessage(
-          {
-            ...booking,
-            date: assignedDate,
-            timeSlot: assignedTime,
-            status: 'confirmed',
-          },
-          'confirmation',
-          waConfig
-        );
-      }
     } catch (err) {
       console.error('Failed to assign flexible slot:', err);
       sendDualAlert(
@@ -1620,6 +1702,200 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       );
     } finally {
       setFlexAssignBusyId((prev) => (prev === booking.id ? null : prev));
+    }
+  };
+
+  const handlePostponeLateBookingToNearest = async (booking: AppointmentBooking) => {
+    setLateActionBusyId(booking.id);
+    try {
+      const parseSlotMin = (hhmm?: string) => {
+        if (!hhmm || !/^\d{1,2}:\d{2}$/.test(hhmm.trim())) return nowMinutes;
+        const [h, m] = hhmm.trim().split(':').map(Number);
+        return h * 60 + m;
+      };
+
+      const minSearchDate = booking.date >= todayStr ? booking.date : todayStr;
+      const bookingStartMin =
+        booking.timeSlot && booking.timeSlot !== 'FLEXIBLE'
+          ? parseSlotMin(booking.timeSlot)
+          : nowMinutes;
+      const hintMin = Math.min(22 * 60, Math.max(nowMinutes + 15, bookingStartMin + 30));
+      const hintTime = `${String(Math.floor(hintMin / 60)).padStart(2, '0')}:${String(hintMin % 60).padStart(2, '0')}`;
+
+      const candidates = getRankedAvailableSlotsForBarber(
+        booking.barberId,
+        minSearchDate,
+        hintTime,
+        barberSchedules,
+        bookings,
+        booking.totalDurationMinutes || 30
+      );
+
+      const forwardEligible = candidates
+        .filter((slot) => {
+          if (slot.date === booking.date && slot.time === booking.timeSlot) return false;
+          if (slot.date === todayStr) {
+            return parseSlotMin(slot.time) > Math.max(nowMinutes - 5, bookingStartMin);
+          }
+          if (slot.date === booking.date && booking.timeSlot !== 'FLEXIBLE') {
+            return parseSlotMin(slot.time) > bookingStartMin;
+          }
+          return true;
+        })
+        .sort((a, b) => {
+          if (a.date !== b.date) return a.date.localeCompare(b.date);
+          return parseSlotMin(a.time) - parseSlotMin(b.time);
+        });
+
+      const picked = forwardEligible[0];
+      if (!picked) {
+        sendDualAlert(
+          pickLang(lang, {
+            ar: 'لا يوجد وقت متاح قريباً',
+            fr: 'Aucun créneau proche disponible',
+            amz: 'ⵓⵔ ⵉⵍⵍⵉ ⵡⴰⴽⵓⴷ ⵉⵇⵇⵏⵏ',
+            en: 'No nearby open slot found',
+            es: 'No hay hueco cercano disponible',
+          }),
+          {
+            body: pickLang(lang, {
+              ar: 'يمكنك تحويل الزبون للطابور أو اختيار توقيت يدوي.',
+              fr: 'Vous pouvez placer le client en liste d’attente ou choisir un horaire manuel.',
+              amz: 'ⵜⵣⵎⵔⴷ ⴰⴷ ⵜⵙⵙⵉⴷⴷ ⴰⵎⵙⴰⵖ ⵉ ⵜⴰⵍⴳⴰⵎⵜ.',
+              en: 'Consider moving the client to the queue or picking another day manually.',
+              es: 'Puedes pasarlo a la cola o elegir otro horario manualmente.',
+            }),
+            type: 'warning',
+          }
+        );
+        return;
+      }
+
+      const staffLabel = session?.name || booking.barberName;
+      const noteText = pickLang(lang, {
+        ar: `بسبب التأخر عن الموعد (${booking.timeSlot})، تم تأجيله إلى أقرب وقت متاح (${picked.date} · ${picked.time}) بواسطة ${staffLabel}.`,
+        fr: `Suite au retard (${booking.timeSlot}), déplacé au créneau le plus proche (${picked.date} · ${picked.time}) par ${staffLabel}.`,
+        amz: `ⵙ ⵓⵙⵔⴰⴳ ⵏ ⵓⵎⴰⵟⵟⵍ (${booking.timeSlot}), ⵉⵜⵜⵓⵙⵏⴼⵍ ⵉ (${picked.date} · ${picked.time}).`,
+        en: `Moved due to late arrival (${booking.timeSlot}) to nearest slot (${picked.date} · ${picked.time}) by ${staffLabel}.`,
+        es: `Movido por retraso (${booking.timeSlot}) al horario más cercano (${picked.date} · ${picked.time}).`,
+      });
+
+      await rescheduleBookingToNearestSlot(booking.id, picked.date, picked.time, noteText);
+      sendDualAlert(
+        pickLang(lang, {
+          ar: `تم تأجيل الموعد لأقرب وقت (${picked.time}) ✓`,
+          fr: `Déplacé au créneau le plus proche (${picked.time}) ✓`,
+          amz: `ⵉⵜⵜⵓⵙⵏⴼⵍ ⵉ ⵡⴰⴽⵓⴷ (${picked.time}) ✓`,
+          en: `Moved to Nearest Slot (${picked.time}) ✓`,
+          es: `Movido al hueco cercano (${picked.time}) ✓`,
+        }),
+        {
+          body: pickLang(lang, {
+            ar: `تم تحرير الموعد القديم ونقل ${booking.clientName} إلى ${picked.date} الساعة ${picked.time}.`,
+            fr: `L’ancien créneau est libéré et ${booking.clientName} est déplacé au ${picked.date} à ${picked.time}.`,
+            amz: `ⴰⴽⵓⴷ ⴰⵣⴰⵢⴽⵓ ⵉⵔⵥⵎ, ${booking.clientName} ⵉⵜⵜⵓⵙⵏⴼⵍ ⵉ ${picked.date} · ${picked.time}.`,
+            en: `Original slot freed and ${booking.clientName} moved to ${picked.date} at ${picked.time}.`,
+            es: `El hueco anterior quedó libre y ${booking.clientName} pasó al ${picked.date} a las ${picked.time}.`,
+          }),
+          type: 'success',
+          skipSound: true,
+        }
+      );
+    } catch (err) {
+      console.error('Failed to postpone late booking to nearest slot:', err);
+      showToast(
+        pickLang(lang, {
+          ar: 'تعذر تأجيل الموعد، يرجى المحاولة مجدداً.',
+          fr: 'Impossible de décaler le rendez-vous.',
+          amz: 'ⵓⵔ ⵉⵣⵎⵉⵔ ⴰⴷ ⵉⵙⵏⴼⵍ ⴰⵙⵉⵀⴰⵔ.',
+          en: 'Failed to move booking to nearest slot.',
+          es: 'No se pudo mover la cita.',
+        }),
+        'warning'
+      );
+    } finally {
+      setLateActionBusyId((prev) => (prev === booking.id ? null : prev));
+    }
+  };
+
+  const handleMoveLateBookingToWaitlist = async (booking: AppointmentBooking) => {
+    setLateActionBusyId(booking.id);
+    try {
+      const targetDate = booking.date >= todayStr ? booking.date : todayStr;
+      const servicesSummary =
+        (booking.cartItemsSummary || []).map((i) => i.name).filter(Boolean).join(', ') ||
+        pickLang(lang, {
+          ar: 'حلاقة وعناية',
+          fr: 'Coupe & soins',
+          amz: 'ⴰⵙⵙⴼⵔⵓ',
+          en: 'Haircut & Grooming',
+          es: 'Corte y cuidado',
+        });
+
+      await addToWaitlist({
+        barberId: booking.barberId,
+        barberName: booking.barberName,
+        date: targetDate,
+        preferredTime:
+          booking.timeSlot === 'FLEXIBLE'
+            ? pickLang(lang, {
+                ar: 'أي توقيت متاح',
+                fr: 'Tout horaire libre',
+                amz: 'ⴰⴽⵓⴷ ⵉⵔⵥⵎⵏ',
+                en: 'Any open slot',
+                es: 'Cualquier hueco',
+              })
+            : `بعد ${booking.timeSlot} (متأخر)`,
+        clientName: booking.clientName,
+        clientPhone: booking.clientPhone,
+        servicesSummary,
+      });
+
+      const staffLabel = session?.name || booking.barberName;
+      const noteText = pickLang(lang, {
+        ar: `بسبب التأخر عن الموعد (${booking.timeSlot})، تم تحويل ${booking.clientName} إلى طابور الانتظار وتحرير الحصة بواسطة ${staffLabel}.`,
+        fr: `Suite au retard (${booking.timeSlot}), ${booking.clientName} a été placé en liste d’attente et le créneau libéré par ${staffLabel}.`,
+        amz: `ⵙ ⵓⵙⵔⴰⴳ ⵏ ⵓⵎⴰⵟⵟⵍ, ${booking.clientName} ⵉⵜⵜⵓⵙⵙⵉⴷ ⵉ ⵜⴰⵍⴳⴰⵎⵜ ⵏ ⵓⴳⴰⵏⵉ.`,
+        en: `Moved ${booking.clientName} to Smart Waitlist due to late arrival (${booking.timeSlot}) and freed slot by ${staffLabel}.`,
+        es: `Pasado a lista de espera por retraso (${booking.timeSlot}) y liberado el horario por ${staffLabel}.`,
+      });
+
+      await updateBookingStatus(booking.id, 'cancelled', noteText);
+
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'تم التحويل للطابور وتحرير الموعد ✓',
+          fr: 'Placé en attente & créneau libéré ✓',
+          amz: 'ⵉⵜⵜⵓⵙⵙⵉⴷ ⵉ ⵜⴰⵍⴳⴰⵎⵜ ✓',
+          en: 'Moved to Queue & Slot Freed ✓',
+          es: 'Pasado a cola y hueco libre ✓',
+        }),
+        {
+          body: pickLang(lang, {
+            ar: `تمت إضافة ${booking.clientName} لقائمة الانتظار وتحرير ساعة ${booking.timeSlot}.`,
+            fr: `${booking.clientName} a rejoint la liste d’attente et ${booking.timeSlot} est libre.`,
+            amz: `${booking.clientName} ⵉⵍⵍⴰ ⴳ ⵜⴰⵍⴳⴰⵎⵜ ⵏ ⵓⴳⴰⵏⵉ.`,
+            en: `${booking.clientName} added to waitlist and ${booking.timeSlot} slot opened.`,
+            es: `${booking.clientName} en lista de espera y horario ${booking.timeSlot} liberado.`,
+          }),
+          type: 'success',
+          skipSound: true,
+        }
+      );
+    } catch (err) {
+      console.error('Failed to move late booking to waitlist:', err);
+      showToast(
+        pickLang(lang, {
+          ar: 'تعذر التحويل للطابور، يرجى المحاولة مجدداً.',
+          fr: 'Impossible de transférer en attente.',
+          amz: 'ⵓⵔ ⵉⵣⵎⵉⵔ ⴰⴷ ⵉⵙⵙⵉⴷ ⵉ ⵜⴰⵍⴳⴰⵎⵜ.',
+          en: 'Failed to move booking to waitlist.',
+          es: 'No se pudo pasar a lista de espera.',
+        }),
+        'warning'
+      );
+    } finally {
+      setLateActionBusyId((prev) => (prev === booking.id ? null : prev));
     }
   };
 
@@ -1653,33 +1929,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleSaveWaConfig = (e: React.FormEvent) => {
-    e.preventDefault();
-    saveWhatsAppAutomationConfig(waConfig);
-    setWaSavedNotice(true);
-    setTimeout(() => setWaSavedNotice(false), 2500);
-    sendDualAlert(
-      pickLang(lang, {
-        ar: 'تم حفظ إعدادات واتساب API',
-        fr: 'Configuration WhatsApp API enregistrée',
-        amz: 'ⵉⵜⵜⵓⵃⴹⴰ WhatsApp API',
-        en: 'WhatsApp API Settings Saved',
-        es: 'Configuración de WhatsApp API guardada',
-      }),
-      {
-        body: `${waConfig.provider === 'green-api' ? 'Green-API' : 'UltraMsg'}`,
-        type: 'success',
-        skipSound: true,
-      }
-    );
-  };
-
   const handleSaveGoogleLinks = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileLinksError(null);
     setSavingProfileLinks(true);
     try {
-      await saveSalonProfileSettings(mapsUrlInput, reviewUrlInput);
+      const parsedAdditionalPhones = additionalPhonesText
+        .split(/[\n,،]+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length >= 6);
+      await saveSalonProfileSettings(mapsUrlInput, reviewUrlInput, {
+        salonPhone: salonPhoneInput.trim() || SALON_INFO.phone,
+        salonWhatsapp: salonWhatsappInput.trim() || SALON_INFO.whatsappNumber,
+        additionalPhones: parsedAdditionalPhones,
+      });
       setProfileLinksSaved(true);
       setTimeout(() => setProfileLinksSaved(false), 2500);
       sendDualAlert(
@@ -1718,79 +1981,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleSendWhatsAppApiReminder = async (booking: AppointmentBooking) => {
-    if (!waConfig.enabled || !waConfig.instanceId.trim() || !waConfig.token.trim()) {
-      setIsSettingsOpen(true);
-      sendDualAlert(
-        pickLang(lang, {
-          ar: 'أدخل بيانات الربط أولاً',
-          fr: 'Entrez les identifiants API d’abord',
-          amz: 'ⵙⴽⵛⵎ ⵉⵙⴼⴽⴰ API ⵜⴰⵣⵡⴰⵔⴰ',
-          en: 'Enter API credentials first',
-          es: 'Ingresa las credenciales primero',
-        }),
-        {
-          body: pickLang(lang, {
-            ar: 'يرجى تفعيل Green-API أو UltraMsg وإدخال Instance ID و Token في لوحة الإعدادات.',
-            fr: 'Activez Green-API ou UltraMsg et saisissez Instance ID & Token.',
-            amz: 'ⵙⵎⵔ Green-API ⵏⵖ UltraMsg ⴷ Instance ID.',
-            en: 'Enable Green-API or UltraMsg and enter Instance ID & Token in Settings.',
-            es: 'Activa Green-API o UltraMsg e ingresa Instance ID y Token.',
-          }),
-          type: 'warning',
-          skipSound: true,
-        }
-      );
-      return;
-    }
-
-    setSendingReminderId(booking.id);
-    const res = await dispatchAutomatedWhatsAppMessage(booking, 'reminder_1h', waConfig);
-    setSendingReminderId(null);
-
-    if (res.success) {
-      sendDualAlert(
-        pickLang(lang, {
-          ar: 'تم إرسال التذكير الآلي بنجاح ✅',
-          fr: 'Rappel automatique envoyé ✅',
-          amz: 'ⴰⵙⴽⵜⵉ ⵉⵜⵜⵓⵣⵏ ✅',
-          en: 'Automated Reminder Sent ✅',
-          es: 'Recordatorio automático enviado ✅',
-        }),
-        {
-          body: `${res.provider} → ${booking.clientName}`,
-          type: 'success',
-        }
-      );
-    } else {
-      sendDualAlert(
-        pickLang(lang, {
-          ar: 'تعذر الإرسال عبر API',
-          fr: 'Échec de l’envoi API',
-          amz: 'ⵓⵔ ⵉⵣⵎⵉⵔ ⴰⴷ ⵉⵣⵏ ⵙ API',
-          en: 'API Dispatch Failed',
-          es: 'Error al enviar vía API',
-        }),
-        {
-          body:
-            res.reason ||
-            pickLang(lang, {
-              ar: 'تحقق من حالة الجلسة في بوابة واتساب.',
-              fr: 'Vérifiez la session sur votre passerelle WhatsApp.',
-              amz: 'ⵙⵙⵏⵇⴷ ⴰⵙⵙⴰⵖ ⵏ WhatsApp.',
-              en: 'Check your WhatsApp gateway session status.',
-              es: 'Verifica la sesión en tu pasarela WhatsApp.',
-            }),
-          type: 'warning',
-        }
-      );
-    }
-  };
-
   // Helper to find barber color
   const getBarberColor = (booking: AppointmentBooking) => {
     if (booking.barberColor) return booking.barberColor;
-    const found = TEAM_MEMBERS.find((b) => b.id === booking.barberId);
+    const found = mergedBarbers.find((b) => b.id === booking.barberId);
     return found?.themeColor || '#D97706';
   };
 
@@ -1803,7 +1997,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const isAssigned = b.barberId === session.barberId || 
         b.barberName.toLowerCase().includes(session.name.toLowerCase().split(' ')[0]);
       if (!isAssigned) return false;
-    } else if (session.role === 'master') {
+    } else if (session.role === 'master' || session.role === 'caisse') {
       if (masterBarberFilter !== 'all') {
         const matches = b.barberId === masterBarberFilter || 
           b.barberName.toLowerCase().includes(masterBarberFilter.toLowerCase().split('-')[0]);
@@ -1811,9 +2005,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     }
 
-    // 2. Date View: 'today' or 'archive'
+    // 2. Date View: 'today' (Today remaining + Upcoming Days/Next Week) or 'archive'
     if (activeTab === 'today') {
-      if (b.date !== todayStr) return false;
+      if (b.date < todayStr) return false;
     } else {
       // Archive View
       if (archiveDateFilter && b.date !== archiveDateFilter) {
@@ -1837,13 +2031,75 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return true;
   });
 
+  const isTerminalStatus = (status: AppointmentBooking['status']) =>
+    ['completed', 'rejected', 'cancelled', 'no_show'].includes(status);
+
+  const isBookingSlotPassedToday = (b: AppointmentBooking): boolean => {
+    if (b.date !== todayStr) return false;
+    const rawSlot = (b.timeSlot || '').trim();
+    if (!rawSlot || rawSlot === 'FLEXIBLE') return false;
+    const startMin = parseBookingStartMinutes(rawSlot);
+    if (startMin >= 24 * 60) return false;
+    const duration = Math.max(30, Number(b.totalDurationMinutes) || 60);
+    return startMin + duration < nowMinutes;
+  };
+
+  // Chronological Partitioning for activeTab === 'today'
+  const todayActiveQueue = visibleBookings
+    .filter(
+      (b) =>
+        b.date === todayStr &&
+        !isTerminalStatus(b.status) &&
+        !isBookingSlotPassedToday(b)
+    )
+    .sort((a, b) => {
+      const diff = parseBookingStartMinutes(a.timeSlot) - parseBookingStartMinutes(b.timeSlot);
+      if (diff !== 0) return diff;
+      return (a.createdAt || '').localeCompare(b.createdAt || '');
+    });
+
+  const futureUpcomingQueue = visibleBookings
+    .filter((b) => b.date > todayStr && !isTerminalStatus(b.status))
+    .sort((a, b) => {
+      const dateCmp = a.date.localeCompare(b.date);
+      if (dateCmp !== 0) return dateCmp;
+      const timeDiff = parseBookingStartMinutes(a.timeSlot) - parseBookingStartMinutes(b.timeSlot);
+      if (timeDiff !== 0) return timeDiff;
+      return (a.createdAt || '').localeCompare(b.createdAt || '');
+    });
+
+  const todayActiveIdSet = new Set(todayActiveQueue.map((b) => b.id));
+  const futureUpcomingIdSet = new Set(futureUpcomingQueue.map((b) => b.id));
+
+  const todayPastOrDoneQueue = visibleBookings
+    .filter((b) => !todayActiveIdSet.has(b.id) && !futureUpcomingIdSet.has(b.id))
+    .sort((a, b) => {
+      const dateCmp = b.date.localeCompare(a.date);
+      if (dateCmp !== 0) return dateCmp;
+      return parseBookingStartMinutes(b.timeSlot) - parseBookingStartMinutes(a.timeSlot);
+    });
+
+  const sortedArchiveBookings = [...visibleBookings].sort((a, b) => {
+    const dateCmp = b.date.localeCompare(a.date);
+    if (dateCmp !== 0) return dateCmp;
+    return parseBookingStartMinutes(b.timeSlot) - parseBookingStartMinutes(a.timeSlot);
+  });
+
   const archiveSearchMatchesCount =
     activeTab === 'today' && searchQuery.trim()
       ? bookings.filter((b) => matchesUniversalBookingQuery(b, searchQuery)).length
       : 0;
 
-  // KPI Calculations
-  const todayTickets = bookings.filter((b) => b.date === todayStr);
+  // KPI Calculations (Scoped strictly to own barber when role === 'barber')
+  const kpiSourceBookings =
+    session?.role === 'barber'
+      ? bookings.filter(
+          (b) =>
+            b.barberId === session.barberId ||
+            b.barberName.toLowerCase().includes(session.name.toLowerCase().split(' ')[0])
+        )
+      : bookings;
+  const todayTickets = kpiSourceBookings.filter((b) => b.date === todayStr);
   const pendingCount = todayTickets.filter((b) =>
     ['pending', 'flexible_pending', 'pending_quote'].includes(b.status)
   ).length;
@@ -1854,22 +2110,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     ? computeDailyCompletedRevenue(bookings, todayStr, session.role, session.barberId)
     : null;
 
+  const activeSessionTone = getBarberIdentityTokens(
+    session?.barberId === 'all' ? 'hassan' : session?.barberId
+  );
+
   return (
-    <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md">
-      <div className="relative w-full max-w-5xl bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl flex flex-col my-6 max-h-[92vh] overflow-hidden">
+    <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-2 sm:p-4 bg-black/75 dark:bg-black/90 backdrop-blur-md">
+      <div className="relative w-full max-w-5xl bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col my-3 sm:my-6 max-h-[94vh] overflow-hidden">
         
-        {/* Barber Pole Top Line */}
-        <div className="h-1.5 w-full bg-gradient-to-r from-red-600 via-white to-blue-600" />
+        {/* Subtle Per-Barber Identity Accent Line */}
+        <div
+          className="h-1 w-full transition-colors"
+          style={{ backgroundColor: session ? activeSessionTone.accentHex : '#D97706' }}
+        />
 
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/70">
+        <div className="p-4 sm:p-5 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-white dark:bg-zinc-900/80">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-600/10 border border-red-500/30 flex items-center justify-center text-red-500 font-black flex-shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 flex items-center justify-center text-amber-700 dark:text-amber-400 font-black flex-shrink-0">
               <Scissors className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base sm:text-lg font-black text-white font-display">
+                <h2 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white font-display">
                   {pickLang(lang, {
                     ar: 'فضاء الإدارة • صالون بومليك',
                     fr: 'ESPACE GESTION • SALON BOUMLIK',
@@ -1879,35 +2142,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   })}
                 </h2>
                 {session && (
-                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
-                    session.role === 'master' 
-                      ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' 
-                      : 'bg-blue-500/15 border-blue-500/40 text-blue-300'
-                  }`}>
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-lg border flex items-center gap-1 ${activeSessionTone.badgeClass}`}>
                     <ShieldCheck className="w-3 h-3" />
                     <span>
                       {session.name} (
                       {session.role === 'master'
                         ? pickLang(lang, {
-                            ar: 'المدير العام',
+                            ar: 'المشرف العام',
                             fr: 'Master Admin',
                             amz: 'ⴰⵏⵎⵀⴰⵍ',
                             en: 'Master Admin',
                             es: 'Admin Maestro',
                           })
-                        : pickLang(lang, {
-                            ar: 'حلاق',
-                            fr: 'Barbier',
-                            amz: 'ⴰⵎⴽⵕⴰⴹ',
-                            en: 'Barber',
-                            es: 'Barbero',
-                          })}
+                        : session.role === 'caisse'
+                          ? pickLang(lang, {
+                              ar: 'لاكيس',
+                              fr: 'Caisse',
+                              amz: 'ⵍⴰⴽⵉⵙ',
+                              en: 'Caisse',
+                              es: 'Caja',
+                            })
+                          : pickLang(lang, {
+                              ar: 'حلاق',
+                              fr: 'Barbier',
+                              amz: 'ⴰⵎⴽⵕⴰⴹ',
+                              en: 'Barber',
+                              es: 'Barbero',
+                            })}
                       )
                     </span>
                   </span>
                 )}
               </div>
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 {session?.role === 'master' 
                   ? pickLang(lang, {
                       ar: 'الإدارة الشاملة للحجوزات وملاحظات الزبناء في الوقت الفعلي',
@@ -1916,13 +2183,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       en: 'Global real-time booking & client notes management',
                       es: 'Gestión global en tiempo real de reservas y notas',
                     })
-                  : pickLang(lang, {
-                      ar: `لوحة التحكم الشخصية: المواعيد المخصصة لـ ${session?.name || 'لك'}`,
-                      fr: `Tableau de bord personnel : rendez-vous assignés à ${session?.name || 'vous'}`,
-                      amz: `ⵜⴰⴼⵍⵡⵉⵜ ⵏⵏⴽ: ⵉⵙⵉⵀⴰⵔⵏ ⵏ ${session?.name || 'ⴽⵢⵢ'}`,
-                      en: `Personal dashboard: appointments assigned to ${session?.name || 'you'}`,
-                      es: `Panel personal: citas asignadas a ${session?.name || 'ti'}`,
-                    })}
+                  : session?.role === 'caisse'
+                    ? pickLang(lang, {
+                        ar: 'صندوق لاكيس اليومي ومتابعة حجوزات الزبناء',
+                        fr: 'Caisse quotidienne & suivi des rendez-vous du salon',
+                        amz: 'ⵍⴰⴽⵉⵙ ⵏ ⵡⴰⵙⵙ ⴷ ⵉⵙⵉⵀⴰⵔⵏ',
+                        en: 'Daily Caisse counter & salon booking tracking',
+                        es: 'Caja diaria y seguimiento de citas del salón',
+                      })
+                    : pickLang(lang, {
+                        ar: `لوحة التحكم الشخصية: ${session?.name || 'الطاقم'}`,
+                        fr: `Tableau de bord personnel : ${session?.name || 'vous'}`,
+                        amz: `ⵜⴰⴼⵍⵡⵉⵜ ⵏⵏⴽ: ${session?.name || 'ⴽⵢⵢ'}`,
+                        en: `Personal dashboard: ${session?.name || 'you'}`,
+                        es: `Panel personal: ${session?.name || 'ti'}`,
+                      })}
               </p>
             </div>
           </div>
@@ -1931,7 +2206,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {session && (
               <button
                 onClick={handleLogout}
-                className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition-colors cursor-pointer"
+                className="px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-semibold transition-colors cursor-pointer"
                 title={pickLang(lang, {
                   ar: 'تسجيل الخروج',
                   fr: 'Déconnexion',
@@ -1951,7 +2226,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             )}
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -1961,12 +2236,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* SECURE PIN SCREEN (Password input type, no exposed PINs in placeholder) */}
         {!session ? (
           <div className="p-8 sm:p-12 text-center max-w-md mx-auto space-y-6">
-            <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 mx-auto flex items-center justify-center text-amber-400 shadow-xl">
+            <div className="w-16 h-16 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 mx-auto flex items-center justify-center text-amber-600 dark:text-amber-400 shadow-lg">
               <Lock className="w-8 h-8" />
             </div>
 
             <div className="space-y-1">
-              <h3 className="text-xl font-bold text-white">
+              <h3 className="text-xl font-bold text-zinc-900 dark:text-white">
                 {pickLang(lang, {
                   ar: 'فضاء الطاقم والإدارة',
                   fr: 'Espace Staff & Direction',
@@ -1975,7 +2250,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   es: 'Acceso Personal y Dirección',
                 })}
               </h3>
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 {pickLang(lang, {
                   ar: 'دخول مؤمن لفريق صالون بومليك. أدخل رمزك السري (PIN).',
                   fr: "Accès sécurisé pour l'équipe du Salon Boumlik. Veuillez entrer votre code confidentiel.",
@@ -1996,15 +2271,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     setPinError(false);
                   }}
                   placeholder="••••"
-                  className="w-full text-center text-2xl font-mono tracking-widest bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500"
+                  className="w-full text-center text-2xl font-mono tracking-widest bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 rounded-xl px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:border-amber-500"
                   autoFocus
                   required
                 />
               </div>
 
               {pinError && (
-                <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/40 text-red-300 text-xs flex items-center justify-center gap-1.5">
-                  <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-500/40 text-red-700 dark:text-red-300 text-xs flex items-center justify-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-red-500 dark:text-red-400 flex-shrink-0" />
                   <span>
                     {pickLang(lang, {
                       ar: 'رمز PIN غير صحيح. حاول مجدداً.',
@@ -2019,7 +2294,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-sm transition-colors shadow-lg shadow-amber-500/20 cursor-pointer"
+                className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 dark:bg-amber-500 dark:hover:bg-amber-400 text-white dark:text-black font-black text-sm transition-colors shadow-lg shadow-amber-500/20 cursor-pointer"
               >
                 {pickLang(lang, {
                   ar: 'الدخول إلى لوحة التحكم',
@@ -2033,19 +2308,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         ) : (
           /* AUTHENTICATED STAFF DASHBOARD */
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-28 space-y-5">
 
-            {/* DAILY REVENUE SUMMARY CARD (Top of Admin Dashboard) */}
-            {dailyRevenue && (
-              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-emerald-950/35 via-zinc-900/95 to-zinc-950 border border-emerald-500/35">
+            {/* DAILY REVENUE SUMMARY CARD (Shown for Master Admin on Bookings tab only — clean Caisse-first for barbers) */}
+            {dailyRevenue && session.role === 'master' && workspaceSection === 'bookings' && (
+              <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50/80 dark:bg-gradient-to-br dark:from-emerald-950/35 dark:via-zinc-900/95 dark:to-zinc-950 border border-emerald-200 dark:border-emerald-500/35">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-start sm:items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 flex-shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400 flex-shrink-0">
                       <TrendingUp className="w-5 h-5" />
                     </div>
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm sm:text-base font-black text-white">
+                        <h3 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">
                           {pickLang(lang, {
                             ar: 'الأرباح اليومية',
                             fr: 'Revenus du Jour',
@@ -2054,11 +2329,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             es: 'Ingresos Diarios',
                           })}
                         </h3>
-                        <span className="text-[11px] font-mono text-emerald-400 tabular-nums">
+                        <span className="text-[11px] font-mono text-emerald-700 dark:text-emerald-400 tabular-nums">
                           {todayStr}
                         </span>
                       </div>
-                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                      <p className="text-[11px] text-zinc-600 dark:text-zinc-400 mt-0.5">
                         {session.role === 'master'
                           ? pickLang(lang, {
                               ar: 'إجمالي مداخيل المواعيد المكتملة اليوم بناءً على الخدمات المختارة في نموذج الحجز',
@@ -2078,12 +2353,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
 
-                  <div className="sm:text-end flex sm:flex-col items-baseline sm:items-end justify-between gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-emerald-500/15">
-                    <div className="text-2xl sm:text-3xl font-black text-white font-mono tabular-nums tracking-tight">
+                  <div className="sm:text-end flex sm:flex-col items-baseline sm:items-end justify-between gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-emerald-200 dark:border-emerald-500/15">
+                    <div className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-white font-mono tabular-nums tracking-tight">
                       {dailyRevenue.servicesRevenueMAD.toLocaleString('en-US')}{' '}
-                      <span className="text-xs sm:text-sm font-bold text-emerald-400">MAD</span>
+                      <span className="text-xs sm:text-sm font-bold text-emerald-700 dark:text-emerald-400">MAD</span>
                     </div>
-                    <div className="text-[11px] text-zinc-300 font-mono tabular-nums">
+                    <div className="text-[11px] text-zinc-700 dark:text-zinc-300 font-mono tabular-nums">
                       {dailyRevenue.completedCount}{' '}
                       {pickLang(lang, {
                         ar: 'مواعيد مكتملة',
@@ -2101,7 +2376,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         es: 'servicios',
                       })}
                       {dailyRevenue.netCollectedMAD !== dailyRevenue.servicesRevenueMAD && (
-                        <span className="text-emerald-300">
+                        <span className="text-emerald-700 dark:text-emerald-300">
                           {' '}·{' '}
                           {pickLang(lang, {
                             ar: 'الصافي',
@@ -2118,8 +2393,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 {dailyRevenue.topServices.length > 0 && (
-                  <div className="mt-3 pt-2.5 border-t border-emerald-500/15 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-300">
-                    <span className="text-emerald-400 font-bold flex items-center gap-1">
+                  <div className="mt-3 pt-2.5 border-t border-emerald-200 dark:border-emerald-500/15 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-700 dark:text-zinc-300">
+                    <span className="text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1">
                       <Scissors className="w-3.5 h-3.5" />
                       <span>
                         {pickLang(lang, {
@@ -2133,9 +2408,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </span>
                     {dailyRevenue.topServices.slice(0, 4).map((srv, idx) => (
                       <span key={srv.name} className="inline-flex items-center gap-1">
-                        {idx > 0 && <span className="text-zinc-600" aria-hidden="true">·</span>}
-                        <span className="font-semibold text-white">{srv.name}</span>
-                        <span className="font-mono text-zinc-400 tabular-nums">
+                        {idx > 0 && <span className="text-zinc-400 dark:text-zinc-600" aria-hidden="true">·</span>}
+                        <span className="font-semibold text-zinc-900 dark:text-white">{srv.name}</span>
+                        <span className="font-mono text-zinc-600 dark:text-zinc-400 tabular-nums">
                           ({srv.count}× · {srv.revenue} MAD)
                         </span>
                       </span>
@@ -2145,291 +2420,431 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             )}
 
-            {/* Enterprise v2.0 Workspace Tabs */}
-            <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-zinc-800">
-              <button
-                type="button"
-                onClick={() => setWorkspaceSection('bookings')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  workspaceSection === 'bookings'
-                    ? 'bg-amber-500 text-black shadow-md'
-                    : 'bg-zinc-900 text-zinc-300 hover:text-white border border-zinc-800'
-                }`}
-              >
-                <CalendarDays className="w-4 h-4" />
-                <span>
-                  {pickLang(lang, {
-                    ar: 'الحجوزات',
-                    fr: 'Réservations',
-                    amz: 'ⵉⵙⵉⵀⴰⵔⵏ',
-                    en: 'Bookings',
-                    es: 'Reservas',
-                  })}{' '}
-                  ({bookings.length})
-                </span>
-              </button>
+            {/* Enterprise Workspace Navigation Tabs (3 organized groups for Master Admin; streamlined Caisse-first tabs for Barbers & Caisse) */}
+            {session.role === 'master' ? (() => {
+              const masterGroup: 'finance' | 'operations' | 'team_config' =
+                ['caisse', 'analytics', 'summary'].includes(workspaceSection)
+                  ? 'finance'
+                  : ['credits', 'pricing', 'staff', 'profile', 'schedules', 'shifts'].includes(workspaceSection)
+                  ? 'team_config'
+                  : 'operations';
 
-              {(() => {
-                const liveQueueCount = getLiveQueueBookings(
-                  bookings,
-                  todayStr,
-                  session.role,
-                  session.barberId,
-                  'all'
-                ).length;
-                return (
-                  <button
-                    type="button"
-                    onClick={() => setWorkspaceSection('queue')}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                      workspaceSection === 'queue'
-                        ? 'bg-emerald-500 text-black shadow-md'
-                        : 'bg-zinc-900 text-emerald-300 hover:bg-zinc-800 border border-zinc-800'
-                    }`}
-                  >
-                    <Users className="w-4 h-4" />
-                    <span>
-                      {pickLang(lang, {
-                        ar: 'الطابور المباشر',
-                        fr: 'File en Direct',
-                        amz: 'ⴰⴱⵔⵉⴷ ⵓⵙⵔⵉⴷ',
-                        en: 'Live Queue',
-                        es: 'Cola en Vivo',
-                      })}
-                    </span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono tabular-nums ${
-                        workspaceSection === 'queue'
-                          ? 'bg-black/20 text-black font-black'
-                          : 'bg-emerald-500/20 text-emerald-300'
+              const liveQueueCount = getLiveQueueBookings(
+                bookings,
+                todayStr,
+                session.role,
+                session.barberId,
+                'all'
+              ).length;
+              const waitingCount = waitlistEntries.filter((w) => w.status === 'waiting').length;
+              const pendingShiftCount = shiftRequests.filter((r) => r.status === 'pending').length;
+              const openManualDebtorsCount = manualCredits.filter(
+                (r) => r.amountOwedMAD > 0 && r.status !== 'paid'
+              ).length;
+              const openCaisseCreditsCount = caisseEntries.filter(
+                (e) => e.creditRemainingMAD > 0 && e.creditStatus !== 'paid'
+              ).length;
+              const openDisputesCount = creditDisputes.filter(
+                (d) => d.status !== 'resolved'
+              ).length;
+              const totalOpenCreditsCount =
+                openManualDebtorsCount + openCaisseCreditsCount + openDisputesCount;
+
+              return (
+                <div className="space-y-2.5 pb-3 border-b border-zinc-200 dark:border-zinc-800">
+                  {/* 3 Primary Master Workspace Category Groups */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (masterGroup !== 'finance') setWorkspaceSection('caisse');
+                      }}
+                      className={`min-h-[42px] px-3.5 py-2 rounded-xl text-xs font-black flex items-center justify-between gap-2 transition-all cursor-pointer border ${
+                        masterGroup === 'finance'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-800 hover:bg-emerald-50/70 dark:hover:bg-zinc-800'
                       }`}
                     >
-                      {liveQueueCount}
-                    </span>
-                  </button>
-                );
-              })()}
-
-              <button
-                type="button"
-                onClick={() => setWorkspaceSection('summary')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  workspaceSection === 'summary'
-                    ? 'bg-amber-500 text-black shadow-md'
-                    : 'bg-zinc-900 text-amber-300 hover:bg-zinc-800 border border-zinc-800'
-                }`}
-              >
-                <BarChart3 className="w-4 h-4" />
-                <span>
-                  {pickLang(lang, {
-                    ar: 'ملخص الموارد',
-                    fr: 'Synthèse',
-                    amz: 'ⵜⴰⴳⴹⵡⵉⵜ',
-                    en: 'Summary',
-                    es: 'Resumen',
-                  })}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setWorkspaceSection('analytics')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  workspaceSection === 'analytics'
-                    ? 'bg-emerald-500 text-black shadow-md'
-                    : 'bg-zinc-900 text-emerald-300 hover:bg-zinc-800 border border-zinc-800'
-                }`}
-              >
-                <TrendingUp className="w-4 h-4" />
-                <span>
-                  {pickLang(lang, {
-                    ar: 'التحليلات والأداء',
-                    fr: 'Analytique',
-                    amz: 'ⵜⵉⵙⵍⴹⵉⵏ',
-                    en: 'Analytics',
-                    es: 'Analítica',
-                  })}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setWorkspaceSection('crm')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  workspaceSection === 'crm'
-                    ? 'bg-amber-500 text-black shadow-md'
-                    : 'bg-zinc-900 text-zinc-300 hover:text-white border border-zinc-800'
-                }`}
-              >
-                <Award className="w-4 h-4" />
-                <span>
-                  {pickLang(lang, {
-                    ar: 'الزبناء والولاء CRM',
-                    fr: 'Clients & Fidélité CRM',
-                    amz: 'ⵉⵎⵣⴷⴰⵖⵏ & ⵜⵉⵖⵓⴷⴰ CRM',
-                    en: 'Clients & CRM',
-                    es: 'Clientes y CRM',
-                  })}
-                </span>
-                {Object.values(crmClientsMap).filter((c) => c.isBanned).length > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[10px] font-mono">
-                    {Object.values(crmClientsMap).filter((c) => c.isBanned).length}
-                  </span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setWorkspaceSection('loyalty')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  workspaceSection === 'loyalty'
-                    ? 'bg-amber-400 text-black shadow-md'
-                    : 'bg-zinc-900 text-amber-300 hover:bg-zinc-800 border border-zinc-800'
-                }`}
-              >
-                <Coins className="w-4 h-4" />
-                <span>
-                  {pickLang(lang, {
-                    ar: 'نقاط الولاء',
-                    fr: 'Points Fidélité',
-                    amz: 'ⵜⵉⵏⵇⵇⴰⴹ ⵏ ⵜⵉⵖⵓⴷⴰ',
-                    en: 'Loyalty Points',
-                    es: 'Puntos de Fidelidad',
-                  })}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setWorkspaceSection('schedules')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  workspaceSection === 'schedules'
-                    ? 'bg-amber-500 text-black shadow-md'
-                    : 'bg-zinc-900 text-zinc-300 hover:text-white border border-zinc-800'
-                }`}
-              >
-                <Clock className="w-4 h-4" />
-                <span>
-                  {pickLang(lang, {
-                    ar: 'أوقات الحلاقين',
-                    fr: 'Horaires Coiffeurs',
-                    amz: 'ⵉⴽⵓⴷⵏ ⵏ ⵉⵎⴽⵕⴰⴹⵏ',
-                    en: 'Barber Schedules',
-                    es: 'Horarios Barberos',
-                  })}
-                </span>
-              </button>
-
-              {(() => {
-                const pendingShiftCount = shiftRequests.filter(
-                  (r) =>
-                    r.status === 'pending' &&
-                    (session.role === 'master' ||
-                      r.barberId === session.barberId ||
-                      r.swapWithBarberId === session.barberId)
-                ).length;
-                return (
-                  <button
-                    type="button"
-                    onClick={() => setWorkspaceSection('shifts')}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                      workspaceSection === 'shifts'
-                        ? 'bg-amber-500 text-black shadow-md'
-                        : 'bg-zinc-900 text-amber-300 hover:bg-zinc-800 border border-zinc-800'
-                    }`}
-                  >
-                    <Repeat className="w-4 h-4" />
-                    <span>
-                      {pickLang(lang, {
-                        ar: 'تخطيط المناوبات',
-                        fr: 'Planning & Shifts',
-                        amz: 'ⴰⵙⵖⵉⵡⵙ ⵏ ⵜⵉⵙⵙⵓⵔⵉⵏ',
-                        en: 'Shift Planner',
-                        es: 'Turnos',
-                      })}
-                    </span>
-                    {pendingShiftCount > 0 && (
-                      <span
-                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono tabular-nums ${
-                          workspaceSection === 'shifts'
-                            ? 'bg-black/20 text-black font-black'
-                            : 'bg-amber-500/20 text-amber-300'
-                        }`}
-                      >
-                        {pendingShiftCount}
+                      <span className="flex items-center gap-2">
+                        <Wallet className="w-4 h-4 shrink-0" />
+                        <span>1. لاكيس والحسابات</span>
                       </span>
+                      <span className="text-[10px] opacity-80 font-mono">Caisse</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (masterGroup !== 'operations') setWorkspaceSection('bookings');
+                      }}
+                      className={`min-h-[42px] px-3.5 py-2 rounded-xl text-xs font-black flex items-center justify-between gap-2 transition-all cursor-pointer border ${
+                        masterGroup === 'operations'
+                          ? 'bg-amber-600 dark:bg-amber-500 text-white dark:text-zinc-950 border-amber-600 dark:border-amber-400 shadow-sm'
+                          : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-800 hover:bg-amber-50/70 dark:hover:bg-zinc-800'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <CalendarDays className="w-4 h-4 shrink-0" />
+                        <span>2. الحجوزات، الطابور والزبناء</span>
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-black/10 dark:bg-white/10">
+                        {todayTickets.length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (masterGroup !== 'team_config') setWorkspaceSection('credits');
+                      }}
+                      className={`min-h-[42px] px-3.5 py-2 rounded-xl text-xs font-black flex items-center justify-between gap-2 transition-all cursor-pointer border ${
+                        masterGroup === 'team_config'
+                          ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 border-zinc-900 dark:border-zinc-100 shadow-sm'
+                          : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 shrink-0" />
+                        <span>3. الطاقم، الأثمنة والكريدي</span>
+                      </span>
+                      {totalOpenCreditsCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-orange-500 text-white">
+                          {totalOpenCreditsCount}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Nested Sub-Tabs for Active Master Workspace Group */}
+                  <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-xl bg-zinc-100/80 dark:bg-zinc-900/70 border border-zinc-200 dark:border-zinc-800">
+                    {masterGroup === 'finance' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('caisse')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'caisse'
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <Wallet className="w-3.5 h-3.5" />
+                          <span>صندوق لاكيس والحسابات</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('analytics')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'analytics'
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          <span>التحليلات المالية</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('summary')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'summary'
+                              ? 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <BarChart3 className="w-3.5 h-3.5" />
+                          <span>ملخص الموارد والأداء</span>
+                        </button>
+                      </>
                     )}
-                  </button>
-                );
-              })()}
 
-              <button
-                type="button"
-                onClick={() => setWorkspaceSection('waitlist')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  workspaceSection === 'waitlist'
-                    ? 'bg-blue-500 text-white shadow-md'
-                    : 'bg-zinc-900 text-blue-300 hover:bg-zinc-800 border border-zinc-800'
-                }`}
-              >
-                <ListPlus className="w-4 h-4" />
-                <span>
-                  {pickLang(lang, {
-                    ar: 'قائمة الانتظار',
-                    fr: 'Liste d’Attente',
-                    amz: 'ⵜⴰⵍⴳⴰⵎⵜ ⵏ ⵓⵔⴰⵊⵓ',
-                    en: 'Waitlist',
-                    es: 'Lista de Espera',
-                  })}
-                </span>
-                {waitlistEntries.filter((w) => w.status === 'waiting').length > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-blue-600 text-white text-[10px] font-mono">
-                    {waitlistEntries.filter((w) => w.status === 'waiting').length}
-                  </span>
-                )}
-              </button>
+                    {masterGroup === 'operations' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('bookings')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'bookings'
+                              ? 'bg-amber-600 dark:bg-amber-500 text-white dark:text-black border-amber-600'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <CalendarDays className="w-3.5 h-3.5" />
+                          <span>الحجوزات ({bookings.length})</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('queue')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'queue'
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>الطابور المباشر ({liveQueueCount})</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('crm')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'crm'
+                              ? 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <Award className="w-3.5 h-3.5" />
+                          <span>ملفات الزبناء (CRM)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('loyalty')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'loyalty'
+                              ? 'bg-amber-500 text-black border-amber-500'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <Coins className="w-3.5 h-3.5" />
+                          <span>نقاط الولاء</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('waitlist')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'waitlist'
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <ListPlus className="w-3.5 h-3.5" />
+                          <span>قائمة الانتظار</span>
+                          {waitingCount > 0 && (
+                            <span className="px-1.5 rounded-full bg-blue-600 text-white text-[10px] font-mono">
+                              {waitingCount}
+                            </span>
+                          )}
+                        </button>
+                      </>
+                    )}
 
-              {/* Visually Distinct Separator & Dedicated Caisse & Accounting Sticker Tab */}
-              <div className="hidden sm:block h-7 w-px bg-emerald-500/35 mx-1" aria-hidden="true" />
-              <button
-                type="button"
-                onClick={() => setWorkspaceSection('caisse')}
-                className={`min-h-[40px] px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all cursor-pointer border-2 shadow-md ${
-                  workspaceSection === 'caisse'
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-black border-emerald-300 shadow-emerald-950/60'
-                    : 'bg-emerald-950/50 text-emerald-300 hover:bg-emerald-900/60 border-emerald-500/50'
-                }`}
-              >
-                <Wallet className="w-4 h-4 shrink-0" />
-                <span>
-                  {pickLang(lang, {
-                    ar: 'لاكيس والحسابات',
-                    fr: 'Caisse & Comptabilité',
-                    amz: 'ⵍⴰⴽⵉⵙ & ⵉⵙⵉⴹⴰⵏ',
-                    en: 'Caisse & Accounting',
-                    es: 'Caja y Contabilidad',
-                  })}
-                </span>
-                <span
-                  className={`px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                    {masterGroup === 'team_config' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('credits')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'credits'
+                              ? 'bg-orange-600 text-white border-orange-600'
+                              : 'bg-white dark:bg-zinc-950 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-500/40'
+                          }`}
+                        >
+                          <CreditCard className="w-3.5 h-3.5" />
+                          <span>الناس لي كانتسالهم</span>
+                          {totalOpenCreditsCount > 0 && (
+                            <span className="px-1.5 rounded-full bg-orange-500/20 text-[10px] font-mono">
+                              {totalOpenCreditsCount}
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('pricing')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'pricing'
+                              ? 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <Tag className="w-3.5 h-3.5" />
+                          <span>أثمنة المحل والباقات</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('staff')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'staff'
+                              ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 border-zinc-900'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <KeyRound className="w-3.5 h-3.5" />
+                          <span>الفريق وكلمات المرور</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('profile')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'profile'
+                              ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 border-zinc-900'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <UserCog className="w-3.5 h-3.5" />
+                          <span>ملفات وخدمات الحلاقين</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('schedules')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'schedules'
+                              ? 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>أوقات العمل</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('shifts')}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'shifts'
+                              ? 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <Repeat className="w-3.5 h-3.5" />
+                          <span>المناوبات ({pendingShiftCount})</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })() : (
+              <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-zinc-200 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceSection('caisse')}
+                  className={`min-h-[38px] px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all cursor-pointer border ${
                     workspaceSection === 'caisse'
-                      ? 'bg-black/20 text-black'
-                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                      : 'bg-white dark:bg-zinc-900 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
                   }`}
                 >
-                  {pickLang(lang, {
-                    ar: 'صندوق مالي',
-                    fr: 'Caisse',
-                    amz: 'ⴰⴼⵏⵉⵇ',
-                    en: 'Finance',
-                    es: 'Caja',
-                  })}
-                </span>
-              </button>
-            </div>
+                  <Wallet className="w-4 h-4 shrink-0" />
+                  <span>
+                    {session.role === 'barber'
+                      ? 'لاكيس والحسابات ديالي'
+                      : pickLang(lang, {
+                          ar: 'لاكيس والحسابات',
+                          fr: 'Caisse & Comptabilité',
+                          amz: 'ⵍⴰⴽⵉⵙ & ⵉⵙⵉⴹⴰⵏ',
+                          en: 'Caisse & Accounting',
+                          es: 'Caja y Contabilidad',
+                        })}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceSection('bookings')}
+                  className={`min-h-[38px] px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                    workspaceSection === 'bookings'
+                      ? 'bg-amber-600 dark:bg-amber-500 text-white dark:text-black border-amber-600 dark:border-amber-400 shadow-sm'
+                      : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white border-zinc-200 dark:border-zinc-800'
+                  }`}
+                >
+                  <CalendarDays className="w-4 h-4" />
+                  <span>
+                    {pickLang(lang, {
+                      ar: 'حجوزاتي',
+                      fr: 'Mes Réservations',
+                      amz: 'ⵉⵙⵉⵀⴰⵔⵏ ⵉⵏⵓ',
+                      en: 'My Bookings',
+                      es: 'Mis Reservas',
+                    })}{' '}
+                    ({kpiSourceBookings.length})
+                  </span>
+                </button>
+
+                {session.role !== 'caisse' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setWorkspaceSection('profile')}
+                      className={`min-h-[38px] px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                        workspaceSection === 'profile'
+                          ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 border-zinc-900 dark:border-zinc-100 shadow-sm'
+                          : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 border-zinc-200 dark:border-zinc-800'
+                      }`}
+                    >
+                      <UserCog className="w-4 h-4" />
+                      <span>
+                        {pickLang(lang, {
+                          ar: 'ملفي وخدماتي',
+                          fr: 'Mon Profil & Services',
+                          amz: 'ⴰⴼⴰⵢⵍⵓ ⵉⵏⵓ',
+                          en: 'My Profile & Services',
+                          es: 'Mi Perfil y Servicios',
+                        })}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setWorkspaceSection('schedules')}
+                      className={`min-h-[38px] px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                        workspaceSection === 'schedules'
+                          ? 'bg-amber-600 dark:bg-amber-500 text-white dark:text-black border-amber-600'
+                          : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                      }`}
+                    >
+                      <Clock className="w-4 h-4" />
+                      <span>
+                        {pickLang(lang, {
+                          ar: 'أوقات العمل',
+                          fr: 'Horaires',
+                          amz: 'ⵉⴽⵓⴷⵏ',
+                          en: 'Schedules',
+                          es: 'Horarios',
+                        })}
+                      </span>
+                    </button>
+
+                    {(() => {
+                      const pendingShiftCount = shiftRequests.filter(
+                        (r) =>
+                          r.status === 'pending' &&
+                          (r.barberId === session.barberId ||
+                            r.swapWithBarberId === session.barberId)
+                      ).length;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceSection('shifts')}
+                          className={`min-h-[38px] px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                            workspaceSection === 'shifts'
+                              ? 'bg-amber-600 dark:bg-amber-500 text-white dark:text-black border-amber-600'
+                              : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <Repeat className="w-4 h-4" />
+                          <span>
+                            {pickLang(lang, {
+                              ar: 'المناوبات',
+                              fr: 'Shifts',
+                              amz: 'ⵜⵉⵙⵙⵓⵔⵉⵏ',
+                              en: 'Shifts',
+                              es: 'Turnos',
+                            })}
+                          </span>
+                          {pendingShiftCount > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono tabular-nums bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                              {pendingShiftCount}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })()}
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Navigation Tabs: Today's View vs. Archive / History + QR Scanner Button */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-800">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-200 dark:border-zinc-800">
               {workspaceSection === 'bookings' ? (
                 <div className="flex items-center gap-2">
                   <button
@@ -2438,20 +2853,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       setActiveTab('today');
                       setArchiveDateFilter('');
                     }}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                    className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer border ${
                       activeTab === 'today'
-                        ? 'bg-amber-500 text-black shadow-md'
-                        : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
+                        ? 'bg-amber-600 dark:bg-amber-500 text-white dark:text-black border-amber-600 dark:border-amber-400 shadow-sm'
+                        : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white border-zinc-200 dark:border-zinc-800'
                     }`}
                   >
                     <CalendarDays className="w-4 h-4" />
                     <span>
                       {pickLang(lang, {
-                        ar: `تذاكر اليوم (${todayStr})`,
-                        fr: `Tickets du jour (${todayStr})`,
-                        amz: `ⵉⵏⵜⵜⵉⴽⵉⵜⵏ ⵏ ⵡⴰⵙⵙⴰ (${todayStr})`,
-                        en: `Today's Tickets (${todayStr})`,
-                        es: `Tickets de hoy (${todayStr})`,
+                        ar: `المواعيد القادمة (${todayStr})`,
+                        fr: `Rendez-vous à venir (${todayStr})`,
+                        amz: `ⵉⵙⵉⵀⴰⵔⵏ ⴷ ⵉⴷⴷⴰⵏ (${todayStr})`,
+                        en: `Upcoming Queue (${todayStr})`,
+                        es: `Próximas citas (${todayStr})`,
                       })}
                     </span>
                   </button>
@@ -2459,10 +2874,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveTab('archive')}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                    className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer border ${
                       activeTab === 'archive'
-                        ? 'bg-amber-500 text-black shadow-md'
-                        : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
+                        ? 'bg-amber-600 dark:bg-amber-500 text-white dark:text-black border-amber-600 dark:border-amber-400 shadow-sm'
+                        : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white border-zinc-200 dark:border-zinc-800'
                     }`}
                   >
                     <Archive className="w-4 h-4" />
@@ -2476,6 +2891,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       })}
                     </span>
                   </button>
+
+                  {session.role === 'master' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWalkInBarberId(
+                          masterBarberFilter !== 'all' ? masterBarberFilter : 'hassan'
+                        );
+                        setIsWalkInModalOpen(true);
+                      }}
+                      className="px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all cursor-pointer border bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 shadow-sm"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      <span>
+                        {pickLang(lang, {
+                          ar: 'حجز مباشر بالصالون (بدون حد)',
+                          fr: 'Réservation directe salon (sans limite)',
+                          amz: 'ⴰⵙⵉⵀⴰⵔ ⵓⵙⵔⵉⴷ (ⵡⴰⵔ ⵜⵉⵍⵉⵙⵜ)',
+                          en: 'Direct Walk-In Booking (No Cap)',
+                          es: 'Reserva directa salón (sin límite)',
+                        })}
+                      </span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="text-xs text-zinc-400 font-semibold">
@@ -2497,7 +2936,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     })}
                   {workspaceSection === 'analytics' &&
                     pickLang(lang, {
-                      ar: '📈 إحصائيات الأرباح والخدمات (خاص بالمدير العام)',
+                      ar: '📈 إحصائيات الأرباح والخدمات (خاص بالمشرف العام)',
                       fr: '📈 Statistiques revenus et prestations (Master Admin)',
                       amz: '📈 ⵜⵉⵙⵍⴹⵉⵏ ⵏ ⵉⴽⵛⵓⵎⵏ ⴷ ⵜⵡⵓⵔⵉⵡⵉⵏ',
                       en: '📈 Revenue & service analytics (Master Admin)',
@@ -2551,6 +2990,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       en: '💰 Isolated Caisse & Accounting — income, expenses, credits & settlements',
                       es: '💰 Caja y Contabilidad aislada — ingresos, gastos, créditos y cierres',
                     })}
+                  {workspaceSection === 'pricing' &&
+                    pickLang(lang, {
+                      ar: '🏷️ إدارة أثمنة المحل الرسمية، استرجاع الأثمنة الافتراضية، وعروض الأيام والأعياد (المشرف العام فقط)',
+                      fr: '🏷️ Tarifs officiels du salon, réinitialisation et règles spéciales jours/Aïd (Master Admin)',
+                      amz: '🏷️ ⴰⵜⵉⴳⵏ ⵏ ⵓⵙⴰⵍⵓⵏ ⴷ ⵉⵍⵓⴳⴰⵏ ⵏ ⵓⵙⴼⵓⴳⵍⵓ',
+                      en: '🏷️ Official salon pricing, default restore & special weekday/Eid rules (Master Admin only)',
+                      es: '🏷️ Precios oficiales del salón y reglas especiales (Solo Admin Maestro)',
+                    })}
+                  {workspaceSection === 'staff' &&
+                    pickLang(lang, {
+                      ar: '🔐 إدارة كلمات مرور الطاقم ولاكيس + إضافة أو استبدال الحلاقين (المشرف العام فقط)',
+                      fr: '🔐 Gestion des mots de passe équipe & Caisse + ajout ou remplacement de barbiers',
+                      amz: '🔐 ⴰⵙⵡⵓⴷⴷⵓ ⵏ ⵉⵡⴰⵍⵉⵡⵏ ⵏ ⵜⵔⴰⴱⴱⵓⵜ & PIN',
+                      en: '🔐 Team & Caisse PIN management + add or replace barbers (Master Admin only)',
+                      es: '🔐 Gestión de contraseñas del equipo y Caja + añadir o reemplazar barberos',
+                    })}
+                  {workspaceSection === 'credits' &&
+                    '📒 الناس لي كانتسالهم — كشف الكريدي اليدوي ومستحقات المواعيد مع تنبيه تلقائي برقم الهاتف'}
                 </div>
               )}
 
@@ -2559,10 +3016,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <button
                   type="button"
                   onClick={handleToggleNotifications}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer shadow-sm ${
+                  className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer shadow-xs ${
                     notificationsEnabled
-                      ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-600/30'
-                      : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-white'
+                      ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-200 dark:border-emerald-500/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-600/30'
+                      : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                   }`}
                   title={pickLang(lang, {
                     ar: 'تفعيل أو كتم التنبيهات الصوتية والمنبثقة عند وصول حجز جديد',
@@ -2574,7 +3031,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 >
                   {notificationsEnabled ? (
                     <>
-                      <Volume2 className="w-4 h-4 text-emerald-400 animate-pulse" />
+                      <Volume2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 animate-pulse" />
                       <span>
                         {pickLang(lang, {
                           ar: 'الإشعارات (مفعّلة ✓)',
@@ -2604,7 +3061,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <button
                   type="button"
                   onClick={handleOpenScanner}
-                  className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-colors cursor-pointer"
+                  className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
                 >
                   <Camera className="w-4 h-4" />
                   <span>
@@ -2621,7 +3078,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsQrGeneratorOpen(true)}
-                  className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs flex items-center gap-1.5 shadow-md transition-colors cursor-pointer"
+                  className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
                 >
                   <QrCode className="w-4 h-4" />
                   <span>
@@ -2635,256 +3092,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setIsSettingsOpen((prev) => !prev)}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-colors cursor-pointer ${
-                    isSettingsOpen
-                      ? 'bg-amber-500 text-black border-amber-400 shadow-md'
-                      : 'bg-zinc-900 border-zinc-700 text-zinc-200 hover:bg-zinc-800'
-                  }`}
-                >
-                  <Settings className="w-4 h-4" />
-                  <span>
-                    {pickLang(lang, {
-                      ar: 'إعدادات WhatsApp & Google',
-                      fr: 'Paramètres WhatsApp & Google',
-                      amz: 'ⵜⵉⵙⵖⴰⵍ WhatsApp & Google',
-                      en: 'WhatsApp & Google Settings',
-                      es: 'Ajustes WhatsApp & Google',
-                    })}
-                  </span>
-                </button>
+                {session.role !== 'caisse' && (
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingsOpen((prev) => !prev)}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                      isSettingsOpen
+                        ? 'bg-amber-500 text-black border-amber-400 shadow-sm'
+                        : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    <Settings className="w-4 h-4" />
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'إعدادات Google Business & Maps',
+                        fr: 'Paramètres Google Business & Maps',
+                        amz: 'ⵜⵉⵙⵖⴰⵍ Google Business & Maps',
+                        en: 'Google Business & Maps Settings',
+                        es: 'Ajustes Google Business & Maps',
+                      })}
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* Collapsible Settings & Integrations Panel (WhatsApp API & Google Business Profile) */}
-            {isSettingsOpen && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 rounded-2xl bg-zinc-900/90 border border-amber-500/40 shadow-xl">
-                {/* Automated WhatsApp Gateway (Green-API / UltraMsg) */}
-                <form onSubmit={handleSaveWaConfig} className="p-4 rounded-xl bg-black/50 border border-zinc-800 space-y-3 text-xs">
-                  <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
-                    <div className="flex items-center gap-2 font-bold text-emerald-400">
-                      <MessageCircle className="w-4 h-4" />
-                      <span>
-                        {pickLang(lang, {
-                          ar: 'أتمتة رسائل WhatsApp (Green-API / UltraMsg)',
-                          fr: 'Automatisation WhatsApp (Green-API / UltraMsg)',
-                          amz: 'ⵜⵓⵣⵉⵏⵉⵏ WhatsApp (Green-API / UltraMsg)',
-                          en: 'Automated WhatsApp (Green-API / UltraMsg)',
-                          es: 'Automatización WhatsApp (Green-API / UltraMsg)',
-                        })}
-                      </span>
-                    </div>
-                    <label className="flex items-center gap-1.5 cursor-pointer font-bold text-zinc-200">
-                      <input
-                        type="checkbox"
-                        checked={waConfig.enabled}
-                        onChange={(e) => setWaConfig({ ...waConfig, enabled: e.target.checked })}
-                        className="accent-emerald-500 w-4 h-4"
-                      />
-                      <span>
-                        {pickLang(lang, {
-                          ar: 'تفعيل',
-                          fr: 'Activer',
-                          amz: 'ⵙⵎⵔ',
-                          en: 'Enable',
-                          es: 'Activar',
-                        })}
-                      </span>
-                    </label>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] text-zinc-400 mb-1">
-                        {pickLang(lang, {
-                          ar: 'مزود البوابة',
-                          fr: 'Fournisseur API',
-                          amz: 'ⴰⵎⵙⴰⵖ ⵏ API',
-                          en: 'Gateway Provider',
-                          es: 'Proveedor API',
-                        })}
-                      </label>
-                      <select
-                        value={waConfig.provider}
-                        onChange={(e) => {
-                          const prov = e.target.value as WhatsAppProvider;
-                          setWaConfig({
-                            ...waConfig,
-                            provider: prov,
-                            apiUrl: prov === 'green-api' ? 'https://api.green-api.com' : 'https://api.ultramsg.com',
-                          });
-                        }}
-                        className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white text-xs"
-                      >
-                        <option value="green-api">Green-API</option>
-                        <option value="ultramsg">UltraMsg</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] text-zinc-400 mb-1">
-                        {pickLang(lang, {
-                          ar: 'وقت التذكير قبل الموعد',
-                          fr: 'Délai de rappel',
-                          amz: 'ⴰⴽⵓⴷ ⵏ ⵓⵙⴽⵜⵉ',
-                          en: 'Reminder Lead Time',
-                          es: 'Tiempo de recordatorio',
-                        })}
-                      </label>
-                      <select
-                        value={waConfig.reminderMinutesBefore}
-                        onChange={(e) =>
-                          setWaConfig({ ...waConfig, reminderMinutesBefore: Number(e.target.value) })
-                        }
-                        className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white text-xs"
-                      >
-                        <option value={30}>
-                          {pickLang(lang, {
-                            ar: '30 دقيقة قبل الموعد',
-                            fr: '30 minutes avant',
-                            amz: '30 ⵏ ⵜⵓⵙⴷⴰⴷⵉⵏ ⴷⴰⵜ',
-                            en: '30 minutes before',
-                            es: '30 minutos antes',
-                          })}
-                        </option>
-                        <option value={60}>
-                          {pickLang(lang, {
-                            ar: 'ساعة واحدة قبل الموعد',
-                            fr: '1 heure avant',
-                            amz: '1 ⵏ ⵜⵙⵔⴰⴳⵜ ⴷⴰⵜ',
-                            en: '1 hour before',
-                            es: '1 hora antes',
-                          })}
-                        </option>
-                        <option value={120}>
-                          {pickLang(lang, {
-                            ar: 'ساعتان قبل الموعد',
-                            fr: '2 heures avant',
-                            amz: '2 ⵜⵙⵔⴰⴳⵉⵏ ⴷⴰⵜ',
-                            en: '2 hours before',
-                            es: '2 horas antes',
-                          })}
-                        </option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] text-zinc-400 mb-1">API Base URL</label>
-                    <input
-                      type="url"
-                      dir="ltr"
-                      value={waConfig.apiUrl}
-                      onChange={(e) => setWaConfig({ ...waConfig, apiUrl: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-[11px]"
-                      placeholder="https://api.green-api.com"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] text-zinc-400 mb-1">Instance ID</label>
-                      <input
-                        type="text"
-                        dir="ltr"
-                        value={waConfig.instanceId}
-                        onChange={(e) => setWaConfig({ ...waConfig, instanceId: e.target.value })}
-                        className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-[11px]"
-                        placeholder="1101xxxxxx"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-zinc-400 mb-1">API Token</label>
-                      <input
-                        type="password"
-                        dir="ltr"
-                        value={waConfig.token}
-                        onChange={(e) => setWaConfig({ ...waConfig, token: e.target.value })}
-                        className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-[11px]"
-                        placeholder="••••••••"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-4 text-[11px] text-zinc-300 pt-1">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={waConfig.autoSendOnConfirm}
-                        onChange={(e) =>
-                          setWaConfig({ ...waConfig, autoSendOnConfirm: e.target.checked })
-                        }
-                        className="accent-emerald-500"
-                      />
-                      <span>
-                        {pickLang(lang, {
-                          ar: 'إرسال تلقائي عند التأكيد',
-                          fr: 'Envoi auto à la confirmation',
-                          amz: 'ⴰⵣⵏ ⵙ ⵓⵡⵓⵔⵎⴰⵏ ⴳ ⵓⵙⵏⵜⵎ',
-                          en: 'Auto-send on confirm',
-                          es: 'Envío auto al confirmar',
-                        })}
-                      </span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={waConfig.autoSendOnReschedule}
-                        onChange={(e) =>
-                          setWaConfig({ ...waConfig, autoSendOnReschedule: e.target.checked })
-                        }
-                        className="accent-emerald-500"
-                      />
-                      <span>
-                        {pickLang(lang, {
-                          ar: 'إرسال تلقائي عند التعديل',
-                          fr: 'Envoi auto au report',
-                          amz: 'ⴰⵣⵏ ⵙ ⵓⵡⵓⵔⵎⴰⵏ ⴳ ⵓⵙⵏⴼⵍ',
-                          en: 'Auto-send on reschedule',
-                          es: 'Envío auto al reprogramar',
-                        })}
-                      </span>
-                    </label>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80">
-                    <span className="text-[10px] text-zinc-500">
-                      {pickLang(lang, {
-                        ar: 'تُحفظ مفاتيح الربط محلياً في متصفح الإدارة فقط.',
-                        fr: 'Clés API enregistrées localement sur cet appareil.',
-                        amz: 'ⵜⵉⵙⴰⵔⵓⵜⵉⵏ ⵜⵜⵓⵃⴹⴰⵏⵜ ⴳ ⵡⴰⵍⵍⴰⵍ ⴰⴷ ⴽⴰ.',
-                        en: 'API keys are stored locally in this browser only.',
-                        es: 'Las claves API se guardan solo localmente.',
-                      })}
-                    </span>
-                    <button
-                      type="submit"
-                      className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Save className="w-3.5 h-3.5" />
-                      <span>
-                        {waSavedNotice
-                          ? pickLang(lang, {
-                              ar: 'تم الحفظ ✓',
-                              fr: 'Enregistré ✓',
-                              amz: 'ⵉⵜⵜⵓⵃⴹⴰ ✓',
-                              en: 'Saved ✓',
-                              es: 'Guardado ✓',
-                            })
-                          : pickLang(lang, {
-                              ar: 'حفظ إعدادات API',
-                              fr: 'Enregistrer API',
-                              amz: 'ⵃⴹⵓ API',
-                              en: 'Save API Settings',
-                              es: 'Guardar API',
-                            })}
-                      </span>
-                    </button>
-                  </div>
-                </form>
-
+            {/* Collapsible Settings Panel (Google Business Profile & Maps Links) */}
+            {isSettingsOpen && session.role !== 'caisse' && (
+              <div className="p-4 rounded-2xl bg-zinc-900/90 border border-amber-500/40 shadow-xl">
                 {/* Google Business Profile & Google Maps Links Configuration */}
                 <form onSubmit={handleSaveGoogleLinks} className="p-4 rounded-xl bg-black/50 border border-zinc-800 space-y-3 text-xs flex flex-col justify-between">
                   <div className="space-y-3">
@@ -2962,6 +3197,55 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                     </div>
 
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-zinc-800/80">
+                      <div>
+                        <label className="block text-[11px] text-zinc-400 mb-1 flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-emerald-400" />
+                          <span>رقم الهاتف الرسمي في الموقع</span>
+                        </label>
+                        <input
+                          type="tel"
+                          dir="ltr"
+                          disabled={session.role !== 'master'}
+                          value={salonPhoneInput}
+                          onChange={(e) => setSalonPhoneInput(e.target.value)}
+                          placeholder="+212 635 392 503"
+                          className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-[11px] disabled:opacity-60"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] text-zinc-400 mb-1 flex items-center gap-1">
+                          <MessageCircle className="w-3 h-3 text-emerald-400" />
+                          <span>رقم واتساب الرسمي (مثال: 212635392503)</span>
+                        </label>
+                        <input
+                          type="tel"
+                          dir="ltr"
+                          disabled={session.role !== 'master'}
+                          value={salonWhatsappInput}
+                          onChange={(e) => setSalonWhatsappInput(e.target.value)}
+                          placeholder="212635392503"
+                          className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-[11px] disabled:opacity-60"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-zinc-400 mb-1">
+                        أرقام هواتف إضافية للعرض في الموقع (رقم في كل سطر — اختياري)
+                      </label>
+                      <textarea
+                        dir="ltr"
+                        rows={2}
+                        disabled={session.role !== 'master'}
+                        value={additionalPhonesText}
+                        onChange={(e) => setAdditionalPhonesText(e.target.value)}
+                        placeholder="+212 600 000 000"
+                        className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-[11px] disabled:opacity-60"
+                      />
+                    </div>
+
                     {profileLinksError && (
                       <div className="p-2 rounded-lg bg-red-950/60 border border-red-500/40 text-red-300 text-[11px]">
                         {profileLinksError}
@@ -2980,7 +3264,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             es: 'Se actualiza en vivo en todo el sitio.',
                           })
                         : pickLang(lang, {
-                            ar: 'متاح لتعديل المدير العام فقط (Hassan).',
+                            ar: 'متاح لتعديل المشرف العام فقط (Hassan).',
                             fr: 'Réservé au Master Admin (Hassan).',
                             amz: 'ⵉ ⵓⵏⵎⵀⴰⵍ ⴽⴰ (Hassan).',
                             en: 'Master Admin only (Hassan).',
@@ -3020,7 +3304,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             )}
 
-            {workspaceSection === 'queue' && (
+            {workspaceSection === 'queue' && session.role === 'master' && (
               <LiveQueuePanel
                 bookings={bookings}
                 crmMap={crmClientsMap}
@@ -3033,10 +3317,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onQuickCancel={handleQuickCancel}
                 onOpenClientTracking={onOpenClientTracking}
                 onShowClientQr={setQrTargetClient}
+                lateBusyId={lateActionBusyId}
+                onPostponeLateToNearest={handlePostponeLateBookingToNearest}
+                onMoveLateToWaitlist={handleMoveLateBookingToWaitlist}
               />
             )}
 
-            {workspaceSection === 'summary' && (
+            {workspaceSection === 'summary' && session.role === 'master' && (
               <ResourcePlanningSummaryCharts
                 bookings={bookings}
                 reviews={firestoreReviews}
@@ -3045,7 +3332,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               />
             )}
 
-            {workspaceSection === 'analytics' && (
+            {workspaceSection === 'analytics' && session.role === 'master' && (
               <FinancialAnalyticsPanel
                 bookings={bookings}
                 role={session.role}
@@ -3053,7 +3340,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               />
             )}
 
-            {workspaceSection === 'schedules' && (
+            {workspaceSection === 'schedules' && session.role !== 'caisse' && (
               <BarberSchedulePanel
                 schedules={barberSchedules}
                 bookings={bookings}
@@ -3062,7 +3349,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               />
             )}
 
-            {workspaceSection === 'shifts' && (
+            {workspaceSection === 'shifts' && session.role !== 'caisse' && (
               <AdminShiftPlannerPanel
                 requests={shiftRequests}
                 schedules={barberSchedules}
@@ -3074,7 +3361,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               />
             )}
 
-            {workspaceSection === 'crm' && (
+            {workspaceSection === 'crm' && session.role === 'master' && (
               <CrmLoyaltyBlacklistPanel
                 bookings={bookings}
                 crmMap={crmClientsMap}
@@ -3082,7 +3369,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               />
             )}
 
-            {workspaceSection === 'loyalty' && (
+            {workspaceSection === 'loyalty' && session.role === 'master' && (
               <LoyaltyPointsAdminPanel
                 bookings={bookings}
                 crmMap={crmClientsMap}
@@ -3090,7 +3377,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               />
             )}
 
-            {workspaceSection === 'waitlist' && (
+            {workspaceSection === 'waitlist' && session.role === 'master' && (
               <WaitlistManagementPanel
                 entries={waitlistEntries}
                 role={session.role}
@@ -3104,7 +3391,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 ownBarberId={session.barberId}
                 staffName={session.name}
                 todayStr={todayStr}
+                bookings={bookings}
+                onAutoExitBarberSession={handleLogout}
               />
+            )}
+
+            {workspaceSection === 'profile' && session.role !== 'caisse' && (
+              <BarberProfileServicesPanel
+                sessionRole={session.role}
+                ownBarberId={session.barberId}
+                staffName={session.name}
+                sessionMemberId={session.memberId}
+              />
+            )}
+
+            {workspaceSection === 'pricing' && session.role === 'master' && (
+              <MasterShopPricingPanel staffName={session.name} />
+            )}
+
+            {workspaceSection === 'staff' && session.role === 'master' && (
+              <MasterTeamAccessPanel staffName={session.name} />
+            )}
+
+            {workspaceSection === 'credits' && session.role === 'master' && (
+              <MasterClientCreditsPanel staffName={session.name} />
             )}
 
             {workspaceSection === 'bookings' && (
@@ -3147,9 +3457,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {/* Archive Date Filter Picker (Shown only in Archive tab) */}
             {activeTab === 'archive' && (
-              <div className="p-3.5 rounded-xl bg-zinc-900/90 border border-zinc-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-                <span className="text-zinc-300 font-semibold flex items-center gap-1.5">
-                  <Archive className="w-4 h-4 text-amber-400" />
+              <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <span className="text-zinc-700 dark:text-zinc-300 font-semibold flex items-center gap-1.5">
+                  <Archive className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                   <span>
                     {pickLang(lang, {
                       ar: 'تصفية الأرشيف حسب تاريخ محدد:',
@@ -3165,12 +3475,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     type="date"
                     value={archiveDateFilter}
                     onChange={(e) => setArchiveDateFilter(e.target.value)}
-                    className="bg-black border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                    className="bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-900 dark:text-white"
                   />
                   {archiveDateFilter && (
                     <button
                       onClick={() => setArchiveDateFilter('')}
-                      className="px-2.5 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:text-white text-xs"
+                      className="px-2.5 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white text-xs cursor-pointer"
                     >
                       {pickLang(lang, {
                         ar: 'عرض كل التواريخ',
@@ -3185,75 +3495,103 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             )}
 
-            {/* TODAY'S KPI METRICS */}
+            {/* TODAY'S KPI METRICS (Interactive -> Centered Modal) */}
             {activeTab === 'today' && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800">
-                  <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block">
-                    {pickLang(lang, {
-                      ar: 'تذاكر اليوم',
-                      fr: 'Tickets du jour',
-                      amz: 'ⵉⵏⵜⵜⵉⴽⵉⵜⵏ ⵏ ⵡⴰⵙⵙⴰ',
-                      en: "Today's Tickets",
-                      es: 'Tickets de hoy',
-                    })}
-                  </span>
-                  <span className="text-2xl font-black text-white font-mono">{todayTickets.length}</span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setBookingKpiModal('today_all')}
+                  className="text-start p-3.5 rounded-xl bg-white dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-600 shadow-2xs transition-all cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-bold tracking-wider block">
+                      {pickLang(lang, {
+                        ar: 'تذاكر اليوم',
+                        fr: 'Tickets du jour',
+                        amz: 'ⵉⵏⵜⵜⵉⴽⵉⵜⵏ ⵏ ⵡⴰⵙⵙⴰ',
+                        en: "Today's Tickets",
+                        es: 'Tickets de hoy',
+                      })}
+                    </span>
+                    <Eye className="w-3.5 h-3.5 text-zinc-400 group-hover:text-zinc-700 dark:group-hover:text-zinc-200 transition-colors shrink-0" />
+                  </div>
+                  <span className="text-2xl font-black text-zinc-900 dark:text-white font-mono">{todayTickets.length}</span>
+                </button>
 
-                <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800">
-                  <span className="text-[10px] text-amber-400 uppercase font-bold tracking-wider block">
-                    {pickLang(lang, {
-                      ar: 'قيد المراجعة (معلق)',
-                      fr: 'En attente',
-                      amz: 'ⴳ ⵓⵔⴰⵊⵓ',
-                      en: 'Pending',
-                      es: 'Pendientes',
-                    })}
-                  </span>
-                  <span className="text-2xl font-black text-amber-400 font-mono">{pendingCount}</span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setBookingKpiModal('pending')}
+                  className="text-start p-3.5 rounded-xl bg-white dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 hover:border-amber-400 dark:hover:border-amber-500/60 shadow-2xs transition-all cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[10px] text-amber-700 dark:text-amber-400 uppercase font-bold tracking-wider block">
+                      {pickLang(lang, {
+                        ar: 'قيد المراجعة (معلق)',
+                        fr: 'En attente',
+                        amz: 'ⴳ ⵓⵔⴰⵊⵓ',
+                        en: 'Pending',
+                        es: 'Pendientes',
+                      })}
+                    </span>
+                    <Eye className="w-3.5 h-3.5 text-amber-500/70 group-hover:text-amber-700 dark:group-hover:text-amber-300 transition-colors shrink-0" />
+                  </div>
+                  <span className="text-2xl font-black text-amber-700 dark:text-amber-400 font-mono">{pendingCount}</span>
+                </button>
 
-                <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800">
-                  <span className="text-[10px] text-emerald-400 uppercase font-bold tracking-wider block">
-                    {pickLang(lang, {
-                      ar: 'مؤكد ومقبول',
-                      fr: 'Confirmés',
-                      amz: 'ⵉⵜⵜⵓⵙⵏⵜⵎⵏ',
-                      en: 'Confirmed',
-                      es: 'Confirmados',
-                    })}
-                  </span>
-                  <span className="text-2xl font-black text-emerald-400 font-mono">{confirmedCount}</span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setBookingKpiModal('confirmed')}
+                  className="text-start p-3.5 rounded-xl bg-white dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-400 dark:hover:border-emerald-500/60 shadow-2xs transition-all cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[10px] text-emerald-700 dark:text-emerald-400 uppercase font-bold tracking-wider block">
+                      {pickLang(lang, {
+                        ar: 'مؤكد ومقبول',
+                        fr: 'Confirmés',
+                        amz: 'ⵉⵜⵜⵓⵙⵏⵜⵎⵏ',
+                        en: 'Confirmed',
+                        es: 'Confirmados',
+                      })}
+                    </span>
+                    <Eye className="w-3.5 h-3.5 text-emerald-500/70 group-hover:text-emerald-700 dark:group-hover:text-emerald-300 transition-colors shrink-0" />
+                  </div>
+                  <span className="text-2xl font-black text-emerald-700 dark:text-emerald-400 font-mono">{confirmedCount}</span>
+                </button>
 
-                <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800">
-                  <span className="text-[10px] text-red-400 uppercase font-bold tracking-wider block">
-                    {pickLang(lang, {
-                      ar: 'مرفوض / ملغى',
-                      fr: 'Refusés / Annulés',
-                      amz: 'ⵉⵜⵜⵓⵙⵔⵏ',
-                      en: 'Rejected / Cancelled',
-                      es: 'Rechazados / Cancelados',
-                    })}
-                  </span>
-                  <span className="text-2xl font-black text-red-400 font-mono">{rejectedCount}</span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setBookingKpiModal('rejected')}
+                  className="text-start p-3.5 rounded-xl bg-white dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 hover:border-rose-400 dark:hover:border-red-500/60 shadow-2xs transition-all cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[10px] text-rose-700 dark:text-red-400 uppercase font-bold tracking-wider block">
+                      {pickLang(lang, {
+                        ar: 'مرفوض / ملغى',
+                        fr: 'Refusés / Annulés',
+                        amz: 'ⵉⵜⵜⵓⵙⵔⵏ',
+                        en: 'Rejected / Cancelled',
+                        es: 'Rechazados / Cancelados',
+                      })}
+                    </span>
+                    <Eye className="w-3.5 h-3.5 text-rose-500/70 group-hover:text-rose-700 dark:group-hover:text-red-300 transition-colors shrink-0" />
+                  </div>
+                  <span className="text-2xl font-black text-rose-700 dark:text-red-400 font-mono">{rejectedCount}</span>
+                </button>
               </div>
             )}
 
-            {/* WEEKLY TEAM WORKLOAD BAR CHART */}
-            {activeTab === 'today' && (
+            {/* WEEKLY TEAM WORKLOAD BAR CHART (Master Admin only — hidden from individual barbers) */}
+            {activeTab === 'today' && session.role === 'master' && (
               <WeeklyWorkloadBarChart bookings={bookings} todayStr={todayStr} />
             )}
 
             {/* Filter Toolbar & Status Tabs */}
-            <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-3">
+            <div className="p-4 rounded-xl bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-3 shadow-2xs">
               <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
                 
                 {/* Search Input */}
                 <div className="relative w-full sm:w-80">
-                  <Search className="w-4 h-4 text-zinc-500 absolute start-3 top-1/2 -translate-y-1/2" />
+                  <Search className="w-4 h-4 text-zinc-400 dark:text-zinc-500 absolute start-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={searchQuery}
@@ -3265,7 +3603,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       en: 'Search by ticket #SB or phone (06... / +212)...',
                       es: 'Buscar por ticket #SB o teléfono (06...)...',
                     })}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl ps-9 pe-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl ps-9 pe-3 py-2 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-amber-500"
                   />
                 </div>
 
@@ -3273,10 +3611,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
                   <button
                     onClick={() => setStatusFilter('all')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer border ${
                       statusFilter === 'all'
-                        ? 'bg-zinc-200 text-black shadow'
-                        : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                        ? 'bg-zinc-900 dark:bg-zinc-200 text-white dark:text-black border-zinc-900 dark:border-zinc-200 shadow-xs'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:text-zinc-900 dark:hover:text-white'
                     }`}
                   >
                     {pickLang(lang, {
@@ -3290,10 +3628,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   <button
                     onClick={() => setStatusFilter('pending')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer border ${
                       statusFilter === 'pending'
-                        ? 'bg-amber-500 text-black shadow'
-                        : 'bg-zinc-800 text-amber-400 hover:bg-zinc-700'
+                        ? 'bg-amber-500 text-black border-amber-400 shadow-xs'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-amber-700 dark:text-amber-400 border-zinc-200 dark:border-zinc-700 hover:bg-amber-50 dark:hover:bg-zinc-700'
                     }`}
                   >
                     {pickLang(lang, {
@@ -3307,10 +3645,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   <button
                     onClick={() => setStatusFilter('confirmed')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer border ${
                       statusFilter === 'confirmed'
-                        ? 'bg-emerald-600 text-white shadow'
-                        : 'bg-zinc-800 text-emerald-400 hover:bg-zinc-700'
+                        ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-emerald-700 dark:text-emerald-400 border-zinc-200 dark:border-zinc-700 hover:bg-emerald-50 dark:hover:bg-zinc-700'
                     }`}
                   >
                     {pickLang(lang, {
@@ -3324,10 +3662,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   <button
                     onClick={() => setStatusFilter('completed')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer border ${
                       statusFilter === 'completed'
-                        ? 'bg-teal-600 text-white shadow'
-                        : 'bg-zinc-800 text-teal-400 hover:bg-zinc-700'
+                        ? 'bg-teal-600 text-white border-teal-500 shadow-xs'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-teal-700 dark:text-teal-400 border-zinc-200 dark:border-zinc-700 hover:bg-teal-50 dark:hover:bg-zinc-700'
                     }`}
                   >
                     {pickLang(lang, {
@@ -3341,10 +3679,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   <button
                     onClick={() => setStatusFilter('rejected')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer border ${
                       statusFilter === 'rejected'
-                        ? 'bg-red-600 text-white shadow'
-                        : 'bg-zinc-800 text-red-400 hover:bg-zinc-700'
+                        ? 'bg-red-600 text-white border-red-500 shadow-xs'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-rose-700 dark:text-red-400 border-zinc-200 dark:border-zinc-700 hover:bg-rose-50 dark:hover:bg-zinc-700'
                     }`}
                   >
                     {pickLang(lang, {
@@ -3358,11 +3696,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Master Admin Only: Barber Filter Tabs with Barber Color Indicators */}
-              {session.role === 'master' && (
-                <div className="pt-2 border-t border-zinc-800 flex items-center gap-2 overflow-x-auto text-xs">
-                  <span className="text-zinc-400 font-semibold text-[11px] flex items-center gap-1 flex-shrink-0">
-                    <Users className="w-3.5 h-3.5 text-amber-400" />
+              {/* Master Admin & Caisse: Barber Filter Tabs with Subtle Identity Indicators */}
+              {(session.role === 'master' || session.role === 'caisse') && (
+                <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800 flex items-center gap-2 overflow-x-auto text-xs">
+                  <span className="text-zinc-500 dark:text-zinc-400 font-semibold text-[11px] flex items-center gap-1 flex-shrink-0">
+                    <Users className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                     <span>
                       {pickLang(lang, {
                         ar: 'تصفية حسب الحلاق :',
@@ -3376,10 +3714,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   <button
                     onClick={() => setMasterBarberFilter('all')}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
                       masterBarberFilter === 'all'
-                        ? 'bg-zinc-200 text-black'
-                        : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
+                        ? 'bg-zinc-900 dark:bg-zinc-200 text-white dark:text-black border-zinc-900 dark:border-zinc-200'
+                        : 'bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white border-zinc-200 dark:border-zinc-800'
                     }`}
                   >
                     {pickLang(lang, {
@@ -3392,29 +3730,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     ({bookings.length})
                   </button>
 
-                  {TEAM_MEMBERS.map((b) => {
+                  {mergedBarbers.map((b) => {
                     const count = bookings.filter(
                       (item) => item.barberId === b.id || item.barberName.toLowerCase().includes(b.name.fr.toLowerCase().split(' ')[0])
                     ).length;
-                    const bColor = b.themeColor || '#D97706';
+                    const tone = getBarberIdentityTokens(b.id, b.name.ar, b.colorName);
+                    const isActive = masterBarberFilter === b.id;
 
                     return (
                       <button
                         key={b.id}
                         onClick={() => setMasterBarberFilter(b.id)}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                          masterBarberFilter === b.id
-                            ? 'text-white shadow ring-1'
-                            : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                          isActive
+                            ? tone.activeTabClass
+                            : 'bg-zinc-50 dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-900 border-zinc-200 dark:border-zinc-800'
                         }`}
-                        style={{
-                          backgroundColor: masterBarberFilter === b.id ? bColor : undefined,
-                          borderColor: bColor,
-                        }}
                       >
-                        <span 
-                          className="w-2 h-2 rounded-full inline-block"
-                          style={{ backgroundColor: bColor }}
+                        <span
+                          className={`w-2 h-2 rounded-full inline-block ${
+                            isActive ? 'bg-white dark:bg-current' : tone.dotClass
+                          }`}
                         />
                         <span className="truncate">{b.name[lang] || b.name.ar || b.name.fr}</span>
                         <span className="opacity-75 font-mono">({count})</span>
@@ -3425,18 +3761,55 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
             </div>
 
+            {/* Remaining Clients & Upcoming Days Summary Bar (Interactive -> Centered Modal) */}
+            {activeTab === 'today' && (
+              <div className="p-3 rounded-xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBookingKpiModal('queue_active')}
+                    className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-500/15 dark:hover:bg-emerald-500/25 border border-emerald-200 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-300 font-black font-mono tabular-nums inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <span>باقي اليوم: {todayActiveQueue.length} زبناء</span>
+                    <Eye className="w-3.5 h-3.5 opacity-75" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBookingKpiModal('queue_future')}
+                    className="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/15 dark:hover:bg-amber-500/25 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 font-bold font-mono tabular-nums inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <span>الأيام القادمة / الأسبوع المقبل: {futureUpcomingQueue.length}</span>
+                    <Eye className="w-3.5 h-3.5 opacity-75" />
+                  </button>
+                  {todayPastOrDoneQueue.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setBookingKpiModal('queue_done')}
+                      className="px-2.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-semibold font-mono tabular-nums inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <span>مرت / منتهية: {todayPastOrDoneQueue.length}</span>
+                      <Eye className="w-3.5 h-3.5 opacity-75" />
+                    </button>
+                  )}
+                </div>
+                <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  مرتبة زمنياً حسب أقرب ساعة · اضغط على أي بطاقة لعرض التفاصيل
+                </span>
+              </div>
+            )}
+
             {/* Bookings List */}
             {visibleBookings.length === 0 ? (
-              <div className="text-center py-12 px-4 rounded-2xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
-                <CalendarDays className="w-8 h-8 text-zinc-600 mx-auto" />
-                <p className="text-zinc-400 text-xs font-medium">
+              <div className="text-center py-12 px-4 rounded-2xl bg-white dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/80 space-y-3">
+                <CalendarDays className="w-8 h-8 text-zinc-400 dark:text-zinc-600 mx-auto" />
+                <p className="text-zinc-600 dark:text-zinc-400 text-xs font-medium">
                   {activeTab === 'today'
                     ? pickLang(lang, {
-                        ar: `لا توجد أي حجوزات مبرمجة بالضبط لتاريخ اليوم (${todayStr}).`,
-                        fr: `Aucune réservation prévue exactement pour aujourd’hui (${todayStr}).`,
-                        amz: `ⵓⵔ ⵍⵍⵉⵏ ⵉⵙⵉⵀⴰⵔⵏ ⵉ ⵡⴰⵙⵙⴰ (${todayStr}).`,
-                        en: `No appointments scheduled for today (${todayStr}).`,
-                        es: `No hay citas programadas para hoy (${todayStr}).`,
+                        ar: `لا توجد مواعيد قادمة مبرمجة حالياً ابتداءً من اليوم (${todayStr}).`,
+                        fr: `Aucun rendez-vous à venir programmé à partir d’aujourd’hui (${todayStr}).`,
+                        amz: `ⵓⵔ ⵍⵍⵉⵏ ⵉⵙⵉⵀⴰⵔⵏ ⴷ ⵉⴷⴷⴰⵏ (${todayStr}).`,
+                        en: `No upcoming appointments scheduled from today (${todayStr}).`,
+                        es: `No hay próximas citas programadas desde hoy (${todayStr}).`,
                       })
                     : pickLang(lang, {
                         ar: 'لا توجد أي تذاكر مطابقة في الأرشيف أو البحث.',
@@ -3451,7 +3824,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <button
                       type="button"
                       onClick={() => setActiveTab('archive')}
-                      className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition-colors cursor-pointer"
+                      className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/20 dark:hover:bg-amber-500/30 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 text-xs font-bold transition-colors cursor-pointer"
                     >
                       {archiveSearchMatchesCount > 0
                         ? pickLang(lang, {
@@ -3473,11 +3846,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 )}
               </div>
             ) : (
-              <div className="space-y-4">
-                {visibleBookings.map((booking) => {
+              (() => {
+                const renderBookingCard = (booking: AppointmentBooking) => {
                   const clientPhoneClean = formatMoroccanWhatsAppNumber(booking.clientPhone);
                   const isNoteSaved = savedNoteId === booking.id;
-                  const barberColor = getBarberColor(booking);
+                  const barberTone = getBarberIdentityTokens(booking.barberId, booking.barberName);
+                  const isCardExpanded = Boolean(expandedBookingIds[booking.id]);
                   const clientNormalized = normalizeMoroccanPhoneDigits(booking.clientPhone);
                   const crmProfile = crmClientsMap[getCrmDocId(booking.clientPhone)];
                   const clientBookingsForPhone = clientNormalized
@@ -3488,60 +3862,151 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     : [];
                   const verifiedVisitsCount = getVerifiedVisitsCount(clientBookingsForPhone, crmProfile);
                   const loyaltyState = computeLoyaltyProgress(verifiedVisitsCount, lang);
+                  const bookingCredit = computeOutstandingCreditsForPhone(
+                    booking.clientPhone,
+                    caisseEntries,
+                    manualCredits
+                  );
+                  const durationLabel = booking.totalDurationMinutes
+                    ? `${booking.totalDurationMinutes}m`
+                    : '60m';
 
                   return (
                     <div
                       key={booking.id}
-                      className="p-4 sm:p-5 rounded-2xl bg-zinc-900/70 border-2 hover:border-zinc-700/80 transition-all space-y-4 shadow-lg relative overflow-hidden"
-                      style={{
-                        borderColor: `${barberColor}60`,
-                      }}
+                      className={`rounded-2xl bg-white dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 shadow-xs overflow-hidden transition-all ${barberTone.borderLeftClass}`}
                     >
-                      {/* Barber Color Indicator Top Line */}
-                      <div 
-                        className="h-1 -mx-5 -mt-5 mb-3"
-                        style={{ backgroundColor: barberColor }}
-                      />
+                      {/* Compact Single-Line Booking Header (Expandable on Tap) */}
+                      <div className="p-3 sm:px-4 flex flex-wrap items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedBookingIds((prev) => ({
+                              ...prev,
+                              [booking.id]: !prev[booking.id],
+                            }))
+                          }
+                          className="flex-1 min-w-[200px] flex items-center gap-2.5 text-start cursor-pointer"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-black text-sm text-zinc-900 dark:text-white truncate">
+                                {booking.clientName}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${barberTone.badgeClass}`}>
+                                {booking.barberName.split(' ')[0]}
+                              </span>
+                              <span className="text-[11px] font-mono tabular-nums text-zinc-500 dark:text-zinc-400">
+                                {booking.timeSlot === 'FLEXIBLE' ? 'مرن' : booking.timeSlot} · {booking.date.slice(5)} · {durationLabel}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                booking.status === 'completed'
+                                  ? 'bg-teal-50 text-teal-800 dark:bg-teal-500/20 dark:text-teal-300'
+                                  : booking.status === 'confirmed'
+                                  ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300'
+                                  : booking.status === 'flexible_pending'
+                                  ? 'bg-purple-50 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300'
+                                  : ['rejected', 'cancelled', 'no_show'].includes(booking.status)
+                                  ? 'bg-rose-50 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300'
+                                  : 'bg-amber-50 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'
+                              }`}>
+                                {booking.status === 'completed'
+                                  ? 'حضر ✓'
+                                  : booking.status === 'confirmed'
+                                  ? 'مقبول'
+                                  : booking.status === 'flexible_pending'
+                                  ? 'وقت مرن'
+                                  : booking.status === 'no_show'
+                                  ? 'تغيب'
+                                  : booking.status === 'cancelled'
+                                  ? 'ملغى'
+                                  : booking.status === 'rejected'
+                                  ? 'مرفوض'
+                                  : 'معلق'}
+                              </span>
+                              {bookingCredit.hasCredit && (
+                                <span
+                                  className="px-2 py-0.5 rounded-md text-[10px] font-black bg-orange-100 text-orange-800 dark:bg-orange-500/20 dark:text-orange-300 border border-orange-300 dark:border-orange-500/40"
+                                  title={`عليه كريدي سابق: ${bookingCredit.totalOwedMAD} MAD`}
+                                >
+                                  كريدي: {bookingCredit.totalOwedMAD} MAD
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {isCardExpanded ? (
+                            <ChevronUp className="w-4 h-4 text-zinc-400 shrink-0" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" />
+                          )}
+                        </button>
 
-                      {/* Top Bar: Ticket #, Barber Tag with Hex Color, Date & Time, Status */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">
-                        <div className="flex flex-wrap items-center gap-2.5">
-                          <span className="font-mono text-base font-black text-white bg-black/60 px-2.5 py-1 rounded-lg border border-zinc-800">
+                        {/* Quick Single-Line Actions: WhatsApp + حضر */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <a
+                            href={`https://wa.me/${clientPhoneClean}?text=${encodeURIComponent(
+                              buildClientTicketWhatsAppMessage(booking)
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="min-h-[34px] px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] inline-flex items-center gap-1"
+                            title="WhatsApp"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">واتساب</span>
+                          </a>
+
+                          {booking.status !== 'completed' &&
+                            booking.status !== 'cancelled' &&
+                            booking.status !== 'rejected' && (
+                              <button
+                                type="button"
+                                disabled={quickActionBusyId === booking.id}
+                                onClick={() => handleMarkCompleted(booking)}
+                                className="min-h-[34px] px-3 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-black text-[11px] inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>حضر</span>
+                              </button>
+                            )}
+
+                          {!booking.caisseLoggedAt &&
+                            !['cancelled', 'rejected'].includes(booking.status) && (
+                            <button
+                              type="button"
+                              onClick={() => openCaissePromptForBooking(booking)}
+                              className="min-h-[34px] px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Wallet className="w-3.5 h-3.5" />
+                              <span>للاكيس</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Expanded Full Details & Secondary Controls */}
+                      {isCardExpanded && (
+                        <div className="px-4 pb-4 pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-4">
+                      {/* Top Bar: Ticket #, Barber Tag, Date & Time, Status */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-zinc-100 dark:border-zinc-800/80">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-xs font-black text-zinc-900 dark:text-white bg-zinc-100 dark:bg-black/60 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800">
                             {booking.ticketNumber}
                           </span>
-
-                          {/* Distinct Barber Hex Color Badge */}
-                          <div 
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-white font-bold text-xs shadow-xs"
-                            style={{ backgroundColor: barberColor }}
-                          >
-                            <span className="w-2 h-2 rounded-full bg-white" />
-                            <span>{booking.barberName}</span>
-                          </div>
-
-                          <span className="text-xs text-zinc-400 font-mono tabular-nums">
-                            📅 {booking.date} • ⏰{' '}
-                            {booking.timeSlot === 'FLEXIBLE'
-                              ? pickLang(lang, {
-                                  ar: 'وقت مرن (يختاره الحلاق)',
-                                  fr: 'Horaire flexible (choisi par le barbier)',
-                                  amz: 'ⴰⴽⵓⴷ ⵉⴼⵙⵙⵓⵙⵏ',
-                                  en: 'Flexible time (barber choice)',
-                                  es: 'Horario flexible (elige barbero)',
-                                })
-                              : booking.timeSlot}
+                          <span className="text-xs text-zinc-500 dark:text-zinc-400 font-mono tabular-nums">
+                            {booking.date} • {booking.timeSlot}
                           </span>
                         </div>
 
                         {/* Status Badge + Inline CRM / Verified Milestone Badges */}
                         <div className="flex flex-wrap items-center gap-1.5">
                           {crmProfile?.isVip && (
-                            <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[10px] font-bold">
+                            <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 border border-amber-300 dark:border-amber-400/50 text-amber-800 dark:text-amber-300 text-[10px] font-bold">
                               👑 VIP
                             </span>
                           )}
                           {crmProfile?.isBanned && (
-                            <span className="px-2 py-0.5 rounded-full bg-red-600/30 border border-red-500/60 text-red-200 text-[10px] font-bold">
+                            <span className="px-2 py-0.5 rounded-full bg-rose-100 dark:bg-red-600/30 border border-rose-300 dark:border-red-500/60 text-rose-800 dark:text-red-200 text-[10px] font-bold">
                               🚫{' '}
                               {pickLang(lang, {
                                 ar: 'محظور',
@@ -3553,7 +4018,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </span>
                           )}
                           <span
-                            className="px-2.5 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 text-amber-300 text-[10px] font-mono font-bold tabular-nums flex items-center gap-1"
+                            className="px-2.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-amber-800 dark:text-amber-300 text-[10px] font-mono font-bold tabular-nums flex items-center gap-1"
                             title={pickLang(lang, {
                               ar: 'تُحتسب الزيارات فقط بعد الضغط على تأكيد الحضور',
                               fr: 'Les visites ne sont comptées qu’après confirmation de présence',
@@ -3572,9 +4037,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               })}{' '}
                               {loyaltyState.verifiedVisits}
                             </span>
-                            <span className="text-zinc-500">·</span>
+                            <span className="text-zinc-400 dark:text-zinc-500">·</span>
                             {loyaltyState.justUnlockedMilestone ? (
-                              <span className="text-emerald-300">
+                              <span className="text-emerald-700 dark:text-emerald-300">
                                 {loyaltyState.justUnlockedMilestone}/{loyaltyState.justUnlockedMilestone}{' '}
                                 {pickLang(lang, {
                                   ar: 'مكتمل ✓',
@@ -3586,13 +4051,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 → {loyaltyState.nextMilestone}
                               </span>
                             ) : (
-                              <span className="text-zinc-300">
+                              <span className="text-zinc-700 dark:text-zinc-300">
                                 {loyaltyState.verifiedVisits}/{loyaltyState.nextMilestone}
                               </span>
                             )}
                           </span>
                           {booking.checkedInAt && (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-[10px] font-bold flex items-center gap-1">
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 border border-emerald-300 dark:border-emerald-400/50 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold flex items-center gap-1">
                               <ScanLine className="w-3 h-3" />
                               <span>
                                 {pickLang(lang, {
@@ -3606,7 +4071,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </span>
                           )}
                           {booking.caisseLoggedAt && (
-                            <span className="px-2 py-0.5 rounded-full bg-teal-500/20 border border-teal-400/50 text-teal-200 text-[10px] font-bold flex items-center gap-1">
+                            <span className="px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-500/20 border border-teal-300 dark:border-teal-400/50 text-teal-800 dark:text-teal-200 text-[10px] font-bold flex items-center gap-1">
                               <Wallet className="w-3 h-3" />
                               <span>
                                 {pickLang(lang, {
@@ -3619,15 +4084,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </span>
                             </span>
                           )}
-                          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${
-                            booking.status === 'completed' ? 'bg-teal-500/20 text-teal-300 border border-teal-400/50' :
-                            booking.status === 'confirmed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' :
-                            booking.status === 'flexible_pending' ? 'bg-purple-500/20 text-purple-300 border border-purple-400/50' :
-                            booking.status === 'pending' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' :
-                            booking.status === 'rescheduled' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' :
-                            booking.status === 'no_show' ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40' :
-                            booking.status === 'cancelled' ? 'bg-zinc-700/40 text-zinc-300 border border-zinc-600' :
-                            'bg-red-500/20 text-red-400 border border-red-500/40'
+                          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${
+                            booking.status === 'completed' ? 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-500/20 dark:text-teal-300 dark:border-teal-400/50' :
+                            booking.status === 'confirmed' ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/40' :
+                            booking.status === 'flexible_pending' ? 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-500/20 dark:text-purple-300 dark:border-purple-400/50' :
+                            booking.status === 'pending' ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-500/40' :
+                            booking.status === 'rescheduled' ? 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-500/40' :
+                            booking.status === 'no_show' ? 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-500/20 dark:text-orange-300 dark:border-orange-500/40' :
+                            booking.status === 'cancelled' ? 'bg-zinc-100 text-zinc-700 border-zinc-300 dark:bg-zinc-700/40 dark:text-zinc-300 dark:border-zinc-600' :
+                            'bg-rose-100 text-rose-800 border-rose-300 dark:bg-red-500/20 dark:text-red-400 dark:border-red-500/40'
                           }`}>
                             {booking.status === 'completed'
                               ? pickLang(lang, {
@@ -3703,16 +4168,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           booking.date,
                           booking.preferredTimeHint,
                           barberSchedules,
-                          bookings
+                          bookings,
+                          booking.totalDurationMinutes || 30
                         ).slice(0, 6);
                         const isCustomOpen = flexCustomTargetId === booking.id;
                         const isFlexBusy = flexAssignBusyId === booking.id;
 
                         return (
-                          <div className="p-3 rounded-xl bg-purple-950/35 border border-purple-500/40 space-y-2.5 text-xs">
+                          <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/35 border border-purple-200 dark:border-purple-500/40 space-y-2.5 text-xs">
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 font-black text-purple-200">
-                                <CalendarClock className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                              <div className="flex items-center gap-2 font-black text-purple-900 dark:text-purple-200">
+                                <CalendarClock className="w-4 h-4 text-purple-600 dark:text-purple-400 flex-shrink-0" />
                                 <span>
                                   {pickLang(lang, {
                                     ar: 'الزبون طلب اختيار أفضل وقت متاح له • اضغط لتعيين الساعة وإشعار الزبون تلقائياً',
@@ -3724,7 +4190,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </span>
                               </div>
                               {booking.preferredTimeHint && (
-                                <span className="text-[11px] font-mono text-amber-300 bg-amber-500/15 px-2 py-0.5 rounded-md border border-amber-500/30">
+                                <span className="text-[11px] font-mono text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-500/15 px-2 py-0.5 rounded-md border border-amber-300 dark:border-amber-500/30">
                                   {pickLang(lang, {
                                     ar: 'كان يفضل:',
                                     fr: 'Souhaité :',
@@ -3768,7 +4234,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 ))}
                               </div>
                             ) : (
-                              <div className="text-[11px] text-amber-300">
+                              <div className="text-[11px] text-amber-700 dark:text-amber-300">
                                 {pickLang(lang, {
                                   ar: 'لا توجد ساعات شاغرة تلقائياً في الأيام الثلاثة القادمة، يمكنك تخصيص تاريخ ووقت يدوياً:',
                                   fr: 'Aucun créneau libre sur 3 jours, saisissez une date et heure manuellement :',
@@ -3791,7 +4257,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     setFlexCustomTime(booking.preferredTimeHint || rankedSlots[0]?.time || '16:00');
                                   }
                                 }}
-                                className="text-[11px] font-bold text-purple-300 hover:text-white underline cursor-pointer"
+                                className="text-[11px] font-bold text-purple-700 dark:text-purple-300 hover:underline cursor-pointer"
                               >
                                 {isCustomOpen
                                   ? pickLang(lang, {
@@ -3818,13 +4284,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   value={flexCustomDate}
                                   min={todayStr}
                                   onChange={(e) => setFlexCustomDate(e.target.value)}
-                                  className="bg-black/60 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-white"
+                                  className="bg-white dark:bg-black/60 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-zinc-900 dark:text-white"
                                 />
                                 <input
                                   type="time"
                                   value={flexCustomTime}
                                   onChange={(e) => setFlexCustomTime(e.target.value)}
-                                  className="bg-black/60 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-white font-mono"
+                                  className="bg-white dark:bg-black/60 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-zinc-900 dark:text-white font-mono"
                                 />
                                 <button
                                   type="button"
@@ -3851,9 +4317,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                       {/* Quick Actions for Pending Appointments (Single-Tap Verify Completion & Cancel) */}
                       {(booking.status === 'pending' || booking.status === 'pending_quote') && (
-                        <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                          <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
-                            <Clock className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                        <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                          <div className="flex items-center gap-2 text-xs font-bold text-amber-800 dark:text-amber-300">
+                            <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                             <span>
                               {pickLang(lang, {
                                 ar: 'إجراءات سريعة للطلب المعلق',
@@ -3869,7 +4335,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               type="button"
                               disabled={quickActionBusyId === booking.id}
                               onClick={() => handleMarkCompleted(booking)}
-                              className="min-h-[44px] px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-md shadow-teal-950/50 border border-teal-400/40 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="min-h-[44px] px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-sm border border-teal-500 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               {quickActionBusyId === booking.id ? (
                                 <RefreshCw className="w-4 h-4 animate-spin flex-shrink-0" />
@@ -3891,7 +4357,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               type="button"
                               disabled={quickActionBusyId === booking.id}
                               onClick={() => handleQuickCancel(booking)}
-                              className="min-h-[44px] px-4 py-2 rounded-xl bg-red-600/90 hover:bg-red-500 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-md shadow-red-950/50 border border-red-400/40 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="min-h-[44px] px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-sm border border-red-500 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               {quickActionBusyId === booking.id ? (
                                 <RefreshCw className="w-4 h-4 animate-spin flex-shrink-0" />
@@ -3913,17 +4379,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       )}
 
                       {booking.loyaltyRewardApplied && (
-                        <div className="px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-bold flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                        <div className="px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                           <span>{booking.loyaltyRewardApplied}</span>
                         </div>
                       )}
 
                       {/* Client Info with DIRECT WHATSAPP BUTTON */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="p-3 rounded-xl bg-black/40 border border-zinc-800/80 space-y-2 text-xs">
+                        <div className="p-3 rounded-xl bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-zinc-800/80 space-y-2 text-xs">
                           <div className="flex items-center justify-between">
-                            <span className="text-zinc-400">
+                            <span className="text-zinc-500 dark:text-zinc-400">
                               {pickLang(lang, {
                                 ar: 'الزبون :',
                                 fr: 'Client :',
@@ -3932,11 +4398,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 es: 'Cliente:',
                               })}
                             </span>
-                            <span className="font-bold text-white text-sm">{booking.clientName}</span>
+                            <span className="font-bold text-zinc-900 dark:text-white text-sm">{booking.clientName}</span>
                           </div>
 
-                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-zinc-800/80">
-                            <span className="text-zinc-400">
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-zinc-200 dark:border-zinc-800/80">
+                            <span className="text-zinc-500 dark:text-zinc-400">
                               {pickLang(lang, {
                                 ar: 'الهاتف :',
                                 fr: 'Téléphone :',
@@ -3946,7 +4412,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               })}
                             </span>
                             <div className="flex flex-wrap items-center gap-1.5">
-                              <span dir="ltr" className="font-mono text-zinc-200">{booking.clientPhone}</span>
+                              <span dir="ltr" className="font-mono text-zinc-800 dark:text-zinc-200">{booking.clientPhone}</span>
                               
                               {/* Direct WhatsApp Client Button */}
                               <a
@@ -3976,34 +4442,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </span>
                               </a>
 
-                              {/* Automated API Reminder Dispatch Button (Green-API / UltraMsg) */}
-                              <button
-                                type="button"
-                                disabled={sendingReminderId === booking.id}
-                                onClick={() => handleSendWhatsAppApiReminder(booking)}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-teal-950/70 hover:bg-teal-900 border border-teal-500/40 text-teal-300 font-bold text-[11px] transition-colors cursor-pointer disabled:opacity-50"
-                                title={pickLang(lang, {
-                                  ar: 'إرسال تذكير آلي عبر بوابة Green-API أو UltraMsg',
-                                  fr: 'Envoyer un rappel automatique via API',
-                                  amz: 'ⴰⵣⵏ ⴰⵙⴽⵜⵉ ⵙ API',
-                                  en: 'Send automated reminder via API',
-                                  es: 'Enviar recordatorio automático vía API',
-                                })}
-                              >
-                                <Send className="w-3 h-3" />
-                                <span>
-                                  {sendingReminderId === booking.id
-                                    ? '...'
-                                    : pickLang(lang, {
-                                        ar: 'تذكير API',
-                                        fr: 'Rappel API',
-                                        amz: 'ⴰⵙⴽⵜⵉ API',
-                                        en: 'API Reminder',
-                                        es: 'Aviso API',
-                                      })}
-                                </span>
-                              </button>
-
                               {/* Client Profile Unique QR Button */}
                               <button
                                 type="button"
@@ -4018,7 +4456,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     isBanned: crmProfile?.isBanned,
                                   })
                                 }
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-[11px] transition-colors cursor-pointer"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/15 dark:hover:bg-amber-500/25 border border-amber-200 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 font-bold text-[11px] transition-colors cursor-pointer"
                                 title={pickLang(lang, {
                                   ar: 'عرض رمز QR الخاص بملف هذا الزبون',
                                   fr: 'Afficher le QR du profil client',
@@ -4042,10 +4480,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
 
                           {(booking.clientNotes || booking.notes) && (
-                            <div className="pt-1 text-[11px] text-zinc-300 space-y-0.5">
+                            <div className="pt-1 text-[11px] text-zinc-700 dark:text-zinc-300 space-y-0.5">
                               {booking.clientNotes && (
-                                <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-200">
-                                  <span className="text-amber-400 font-bold">
+                                <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 text-amber-900 dark:text-amber-200">
+                                  <span className="text-amber-700 dark:text-amber-400 font-bold">
                                     {pickLang(lang, {
                                       ar: 'ملاحظات الزبون (التفضيلات): ',
                                       fr: 'Préférences client : ',
@@ -4058,7 +4496,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </div>
                               )}
                               {booking.notes && booking.notes !== booking.clientNotes && (
-                                <div className="text-zinc-400">
+                                <div className="text-zinc-600 dark:text-zinc-400">
                                   <span className="text-zinc-500 font-semibold">
                                     {pickLang(lang, {
                                       ar: 'ملاحظة / إضافات: ',
@@ -4075,10 +4513,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           )}
 
                           {booking.cihReceiptName && (
-                            <div className="mt-2 p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between gap-2">
+                            <div className="mt-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-500/40 flex items-center justify-between gap-2">
                               <div className="min-w-0">
-                                <div className="text-[11px] font-bold text-emerald-300 flex items-center gap-1.5">
-                                  <Building2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                                <div className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                                  <Building2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                                   <span>
                                     {pickLang(lang, {
                                       ar: 'إيصال تحويل CIH Bank',
@@ -4089,7 +4527,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     })}
                                   </span>
                                 </div>
-                                <div className="text-[10px] font-mono text-zinc-300 truncate">{booking.cihReceiptName}</div>
+                                <div className="text-[10px] font-mono text-zinc-600 dark:text-zinc-300 truncate">{booking.cihReceiptName}</div>
                               </div>
                               {booking.cihReceiptPreview && (
                                 <button
@@ -4121,8 +4559,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
 
                         {/* Services & Total */}
-                        <div className="p-3 rounded-xl bg-black/40 border border-zinc-800/80 space-y-1.5 text-xs">
-                          <div className="text-zinc-400 font-semibold text-[11px]">
+                        <div className="p-3 rounded-xl bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-zinc-800/80 space-y-1.5 text-xs">
+                          <div className="text-zinc-500 dark:text-zinc-400 font-semibold text-[11px]">
                             {pickLang(lang, {
                               ar: 'الخدمات المطلوبة :',
                               fr: 'Prestations demandées :',
@@ -4133,14 +4571,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                           <div className="space-y-0.5">
                             {(booking.cartItemsSummary || []).map((itm, i) => (
-                              <div key={i} className="flex justify-between text-zinc-300 text-[11px]">
+                              <div key={i} className="flex justify-between text-zinc-700 dark:text-zinc-300 text-[11px]">
                                 <span>• {itm.name}</span>
-                                <span className="font-mono font-bold text-white">{itm.finalPrice} MAD</span>
+                                <span className="font-mono font-bold text-zinc-900 dark:text-white">{itm.finalPrice} MAD</span>
                               </div>
                             ))}
                           </div>
-                          <div className="pt-1.5 border-t border-zinc-800 flex justify-between font-bold">
-                            <span className="text-zinc-300">
+                          <div className="pt-1.5 border-t border-zinc-200 dark:border-zinc-800 flex justify-between font-bold">
+                            <span className="text-zinc-700 dark:text-zinc-300">
                               {pickLang(lang, {
                                 ar: 'المجموع المطلوب للأداء :',
                                 fr: 'Total à payer :',
@@ -4149,16 +4587,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 es: 'Total a pagar:',
                               })}
                             </span>
-                            <span className="text-amber-400 font-mono text-sm">{booking.finalTotalMAD} MAD</span>
+                            <span className="text-amber-700 dark:text-amber-400 font-mono text-sm">{booking.finalTotalMAD} MAD</span>
                           </div>
                         </div>
                       </div>
 
                       {/* CLIENT STATUS NOTE (Universal Ticket Tools) */}
-                      <div className="p-3 rounded-xl bg-[#12141B] border border-zinc-800 space-y-2">
+                      <div className="p-3 rounded-xl bg-zinc-50 dark:bg-[#12141B] border border-zinc-200 dark:border-zinc-800 space-y-2">
                         <div className="flex items-center justify-between text-xs flex-wrap gap-1">
-                          <label className="font-bold text-zinc-300 flex items-center gap-1.5">
-                            <MessageCircle className="w-3.5 h-3.5 text-amber-400" />
+                          <label className="font-bold text-zinc-800 dark:text-zinc-300 flex items-center gap-1.5">
+                            <MessageCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                             <span>
                               {pickLang(lang, {
                                 ar: 'ملاحظة أو رد مخصص للزبون :',
@@ -4197,15 +4635,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               en: 'e.g. Your chair is reserved, please arrive 5 mins early...',
                               es: 'Ej: Tu silla está reservada, llega 5 min antes...',
                             })}
-                            className="flex-1 bg-black/60 border border-zinc-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+                            className="flex-1 bg-white dark:bg-black/60 border border-zinc-200 dark:border-zinc-700/80 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-amber-500"
                           />
                           <button
                             type="button"
                             onClick={() => handleSaveClientNote(booking.id)}
-                            className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                            className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
                               isNoteSaved
-                                ? 'bg-emerald-600 text-white'
-                                : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700'
+                                ? 'bg-emerald-600 text-white border-emerald-600'
+                                : 'bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 border-zinc-200 dark:border-zinc-700'
                             }`}
                           >
                             {isNoteSaved ? (
@@ -4239,50 +4677,78 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                       </div>
 
-                      {/* Action Triggers: Accept / Complete / Reschedule / No-Show / VIP / Ban / Reject */}
-                      <div className="pt-2 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {booking.status !== 'confirmed' && booking.status !== 'completed' && (
-                            <button
-                              onClick={() => handleConfirm(booking.id)}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>
-                                {pickLang(lang, {
-                                  ar: 'قبول وتأكيد',
-                                  fr: 'Accepter & Confirmer',
-                                  amz: 'ⵙⵏⵜⵎ',
-                                  en: 'Accept & Confirm',
-                                  es: 'Aceptar y Confirmar',
-                                })}
-                              </span>
-                            </button>
-                          )}
+                      {/* Primary Booking Card Actions + Clean Collapsible Secondary Actions ("المزيد") */}
+                      <div className="pt-2.5 border-t border-zinc-200 dark:border-zinc-800/80 space-y-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {booking.status === 'flexible_pending' ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFlexCustomTargetId(booking.id);
+                                  setFlexCustomDate(booking.date);
+                                  setFlexCustomTime(booking.preferredTimeHint || '16:00');
+                                  setOpenBookingActionsId(null);
+                                }}
+                                className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-black flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                              >
+                                <Clock3 className="w-3.5 h-3.5" />
+                                <span>
+                                  {pickLang(lang, {
+                                    ar: 'تحديد الساعة وتأكيد',
+                                    fr: 'Fixer l’heure & Confirmer',
+                                    amz: 'ⴼⵔⵏ ⵜⵉⵣⵉ & ⵙⵏⵜⵎ',
+                                    en: 'Assign Time & Confirm',
+                                    es: 'Asignar Hora y Confirmar',
+                                  })}
+                                </span>
+                              </button>
+                            ) : (
+                              booking.status !== 'confirmed' &&
+                              booking.status !== 'completed' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirm(booking.id)}
+                                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>
+                                    {pickLang(lang, {
+                                      ar: 'قبول وتأكيد',
+                                      fr: 'Accepter & Confirmer',
+                                      amz: 'ⵙⵏⵜⵎ',
+                                      en: 'Accept & Confirm',
+                                      es: 'Aceptar y Confirmar',
+                                    })}
+                                  </span>
+                                </button>
+                              )
+                            )}
 
-                          {booking.status !== 'completed' && booking.status !== 'cancelled' && booking.status !== 'rejected' && (
-                            <button
-                              type="button"
-                              onClick={() => handleMarkCompleted(booking)}
-                              className="min-h-[38px] px-3.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-teal-900/40 border border-teal-400/40 transition-colors cursor-pointer"
-                            >
-                              <Award className="w-4 h-4" />
-                              <span>
-                                {pickLang(lang, {
-                                  ar: 'تأكيد الحضور / مكتمل',
-                                  fr: 'Confirmer Présence / Terminé',
-                                  amz: 'ⵙⵏⵜⵎ ⵜⵉⵍⵉⵏⵜ / ⵉⵙⵎⴷ',
-                                  en: 'Confirm Attendance / Completed',
-                                  es: 'Confirmar Asistencia',
-                                })}
-                              </span>
-                            </button>
-                          )}
+                            {booking.status !== 'completed' &&
+                              booking.status !== 'cancelled' &&
+                              booking.status !== 'rejected' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkCompleted(booking)}
+                                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-black flex items-center gap-1.5 shadow-xs border border-teal-500 transition-colors cursor-pointer"
+                                >
+                                  <Award className="w-4 h-4" />
+                                  <span>
+                                    {pickLang(lang, {
+                                      ar: 'تأكيد الحضور / مكتمل',
+                                      fr: 'Confirmer Présence / Terminé',
+                                      amz: 'ⵙⵏⵜⵎ ⵜⵉⵍⵉⵏⵜ / ⵉⵙⵎⴷ',
+                                      en: 'Confirm Attendance / Completed',
+                                      es: 'Confirmar Asistencia',
+                                    })}
+                                  </span>
+                                </button>
+                              )}
 
-                          {booking.status === 'completed' && (
-                            <>
-                              <span className="min-h-[38px] px-3 py-1.5 rounded-lg bg-teal-950/70 border border-teal-500/40 text-teal-300 text-xs font-bold flex items-center gap-1.5">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-teal-400" />
+                            {booking.status === 'completed' && (
+                              <span className="min-h-[38px] px-3 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/70 border border-teal-200 dark:border-teal-500/40 text-teal-800 dark:text-teal-300 text-xs font-bold flex items-center gap-1.5">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                                 <span>
                                   {pickLang(lang, {
                                     ar: 'حضر ✓ (+1 ولاء)',
@@ -4293,11 +4759,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   })}
                                 </span>
                               </span>
-                              {!booking.caisseLoggedAt && (
+                            )}
+
+                            {!booking.caisseLoggedAt &&
+                              !['cancelled', 'rejected'].includes(booking.status) && (
                                 <button
                                   type="button"
                                   onClick={() => openCaissePromptForBooking(booking)}
-                                  className="min-h-[38px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-sm"
+                                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
                                 >
                                   <Wallet className="w-3.5 h-3.5" />
                                   <span>
@@ -4311,150 +4780,347 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   </span>
                                 </button>
                               )}
-                            </>
-                          )}
 
-                          <button
-                            onClick={() => handleOpenReschedule(booking)}
-                            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                          >
-                            <Clock3 className="w-3.5 h-3.5" />
-                            <span>
-                              {pickLang(lang, {
-                                ar: 'تعديل الموعد',
-                                fr: 'Décaler RDV',
-                                amz: 'ⵙⵏⴼⵍ ⴰⴽⵓⴷ',
-                                en: 'Reschedule',
-                                es: 'Reprogramar',
-                              })}
-                            </span>
-                          </button>
-
-                          {booking.status !== 'no_show' && booking.status !== 'completed' && (
                             <button
-                              onClick={() => handleRecordNoShow(booking)}
-                              className="px-2.5 py-1.5 rounded-lg bg-orange-950/70 hover:bg-orange-900 border border-orange-500/40 text-orange-300 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                              title={pickLang(lang, {
-                                ar: 'تسجيل عدم الحضور (تغيبان = حظر تلقائي)',
-                                fr: 'Signaler absence (2 absences = blocage auto)',
-                                amz: 'ⵣⵎⵎⴻⵎ ⵜⴰⵏⵖⵓⴱⴰ',
-                                en: 'Log No-Show (2 strikes = auto-ban)',
-                                es: 'Registrar ausencia (2 = bloqueo auto)',
-                              })}
+                              type="button"
+                              onClick={() => handleOpenReschedule(booking)}
+                              className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                             >
-                              <AlertCircle className="w-3.5 h-3.5" />
+                              <Clock3 className="w-3.5 h-3.5" />
                               <span>
                                 {pickLang(lang, {
-                                  ar: 'تغيب',
-                                  fr: 'Absent',
-                                  amz: 'ⵉⵏⵖⵓⴱⴰ',
-                                  en: 'No-Show',
-                                  es: 'Ausente',
+                                  ar: 'تعديل الموعد',
+                                  fr: 'Décaler RDV',
+                                  amz: 'ⵙⵏⴼⵍ ⴰⴽⵓⴷ',
+                                  en: 'Reschedule',
+                                  es: 'Reprogramar',
                                 })}
                               </span>
                             </button>
-                          )}
+                          </div>
 
+                          {/* Compact Overflow Menu Trigger ("المزيد") */}
                           <button
                             type="button"
+                            aria-expanded={openBookingActionsId === booking.id}
                             onClick={() =>
-                              toggleClientVip(booking.clientPhone, booking.clientName, crmClientsMap)
-                            }
-                            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 border cursor-pointer ${
-                              crmProfile?.isVip
-                                ? 'bg-amber-500 text-black border-amber-400'
-                                : 'bg-zinc-800 hover:bg-zinc-700 text-amber-300 border-zinc-700'
-                            }`}
-                          >
-                            <Star className="w-3.5 h-3.5" />
-                            <span>VIP</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setClientBanStatus(
-                                booking.clientPhone,
-                                booking.clientName,
-                                !crmProfile?.isBanned,
-                                !crmProfile?.isBanned
-                                  ? pickLang(lang, {
-                                      ar: 'حظر يدوي من التذكرة',
-                                      fr: 'Blocage manuel depuis le ticket',
-                                      amz: 'ⴰⴳⴷⴰⵍ ⵙ ⵓⴼⵓⵙ',
-                                      en: 'Manual ban from ticket',
-                                      es: 'Bloqueo manual desde el ticket',
-                                    })
-                                  : pickLang(lang, {
-                                      ar: 'رفع الحظر يدوياً',
-                                      fr: 'Déblocage manuel',
-                                      amz: 'ⴽⴽⵙ ⴰⴳⴷⴰⵍ',
-                                      en: 'Manual unban',
-                                      es: 'Desbloqueo manual',
-                                    }),
-                                crmClientsMap
+                              setOpenBookingActionsId((prev) =>
+                                prev === booking.id ? null : booking.id
                               )
                             }
-                            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 border cursor-pointer ${
-                              crmProfile?.isBanned
-                                ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500'
-                                : 'bg-zinc-800 hover:bg-red-950 text-zinc-300 hover:text-red-300 border-zinc-700'
+                            className={`min-h-[38px] px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
+                              openBookingActionsId === booking.id
+                                ? 'bg-zinc-900 text-white border-zinc-800 dark:bg-amber-500 dark:text-black dark:border-amber-400'
+                                : 'bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-stone-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200'
                             }`}
                           >
-                            {crmProfile?.isBanned ? (
-                              <>
-                                <UserCheck className="w-3.5 h-3.5" />
-                                <span>
-                                  {pickLang(lang, {
-                                    ar: 'رفع الحظر',
-                                    fr: 'Débloquer',
-                                    amz: 'ⴽⴽⵙ ⴰⴳⴷⴰⵍ',
-                                    en: 'Unban',
-                                    es: 'Desbloquear',
-                                  })}
-                                </span>
-                              </>
-                            ) : (
-                              <>
-                                <Ban className="w-3.5 h-3.5" />
-                                <span>
-                                  {pickLang(lang, {
-                                    ar: 'حظر',
-                                    fr: 'Bloquer',
-                                    amz: 'ⴰⴳⴷⴰⵍ',
-                                    en: 'Ban',
-                                    es: 'Bloquear',
-                                  })}
-                                </span>
-                              </>
-                            )}
-                          </button>
-
-                          {booking.status !== 'rejected' && (
-                            <button
-                              onClick={() => handleReject(booking.id)}
-                              className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-red-950 text-zinc-400 hover:text-red-400 text-xs font-semibold transition-colors cursor-pointer"
-                            >
+                            <MoreHorizontal className="w-4 h-4" />
+                            <span>
                               {pickLang(lang, {
-                                ar: 'رفض الطلب',
-                                fr: 'Refuser',
-                                amz: 'ⴰⴳⵉ',
-                                en: 'Reject',
-                                es: 'Rechazar',
+                                ar: 'المزيد',
+                                fr: 'Plus',
+                                amz: 'ⵓⴳⴳⴰⵔ',
+                                en: 'More',
+                                es: 'Más',
                               })}
-                            </button>
-                          )}
+                            </span>
+                            <ChevronDown
+                              className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                                openBookingActionsId === booking.id ? 'rotate-180' : ''
+                              }`}
+                            />
+                          </button>
                         </div>
 
-                        <span className="text-[10px] text-zinc-500">
-                          ID: {booking.id.slice(0, 14)}...
-                        </span>
+                        {/* Collapsible Secondary Actions Tray (Unclipped on All Viewports) */}
+                        {openBookingActionsId === booking.id && (
+                          <div className="p-2.5 rounded-xl bg-stone-50 dark:bg-zinc-950/75 border border-stone-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {booking.status !== 'completed' &&
+                                booking.status !== 'cancelled' &&
+                                booking.status !== 'rejected' && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      disabled={lateActionBusyId === booking.id}
+                                      onClick={() => {
+                                        setOpenBookingActionsId(null);
+                                        handlePostponeLateBookingToNearest(booking);
+                                      }}
+                                      className="min-h-[34px] px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-200 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                                    >
+                                      {lateActionBusyId === booking.id ? (
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <Clock className="w-3.5 h-3.5" />
+                                      )}
+                                      <span>
+                                        {pickLang(lang, {
+                                          ar: 'تأجيل لأقرب وقت متاح',
+                                          fr: 'Décaler au plus tôt',
+                                          amz: 'ⵙⵏⴼⵍ ⵉ ⵡⴰⴽⵓⴷ ⴰⵎⵣⵡⴰⵔⵓ',
+                                          en: 'Nearest Open Slot',
+                                          es: 'Hueco más cercano',
+                                        })}
+                                      </span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      disabled={lateActionBusyId === booking.id}
+                                      onClick={() => {
+                                        setOpenBookingActionsId(null);
+                                        handleMoveLateBookingToWaitlist(booking);
+                                      }}
+                                      className="min-h-[34px] px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/60 dark:hover:bg-sky-900 border border-sky-300 dark:border-sky-500/40 text-sky-800 dark:text-sky-200 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                                    >
+                                      <ListPlus className="w-3.5 h-3.5" />
+                                      <span>
+                                        {pickLang(lang, {
+                                          ar: 'تحويل للطابور',
+                                          fr: 'Mettre en attente',
+                                          amz: 'ⵙⵙⵉⴷ ⵉ ⵜⴰⵍⴳⴰⵎⵜ',
+                                          en: 'Move to Queue',
+                                          es: 'Pasar a espera',
+                                        })}
+                                      </span>
+                                    </button>
+                                  </>
+                                )}
+
+                              {booking.status !== 'no_show' && booking.status !== 'completed' && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenBookingActionsId(null);
+                                    handleRecordNoShow(booking);
+                                  }}
+                                  className="min-h-[34px] px-2.5 py-1 rounded-lg bg-orange-50 hover:bg-orange-100 dark:bg-orange-950/70 dark:hover:bg-orange-900 border border-orange-200 dark:border-orange-500/40 text-orange-700 dark:text-orange-300 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                                  title={pickLang(lang, {
+                                    ar: 'تسجيل عدم الحضور (تغيبان = حظر تلقائي)',
+                                    fr: 'Signaler absence (2 absences = blocage auto)',
+                                    amz: 'ⵣⵎⵎⴻⵎ ⵜⴰⵏⵖⵓⴱⴰ',
+                                    en: 'Log No-Show (2 strikes = auto-ban)',
+                                    es: 'Registrar ausencia (2 = bloqueo auto)',
+                                  })}
+                                >
+                                  <AlertCircle className="w-3.5 h-3.5" />
+                                  <span>
+                                    {pickLang(lang, {
+                                      ar: 'تغيب',
+                                      fr: 'Absent',
+                                      amz: 'ⵉⵏⵖⵓⴱⴰ',
+                                      en: 'No-Show',
+                                      es: 'Ausente',
+                                    })}
+                                  </span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenBookingActionsId(null);
+                                  toggleClientVip(booking.clientPhone, booking.clientName, crmClientsMap);
+                                }}
+                                className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 border cursor-pointer ${
+                                  crmProfile?.isVip
+                                    ? 'bg-amber-500 text-black border-amber-400'
+                                    : 'bg-white hover:bg-stone-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-amber-700 dark:text-amber-300 border-stone-200 dark:border-zinc-700'
+                                }`}
+                              >
+                                <Star className="w-3.5 h-3.5" />
+                                <span>VIP</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenBookingActionsId(null);
+                                  setClientBanStatus(
+                                    booking.clientPhone,
+                                    booking.clientName,
+                                    !crmProfile?.isBanned,
+                                    !crmProfile?.isBanned
+                                      ? pickLang(lang, {
+                                          ar: 'حظر يدوي من التذكرة',
+                                          fr: 'Blocage manuel depuis le ticket',
+                                          amz: 'ⴰⴳⴷⴰⵍ ⵙ ⵓⴼⵓⵙ',
+                                          en: 'Manual ban from ticket',
+                                          es: 'Bloqueo manual desde el ticket',
+                                        })
+                                      : pickLang(lang, {
+                                          ar: 'رفع الحظر يدوياً',
+                                          fr: 'Déblocage manuel',
+                                          amz: 'ⴽⴽⵙ ⴰⴳⴷⴰⵍ',
+                                          en: 'Manual unban',
+                                          es: 'Desbloqueo manual',
+                                        }),
+                                    crmClientsMap
+                                  );
+                                }}
+                                className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 border cursor-pointer ${
+                                  crmProfile?.isBanned
+                                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500'
+                                    : 'bg-white hover:bg-rose-50 dark:bg-zinc-800 dark:hover:bg-red-950 text-zinc-700 dark:text-zinc-300 hover:text-rose-700 dark:hover:text-red-300 border-stone-200 dark:border-zinc-700'
+                                }`}
+                              >
+                                {crmProfile?.isBanned ? (
+                                  <>
+                                    <UserCheck className="w-3.5 h-3.5" />
+                                    <span>
+                                      {pickLang(lang, {
+                                        ar: 'رفع الحظر',
+                                        fr: 'Débloquer',
+                                        amz: 'ⴽⴽⵙ ⴰⴳⴷⴰⵍ',
+                                        en: 'Unban',
+                                        es: 'Desbloquear',
+                                      })}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Ban className="w-3.5 h-3.5" />
+                                    <span>
+                                      {pickLang(lang, {
+                                        ar: 'حظر',
+                                        fr: 'Bloquer',
+                                        amz: 'ⴰⴳⴷⴰⵍ',
+                                        en: 'Ban',
+                                        es: 'Bloquear',
+                                      })}
+                                    </span>
+                                  </>
+                                )}
+                              </button>
+
+                              {booking.status !== 'rejected' && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenBookingActionsId(null);
+                                    handleReject(booking.id);
+                                  }}
+                                  className="min-h-[34px] px-3 py-1 rounded-lg bg-white hover:bg-rose-50 dark:bg-zinc-800 dark:hover:bg-red-950 text-zinc-600 dark:text-zinc-300 hover:text-rose-700 dark:hover:text-red-400 border border-stone-200 dark:border-zinc-700 text-xs font-semibold transition-colors cursor-pointer"
+                                >
+                                  {pickLang(lang, {
+                                    ar: 'رفض الطلب',
+                                    fr: 'Refuser',
+                                    amz: 'ⴰⴳⵉ',
+                                    en: 'Reject',
+                                    es: 'Rechazar',
+                                  })}
+                                </button>
+                              )}
+
+                              {session.role === 'master' && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenBookingActionsId(null);
+                                    setDeleteTargetBooking(booking);
+                                    setDeleteBookingCreditAck(false);
+                                  }}
+                                  className="min-h-[34px] px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 text-xs font-black inline-flex items-center gap-1 cursor-pointer transition-colors"
+                                  title="حذف هذا الموعد فقط مع فحص الكريدي"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>
+                                    {pickLang(lang, {
+                                      ar: 'حذف',
+                                      fr: 'Supprimer',
+                                      amz: 'ⴽⴽⵙ',
+                                      en: 'Delete',
+                                      es: 'Eliminar',
+                                    })}
+                                  </span>
+                                </button>
+                              )}
+                            </div>
+
+                            <span className="text-[10px] font-mono text-zinc-400">
+                              ID: {booking.id.slice(0, 12)}...
+                            </span>
+                          </div>
+                        )}
                       </div>
+                      </div>
+                      )}
 
                     </div>
                   );
-                })}
-              </div>
+                };
+
+                if (activeTab === 'archive') {
+                  return <div className="space-y-2.5">{sortedArchiveBookings.map(renderBookingCard)}</div>;
+                }
+
+                return (
+                  <div className="space-y-4">
+                    {/* 1. Today's Remaining Active Appointments (Chronological Order) */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between px-1">
+                        <h4 className="text-xs font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          <span>مواعيد اليوم المتبقية ({todayStr})</span>
+                        </h4>
+                        <span className="text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                          {todayActiveQueue.length} زبناء
+                        </span>
+                      </div>
+                      {todayActiveQueue.length === 0 ? (
+                        <div className="p-4 rounded-xl bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-center text-xs text-zinc-500 dark:text-zinc-400">
+                          لا توجد مواعيد متبقية لبقية اليوم.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">{todayActiveQueue.map(renderBookingCard)}</div>
+                      )}
+                    </div>
+
+                    {/* 2. Upcoming Future Days / Next Week Appointments (Chronological Order) */}
+                    {futureUpcomingQueue.length > 0 && (
+                      <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                        <div className="flex items-center justify-between px-1">
+                          <h4 className="text-xs font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                            <CalendarDays className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                            <span>الأيام القادمة والأسبوع المقبل</span>
+                          </h4>
+                          <span className="text-[11px] font-mono font-bold text-amber-700 dark:text-amber-400">
+                            {futureUpcomingQueue.length} موعد
+                          </span>
+                        </div>
+                        <div className="space-y-2">{futureUpcomingQueue.map(renderBookingCard)}</div>
+                      </div>
+                    )}
+
+                    {/* 3. Collapsed Passed / Completed Today Slots */}
+                    {todayPastOrDoneQueue.length > 0 && (
+                      <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                        <button
+                          type="button"
+                          onClick={() => setShowPastTodaySlots((prev) => !prev)}
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200/80 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 flex items-center justify-between text-xs font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer transition-colors"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Archive className="w-3.5 h-3.5 text-zinc-500" />
+                            <span>أوقات مرت أو منتهية ({todayPastOrDoneQueue.length})</span>
+                          </span>
+                          {showPastTodaySlots ? (
+                            <ChevronUp className="w-4 h-4 text-zinc-400" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-zinc-400" />
+                          )}
+                        </button>
+                        {showPastTodaySlots && (
+                          <div className="space-y-2 mt-2.5 opacity-85">
+                            {todayPastOrDoneQueue.map(renderBookingCard)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
             )}
               </>
             )}
@@ -4841,16 +5507,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <span className="font-bold text-white">{checkInConfirmModal.booking.barberName}</span> ·{' '}
                 <span className="font-mono">{checkInConfirmModal.booking.date} ({checkInConfirmModal.booking.timeSlot})</span>
               </div>
-              {checkInConfirmModal.booking.checkInToken && (
+              {(checkInConfirmModal.booking.clientPhone || checkInConfirmModal.booking.checkInToken) && (
                 <div className="text-[11px] font-mono text-emerald-300">
                   {pickLang(lang, {
-                    ar: 'رمز التحقق:',
-                    fr: 'Code vérif. :',
+                    ar: 'معرّف الزبون:',
+                    fr: 'ID Client :',
                     amz: 'ⵜⴰⵎⴰⵜⴰⵔⵜ :',
-                    en: 'Token:',
-                    es: 'Código:',
+                    en: 'Client ID:',
+                    es: 'ID Cliente:',
                   })}{' '}
-                  {checkInConfirmModal.booking.checkInToken}{' '}
+                  <span dir="ltr">
+                    {(() => {
+                      const digits = String(checkInConfirmModal.booking.clientPhone || '').replace(/\D/g, '');
+                      if (digits.startsWith('212') && digits.length >= 11) return `0${digits.slice(3)}`;
+                      if (digits.length === 9 && /^[567]/.test(digits)) return `0${digits}`;
+                      if (digits.length >= 6) return digits;
+                      return checkInConfirmModal.booking.checkInToken || '';
+                    })()}
+                  </span>{' '}
                   {checkInConfirmModal.tokenMatched
                     ? pickLang(lang, {
                         ar: '(مطابق ✓)',
@@ -4917,13 +5591,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Attendance-to-Caisse Prompt Modal (Never triggered on booking creation — only on attendance confirmation) */}
       {caissePromptBooking && (
-        <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+        <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/75 dark:bg-black/85 backdrop-blur-sm">
           <form
             onSubmit={handleConfirmCaisseFromBooking}
-            className="bg-zinc-950 border-2 border-emerald-500/50 rounded-2xl p-5 max-w-md w-full space-y-4 shadow-2xl"
+            className="bg-white dark:bg-zinc-950 border-2 border-emerald-400 dark:border-emerald-500/50 rounded-2xl p-5 max-w-md w-full space-y-4 shadow-2xl"
           >
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <div className="flex items-center gap-2 text-emerald-300 font-black text-sm">
+            <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-black text-sm">
                 <Wallet className="w-5 h-5" />
                 <span>
                   {pickLang(lang, {
@@ -4938,28 +5612,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setCaissePromptBooking(null)}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
+                className="p-1.5 rounded-lg text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-xs space-y-1">
+            <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs space-y-1">
               <div className="flex justify-between">
-                <span className="font-black text-white">{caissePromptBooking.clientName}</span>
-                <span className="font-mono text-amber-300">{caissePromptBooking.ticketNumber}</span>
+                <span className="font-black text-zinc-900 dark:text-white">{caissePromptBooking.clientName}</span>
+                <span className="font-mono text-amber-700 dark:text-amber-300">{caissePromptBooking.ticketNumber}</span>
               </div>
-              <div className="text-zinc-400">
-                {pickLang(lang, {
-                  ar: 'الحلاق:',
-                  fr: 'Barbier :',
-                  amz: 'ⴰⵎⴽⵕⴰⴹ :',
-                  en: 'Barber:',
-                  es: 'Barbero:',
-                })}{' '}
-                {caissePromptBooking.barberName}
+              <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+                <span>
+                  {pickLang(lang, {
+                    ar: 'الحلاق:',
+                    fr: 'Barbier :',
+                    amz: 'ⴰⵎⴽⵕⴰⴹ :',
+                    en: 'Barber:',
+                    es: 'Barbero:',
+                  })}{' '}
+                  {caissePromptBooking.barberName}
+                </span>
+                <span dir="ltr" className="font-mono">{caissePromptBooking.clientPhone}</span>
               </div>
-              <div className="text-zinc-300">
+              <div className="text-zinc-700 dark:text-zinc-300">
                 {pickLang(lang, {
                   ar: 'الخدمات:',
                   fr: 'Prestations :',
@@ -4969,107 +5646,194 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 })}{' '}
                 {(caissePromptBooking.services || []).map((s) => s.name?.[lang] || s.name?.ar || s.id).join(' + ')}
               </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div>
-                <label className="block text-zinc-300 font-bold mb-1">
-                  {pickLang(lang, {
-                    ar: 'المبلغ المستخلص في لاكيس (MAD) *',
-                    fr: 'Montant encaissé en Caisse (MAD) *',
-                    amz: 'ⴰⵜⵉⴳ ⵉⵜⵜⵓⵙⵔⵙⵏ ⴳ ⵍⴰⴽⵉⵙ (MAD) *',
-                    en: 'Amount Collected in Caisse (MAD) *',
-                    es: 'Monto cobrado en Caja (MAD) *',
-                  })}
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={caissePromptPaid}
-                  onChange={(e) => setCaissePromptPaid(e.target.value)}
-                  className="w-full bg-black border border-zinc-700 focus:border-emerald-500 rounded-xl px-3 py-2 text-sm font-mono font-bold text-white outline-none"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-zinc-300 font-bold mb-1">
-                  {pickLang(lang, {
-                    ar: 'ملاحظة',
-                    fr: 'Note',
-                    amz: 'ⵜⴰⵏⵏⴰⵢⵜ',
-                    en: 'Note',
-                    es: 'Nota',
-                  })}
-                </label>
-                <input
-                  type="text"
-                  value={caissePromptNote}
-                  onChange={(e) => setCaissePromptNote(e.target.value)}
-                  className="w-full bg-black border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white"
-                />
+              <div className="pt-1 border-t border-zinc-200 dark:border-zinc-800 flex justify-between font-bold text-zinc-800 dark:text-zinc-200">
+                <span>ثمن الموعد المسجل:</span>
+                <span className="font-mono text-amber-700 dark:text-amber-300">
+                  {Math.max(0, Math.round(Number(caissePromptBooking.finalTotalMAD) || 0))} MAD
+                </span>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setCaissePromptHasCredit((p) => !p)}
-              className={`w-full min-h-[38px] px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 cursor-pointer ${
-                caissePromptHasCredit
-                  ? 'bg-orange-500/20 border-orange-400 text-orange-200'
-                  : 'bg-zinc-900 border-zinc-800 text-zinc-300'
-              }`}
-            >
-              <CreditCard className="w-4 h-4 text-orange-400" />
-              <span>
-                {pickLang(lang, {
-                  ar: 'تسجيل الباقي كـ كريدي (الكريدي)',
-                  fr: 'Enregistrer le reste en Crédit',
-                  amz: 'ⵣⵎⵎⴻⵎ ⵎⴰⴷ ⵉⵖⴰⵎⴰⵏ ⴰⵎ ⵓⴽⵔⵉⴷⵉ',
-                  en: 'Record Remainder as Credit',
-                  es: 'Registrar resto como Crédito',
-                })}
-              </span>
-            </button>
+            {(() => {
+              const paidNum = Math.max(0, Number(caissePromptPaid) || 0);
+              const expectedNum = Math.max(
+                paidNum,
+                Number(caissePromptExpected) || Math.round(Number(caissePromptBooking.finalTotalMAD) || 0)
+              );
+              const computedRemaining = Math.max(0, expectedNum - paidNum);
 
-            {caissePromptHasCredit && (
-              <div className="p-3 rounded-xl bg-orange-950/30 border border-orange-500/35 grid grid-cols-2 gap-2.5 text-xs">
-                <div>
-                  <label className="block text-orange-200 font-bold mb-1">
-                    {pickLang(lang, {
-                      ar: 'الإجمالي المتفق عليه (MAD)',
-                      fr: 'Total convenu (MAD)',
-                      amz: 'ⴰⵎⵖⵔⵓⴷ (MAD)',
-                      en: 'Agreed Total (MAD)',
-                      es: 'Total acordado (MAD)',
-                    })}
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={caissePromptExpected}
-                    onChange={(e) => setCaissePromptExpected(e.target.value)}
-                    className="w-full bg-black border border-orange-500/40 rounded-lg px-2.5 py-1.5 font-mono text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-zinc-300 font-bold mb-1">
-                    {pickLang(lang, {
-                      ar: 'تاريخ الأداء المتوقع',
-                      fr: 'Date de remboursement prévue',
-                      amz: 'ⴰⵙⴰⴽⵓⴷ ⵏ ⵓⴼⵔⵓ',
-                      en: 'Expected Repayment Date',
-                      es: 'Fecha de pago prevista',
-                    })}
-                  </label>
-                  <input
-                    type="date"
-                    value={caissePromptRepayDate}
-                    onChange={(e) => setCaissePromptRepayDate(e.target.value)}
-                    className="w-full bg-black border border-zinc-700 rounded-lg px-2.5 py-1.5 font-mono text-white"
-                  />
-                </div>
-              </div>
-            )}
+              return (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block text-zinc-700 dark:text-zinc-300 font-black mb-1">
+                        {pickLang(lang, {
+                          ar: 'شحال عطاني (المبلغ المدفوع - MAD) *',
+                          fr: 'Montant donné / encaissé (MAD) *',
+                          amz: 'ⵎⵛⵃⴰⵍ ⵉⴼⴽⴰ (MAD) *',
+                          en: 'Amount Paid ("شحال عطاني" - MAD) *',
+                          es: 'Monto pagado (MAD) *',
+                        })}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        autoFocus
+                        value={caissePromptPaid}
+                        onChange={(e) => {
+                          const nextVal = e.target.value;
+                          setCaissePromptPaid(nextVal);
+                          const nextPaidNum = Math.max(0, Number(nextVal) || 0);
+                          const currentExp = Math.max(
+                            0,
+                            Number(caissePromptExpected) || Math.round(Number(caissePromptBooking.finalTotalMAD) || 0)
+                          );
+                          if (nextVal !== '' && nextPaidNum < currentExp) {
+                            setCaissePromptHasCredit(true);
+                          }
+                        }}
+                        className="w-full bg-zinc-50 dark:bg-black border border-zinc-300 dark:border-zinc-700 focus:border-emerald-500 rounded-xl px-3 py-2 text-sm font-mono font-bold text-zinc-900 dark:text-white outline-none"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-zinc-700 dark:text-zinc-300 font-bold mb-1">
+                        {pickLang(lang, {
+                          ar: 'ملاحظة',
+                          fr: 'Note',
+                          amz: 'ⵜⴰⵏⵏⴰⵢⵜ',
+                          en: 'Note',
+                          es: 'Nota',
+                        })}
+                      </label>
+                      <input
+                        type="text"
+                        value={caissePromptNote}
+                        onChange={(e) => setCaissePromptNote(e.target.value)}
+                        className="w-full bg-zinc-50 dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setCaissePromptHasCredit((p) => !p)}
+                    className={`w-full min-h-[40px] px-3 py-2 rounded-xl text-xs font-black border flex items-center justify-between gap-2 cursor-pointer ${
+                      caissePromptHasCredit
+                        ? 'bg-orange-50 dark:bg-orange-500/20 border-orange-400 text-orange-800 dark:text-orange-200'
+                        : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <CreditCard className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                      <span>
+                        {pickLang(lang, {
+                          ar: 'واش كيتسالو باقي؟ (تسجيل الباقي كـ كريدي)',
+                          fr: 'Reste à payer ? (Enregistrer le reste en Crédit)',
+                          amz: 'ⵉⵙ ⵉⵍⵍⴰ ⵓⴽⵔⵉⴷⵉ ?',
+                          en: 'Balance Owed? (Record Remainder as Credit)',
+                          es: '¿Saldo pendiente? (Registrar como Crédito)',
+                        })}
+                      </span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-black/5 dark:bg-white/10">
+                      {caissePromptHasCredit ? 'نعم ✓' : 'لا'}
+                    </span>
+                  </button>
+
+                  {caissePromptHasCredit && (
+                    <div className="p-3 rounded-xl bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-500/35 space-y-2.5 text-xs">
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-orange-800 dark:text-orange-200 font-bold mb-1">
+                            {pickLang(lang, {
+                              ar: 'مبلغ الكريدي الباقي (MAD)',
+                              fr: 'Crédit restant (MAD)',
+                              amz: 'ⴰⴽⵔⵉⴷⵉ ⵉⵇⵇⵉⵎⵏ (MAD)',
+                              en: 'Credit Remaining (MAD)',
+                              es: 'Crédito pendiente (MAD)',
+                            })}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={computedRemaining > 0 ? String(computedRemaining) : ''}
+                            onChange={(e) => {
+                              const rem = Math.max(0, Number(e.target.value) || 0);
+                              setCaissePromptExpected(String(paidNum + rem));
+                            }}
+                            placeholder="0"
+                            className="w-full bg-white dark:bg-black border border-orange-300 dark:border-orange-500/50 rounded-lg px-2.5 py-1.5 font-mono font-black text-orange-700 dark:text-orange-300"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-zinc-700 dark:text-zinc-300 font-bold mb-1">
+                            {pickLang(lang, {
+                              ar: 'أو الإجمالي المتفق عليه (MAD)',
+                              fr: 'Ou Total convenu (MAD)',
+                              amz: 'ⵏⵖ ⴰⵎⵖⵔⵓⴷ (MAD)',
+                              en: 'Or Agreed Total (MAD)',
+                              es: 'O Total acordado (MAD)',
+                            })}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={caissePromptExpected}
+                            onChange={(e) => setCaissePromptExpected(e.target.value)}
+                            className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 font-mono text-zinc-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-zinc-700 dark:text-zinc-300 font-semibold mb-1">
+                            اسم الزبون
+                          </label>
+                          <input
+                            type="text"
+                            value={caissePromptClientName}
+                            onChange={(e) => setCaissePromptClientName(e.target.value)}
+                            className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-zinc-700 dark:text-zinc-300 font-semibold mb-1">
+                            رقم الهاتف
+                          </label>
+                          <input
+                            type="text"
+                            dir="ltr"
+                            value={caissePromptClientPhone}
+                            onChange={(e) => setCaissePromptClientPhone(e.target.value)}
+                            className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 font-mono text-zinc-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-zinc-700 dark:text-zinc-300 font-semibold mb-1">
+                            تاريخ الأداء المتوقع
+                          </label>
+                          <input
+                            type="date"
+                            value={caissePromptRepayDate}
+                            onChange={(e) => setCaissePromptRepayDate(e.target.value)}
+                            className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 font-mono text-zinc-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-orange-200 dark:border-orange-500/30 flex items-center justify-between text-xs font-black text-orange-900 dark:text-orange-200">
+                        <span>الباقي كـ كريدي (برقم {caissePromptClientPhone || caissePromptBooking.clientPhone}):</span>
+                        <span className="font-mono text-sm px-2.5 py-0.5 rounded-lg bg-orange-600 text-white">
+                          {computedRemaining} MAD
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
             <div className="flex gap-2 pt-1">
               <button
@@ -5091,7 +5855,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setCaissePromptBooking(null)}
-                className="px-4 min-h-[42px] rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold cursor-pointer"
+                className="px-4 min-h-[42px] rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold cursor-pointer"
               >
                 {pickLang(lang, {
                   ar: 'تخطي الآن',
@@ -5105,6 +5869,526 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </form>
         </div>
       )}
+
+      {/* Master Admin Direct Walk-In Booking Modal (Bypasses 2-Booking Anti-Spam Limit) */}
+      {isWalkInModalOpen && session?.role === 'master' && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4"
+          onClick={() => setIsWalkInModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-3xl max-h-[92vh] rounded-3xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 sm:px-5 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2 bg-stone-50 dark:bg-zinc-900">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center flex-shrink-0">
+                  <UserPlus className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black text-zinc-900 dark:text-white truncate">
+                    {pickLang(lang, {
+                      ar: 'حجز مباشر بالصالون — صلاحية المشرف العام (بدون حد أقصى)',
+                      fr: 'Réservation directe salon — Accès Patron (sans limite)',
+                      amz: 'ⴰⵙⵉⵀⴰⵔ ⵓⵙⵔⵉⴷ — ⴰⵏⴱⴱⴰⴹ',
+                      en: 'Master Direct Walk-In Booking (Cap Bypassed)',
+                      es: 'Reserva directa salón — Sin límite',
+                    })}
+                  </h3>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                    {pickLang(lang, {
+                      ar: 'يُسجل الموعد مباشرة باسم الزبون مع تجاوز حد الحجزين تلقائياً.',
+                      fr: 'Enregistre le RDV sans blocage même si le client a déjà 2 réservations.',
+                      amz: 'ⵉⵣⵎⵎⴻⵎ ⴰⵙⵉⵀⴰⵔ ⵡⴰⵔ ⵜⵉⵍⵉⵙⵜ ⵏ ⵙⵉⵏ ⵉⵙⵉⵀⴰⵔⵏ.',
+                      en: 'Books any client directly without triggering the 2-booking anti-spam limit.',
+                      es: 'Permite reservar sin restricciones aunque tenga 2 citas activas.',
+                    })}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsWalkInModalOpen(false)}
+                className="min-h-[38px] min-w-[38px] p-2 rounded-xl text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200/70 dark:hover:bg-zinc-800 cursor-pointer flex items-center justify-center"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-3 sm:px-5 bg-white dark:bg-zinc-950">
+              <BookingSection
+                isEmbeddedModal
+                allowAdminBypass
+                pricingResult={walkInPricingResult}
+                selectedBarberId={walkInBarberId}
+                onSelectBarberId={setWalkInBarberId}
+                selectedServiceIds={walkInServiceIds}
+                onToggleServiceId={(id) =>
+                  setWalkInServiceIds((prev) =>
+                    prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+                  )
+                }
+                onSetServiceIds={setWalkInServiceIds}
+                onRequestClose={() => setIsWalkInModalOpen(false)}
+                onBookingConfirmed={(created) => {
+                  showToast(
+                    pickLang(lang, {
+                      ar: `تم إضافة حجز مباشر لـ ${created.clientName} (${created.timeSlot}) ✓`,
+                      fr: `Réservation directe ajoutée pour ${created.clientName} ✓`,
+                      amz: `ⴰⵙⵉⵀⴰⵔ ⵓⵙⵔⵉⴷ ⵉⵜⵜⵓⵔⵏⴰ ⵉ ${created.clientName} ✓`,
+                      en: `Direct walk-in booking created for ${created.clientName} ✓`,
+                      es: `Reserva directa creada para ${created.clientName} ✓`,
+                    }),
+                    'success'
+                  );
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Centered Interactive Booking KPI / Queue Details Modal (Mobile & Desktop) */}
+      {bookingKpiModal && (() => {
+        const modalConfig: Record<
+          BookingKpiModalKind,
+          { title: string; subtitle: string; items: AppointmentBooking[]; badgeClass: string }
+        > = {
+          today_all: {
+            title: pickLang(lang, {
+              ar: 'تذاكر اليوم',
+              fr: 'Tickets du jour',
+              amz: 'ⵉⵏⵜⵜⵉⴽⵉⵜⵏ ⵏ ⵡⴰⵙⵙⴰ',
+              en: "Today's Tickets",
+              es: 'Tickets de hoy',
+            }),
+            subtitle: `${todayStr}`,
+            items: [...todayTickets].sort(
+              (a, b) => parseBookingStartMinutes(a.timeSlot) - parseBookingStartMinutes(b.timeSlot)
+            ),
+            badgeClass: 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200',
+          },
+          pending: {
+            title: pickLang(lang, {
+              ar: 'حجوزات اليوم قيد المراجعة (معلق)',
+              fr: 'En attente aujourd’hui',
+              amz: 'ⴳ ⵓⵔⴰⵊⵓ ⴰⵙⵙⴰ',
+              en: "Today's Pending Bookings",
+              es: 'Pendientes de hoy',
+            }),
+            subtitle: `${todayStr}`,
+            items: todayTickets
+              .filter((b) => ['pending', 'flexible_pending', 'pending_quote'].includes(b.status))
+              .sort(
+                (a, b) => parseBookingStartMinutes(a.timeSlot) - parseBookingStartMinutes(b.timeSlot)
+              ),
+            badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300',
+          },
+          confirmed: {
+            title: pickLang(lang, {
+              ar: 'المواعيد المؤكدة اليوم',
+              fr: 'Rendez-vous confirmés aujourd’hui',
+              amz: 'ⵉⵙⵉⵀⴰⵔⵏ ⵉⵜⵜⵓⵙⵏⵜⵎⵏ ⴰⵙⵙⴰ',
+              en: "Today's Confirmed Appointments",
+              es: 'Confirmados de hoy',
+            }),
+            subtitle: `${todayStr}`,
+            items: todayTickets
+              .filter((b) => b.status === 'confirmed')
+              .sort(
+                (a, b) => parseBookingStartMinutes(a.timeSlot) - parseBookingStartMinutes(b.timeSlot)
+              ),
+            badgeClass: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300',
+          },
+          rejected: {
+            title: pickLang(lang, {
+              ar: 'المرفوضة اليوم',
+              fr: 'Refusés aujourd’hui',
+              amz: 'ⵉⵜⵜⵓⵙⵔⵏ ⴰⵙⵙⴰ',
+              en: "Today's Rejected",
+              es: 'Rechazados de hoy',
+            }),
+            subtitle: `${todayStr}`,
+            items: todayTickets
+              .filter((b) => b.status === 'rejected')
+              .sort(
+                (a, b) => parseBookingStartMinutes(a.timeSlot) - parseBookingStartMinutes(b.timeSlot)
+              ),
+            badgeClass: 'bg-rose-100 text-rose-800 dark:bg-red-500/20 dark:text-red-300',
+          },
+          queue_active: {
+            title: 'باقي اليوم (الزبناء القادمون)',
+            subtitle: `مواعيد نشطة لليوم (${todayStr})`,
+            items: todayActiveQueue,
+            badgeClass: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300',
+          },
+          queue_future: {
+            title: 'الأيام القادمة / الأسبوع المقبل',
+            subtitle: `المواعيد المبرمجة بعد ${todayStr}`,
+            items: futureUpcomingQueue,
+            badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300',
+          },
+          queue_done: {
+            title: 'مواعيد مرت أو منتهية',
+            subtitle: 'الحجوزات المكتملة، الملغاة، أو التي انتهى وقتها',
+            items: todayPastOrDoneQueue,
+            badgeClass: 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300',
+          },
+        };
+
+        const activeCfg = modalConfig[bookingKpiModal];
+
+        return (
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-5 bg-black/65 backdrop-blur-sm"
+            onClick={() => setBookingKpiModal(null)}
+          >
+            <div
+              className="w-full max-w-2xl rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3 bg-zinc-50 dark:bg-zinc-900/90">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white truncate">
+                      {activeCfg.title}
+                    </h3>
+                    <span className={`px-2 py-0.5 rounded-lg text-[11px] font-black font-mono ${activeCfg.badgeClass}`}>
+                      {activeCfg.items.length}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">
+                    {activeCfg.subtitle}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBookingKpiModal(null)}
+                  className="min-h-[36px] min-w-[36px] p-1.5 rounded-xl text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200/70 dark:hover:bg-zinc-800 cursor-pointer flex items-center justify-center shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-3 sm:p-4 overflow-y-auto space-y-2.5 flex-1">
+                {activeCfg.items.length === 0 ? (
+                  <div className="py-10 text-center space-y-2">
+                    <CalendarDays className="w-8 h-8 text-zinc-300 dark:text-zinc-700 mx-auto" />
+                    <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                      لا توجد مواعيد في هذه القائمة حالياً.
+                    </p>
+                  </div>
+                ) : (
+                  activeCfg.items.map((booking) => {
+                    const tone = getBarberIdentityTokens(booking.barberId, booking.barberName);
+                    const phoneWa = formatMoroccanWhatsAppNumber(booking.clientPhone);
+                    const servicesText =
+                      (booking.cartItemsSummary || []).map((i) => i.name).filter(Boolean).join(' + ') ||
+                      (booking.services || [])
+                        .map((s) => s.name?.[lang] || s.name?.ar || s.name?.fr)
+                        .filter(Boolean)
+                        .join(' + ') ||
+                      'حلاقة';
+
+                    return (
+                      <div
+                        key={booking.id}
+                        className={`p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/70 border border-zinc-200 dark:border-zinc-800 space-y-2 ${tone.borderLeftClass}`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-black text-xs sm:text-sm text-zinc-900 dark:text-white">
+                                {booking.clientName}
+                              </span>
+                              <span className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
+                                {booking.ticketNumber}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${tone.badgeClass}`}>
+                                {booking.barberName.split(' ')[0]}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-zinc-600 dark:text-zinc-300">
+                              <span className="font-mono font-bold">
+                                {booking.date} · {booking.timeSlot === 'FLEXIBLE' ? 'مرن' : booking.timeSlot}
+                              </span>
+                              {' · '}
+                              <span>{servicesText}</span>
+                              {(booking.finalTotalMAD ?? 0) > 0 && (
+                                <span className="font-mono font-bold text-amber-700 dark:text-amber-400">
+                                  {' · '}
+                                  {booking.finalTotalMAD} MAD
+                                </span>
+                              )}
+                            </p>
+                          </div>
+
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                              booking.status === 'completed'
+                                ? 'bg-teal-50 text-teal-800 dark:bg-teal-500/20 dark:text-teal-300'
+                                : booking.status === 'confirmed'
+                                ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300'
+                                : booking.status === 'flexible_pending'
+                                ? 'bg-purple-50 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300'
+                                : ['rejected', 'cancelled', 'no_show'].includes(booking.status)
+                                ? 'bg-rose-50 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300'
+                                : 'bg-amber-50 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'
+                            }`}
+                          >
+                            {booking.status === 'completed'
+                              ? 'حضر ✓'
+                              : booking.status === 'confirmed'
+                              ? 'مقبول'
+                              : booking.status === 'flexible_pending'
+                              ? 'وقت مرن'
+                              : booking.status === 'no_show'
+                              ? 'تغيب'
+                              : booking.status === 'cancelled'
+                              ? 'ملغى'
+                              : booking.status === 'rejected'
+                              ? 'مرفوض'
+                              : 'معلق'}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-zinc-200/70 dark:border-zinc-800">
+                          <span className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400" dir="ltr">
+                            {booking.clientPhone}
+                          </span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <a
+                              href={`https://wa.me/${phoneWa}?text=${encodeURIComponent(
+                                buildClientTicketWhatsAppMessage(booking)
+                              )}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] inline-flex items-center gap-1"
+                            >
+                              <MessageCircle className="w-3 h-3" />
+                              <span>واتساب</span>
+                            </a>
+
+                            {['pending', 'pending_quote'].includes(booking.status) &&
+                              session?.role !== 'caisse' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirm(booking.id)}
+                                  className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                                >
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>تأكيد</span>
+                                </button>
+                              )}
+
+                            {booking.status !== 'completed' &&
+                              booking.status !== 'cancelled' &&
+                              booking.status !== 'rejected' && (
+                                <button
+                                  type="button"
+                                  disabled={quickActionBusyId === booking.id}
+                                  onClick={() => handleMarkCompleted(booking)}
+                                  className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-black text-[11px] inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  <Check className="w-3 h-3" />
+                                  <span>حضر</span>
+                                </button>
+                              )}
+
+                            {!booking.caisseLoggedAt &&
+                              !['cancelled', 'rejected'].includes(booking.status) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBookingKpiModal(null);
+                                  openCaissePromptForBooking(booking);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Wallet className="w-3 h-3" />
+                                <span>للاكيس</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSearchQuery(booking.ticketNumber || booking.clientPhone);
+                                setStatusFilter('all');
+                                setMasterBarberFilter('all');
+                                setExpandedBookingIds((prev) => ({
+                                  ...prev,
+                                  [booking.id]: true,
+                                }));
+                                setBookingKpiModal(null);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-[11px] cursor-pointer"
+                            >
+                              عرض في القائمة
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Single Booking Selective Delete Modal with Credit Protection (Master Admin only) */}
+      {deleteTargetBooking && session?.role === 'master' && (() => {
+        const creditSummary = computeOutstandingCreditsForPhone(
+          deleteTargetBooking.clientPhone,
+          caisseEntries,
+          manualCredits,
+          barberRoster
+        );
+        const canConfirmDelete = !creditSummary.hasCredit || deleteBookingCreditAck;
+
+        return (
+          <div
+            className="fixed inset-0 z-[130] bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
+            onClick={() => {
+              if (!deleteBookingBusy) setDeleteTargetBooking(null);
+            }}
+          >
+            <div
+              className="w-full max-w-lg rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-right"
+              dir="rtl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-4 py-3.5 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-rose-50/70 dark:bg-rose-950/30">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-rose-100 dark:bg-rose-500/20 border border-rose-200 dark:border-rose-500/40 flex items-center justify-center text-rose-700 dark:text-rose-300">
+                    <Trash2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-zinc-900 dark:text-white">
+                      تأكيد حذف الموعد الانتقائي
+                    </h3>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                      حذف هذا الحجز فقط دون المساس بباقي سجلات الزبون أو حسابات المجر
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={deleteBookingBusy}
+                  onClick={() => setDeleteTargetBooking(null)}
+                  className="p-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-zinc-900 dark:hover:text-white cursor-pointer disabled:opacity-50"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3.5">
+                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/70 border border-zinc-200 dark:border-zinc-800 space-y-1 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-black text-zinc-900 dark:text-white">
+                      {deleteTargetBooking.clientName}
+                    </span>
+                    <span className="font-mono text-[11px] font-bold text-zinc-600 dark:text-zinc-300" dir="ltr">
+                      {deleteTargetBooking.clientPhone}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                    <span>
+                      {deleteTargetBooking.date} • {deleteTargetBooking.timeSlot} • {deleteTargetBooking.barberName}
+                    </span>
+                    <span className="font-mono font-bold text-amber-700 dark:text-amber-400">
+                      {deleteTargetBooking.finalTotalMAD ??
+                        deleteTargetBooking.originalTotalMAD ??
+                        deleteTargetBooking.services.reduce((sum, s) => sum + (s.basePrice || 0), 0)}{' '}
+                      MAD
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-zinc-600 dark:text-zinc-300">
+                    الخدمة:{' '}
+                    {deleteTargetBooking.services
+                      .map((s) => s.name?.ar || s.name?.fr || s.id)
+                      .join(' + ')}
+                  </div>
+                </div>
+
+                {creditSummary.hasCredit ? (
+                  <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-400 dark:border-rose-500/60 space-y-2.5">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                      <div className="space-y-1 text-xs">
+                        <p className="font-black text-rose-900 dark:text-rose-200">
+                          ⚠️ تنبيه حماية الكريدي: هاد الزبون عندو كريدي باقي ما تخلصش!
+                        </p>
+                        <p className="text-[11px] text-rose-800 dark:text-rose-300">
+                          مجموع الكريدي المفتوح على الرقم{' '}
+                          <span className="font-mono font-black" dir="ltr">
+                            {deleteTargetBooking.clientPhone}
+                          </span>
+                          : <strong className="font-mono">{creditSummary.totalOwedMAD} MAD</strong>
+                        </p>
+                        {creditSummary.creditorBreakdowns.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {creditSummary.creditorBreakdowns.map((item) => (
+                              <span
+                                key={item.creditorKey}
+                                className="px-2 py-0.5 rounded-lg bg-white dark:bg-zinc-900 border border-rose-200 dark:border-rose-500/40 text-[10px] font-bold text-rose-800 dark:text-rose-200"
+                              >
+                                {item.creditorLabel}: {item.amountMAD} MAD
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-[11px] font-semibold text-amber-800 dark:text-amber-300 pt-1">
+                          ملاحظة: حذف الحجز لا يحذف الكريدي أبداً؛ سجل الكريدي ومداخيل المجر سيبقون محفوظين.
+                        </p>
+                      </div>
+                    </div>
+
+                    <label className="flex items-start gap-2 p-2.5 rounded-lg bg-white/90 dark:bg-zinc-900/80 border border-rose-300 dark:border-rose-500/50 cursor-pointer text-[11px] font-bold text-rose-900 dark:text-rose-100">
+                      <input
+                        type="checkbox"
+                        checked={deleteBookingCreditAck}
+                        onChange={(e) => setDeleteBookingCreditAck(e.target.checked)}
+                        className="mt-0.5 rounded accent-rose-600"
+                      />
+                      <span>
+                        فهمت أن الزبون عليه كريدي ({creditSummary.totalOwedMAD} MAD) وأن سجل الكريدي غيبقى محفوظ، وأريد حذف هذا الحجز فقط.
+                      </span>
+                    </label>
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-500/30 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>✓ لا يوجد كريدي مفتوح مسجل على رقم هذا الزبون.</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={deleteBookingBusy}
+                  onClick={() => setDeleteTargetBooking(null)}
+                  className="px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer disabled:opacity-50"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  disabled={!canConfirmDelete || deleteBookingBusy}
+                  onClick={handleConfirmDeleteBooking}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{deleteBookingBusy ? 'جاري الحذف...' : 'حذف الحجز الآن'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

@@ -14,6 +14,7 @@ import {
   buildClientProfileQrPayload,
   downloadClientQrPassPng,
   generateClientProfileQrDataUrl,
+  normalizePhoneForQrId,
 } from '../utils/clientQr';
 import { formatMoroccanWhatsAppNumber } from '../utils/whatsappAutomation';
 import { useLanguage } from '../context/LanguageContext';
@@ -126,7 +127,7 @@ export const ClientQrModal: React.FC<ClientQrModalProps> = ({
                   en: 'Client Profile QR',
                   es: 'Perfil QR',
                 })}{' '}
-                · {client.id}
+                · ID: {normalizePhoneForQrId(client.phoneDisplay || client.normalizedPhone) || client.id}
               </p>
             </div>
           </div>

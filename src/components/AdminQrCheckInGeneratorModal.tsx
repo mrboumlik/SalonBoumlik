@@ -16,10 +16,12 @@ import {
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { AppointmentBooking, CrmClientProfile } from '../types';
-import { TEAM_MEMBERS } from '../data/barbershopData';
+import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore';
+import { useBarberRoster } from '../utils/barberRosterStore';
 import {
   buildBookingCheckInQrPayload,
   generateCheckInToken,
+  normalizePhoneForQrId,
 } from '../utils/clientQr';
 import {
   adjustClientLoyaltyPoints,
@@ -54,6 +56,12 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
   onMarkBookingCompleted,
 }) => {
   const { lang, isRtl } = useLanguage();
+  const roster = useBarberRoster();
+  const profilesMap = useBarberProfiles();
+  const mergedBarbers = useMemo(
+    () => getMergedBarbers(profilesMap, roster),
+    [profilesMap, roster]
+  );
   const [mode, setMode] = useState<'booking' | 'walkin'>('booking');
   const [bookingSearch, setBookingSearch] = useState('');
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
@@ -61,7 +69,7 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
   const [walkinName, setWalkinName] = useState('');
   const [walkinPhone, setWalkinPhone] = useState('');
   const [walkinBarberId, setWalkinBarberId] = useState(
-    scopedBarberId !== 'all' ? scopedBarberId : TEAM_MEMBERS[0]?.id || 'hassan'
+    scopedBarberId !== 'all' ? scopedBarberId : mergedBarbers[0]?.id || 'hassan'
   );
   const [uniqueToken, setUniqueToken] = useState<string>(() => generateCheckInToken());
 
@@ -139,10 +147,17 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
       );
       const verifiedVisits = getVerifiedVisitsCount(history, crm);
       const points = computeClientPointsSummary(verifiedVisits, crm);
-      const token = selectedBooking.checkInToken || uniqueToken;
+      const phoneId = normalizePhoneForQrId(selectedBooking.clientPhone);
+      const token =
+        phoneId ||
+        (selectedBooking.checkInToken && !selectedBooking.checkInToken.startsWith('CHK-')
+          ? selectedBooking.checkInToken
+          : '') ||
+        uniqueToken;
       const qrPayload = buildBookingCheckInQrPayload({
         ticketNumber: selectedBooking.ticketNumber,
         checkInToken: token,
+        clientPhone: selectedBooking.clientPhone,
       });
 
       return {
@@ -159,7 +174,8 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
     }
 
     const cleanName = walkinName.trim() || walkInDefaultName;
-    const cleanPhone = walkinPhone.trim() || '0600000000';
+    const cleanPhone = walkinPhone.trim();
+    const walkinPhoneId = normalizePhoneForQrId(cleanPhone);
     const digits = normalizeMoroccanPhoneDigits(cleanPhone);
     const crm =
       digits.length >= 6
@@ -175,22 +191,23 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
     const verifiedVisits = getVerifiedVisitsCount(history, crm);
     const points = computeClientPointsSummary(verifiedVisits, crm);
     const barberObj =
-      TEAM_MEMBERS.find((b) => b.id === walkinBarberId) || TEAM_MEMBERS[0];
+      mergedBarbers.find((b) => b.id === walkinBarberId) || mergedBarbers[0];
     const origin =
       typeof window !== 'undefined' && window.location?.origin
         ? window.location.origin
         : 'https://salonboumlik.com';
-    const lookupKey = digits.length >= 6 ? cleanPhone : uniqueToken;
+    const resolvedWalkinToken = walkinPhoneId || generateCheckInToken(cleanPhone);
+    const lookupKey = walkinPhoneId || resolvedWalkinToken;
     const qrPayload = `${origin}/#checkin=${encodeURIComponent(lookupKey)}&k=${encodeURIComponent(
-      uniqueToken
+      resolvedWalkinToken
     )}`;
 
     return {
       clientName: crm?.clientName && !walkinName.trim() ? crm.clientName : cleanName,
-      clientPhone: walkinPhone.trim(),
+      clientPhone: cleanPhone,
       barberName: barberObj?.name[lang] || barberObj?.name.fr || 'Salon Boumlik',
-      ticketOrRef: uniqueToken,
-      token: uniqueToken,
+      ticketOrRef: resolvedWalkinToken,
+      token: resolvedWalkinToken,
       qrPayload,
       verifiedVisits,
       pointsBalance: points.pointsBalance,
@@ -393,7 +410,7 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
   };
 
   const handleRegenerateToken = () => {
-    setUniqueToken(generateCheckInToken());
+    setUniqueToken(generateCheckInToken(walkinPhone));
     setLastAttributedMsg(null);
   };
 
@@ -679,7 +696,7 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
                     onChange={(e) => setWalkinBarberId(e.target.value)}
                     className="w-full min-h-[40px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
                   >
-                    {TEAM_MEMBERS.map((b) => (
+                    {mergedBarbers.map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.name[lang] || b.name.fr}
                       </option>

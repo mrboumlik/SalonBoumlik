@@ -3,6 +3,10 @@ import { MessageCircle } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { PricingEngineResult } from '../types';
 import { SALON_INFO, TEAM_MEMBERS } from '../data/barbershopData';
+import {
+  useSalonProfileSettings,
+  normalizeSalonWhatsappDigits,
+} from '../utils/salonSettingsStore';
 
 interface FloatingWhatsAppButtonProps {
   pricingResult: PricingEngineResult;
@@ -14,6 +18,7 @@ export const FloatingWhatsAppButton: React.FC<FloatingWhatsAppButtonProps> = ({
   selectedBarberId,
 }) => {
   const { lang, isRtl } = useLanguage();
+  const salonSettings = useSalonProfileSettings();
 
   const selectedBarber = useMemo(
     () => TEAM_MEMBERS.find((b) => b.id === selectedBarberId),
@@ -108,9 +113,9 @@ export const FloatingWhatsAppButton: React.FC<FloatingWhatsAppButtonProps> = ({
   }, [lang, pricingResult.finalTotal, pricingResult.items.length, selectedBarber, selectedServiceNames]);
 
   const whatsappHref = useMemo(() => {
-    const phone = SALON_INFO.whatsappNumber.replace(/\D/g, '') || '212635392503';
+    const phone = normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp);
     return `https://wa.me/${phone}?text=${encodeURIComponent(formattedMessage)}`;
-  }, [formattedMessage]);
+  }, [formattedMessage, salonSettings.salonWhatsapp]);
 
   const buttonLabel = useMemo(() => {
     if (lang === 'ar') return 'مراسلة عبر واتساب';

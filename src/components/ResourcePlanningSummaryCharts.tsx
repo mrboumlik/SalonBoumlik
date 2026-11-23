@@ -13,8 +13,10 @@ import {
   Legend,
 } from 'recharts';
 import { BarChart3, Clock, TrendingUp, Users, AlertCircle } from 'lucide-react';
-import { AppointmentBooking, CustomerReview } from '../types';
-import { TEAM_MEMBERS, INITIAL_REVIEWS } from '../data/barbershopData';
+import { AppointmentBooking, CustomerReview, StaffRole } from '../types';
+import { INITIAL_REVIEWS } from '../data/barbershopData';
+import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore';
+import { useBarberRoster } from '../utils/barberRosterStore';
 import { ALL_SALON_CONFIGURABLE_HOURS } from '../utils/barberScheduleStore';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
@@ -22,7 +24,7 @@ import { pickLang } from '../utils/i18n';
 interface ResourcePlanningSummaryChartsProps {
   bookings: AppointmentBooking[];
   reviews?: CustomerReview[];
-  role?: 'master' | 'barber';
+  role?: StaffRole;
   ownBarberId?: string;
 }
 
@@ -68,6 +70,12 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
   ownBarberId = 'all',
 }) => {
   const { lang } = useLanguage();
+  const roster = useBarberRoster();
+  const profilesMap = useBarberProfiles();
+  const mergedBarbers = useMemo(
+    () => getMergedBarbers(profilesMap, roster),
+    [profilesMap, roster]
+  );
   const [period, setPeriod] = useState<PeriodWindow>('30d');
   const [barberScope, setBarberScope] = useState<string>(
     role === 'barber' ? ownBarberId : 'all'
@@ -89,14 +97,14 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
   const hourScopedBookings = useMemo(() => {
     const targetBarber = role === 'barber' ? ownBarberId : barberScope;
     if (targetBarber === 'all') return periodFilteredBookings;
-    const barberObj = TEAM_MEMBERS.find((m) => m.id === targetBarber);
+    const barberObj = mergedBarbers.find((m) => m.id === targetBarber);
     const firstFr = barberObj?.name.fr.toLowerCase().split(' ')[0] || targetBarber;
     return periodFilteredBookings.filter(
       (b) =>
         b.barberId === targetBarber ||
         b.barberName.toLowerCase().includes(firstFr)
     );
-  }, [periodFilteredBookings, role, ownBarberId, barberScope]);
+  }, [periodFilteredBookings, role, ownBarberId, barberScope, mergedBarbers]);
 
   // 1. Peak Booking Hours Aggregation (Recharts dataset)
   const peakHoursData = useMemo(() => {
@@ -161,8 +169,8 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
   const barberPerformanceData = useMemo(() => {
     const targetMembers =
       role === 'barber'
-        ? TEAM_MEMBERS.filter((m) => m.id === ownBarberId)
-        : TEAM_MEMBERS;
+        ? mergedBarbers.filter((m) => m.id === ownBarberId)
+        : mergedBarbers;
 
     return targetMembers.map((barber) => {
       const firstFr = barber.name.fr.toLowerCase().split(' ')[0];
@@ -350,7 +358,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                   es: 'Todos los barberos',
                 })}
               </option>
-              {TEAM_MEMBERS.map((m) => (
+              {mergedBarbers.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name[lang] || m.name.ar || m.name.fr}
                 </option>

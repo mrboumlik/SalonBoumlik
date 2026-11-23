@@ -10,16 +10,24 @@ import {
   ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { INITIAL_REVIEWS, SERVICES, SALON_INFO, TEAM_MEMBERS } from '../data/barbershopData';
+import { INITIAL_REVIEWS, SERVICES, SALON_INFO } from '../data/barbershopData';
 import { CustomerReview } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { useSalonProfileSettings } from '../utils/salonSettingsStore';
+import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore';
+import { useBarberRoster } from '../utils/barberRosterStore';
 import { submitBarberReview, useFirestoreReviews } from '../utils/reviewsStore';
 import { pickLang } from '../utils/i18n';
 
 export const ReviewsSection: React.FC = () => {
   const { lang, isRtl } = useLanguage();
   const salonSettings = useSalonProfileSettings();
+  const barberRoster = useBarberRoster();
+  const barberProfiles = useBarberProfiles();
+  const mergedBarbers = React.useMemo(
+    () => getMergedBarbers(barberProfiles, barberRoster),
+    [barberProfiles, barberRoster]
+  );
   const { reviews: firestoreReviews } = useFirestoreReviews();
   const carouselRef = useRef<HTMLDivElement>(null);
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
@@ -53,7 +61,7 @@ export const ReviewsSection: React.FC = () => {
   const [filterRating, setFilterRating] = useState<number | 'all'>('all');
 
   // Form states
-  const [selectedBarberId, setSelectedBarberId] = useState<string>(TEAM_MEMBERS[0]?.id || 'hassan');
+  const [selectedBarberId, setSelectedBarberId] = useState<string>(mergedBarbers[0]?.id || 'hassan');
   const [author, setAuthor] = useState('');
   const [city, setCity] = useState('');
   const [serviceName, setServiceName] = useState('');
@@ -600,7 +608,7 @@ export const ReviewsSection: React.FC = () => {
                     })}
                   </label>
                   <div className="grid grid-cols-2 gap-1.5">
-                    {TEAM_MEMBERS.map((b) => {
+                    {mergedBarbers.map((b) => {
                       const active = selectedBarberId === b.id;
                       return (
                         <button

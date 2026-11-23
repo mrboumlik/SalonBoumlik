@@ -10,6 +10,7 @@ export interface ClientQrTarget {
   verifiedVisits?: number;
   isVip?: boolean;
   isBanned?: boolean;
+  lifetimeSpendMAD?: number;
 }
 
 export interface ParsedQrScanResult {
@@ -20,12 +21,33 @@ export interface ParsedQrScanResult {
 }
 
 /**
- * Generates a short unique check-in verification token for an appointment ticket QR.
+ * Normalizes a phone number into a clean canonical ID (e.g. 0635392503) for QR Check-In & Client Passes.
  */
-export function generateCheckInToken(): string {
-  const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
-  const timePart = Date.now().toString(36).slice(-3).toUpperCase();
-  return `CHK-${rand}${timePart}`.slice(0, 16);
+export function normalizePhoneForQrId(rawPhone?: string): string {
+  let digits = String(rawPhone || '').replace(/\D/g, '');
+  if (digits.length < 6) return '';
+  if (digits.startsWith('00212') && digits.length >= 13) {
+    digits = digits.slice(5);
+  } else if (digits.startsWith('212') && digits.length >= 11) {
+    digits = digits.slice(3);
+  }
+  if (digits.startsWith('0') && digits.length >= 10) {
+    return digits;
+  }
+  if (digits.length === 9 && /^[567]/.test(digits)) {
+    return `0${digits}`;
+  }
+  return digits;
+}
+
+/**
+ * Returns the client's normalized phone ID as the primary Check-In verification ID
+ * instead of random CHK-... codes.
+ */
+export function generateCheckInToken(clientPhone?: string): string {
+  const phoneId = normalizePhoneForQrId(clientPhone);
+  if (phoneId) return phoneId;
+  return 'WALKIN';
 }
 
 /**
@@ -35,13 +57,18 @@ export function generateCheckInToken(): string {
 export function buildBookingCheckInQrPayload(booking: {
   ticketNumber: string;
   checkInToken?: string;
+  clientPhone?: string;
 }): string {
   const origin =
     typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
       : 'https://salonboumlik.com';
-  const tokenPart = booking.checkInToken
-    ? `&k=${encodeURIComponent(booking.checkInToken)}`
+  const resolvedToken =
+    (booking.clientPhone ? normalizePhoneForQrId(booking.clientPhone) : '') ||
+    booking.checkInToken ||
+    '';
+  const tokenPart = resolvedToken
+    ? `&k=${encodeURIComponent(resolvedToken)}`
     : '';
   return `${origin}/#checkin=${encodeURIComponent(booking.ticketNumber)}${tokenPart}`;
 }
@@ -54,8 +81,12 @@ export function buildClientProfileQrPayload(client: ClientQrTarget): string {
     typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
       : 'https://salonboumlik.com';
-  const lookup = client.phoneDisplay || client.normalizedPhone || client.id;
-  return `${origin}/#track=${encodeURIComponent(lookup)}&cid=${encodeURIComponent(client.id)}`;
+  const phoneId =
+    normalizePhoneForQrId(client.phoneDisplay || client.normalizedPhone) ||
+    client.phoneDisplay ||
+    client.normalizedPhone ||
+    client.id;
+  return `${origin}/#track=${encodeURIComponent(phoneId)}&cid=${encodeURIComponent(phoneId)}`;
 }
 
 /**
@@ -87,7 +118,7 @@ export function parseScannedQrResult(rawDecoded: string): ParsedQrScanResult {
     return { kind: 'ticket', query: '' };
   }
 
-  // Unique Booking Arrival Check-In QR (#checkin=#SB-1234&k=CHK-...)
+  // Unique Booking Arrival Check-In QR (#checkin=#SB-1234&k=0635392503)
   if (text.toLowerCase().includes('checkin=')) {
     const afterCheckin = text.split(/checkin=/i)[1] || '';
     const rawTicketVal = afterCheckin.split('&')[0] || '';
@@ -318,8 +349,10 @@ export async function downloadClientQrPassPng(
 
   ctx.fillStyle = '#FBBF24';
   ctx.font = 'bold 13px ui-monospace, SFMono-Regular, monospace';
+  const primaryPhoneId =
+    normalizePhoneForQrId(client.phoneDisplay || client.normalizedPhone) || client.id;
   const badgeText = [
-    `ID: ${client.id}`,
+    `ID: ${primaryPhoneId}`,
     typeof client.verifiedVisits === 'number' ? `VISITS: ${client.verifiedVisits}` : null,
     client.isVip ? 'VIP' : null,
   ]
@@ -346,12 +379,89 @@ export async function downloadClientQrPassPng(
   ctx.fillText('Scan at Salon Boumlik to open tracking & loyalty history', width / 2, 624);
 
   const link = document.createElement('a');
-  const safeName = (client.clientName || client.id)
+  const safeName = (client.clientName || primaryPhoneId)
     .replace(/[^a-zA-Z0-9_-]+/g, '_')
-    .replace(/^_+|_+$/g, '') || client.id;
+    .replace(/^_+|_+$/g, '') || primaryPhoneId;
   link.download = `Salon_Boumlik_Client_QR_${safeName}.png`;
   link.href = canvas.toDataURL('image/png');
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+}
+
+function escapeVcardField(raw: string): string {
+  return String(raw || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\n/g, '\\n')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .trim();
+}
+
+function formatInternationalVcardTel(rawPhone?: string): string {
+  const digits = String(rawPhone || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('212')) return `+${digits}`;
+  if (digits.startsWith('0')) return `+212${digits.slice(1)}`;
+  if (digits.length === 9 && /^[567]/.test(digits)) return `+212${digits}`;
+  return `+${digits}`;
+}
+
+/**
+ * Generates a standard vCard 3.0 block compatible with iPhone/Android Contacts.
+ */
+export function buildClientVcard(client: ClientQrTarget): string {
+  const displayName = escapeVcardField(client.clientName || 'Client Salon Boumlik');
+  const intlTel = formatInternationalVcardTel(client.phoneDisplay || client.normalizedPhone);
+  const noteParts = [
+    'Salon Boumlik Taroudant',
+    typeof client.verifiedVisits === 'number' ? `Visits: ${client.verifiedVisits}` : null,
+    typeof client.lifetimeSpendMAD === 'number' ? `Total: ${client.lifetimeSpendMAD} MAD` : null,
+    client.isVip ? 'VIP' : null,
+  ].filter(Boolean);
+
+  const lines = [
+    'BEGIN:VCARD',
+    'VERSION:3.0',
+    `FN:${displayName}`,
+    `N:${displayName};;;;`,
+    ...(intlTel ? [`TEL;TYPE=CELL:${intlTel}`] : []),
+    'ORG:Salon Boumlik Taroudant',
+    `NOTE:${escapeVcardField(noteParts.join(' | '))}`,
+    'END:VCARD',
+  ];
+  return lines.join('\r\n');
+}
+
+/**
+ * Exports one or multiple CRM clients into a single downloadable `.vcf` file.
+ */
+export function downloadClientsVcf(
+  clients: ClientQrTarget[],
+  customFilename?: string
+): number {
+  const valid = clients.filter(
+    (c) => String(c.phoneDisplay || c.normalizedPhone || '').replace(/\D/g, '').length >= 4
+  );
+  if (valid.length === 0) return 0;
+
+  const vcfPayload = valid.map((c) => buildClientVcard(c)).join('\r\n') + '\r\n';
+  const blob = new Blob([vcfPayload], { type: 'text/vcard;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  const fallbackName =
+    valid.length === 1
+      ? `Salon_Boumlik_${(valid[0].clientName || normalizePhoneForQrId(valid[0].phoneDisplay) || 'Contact')
+          .replace(/[^\p{L}\p{N}_-]+/gu, '_')
+          .replace(/^_+|_+$/g, '') || 'Contact'}.vcf`
+      : `Salon_Boumlik_Contacts_${valid.length}.vcf`;
+
+  link.href = url;
+  link.download = customFilename || fallbackName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  return valid.length;
 }

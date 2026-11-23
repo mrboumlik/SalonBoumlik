@@ -12,6 +12,7 @@ import { ReviewsSection } from './components/ReviewsSection';
 import { FAQSection } from './components/FAQSection';
 import { ContactSection } from './components/ContactSection';
 import { Footer } from './components/Footer';
+import { PublicInfoModal, PublicInfoSection } from './components/PublicInfoModal';
 import { DrawerMenu, HomepageSectionKey } from './components/DrawerMenu';
 import { TrackBookingModal } from './components/TrackBookingModal';
 import { AdminDashboard } from './components/AdminDashboard';
@@ -23,6 +24,10 @@ import {
   useClientAppointmentReminders,
 } from './utils/clientReminderWatcher';
 import { calculateCartPricing } from './utils/pricingEngine';
+import {
+  resolveEffectiveServicePrices,
+  useShopPricingConfig,
+} from './utils/shopPricingStore';
 import { HairColorConfig } from './types';
 import {
   Phone,
@@ -40,6 +45,11 @@ import {
 } from 'lucide-react';
 import { SALON_INFO } from './data/barbershopData';
 import { pickLang } from './utils/i18n';
+import {
+  formatSalonDisplayPhone,
+  normalizeSalonTelHref,
+  useSalonProfileSettings,
+} from './utils/salonSettingsStore';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -97,6 +107,7 @@ class AppErrorBoundary extends React.Component<
 
 function SalonBoumlikApp() {
   const { lang, isRtl } = useLanguage();
+  const salonSettings = useSalonProfileSettings();
 
   // Modals & Panels
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -104,6 +115,7 @@ function SalonBoumlikApp() {
   const [isTrackBookingOpen, setIsTrackBookingOpen] = useState(false);
   const [trackSearchInitial, setTrackSearchInitial] = useState('');
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [activePublicInfo, setActivePublicInfo] = useState<PublicInfoSection | null>(null);
 
   // All homepage content sections collapsed/hidden by default until clicked
   const [expandedSections, setExpandedSections] = useState<
@@ -134,12 +146,27 @@ function SalonBoumlikApp() {
     return phones.length > 0 ? phones[phones.length - 1] : '';
   });
 
-  // Dynamic Pricing Calculation
+  const shopPricingConfig = useShopPricingConfig();
+  const nowLocal = new Date();
+  const todayLocalStr = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`;
+  const todayShopPricing = resolveEffectiveServicePrices({
+    dateStr: todayLocalStr,
+    shopConfig: shopPricingConfig,
+  });
+
+  const hiddenServiceSet = new Set(shopPricingConfig.hiddenServiceIds || []);
+  const activeSelectedServiceIds = selectedServiceIds.filter((id) => !hiddenServiceSet.has(id));
+
+  // Dynamic Pricing Calculation (live global shop prices + today's special day rules + bundles + hidden services)
   const pricingResult = calculateCartPricing({
-    selectedIds: selectedServiceIds,
+    selectedIds: activeSelectedServiceIds,
     colorConfig,
     proteinPrice,
     lang,
+    effectiveServicePrices: todayShopPricing.priceMap,
+    specialRuleLabel: todayShopPricing.activeSpecialRuleLabels[0],
+    hiddenServiceIds: shopPricingConfig.hiddenServiceIds,
+    serviceBundles: shopPricingConfig.serviceBundles,
   });
 
   // Keep live PWA reminder notifications active for tracked client tickets
@@ -563,9 +590,10 @@ function SalonBoumlikApp() {
         }}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onNavigateToSection={handleNavigateToSection}
+        onOpenInfoModal={(section) => setActivePublicInfo(section)}
       />
 
-      {/* 4. Direct Booking Modal Overlay (Full 5-Step Progressive Wizard) */}
+      {/* 4. Direct Booking Modal Overlay (Full 6-Step Progressive Wizard) */}
       <MotionConfig reducedMotion="user">
         <AnimatePresence>
           {isBookingModalOpen && (
@@ -614,16 +642,19 @@ function SalonBoumlikApp() {
                   </button>
                 </div>
 
-                {/* Embedded 5-Step Booking Wizard */}
+                {/* Embedded 6-Step Booking Wizard */}
                 <div className="flex-1 overflow-y-auto overscroll-contain px-3 sm:px-5">
                   <BookingSection
                     isEmbeddedModal
                     onRequestClose={() => setIsBookingModalOpen(false)}
                     pricingResult={pricingResult}
+                    colorConfig={colorConfig}
+                    proteinPrice={proteinPrice}
                     selectedBarberId={selectedBarberId}
                     onSelectBarberId={setSelectedBarberId}
                     selectedServiceIds={selectedServiceIds}
                     onToggleServiceId={handleToggleServiceId}
+                    onSetServiceIds={setSelectedServiceIds}
                     onBookingConfirmed={(booking) => {
                       if (booking.clientPhone) setActiveClientPhone(booking.clientPhone);
                     }}
@@ -669,6 +700,14 @@ function SalonBoumlikApp() {
         initialSearch={trackSearchInitial}
       />
 
+      {/* 6b. Public Informational Modal (About, Contact, Privacy, Terms) */}
+      <PublicInfoModal
+        activeSection={activePublicInfo}
+        onSelectSection={setActivePublicInfo}
+        onClose={() => setActivePublicInfo(null)}
+        onOpenBooking={handleOpenBookingModal}
+      />
+
       {/* 7. Hidden Admin Dashboard (Protected by PIN) */}
       <AdminDashboard
         isOpen={isAdminOpen}
@@ -687,9 +726,9 @@ function SalonBoumlikApp() {
         className="sm:hidden fixed bottom-3 inset-x-3 z-40 max-w-md mx-auto bg-white/95 dark:bg-[#13151B]/95 backdrop-blur-md p-2 rounded-2xl border border-stone-200/90 dark:border-zinc-800 shadow-lg flex items-center gap-2"
       >
         <a
-          href={`tel:${SALON_INFO.phone}`}
+          href={normalizeSalonTelHref(salonSettings.salonPhone)}
           aria-label={ui.mobileCallAria}
-          title={SALON_INFO.displayPhone}
+          title={formatSalonDisplayPhone(salonSettings.salonPhone)}
           className="min-h-[44px] min-w-[44px] rounded-xl bg-stone-100 hover:bg-stone-200/80 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 flex items-center justify-center active:scale-95 transition-all flex-shrink-0"
         >
           <Phone className="w-4 h-4 text-amber-700 dark:text-amber-400" />
