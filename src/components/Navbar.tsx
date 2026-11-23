@@ -11,10 +11,12 @@ interface NavbarProps {
   onOpenTrackBooking?: () => void;
   onOpenDrawerMenu: () => void;
   onOpenAdmin?: () => void;
+  onNavigateHome?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   onOpenDrawerMenu,
+  onNavigateHome,
 }) => {
   const { lang } = useLanguage();
   const { isDark, toggleTheme } = useTheme();
@@ -52,6 +54,27 @@ export const Navbar: React.FC<NavbarProps> = ({
     es: 'Abrir el menú',
   }[lang] || 'Menu';
 
+  const homeAria = {
+    ar: 'العودة إلى الصفحة الرئيسية — صالون بومليك',
+    fr: 'Retour à l’accueil — Salon Boumlik',
+    en: 'Back to home — Salon Boumlik',
+    amz: 'ⴰⵖⵓⵍ ⵖⵔ ⵜⴰⵙⵏⴰ ⵜⴰⵎⵣⵡⴰⵔⵓⵜ — Salon Boumlik',
+    es: 'Volver al inicio — Salon Boumlik',
+  }[lang] || 'Salon Boumlik';
+
+  const handleLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    if (onNavigateHome) {
+      onNavigateHome();
+      return;
+    }
+    try {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {
+      window.scrollTo(0, 0);
+    }
+  };
+
   return (
     <header
       className={`sticky top-0 z-40 transition-all duration-200 border-b ${
@@ -63,8 +86,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-2.5 sm:gap-4">
         {/* Logo & Brand Name ONLY */}
         <a
-          href="#"
-          className="flex items-center gap-2.5 sm:gap-3 group flex-shrink-0 min-w-0"
+          href="#top"
+          onClick={handleLogoClick}
+          aria-label={homeAria}
+          title={homeAria}
+          className="flex items-center gap-2.5 sm:gap-3 group flex-shrink-0 min-w-0 cursor-pointer"
         >
           <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700/80 p-0.5 flex items-center justify-center shadow-2xs group-hover:border-amber-500/60 transition-colors">
             <img

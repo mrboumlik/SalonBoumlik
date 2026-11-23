@@ -20,6 +20,7 @@ import { ToastContainer } from './components/ToastContainer';
 import { ModalPortal } from './components/ModalPortal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { FloatingWhatsAppButton } from './components/FloatingWhatsAppButton';
+import { QuickScrollControl } from './components/QuickScrollControl';
 import {
   getRememberedPhones,
   useClientAppointmentReminders,
@@ -238,6 +239,22 @@ function SalonBoumlikApp() {
       ...prev,
       [key]: !prev[key],
     }));
+  };
+
+  const handleNavigateHome = () => {
+    setIsDrawerOpen(false);
+    setIsBookingModalOpen(false);
+    setIsTrackBookingOpen(false);
+    setIsAdminOpen(false);
+    setActivePublicInfo(null);
+    if (window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    try {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {
+      window.scrollTo(0, 0);
+    }
   };
 
   const handleNavigateToSection = (sectionId: HomepageSectionKey) => {
@@ -485,9 +502,10 @@ function SalonBoumlikApp() {
         }}
         onOpenDrawerMenu={() => setIsDrawerOpen(true)}
         onOpenAdmin={() => setIsAdminOpen(true)}
+        onNavigateHome={handleNavigateHome}
       />
 
-      {/* 2. Compact Main Homepage: Concise Action Card + Collapsed Section Headers */}
+      {/* 2. Main Homepage: Balanced Desktop Hero + Multi-Column Section Grid */}
       <main className="flex-1 relative z-10 pb-24 sm:pb-12">
         <Hero
           onOpenBooking={handleOpenBookingModal}
@@ -499,16 +517,19 @@ function SalonBoumlikApp() {
 
         {/* Collapsible Homepage Sections (Hidden Until Clicked) */}
         <MotionConfig reducedMotion="user">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 space-y-3">
-            {sectionItems.map((section) => {
-              const Icon = section.icon;
-              const isOpen = expandedSections[section.key];
-              return (
-                <div
-                  key={section.key}
-                  id={`section-${section.key}`}
-                  className="rounded-2xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-800 overflow-hidden shadow-2xs transition-colors"
-                >
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 items-start">
+              {sectionItems.map((section) => {
+                const Icon = section.icon;
+                const isOpen = expandedSections[section.key];
+                return (
+                  <div
+                    key={section.key}
+                    id={`section-${section.key}`}
+                    className={`rounded-2xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-800 overflow-hidden shadow-2xs transition-colors ${
+                      isOpen ? 'md:col-span-2 lg:col-span-3' : ''
+                    }`}
+                  >
                   <button
                     type="button"
                     aria-expanded={isOpen}
@@ -578,6 +599,7 @@ function SalonBoumlikApp() {
                 </div>
               );
             })}
+            </div>
           </div>
         </MotionConfig>
       </main>
@@ -761,7 +783,18 @@ function SalonBoumlikApp() {
         </button>
       </aside>
 
-      {/* 9. Floating Bottom-Right WhatsApp Quick Message Button */}
+      {/* 9. Floating Bottom-Left Desktop Quick Scroll Controls */}
+      <QuickScrollControl
+        hidden={
+          isDrawerOpen ||
+          isBookingModalOpen ||
+          isTrackBookingOpen ||
+          isAdminOpen ||
+          Boolean(activePublicInfo)
+        }
+      />
+
+      {/* 10. Floating Bottom-Right WhatsApp Quick Message Button */}
       <FloatingWhatsAppButton
         pricingResult={pricingResult}
         selectedBarberId={selectedBarberId}

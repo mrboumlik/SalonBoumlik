@@ -5,7 +5,6 @@ import {
   Image as ImageIcon,
   Wifi,
   MapPin,
-  Lock,
   Phone,
   Instagram,
   ExternalLink,
@@ -72,7 +71,7 @@ type ServiceFilterGroup =
 interface DrawerMenuProps {
   isOpen: boolean;
   onClose: () => void;
-  onOpenAdmin: () => void;
+  onOpenAdmin?: () => void;
   onOpenBookingModal: () => void;
   onNavigateToSection: (sectionId: HomepageSectionKey) => void;
   onOpenTrackBooking?: () => void;
@@ -189,7 +188,6 @@ const SmoothCategoryAccordion: React.FC<SmoothCategoryAccordionProps> = ({
 export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   isOpen,
   onClose,
-  onOpenAdmin,
   onOpenBookingModal,
   onNavigateToSection,
   onOpenTrackBooking,
@@ -693,13 +691,6 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
       amz: 'ⴰⴱⵕⴽⴰⵏ',
       en: 'Dark',
       es: 'Oscuro',
-    }),
-    adminButton: pickLang(lang, {
-      ar: 'لوحة تحكم الإدارة (للحلاقين)',
-      fr: 'Espace Administration (Staff)',
-      amz: 'ⴰⵎⵙⵙⵓⴳⵓⵔ ⵏ ⵓⵙⴰⵍⵓⵏ',
-      en: 'Staff Admin Dashboard',
-      es: 'Panel de administración',
     }),
     cityBadge: pickLang(lang, {
       ar: 'تارودانت',
@@ -1311,21 +1302,13 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
           </div>
         </div>
 
-        {/* Footer with Staff Admin Access */}
-        <div className="p-4 border-t border-stone-200 dark:border-zinc-800 bg-stone-100/70 dark:bg-black/70 flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => {
-              handleCloseDrawer();
-              onOpenAdmin();
-            }}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white hover:bg-stone-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 border border-stone-200 dark:border-zinc-800 text-xs font-semibold transition-colors cursor-pointer"
-          >
-            <Lock className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
-            <span>{labels.adminButton}</span>
-          </button>
+        {/* Drawer Footer */}
+        <div className="p-4 border-t border-stone-200 dark:border-zinc-800 bg-stone-100 dark:bg-[#0B0C10] flex items-center justify-between gap-3">
+          <span className="text-[11px] font-bold text-slate-700 dark:text-zinc-300">
+            SALON BOUMLIK
+          </span>
 
-          <span className="text-[10px] text-stone-500 dark:text-zinc-500 font-mono">
+          <span className="text-[10px] text-stone-500 dark:text-zinc-400 font-mono">
             {labels.cityBadge}
           </span>
         </div>

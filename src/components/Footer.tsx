@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   MapPin,
   Phone,
@@ -7,7 +7,6 @@ import {
   Instagram,
   Facebook,
   MessageCircle,
-  Lock,
   Ticket,
   ExternalLink,
   Star,
@@ -43,9 +42,38 @@ export const Footer: React.FC<FooterProps> = ({
 }) => {
   const { lang } = useLanguage();
   const salonSettings = useSalonProfileSettings();
+  const lastTapTimeRef = useRef<number>(0);
+  const lastTriggerTimeRef = useRef<number>(0);
+
+  const triggerDiscreetAdmin = () => {
+    if (!onOpenAdmin) return;
+    const now = Date.now();
+    if (now - lastTriggerTimeRef.current < 500) return;
+    lastTriggerTimeRef.current = now;
+    lastTapTimeRef.current = 0;
+    onOpenAdmin();
+  };
+
+  const handleRightsClick = () => {
+    const now = Date.now();
+    if (lastTapTimeRef.current > 0 && now - lastTapTimeRef.current <= 420) {
+      triggerDiscreetAdmin();
+    } else {
+      lastTapTimeRef.current = now;
+    }
+  };
+
+  const handleRightsDoubleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    triggerDiscreetAdmin();
+  };
 
   const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    try {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {
+      window.scrollTo(0, 0);
+    }
   };
 
   const handleSectionLink = (e: React.MouseEvent, sectionId: HomepageSectionKey) => {
@@ -154,19 +182,19 @@ export const Footer: React.FC<FooterProps> = ({
       en: 'Location & Contact',
       es: 'Ubicación y Contacto',
     }),
-    rights: pickLang(lang, {
-      ar: 'صالون بومليك تارودانت — جميع الحقوق محفوظة',
-      fr: 'Salon Boumlik Taroudant — Tous droits réservés',
-      amz: 'ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ ⵜⴰⵔⵓⴷⴰⵏⵜ — ⴰⴽⴽⵯ ⵉⵣⵔⴼⴰⵏ ⵜⵜⵓⵃⴹⴰⵏ',
-      en: 'Salon Boumlik Taroudant — All rights reserved',
-      es: 'Salon Boumlik Taroudant — Todos los derechos reservados',
+    rightsPrefix: pickLang(lang, {
+      ar: 'صالون بومليك تارودانت —',
+      fr: 'Salon Boumlik Taroudant —',
+      amz: 'ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ ⵜⴰⵔⵓⴷⴰⵏⵜ —',
+      en: 'Salon Boumlik Taroudant —',
+      es: 'Salon Boumlik Taroudant —',
     }),
-    staffAccess: pickLang(lang, {
-      ar: 'دخول الإدارة',
-      fr: 'Accès Équipe',
-      amz: 'ⴰⴽⵛⵓⵎ ⵏ ⵜⵔⴰⴱⴱⵓⵜ',
-      en: 'Staff Access',
-      es: 'Acceso Equipo',
+    rightsReserved: pickLang(lang, {
+      ar: 'جميع الحقوق محفوظة',
+      fr: 'Tous droits réservés',
+      amz: 'ⴰⴽⴽⵯ ⵉⵣⵔⴼⴰⵏ ⵜⵜⵓⵃⴹⴰⵏ',
+      en: 'All rights reserved',
+      es: 'Todos los derechos reservados',
     }),
     topAria: pickLang(lang, {
       ar: 'العودة إلى الأعلى',
@@ -206,71 +234,71 @@ export const Footer: React.FC<FooterProps> = ({
   };
 
   return (
-    <footer className="relative z-10 bg-stone-100/80 dark:bg-[#0B0C10] border-t border-stone-200 dark:border-zinc-800/80 text-stone-600 dark:text-zinc-400 text-xs transition-colors">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-8 pb-24 sm:py-9">
-        {/* 1. Centered Brand Identity Header */}
-        <div className="flex flex-col items-center text-center pb-7 mb-7 border-b border-stone-200/80 dark:border-zinc-800/80 space-y-3">
-          <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700/80 p-1 flex items-center justify-center shadow-2xs">
-            <img
-              src={SALON_INFO.media.logoClean}
-              alt="Salon Boumlik Logo"
-              className="w-full h-full object-contain"
-            />
+    <footer className="relative z-10 bg-stone-100 dark:bg-[#0B0C10] border-t border-stone-200 dark:border-zinc-800/80 text-stone-600 dark:text-zinc-400 text-xs transition-colors">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 sm:py-10">
+        {/* Main Responsive Footer Grid: Brand Identity + Quick Links + Client Services + Contact Card */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-12 gap-7 lg:gap-8 items-start">
+          {/* 1. Brand Identity Column */}
+          <div className="col-span-2 md:col-span-3 lg:col-span-4 flex flex-col items-center text-center lg:items-start lg:text-start pb-6 lg:pb-0 border-b lg:border-b-0 border-stone-200/80 dark:border-zinc-800/80 space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700/80 p-1 flex items-center justify-center shadow-2xs">
+              <img
+                src={SALON_INFO.media.logoClean}
+                alt="Salon Boumlik Logo"
+                className="w-full h-full object-contain"
+              />
+            </div>
+
+            <div className="space-y-1 max-w-md">
+              <span className="font-display text-lg sm:text-xl font-black tracking-wide text-slate-900 dark:text-white block">
+                SALON <span className="text-amber-700 dark:text-amber-400">BOUMLIK</span>
+              </span>
+              <p className="text-xs font-semibold text-amber-800 dark:text-amber-300/90">
+                {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
+              </p>
+              <p className="text-xs text-stone-500 dark:text-zinc-400 leading-relaxed text-balance">
+                {labels.about}
+              </p>
+            </div>
+
+            {/* Social Media Icon Row */}
+            <div className="flex items-center justify-center lg:justify-start gap-3 pt-1">
+              <a
+                href={SALON_INFO.social.instagram}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white border border-stone-200 dark:border-zinc-800 flex items-center justify-center transition-all duration-200 shadow-2xs"
+                title="Instagram @SalonBoumlik"
+                aria-label="Instagram"
+              >
+                <Instagram className="w-4 h-4" />
+              </a>
+
+              <a
+                href={SALON_INFO.social.facebook}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white border border-stone-200 dark:border-zinc-800 flex items-center justify-center transition-all duration-200 shadow-2xs"
+                title="Facebook Salon Boumlik"
+                aria-label="Facebook"
+              >
+                <Facebook className="w-4 h-4" />
+              </a>
+
+              <a
+                href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-stone-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 border border-stone-200 dark:border-zinc-800 flex items-center justify-center transition-all duration-200 shadow-2xs"
+                title={`WhatsApp ${formatSalonDisplayPhone(salonSettings.salonWhatsapp)}`}
+                aria-label="WhatsApp"
+              >
+                <MessageCircle className="w-4 h-4" />
+              </a>
+            </div>
           </div>
 
-          <div className="space-y-1 max-w-md">
-            <span className="font-display text-lg sm:text-xl font-black tracking-wide text-slate-900 dark:text-white block">
-              SALON <span className="text-amber-700 dark:text-amber-400">BOUMLIK</span>
-            </span>
-            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300/90">
-              {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
-            </p>
-            <p className="text-xs text-stone-500 dark:text-zinc-400 leading-relaxed text-balance">
-              {labels.about}
-            </p>
-          </div>
-
-          {/* Centered Social Media Icon Row */}
-          <div className="flex items-center justify-center gap-3 pt-1">
-            <a
-              href={SALON_INFO.social.instagram}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200/80 dark:hover:bg-zinc-800 text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white border border-stone-200 dark:border-zinc-800 flex items-center justify-center transition-all duration-200 shadow-2xs"
-              title="Instagram @SalonBoumlik"
-              aria-label="Instagram"
-            >
-              <Instagram className="w-4 h-4" />
-            </a>
-
-            <a
-              href={SALON_INFO.social.facebook}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200/80 dark:hover:bg-zinc-800 text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white border border-stone-200 dark:border-zinc-800 flex items-center justify-center transition-all duration-200 shadow-2xs"
-              title="Facebook Salon Boumlik"
-              aria-label="Facebook"
-            >
-              <Facebook className="w-4 h-4" />
-            </a>
-
-            <a
-              href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200/80 dark:hover:bg-zinc-800 text-stone-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 border border-stone-200 dark:border-zinc-800 flex items-center justify-center transition-all duration-200 shadow-2xs"
-              title={`WhatsApp ${formatSalonDisplayPhone(salonSettings.salonWhatsapp)}`}
-              aria-label="WhatsApp"
-            >
-              <MessageCircle className="w-4 h-4" />
-            </a>
-          </div>
-        </div>
-
-        {/* 2. Compact 2-Column Mobile / 3-Column Desktop Grid (Links + Contact Card) */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8 items-start">
-          {/* Quick Links */}
-          <div className="space-y-3">
+          {/* 2. Quick Links */}
+          <div className="col-span-1 md:col-span-1 lg:col-span-2 space-y-3">
             <h4 className="font-black text-slate-900 dark:text-white text-xs tracking-wide">
               {labels.quickActionsTitle}
             </h4>
@@ -324,8 +352,8 @@ export const Footer: React.FC<FooterProps> = ({
             </ul>
           </div>
 
-          {/* Client Services */}
-          <div className="space-y-3">
+          {/* 3. Client Services */}
+          <div className="col-span-1 md:col-span-1 lg:col-span-3 space-y-3">
             <h4 className="font-black text-slate-900 dark:text-white text-xs tracking-wide">
               {labels.servicesHeading}
             </h4>
@@ -390,8 +418,8 @@ export const Footer: React.FC<FooterProps> = ({
             </ul>
           </div>
 
-          {/* 3. Clean Contact & Location Card */}
-          <div className="col-span-2 md:col-span-1 rounded-2xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-800 p-4 shadow-2xs space-y-3">
+          {/* 4. Clean Contact & Location Card */}
+          <div className="col-span-2 md:col-span-1 lg:col-span-3 rounded-2xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-800 p-4 shadow-2xs space-y-3">
             <h4 className="font-black text-slate-900 dark:text-white text-xs tracking-wide">
               {labels.addressHeading}
             </h4>
@@ -473,32 +501,28 @@ export const Footer: React.FC<FooterProps> = ({
           </nav>
         )}
 
-        {/* 5. Sleek Bottom Copyright & Admin Bar */}
+        {/* 5. Sleek Bottom Copyright Bar (Discreet double-click on rights reserved text opens staff login) */}
         <div
           className={`${
             onOpenInfoModal ? 'mt-4 pt-4' : 'mt-7 pt-5'
           } border-t border-stone-200/80 dark:border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px] text-stone-500 dark:text-zinc-400`}
         >
           <span>
-            © {new Date().getFullYear()} {labels.rights}
+            © {new Date().getFullYear()} {labels.rightsPrefix}{' '}
+            <span
+              onClick={handleRightsClick}
+              onDoubleClick={handleRightsDoubleClick}
+              className="select-none cursor-default"
+            >
+              {labels.rightsReserved}
+            </span>
           </span>
 
           <div className="flex items-center gap-2.5">
-            {onOpenAdmin && (
-              <button
-                type="button"
-                onClick={onOpenAdmin}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-stone-600 dark:text-zinc-400 hover:text-amber-700 dark:hover:text-amber-400 hover:bg-white dark:hover:bg-zinc-900 border border-transparent hover:border-stone-200 dark:hover:border-zinc-800 transition-colors cursor-pointer"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span>{labels.staffAccess}</span>
-              </button>
-            )}
-
             <button
               type="button"
               onClick={scrollToTop}
-              className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-900 hover:bg-stone-200/80 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 flex items-center justify-center transition-colors cursor-pointer"
+              className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 flex items-center justify-center transition-colors cursor-pointer"
               aria-label={labels.topAria}
               title={labels.topAria}
             >
