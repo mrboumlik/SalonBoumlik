@@ -14,6 +14,9 @@ import {
   X,
   Copy,
   CheckCircle2,
+  Maximize2,
+  Minimize2,
+  Shield,
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
@@ -24,9 +27,15 @@ import {
   normalizeSalonWhatsappDigits,
 } from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
-import { safeCopyToClipboard } from '../utils/safeBrowser';
+import { buildWhatsAppInquiryMessage } from '../utils/whatsappAutomation';
+import {
+  SALON_WIFI_CONFIG,
+  buildSalonWifiUri,
+  copyWifiPasswordSafely,
+  copyWifiSsidSafely,
+} from '../utils/wifiConnect';
 import { ModalPortal } from './ModalPortal';
-import heroLogoImage from '../assets/images/regenerated_image_1793760774705.png';
+import { BrandMark } from './BrandMark';
 
 interface HeroProps {
   onOpenBooking: () => void;
@@ -37,7 +46,10 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
   const { lang, t } = useLanguage();
   const salonSettings = useSalonProfileSettings();
   const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
+  const [isWifiQrZoomed, setIsWifiQrZoomed] = useState(false);
   const [copiedWifi, setCopiedWifi] = useState(false);
+  const [copiedSsid, setCopiedSsid] = useState(false);
+  const [quickConnectHint, setQuickConnectHint] = useState(false);
 
   const isOpenNow = useMemo(() => {
     const now = new Date();
@@ -48,10 +60,35 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
   }, []);
 
   const handleCopyWifi = () => {
-    void safeCopyToClipboard(SALON_INFO.media.wifiPassword);
+    void copyWifiPasswordSafely();
     setCopiedWifi(true);
-    setTimeout(() => setCopiedWifi(false), 2000);
+    setTimeout(() => setCopiedWifi(false), 2200);
   };
+
+  const handleCopySsid = () => {
+    void copyWifiSsidSafely();
+    setCopiedSsid(true);
+    setTimeout(() => setCopiedSsid(false), 2000);
+  };
+
+  const handleQuickConnectWifi = () => {
+    void copyWifiPasswordSafely();
+    setCopiedWifi(true);
+    setQuickConnectHint(true);
+    setTimeout(() => setCopiedWifi(false), 2200);
+    setTimeout(() => setQuickConnectHint(false), 5000);
+  };
+
+  const wifiUri = buildSalonWifiUri();
+  const heroWhatsappHref = useMemo(() => {
+    const digits = normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp);
+    const text = buildWhatsAppInquiryMessage({
+      lang,
+      requestType: 'inquiry',
+      includeMessagePrompt: true,
+    });
+    return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+  }, [lang, salonSettings.salonWhatsapp]);
 
   const labels = {
     bookNow: pickLang(lang, {
@@ -82,12 +119,103 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
       en: 'Directions',
       es: 'Cómo llegar',
     }),
+    socialTitle: pickLang(lang, {
+      ar: 'مواقع التواصل:',
+      fr: 'Réseaux sociaux :',
+      amz: 'ⵉⵥⴹⵡⴰⵏ :',
+      en: 'Social Media:',
+      es: 'Redes sociales:',
+    }),
+    instagramLabel: pickLang(lang, {
+      ar: 'إنستغرام',
+      fr: 'Instagram',
+      amz: 'إنستغرام',
+      en: 'Instagram',
+      es: 'Instagram',
+    }),
+    facebookLabel: pickLang(lang, {
+      ar: 'فيسبوك',
+      fr: 'Facebook',
+      amz: 'فيسبوك',
+      en: 'Facebook',
+      es: 'Facebook',
+    }),
+    callLabel: pickLang(lang, {
+      ar: 'اتصال',
+      fr: 'Appeler',
+      amz: 'ⵜⵉⵍⵉⴼⵓⵏ',
+      en: 'Call',
+      es: 'Llamar',
+    }),
+    wifiBtnLabel: pickLang(lang, {
+      ar: 'واي فاي مجاني',
+      fr: 'Wi-Fi Gratuit',
+      amz: 'Wi-Fi',
+      en: 'Free Wi-Fi',
+      es: 'Wi-Fi Gratis',
+    }),
     wifiTitle: pickLang(lang, {
       ar: 'واي فاي مجاني بالصالون',
       fr: 'Wi-Fi Gratuit du Salon',
       amz: 'ⵡⴰⵢ-ⴼⴰⵢ ⴼⴰⴱⵓⵕ',
       en: 'Free Salon Wi-Fi',
       es: 'Wi-Fi Gratis del Salón',
+    }),
+    wifiSubtitle: pickLang(lang, {
+      ar: 'امسح الباركود أو استخدم الاتصال السريع وكلمة المرور أدناه',
+      fr: 'Scannez le QR ou connectez-vous directement avec les identifiants',
+      amz: 'ⵙⴽⴰⵏ ⴱⴰⵔⴽⵓⴷ ⵏⵖ ⵙⵎⵔⵙ ⵜⴰⴳⵓⵔⵉ ⵏ ⵓⵣⵔⴰⵢ',
+      en: 'Scan the QR code or use quick connect & credentials below',
+      es: 'Escanea el QR o conéctate directamente con las credenciales',
+    }),
+    ssidLabel: pickLang(lang, {
+      ar: 'اسم الشبكة (SSID):',
+      fr: 'Réseau (SSID) :',
+      amz: 'ⴰⵥⵟⵟⴰ (SSID):',
+      en: 'Network (SSID):',
+      es: 'Red (SSID):',
+    }),
+    securityLabel: pickLang(lang, {
+      ar: 'الحماية:',
+      fr: 'Sécurité :',
+      amz: 'ⵜⴰⵏⴼⵔⵓⵜ:',
+      en: 'Security:',
+      es: 'Seguridad:',
+    }),
+    passLabel: pickLang(lang, {
+      ar: 'كلمة المرور:',
+      fr: 'Mot de passe :',
+      amz: 'ⴰⵙⴰⵔⵓⵜ:',
+      en: 'Password:',
+      es: 'Contraseña:',
+    }),
+    quickConnectWifi: pickLang(lang, {
+      ar: 'اتصال مباشر بالواي فاي',
+      fr: 'Connexion rapide Wi-Fi',
+      amz: 'ⴰⵎⵢⴰⵡⴰⴹ ⵓⵙⵔⵉⴷ Wi-Fi',
+      en: 'Quick-Connect Wi-Fi',
+      es: 'Conexión rápida Wi-Fi',
+    }),
+    quickConnectNote: pickLang(lang, {
+      ar: 'تم نسخ كلمة المرور (@SalonBoumlik). إذا لم يفتح الاتصال التلقائي على جهازك، اختر شبكة @SalonBoumlik من إعدادات الواي فاي والصق كلمة المرور.',
+      fr: 'Mot de passe copié (@SalonBoumlik). Si votre appareil ne lance pas la connexion auto, sélectionnez @SalonBoumlik dans vos réglages Wi-Fi.',
+      amz: 'ⵉⵜⵜⵓⵏⵖⴰⵍ ⵓⵙⴰⵔⵓⵜ (@SalonBoumlik). ⵙⵜⵢ @SalonBoumlik ⴳ Wi-Fi.',
+      en: 'Password copied (@SalonBoumlik). If your device does not auto-prompt, select @SalonBoumlik in Wi-Fi settings and paste.',
+      es: 'Contraseña copiada (@SalonBoumlik). Si no abre automáticamente, elige @SalonBoumlik en Wi-Fi.',
+    }),
+    zoomQr: pickLang(lang, {
+      ar: 'تكبير الباركود',
+      fr: 'Agrandir QR',
+      amz: 'ⵙⵉⵎⵖⵓⵔ QR',
+      en: 'Enlarge QR',
+      es: 'Ampliar QR',
+    }),
+    shrinkQr: pickLang(lang, {
+      ar: 'تصغير الباركود',
+      fr: 'Réduire QR',
+      amz: 'ⵙⵉⵎⵥⵉ QR',
+      en: 'Normal Size',
+      es: 'Tamaño normal',
     }),
     copyWifi: pickLang(lang, {
       ar: 'نسخ كلمة المرور',
@@ -133,17 +261,11 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
         <div className="rounded-3xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-800 p-5 sm:p-8 lg:p-10 shadow-xs">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 items-center">
             {/* Start Column: Salon Identity, Status & Quick Social/Utility Links */}
-            <div className="lg:col-span-7 flex flex-col items-center lg:items-start text-center lg:text-start gap-4">
-              <div className="flex flex-col lg:flex-row items-center lg:items-center gap-4">
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl p-1.5 bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700/80 flex items-center justify-center shadow-2xs flex-shrink-0">
-                  <img
-                    src={heroLogoImage || SALON_INFO.media.logoClean}
-                    alt="Salon Boumlik"
-                    className="w-full h-full object-contain"
-                  />
-                </div>
+            <div className="lg:col-span-7 flex flex-col items-center lg:items-start text-center lg:text-start gap-4 sm:gap-5">
+              <div className="flex flex-col lg:flex-row items-center lg:items-center gap-3 sm:gap-4">
+                <BrandMark className="w-12 h-14 sm:w-14 sm:h-16 flex-shrink-0" />
 
-                <div className="space-y-1.5 max-w-xl">
+                <div className="space-y-1 max-w-xl">
                   <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight font-display text-slate-900 dark:text-white leading-tight">
                     SALON{' '}
                     <span className="text-amber-700 dark:text-amber-400">
@@ -151,19 +273,19 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
                     </span>
                   </h1>
 
-                  <p className="text-xs sm:text-sm lg:text-base font-medium text-stone-700 dark:text-zinc-300 leading-relaxed text-balance">
+                  <p className="text-xs sm:text-sm lg:text-base font-semibold text-amber-800 dark:text-amber-300/95 leading-relaxed text-balance">
                     {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
                   </p>
                 </div>
               </div>
 
-              <div className="space-y-2 max-w-2xl">
-                <p className="text-[11px] sm:text-xs lg:text-sm text-stone-500 dark:text-zinc-400 leading-snug text-balance flex items-center justify-center lg:justify-start gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400 flex-shrink-0" />
+              <div className="space-y-2.5 max-w-2xl">
+                <p className="text-xs sm:text-sm text-stone-600 dark:text-zinc-300 leading-relaxed text-balance flex items-start sm:items-center justify-center lg:justify-start gap-1.5">
+                  <MapPin className="w-4 h-4 text-amber-700 dark:text-amber-400 flex-shrink-0 mt-0.5 sm:mt-0" />
                   <span>{SALON_INFO.shortAddress[lang] || SALON_INFO.shortAddress.fr}</span>
                 </p>
 
-                <div className="flex flex-wrap items-center justify-center lg:justify-start gap-x-2.5 gap-y-1 text-[11px] sm:text-xs text-stone-500 dark:text-zinc-400">
+                <div className="flex flex-wrap items-center justify-center lg:justify-start gap-x-2.5 gap-y-1.5 text-xs sm:text-sm text-stone-600 dark:text-zinc-400 leading-relaxed">
                   <span
                     className={
                       isOpenNow
@@ -186,48 +308,57 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
                 </div>
               </div>
 
-              {/* Muted Monochrome Social & Utility Icons */}
-              <div className="flex items-center justify-center lg:justify-start gap-3 pt-1">
-                <a
-                  href={SALON_INFO.social.instagram}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Instagram @SalonBoumlik"
-                  title="Instagram @SalonBoumlik"
-                  className="w-10 h-10 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 hover:border-stone-300 dark:hover:border-zinc-700 text-stone-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-all duration-200 active:scale-95"
-                >
-                  <Instagram className="w-4 h-4" />
-                </a>
+              {/* Clear Direct Social Media & Utility Buttons ("مواقع التواصل") */}
+              <div className="w-full pt-1 space-y-2">
+                <div className="text-[11px] font-bold text-stone-500 dark:text-zinc-400">
+                  {labels.socialTitle}
+                </div>
+                <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
+                  <a
+                    href={SALON_INFO.social.instagram}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Instagram @SalonBoumlik"
+                    title="Instagram @SalonBoumlik"
+                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-100 font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                  >
+                    <Instagram className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0" />
+                    <span>{labels.instagramLabel}</span>
+                  </a>
 
-                <a
-                  href={SALON_INFO.social.facebook}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Facebook Salon Boumlik"
-                  title="Facebook Salon Boumlik"
-                  className="w-10 h-10 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 hover:border-stone-300 dark:hover:border-zinc-700 text-stone-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-all duration-200 active:scale-95"
-                >
-                  <Facebook className="w-4 h-4" />
-                </a>
+                  <a
+                    href={SALON_INFO.social.facebook}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Facebook Salon Boumlik"
+                    title="Facebook Salon Boumlik"
+                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-100 font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                  >
+                    <Facebook className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                    <span>{labels.facebookLabel}</span>
+                  </a>
 
-                <a
-                  href={normalizeSalonTelHref(salonSettings.salonPhone)}
-                  aria-label={labels.callAria}
-                  title={formatSalonDisplayPhone(salonSettings.salonPhone)}
-                  className="w-10 h-10 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 hover:border-stone-300 dark:hover:border-zinc-700 text-stone-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-all duration-200 active:scale-95"
-                >
-                  <Phone className="w-4 h-4" />
-                </a>
+                  <a
+                    href={normalizeSalonTelHref(salonSettings.salonPhone)}
+                    aria-label={labels.callAria}
+                    title={formatSalonDisplayPhone(salonSettings.salonPhone)}
+                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-100 font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                  >
+                    <Phone className="w-4 h-4 text-amber-700 dark:text-amber-400 flex-shrink-0" />
+                    <span>{labels.callLabel}</span>
+                  </a>
 
-                <button
-                  type="button"
-                  onClick={() => setIsWifiModalOpen(true)}
-                  aria-label={labels.wifiAria}
-                  title={labels.wifiAria}
-                  className="w-10 h-10 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 hover:border-stone-300 dark:hover:border-zinc-700 text-stone-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-all duration-200 active:scale-95 cursor-pointer"
-                >
-                  <Wifi className="w-4 h-4" />
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsWifiModalOpen(true)}
+                    aria-label={labels.wifiAria}
+                    title={labels.wifiAria}
+                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 text-amber-900 dark:text-amber-300 font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95 cursor-pointer"
+                  >
+                    <Wifi className="w-4 h-4 text-amber-700 dark:text-amber-400 flex-shrink-0" />
+                    <span>{labels.wifiBtnLabel}</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -258,7 +389,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
               {/* 3. Side-by-Side WhatsApp + Directions Buttons */}
               <div className="grid grid-cols-2 gap-2.5">
                 <a
-                  href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}`}
+                  href={heroWhatsappHref}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="min-h-[46px] px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 dark:border-emerald-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors shadow-xs"
@@ -282,7 +413,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
         </div>
       </div>
 
-      {/* Compact Wi-Fi QR Popup */}
+      {/* Compact Wi-Fi QR Popup with Direct Quick-Connect & Enlarge Option */}
       {isWifiModalOpen && (
         <ModalPortal>
           <div
@@ -290,7 +421,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
             onClick={() => setIsWifiModalOpen(false)}
           >
             <div
-              className="bg-white dark:bg-[#111318] border border-stone-200 dark:border-zinc-800 rounded-3xl p-6 max-w-xs w-full shadow-2xl relative text-center space-y-4"
+              className="bg-white dark:bg-[#111318] border border-stone-200 dark:border-zinc-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl relative text-center space-y-4"
               onClick={(e) => e.stopPropagation()}
             >
               <button
@@ -302,41 +433,105 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
                 <X className="w-4 h-4" />
               </button>
 
-              <h3 className="text-sm font-black text-slate-900 dark:text-white pt-1">
-                {labels.wifiTitle}
-              </h3>
-
-              <div className="p-3 bg-stone-50 dark:bg-zinc-900 rounded-2xl border border-stone-200 dark:border-zinc-800 inline-block">
-                <img
-                  src={SALON_INFO.media.qrWifi}
-                  alt="Wi-Fi QR Code"
-                  className="w-44 h-44 object-contain mx-auto rounded-lg"
-                />
+              <div className="space-y-1 pt-1">
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  {labels.wifiTitle}
+                </h3>
+                <p className="text-[11px] text-stone-500 dark:text-zinc-400">
+                  {labels.wifiSubtitle}
+                </p>
               </div>
 
-              <div className="p-3 bg-stone-100 dark:bg-zinc-900 rounded-xl text-start text-xs space-y-1">
-                <div className="flex justify-between items-center text-stone-500 dark:text-zinc-400">
-                  <span>SSID:</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white" dir="ltr">
-                    {SALON_INFO.media.wifiSsid}
+              <div className="space-y-2">
+                <div className="p-3 bg-white rounded-2xl border border-stone-200 dark:border-zinc-700 inline-block shadow-xs">
+                  <img
+                    src={SALON_INFO.media.qrWifi}
+                    alt="Wi-Fi QR Code"
+                    className={`${
+                      isWifiQrZoomed ? 'w-60 h-60' : 'w-40 h-40'
+                    } object-contain mx-auto rounded-lg transition-all duration-200`}
+                  />
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setIsWifiQrZoomed((prev) => !prev)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-[11px] font-bold text-slate-700 dark:text-zinc-200 cursor-pointer transition-colors"
+                  >
+                    {isWifiQrZoomed ? (
+                      <>
+                        <Minimize2 className="w-3.5 h-3.5" />
+                        <span>{labels.shrinkQr}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span>{labels.zoomQr}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-stone-100 dark:bg-zinc-900 rounded-xl border border-stone-200 dark:border-zinc-800 text-start text-xs space-y-2">
+                <div className="flex justify-between items-center gap-2">
+                  <span className="text-stone-500 dark:text-zinc-400">{labels.ssidLabel}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono font-bold text-slate-900 dark:text-white" dir="ltr">
+                      {SALON_WIFI_CONFIG.ssid}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopySsid}
+                      aria-label={labels.ssidLabel}
+                      className="p-1 rounded bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-300 cursor-pointer"
+                    >
+                      {copiedSsid ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center gap-2 pt-1.5 border-t border-stone-200 dark:border-zinc-800">
+                  <span className="text-stone-500 dark:text-zinc-400">{labels.securityLabel}</span>
+                  <span className="inline-flex items-center gap-1 font-mono font-bold text-emerald-700 dark:text-emerald-400" dir="ltr">
+                    <Shield className="w-3 h-3" />
+                    <span>{SALON_WIFI_CONFIG.security}</span>
                   </span>
                 </div>
-                <div className="flex justify-between items-center text-stone-500 dark:text-zinc-400">
-                  <span>Code:</span>
+
+                <div className="flex justify-between items-center gap-2 pt-1.5 border-t border-stone-200 dark:border-zinc-800">
+                  <span className="text-stone-500 dark:text-zinc-400">{labels.passLabel}</span>
                   <span className="font-mono font-bold text-amber-700 dark:text-amber-400" dir="ltr">
-                    {SALON_INFO.media.wifiPassword}
+                    {SALON_WIFI_CONFIG.password}
                   </span>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleCopyWifi}
-                className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
-              >
-                {copiedWifi ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                <span>{copiedWifi ? labels.copiedWifi : labels.copyWifi}</span>
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <a
+                  href={wifiUri}
+                  onClick={handleQuickConnectWifi}
+                  className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Wifi className="w-4 h-4 flex-shrink-0" />
+                  <span>{labels.quickConnectWifi}</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={handleCopyWifi}
+                  className="py-2.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  {copiedWifi ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Copy className="w-4 h-4 flex-shrink-0" />}
+                  <span>{copiedWifi ? labels.copiedWifi : labels.copyWifi}</span>
+                </button>
+              </div>
+
+              {quickConnectHint && (
+                <p className="text-[11px] leading-relaxed text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-700/50 rounded-xl p-2.5 text-start">
+                  {labels.quickConnectNote}
+                </p>
+              )}
             </div>
           </div>
         </ModalPortal>

@@ -64,7 +64,10 @@ import {
 } from '../utils/pricingEngine';
 import { downloadTicketAsPng } from '../utils/ticketCanvas';
 import { buildBookingCheckInQrPayload } from '../utils/clientQr';
-import { buildClientTicketWhatsAppMessage } from '../utils/whatsappAutomation';
+import {
+  buildClientTicketWhatsAppMessage,
+  buildWhatsAppInquiryMessage,
+} from '../utils/whatsappAutomation';
 import { safeCopyToClipboard } from '../utils/safeBrowser';
 import { CIH_BANK_DETAILS, processCihReceiptFile } from '../utils/cihReceipt';
 import { CihBankLogo } from './CihBankLogo';
@@ -4835,12 +4838,15 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
 
                               <a
                                 href={`https://wa.me/${liveSalonWhatsappDigits}?text=${encodeURIComponent(
-                                  pickLang(lang, {
-                                    ar: `مرحباً صالون بومليك، قمت بالتحويل البنكي عبر CIH لتأكيد حجزي (${clientName.trim() || 'زبون'} - بتاريخ ${date} (${displayTimeSlotLabel}) مع ${barberNameLocalized}). مرفق طيه صورة إيصال التحويل:`,
-                                    fr: `Bonjour Salon Boumlik, voici mon reçu de virement CIH pour confirmer ma réservation à l'avance (${clientName.trim() || 'Client'} - le ${date} (${displayTimeSlotLabel}) avec ${barberNameLocalized}) :`,
-                                    amz: `ⴰⵣⵓⵍ Salon Boumlik, ⵀⴰⵜⵉⵏ ⵜⴰⵏⴼⵓⵍⵜ CIH ⵉ ⵓⵙⵏⵜⵎ (${clientName.trim() || 'Client'} - ${date} ${displayTimeSlotLabel} - ${barberNameLocalized}) :`,
-                                    en: `Hello Salon Boumlik, here is my CIH receipt to confirm my booking in advance (${clientName.trim() || 'Client'} - on ${date} (${displayTimeSlotLabel}) with ${barberNameLocalized}):`,
-                                    es: `Hola Salon Boumlik, aquí está mi recibo CIH para confirmar mi reserva (${clientName.trim() || 'Cliente'} - ${date} (${displayTimeSlotLabel}) con ${barberNameLocalized}):`,
+                                  buildWhatsAppInquiryMessage({
+                                    lang,
+                                    requestType: 'cih',
+                                    servicesText: effectiveCartItems.map((item) => item.name).join(' + ') || undefined,
+                                    estimatedPriceMAD: effectiveServicesFinalTotal > 0 ? effectiveServicesFinalTotal : undefined,
+                                    barberName: barberNameLocalized,
+                                    clientName: clientName.trim() || undefined,
+                                    date,
+                                    timeSlot: displayTimeSlotLabel,
                                   })
                                 )}`}
                                 target="_blank"

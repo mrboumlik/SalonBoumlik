@@ -7,15 +7,18 @@ import {
   useSalonProfileSettings,
   normalizeSalonWhatsappDigits,
 } from '../utils/salonSettingsStore';
+import { buildWhatsAppInquiryMessage } from '../utils/whatsappAutomation';
 
 interface FloatingWhatsAppButtonProps {
   pricingResult: PricingEngineResult;
   selectedBarberId: string;
+  hidden?: boolean;
 }
 
 export const FloatingWhatsAppButton: React.FC<FloatingWhatsAppButtonProps> = ({
   pricingResult,
   selectedBarberId,
+  hidden = false,
 }) => {
   const { lang, isRtl } = useLanguage();
   const salonSettings = useSalonProfileSettings();
@@ -37,79 +40,16 @@ export const FloatingWhatsAppButton: React.FC<FloatingWhatsAppButtonProps> = ({
       : SALON_INFO.owner[lang] || SALON_INFO.owner.fr;
 
     const servicesText =
-      selectedServiceNames.length > 0
-        ? selectedServiceNames.join(' + ')
-        : lang === 'ar'
-        ? 'لم يتم تحديد خدمة بعد'
-        : lang === 'en'
-        ? 'No specific service selected yet'
-        : lang === 'es'
-        ? 'Sin servicio seleccionado aún'
-        : lang === 'amz'
-        ? 'ⵓⵔ ⵉⵜⵜⵓⵙⵜⵢ ⵓⵎⵓⵙⵙⵓ ⵜⴰⴷ'
-        : 'Aucune prestation sélectionnée';
+      selectedServiceNames.length > 0 ? selectedServiceNames.join(' + ') : undefined;
 
-    const totalText =
-      pricingResult.items.length > 0 ? `${pricingResult.finalTotal} MAD` : '';
-
-    if (lang === 'ar') {
-      return [
-        'مرحباً صالون بومليك (تارودانت)، لدي استفسار عاجل بخصوص الحجز:',
-        `• الخدمة المختارة: ${servicesText}`,
-        totalText ? `• المجموع التقديري: ${totalText}` : null,
-        `• الحلاق المفضل: ${barberName}`,
-        'سؤالي العاجل: ',
-      ]
-        .filter(Boolean)
-        .join('\n');
-    }
-
-    if (lang === 'en') {
-      return [
-        'Hello Salon Boumlik (Taroudant), I have an urgent question regarding a booking:',
-        `• Selected service: ${servicesText}`,
-        totalText ? `• Estimated total: ${totalText}` : null,
-        `• Preferred barber: ${barberName}`,
-        'My urgent question: ',
-      ]
-        .filter(Boolean)
-        .join('\n');
-    }
-
-    if (lang === 'es') {
-      return [
-        'Hola Salon Boumlik (Taroudant), tengo una consulta urgente sobre mi cita:',
-        `• Servicio seleccionado: ${servicesText}`,
-        totalText ? `• Total estimado: ${totalText}` : null,
-        `• Barbero preferido: ${barberName}`,
-        'Mi pregunta urgente: ',
-      ]
-        .filter(Boolean)
-        .join('\n');
-    }
-
-    if (lang === 'amz') {
-      return [
-        'Azul Salon Boumlik (Taroudant), ⵖⵓⵔⵉ ⴰⵙⵇⵙⵉ ⵉⵣⵔⴱⵏ ⵖⴼ ⵓⵙⵔⵓⵙ:',
-        `• ⵜⴰⵡⵓⵔⵉ ⵉⵜⵜⵓⵙⵜⵢⵏ: ${servicesText}`,
-        totalText ? `• ⴰⵜⵉⴳ: ${totalText}` : null,
-        `• ⴰⵎⴽⵔⴰⴹ: ${barberName}`,
-        'ⴰⵙⵇⵙⵉ ⵉⵏⵓ: ',
-      ]
-        .filter(Boolean)
-        .join('\n');
-    }
-
-    // French default
-    return [
-      'Bonjour Salon Boumlik (Taroudant), j’ai une question urgente concernant mon rendez-vous :',
-      `• Prestation sélectionnée : ${servicesText}`,
-      totalText ? `• Total estimé : ${totalText}` : null,
-      `• Barbier souhaité : ${barberName}`,
-      'Ma question urgente : ',
-    ]
-      .filter(Boolean)
-      .join('\n');
+    return buildWhatsAppInquiryMessage({
+      lang,
+      requestType: pricingResult.items.length > 0 ? 'booking' : 'inquiry',
+      servicesText,
+      estimatedPriceMAD: pricingResult.items.length > 0 ? pricingResult.finalTotal : undefined,
+      barberName,
+      includeMessagePrompt: true,
+    });
   }, [lang, pricingResult.finalTotal, pricingResult.items.length, selectedBarber, selectedServiceNames]);
 
   const whatsappHref = useMemo(() => {
@@ -142,10 +82,19 @@ export const FloatingWhatsAppButton: React.FC<FloatingWhatsAppButtonProps> = ({
     return `${first} +${pricingResult.items.length - 1}`;
   }, [lang, pricingResult.items]);
 
+  const compactLabel = useMemo(() => {
+    if (lang === 'ar') return 'واتساب';
+    return 'WhatsApp';
+  }, [lang]);
+
+  if (hidden) return null;
+
   return (
     <div
       dir="ltr"
-      className="hidden sm:flex fixed bottom-6 right-6 z-40 items-center"
+      className={`hidden sm:flex fixed bottom-5 ${
+        isRtl ? 'left-5' : 'right-5'
+      } z-40 items-center`}
     >
       <a
         href={whatsappHref}
@@ -154,20 +103,15 @@ export const FloatingWhatsAppButton: React.FC<FloatingWhatsAppButtonProps> = ({
         aria-label={`${buttonLabel} — ${primaryServicePreview}`}
         title={formattedMessage}
         dir={isRtl ? 'rtl' : 'ltr'}
-        className="group relative flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white border border-emerald-400/50 dark:border-emerald-400/40 shadow-lg transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-black"
+        className="group relative flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white border border-emerald-500 shadow-lg transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-black"
       >
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 border border-white/25 flex-shrink-0">
-          <MessageCircle className="w-5 h-5 text-white fill-white/15 group-hover:scale-105 transition-transform" />
+        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-700/60 border border-emerald-400/40 flex-shrink-0">
+          <MessageCircle className="w-4 h-4 text-white group-hover:scale-105 transition-transform" />
         </span>
 
-        <div className="flex flex-col items-start text-start leading-tight pr-0.5">
-          <span className="text-xs font-black tracking-tight whitespace-nowrap">
-            {buttonLabel}
-          </span>
-          <span className="text-[10px] font-semibold text-emerald-100 max-w-[175px] truncate">
-            {primaryServicePreview}
-          </span>
-        </div>
+        <span className="text-xs font-black tracking-tight whitespace-nowrap pe-0.5">
+          {compactLabel}
+        </span>
       </a>
     </div>
   );

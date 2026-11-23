@@ -24,14 +24,24 @@ import {
   Award,
   Layers,
   ArrowRight,
+  Facebook,
+  Shield,
 } from 'lucide-react';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
-import { useSalonProfileSettings } from '../utils/salonSettingsStore';
+import {
+  useSalonProfileSettings,
+  normalizeSalonWhatsappDigits,
+} from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
-import { safeCopyToClipboard } from '../utils/safeBrowser';
+import { buildWhatsAppInquiryMessage } from '../utils/whatsappAutomation';
+import {
+  SALON_WIFI_CONFIG,
+  buildSalonWifiUri,
+  copyWifiPasswordSafely,
+} from '../utils/wifiConnect';
 import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore';
 import { useBarberRoster } from '../utils/barberRosterStore';
 import { ServiceDefinition } from '../utils/pricingEngine';
@@ -299,10 +309,20 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
     onClose();
   };
 
+  const [wifiConnectFeedback, setWifiConnectFeedback] = useState(false);
+
   const copyWifiPassword = () => {
-    void safeCopyToClipboard(SALON_INFO.media.wifiPassword);
+    void copyWifiPasswordSafely();
     setWifiCopied(true);
     setTimeout(() => setWifiCopied(false), 2000);
+  };
+
+  const handleQuickConnectWifi = () => {
+    void copyWifiPasswordSafely();
+    setWifiCopied(true);
+    setWifiConnectFeedback(true);
+    setTimeout(() => setWifiCopied(false), 2000);
+    setTimeout(() => setWifiConnectFeedback(false), 4500);
   };
 
   const formatServicePrice = (srv: ServiceDefinition) => {
@@ -1142,21 +1162,82 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
               subtitle={labels.gallerySub}
             >
               <div className="space-y-3">
-                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-900/70 border border-stone-200 dark:border-zinc-800 space-y-2">
-                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-xs">
-                    <Instagram className="w-4 h-4" />
-                    <span>@SalonBoumlik</span>
+                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-900/70 border border-stone-200 dark:border-zinc-800 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-xs">
+                      <Instagram className="w-4 h-4" />
+                      <span>@SalonBoumlik</span>
+                    </div>
+                    <span className="text-[10px] font-bold text-stone-500 dark:text-zinc-400">
+                      {pickLang(lang, {
+                        ar: 'مواقع التواصل',
+                        fr: 'Réseaux sociaux',
+                        amz: 'ⵉⵥⴹⵡⴰⵏ',
+                        en: 'Social Media',
+                        es: 'Redes sociales',
+                      })}
+                    </span>
                   </div>
                   <p className="text-slate-700 dark:text-zinc-300 text-xs">{labels.instaCta}</p>
-                  <a
-                    href={SALON_INFO.social.instagram}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 py-2 px-3.5 rounded-lg bg-slate-900 dark:bg-amber-500 hover:bg-slate-800 dark:hover:bg-amber-400 text-white dark:text-slate-950 font-bold text-xs transition-colors"
-                  >
-                    <span>{labels.instaBtn}</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <a
+                      href={SALON_INFO.social.instagram}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors"
+                    >
+                      <Instagram className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>
+                        {pickLang(lang, {
+                          ar: 'إنستغرام',
+                          fr: 'Instagram',
+                          amz: 'Instagram',
+                          en: 'Instagram',
+                          es: 'Instagram',
+                        })}
+                      </span>
+                    </a>
+                    <a
+                      href={SALON_INFO.social.facebook}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors"
+                    >
+                      <Facebook className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>
+                        {pickLang(lang, {
+                          ar: 'فيسبوك',
+                          fr: 'Facebook',
+                          amz: 'Facebook',
+                          en: 'Facebook',
+                          es: 'Facebook',
+                        })}
+                      </span>
+                    </a>
+                    <a
+                      href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}?text=${encodeURIComponent(
+                        buildWhatsAppInquiryMessage({
+                          lang,
+                          requestType: 'inquiry',
+                          includeMessagePrompt: true,
+                        })
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>
+                        {pickLang(lang, {
+                          ar: 'واتساب',
+                          fr: 'WhatsApp',
+                          amz: 'WhatsApp',
+                          en: 'WhatsApp',
+                          es: 'WhatsApp',
+                        })}
+                      </span>
+                    </a>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2.5">
@@ -1185,14 +1266,29 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="text-stone-500 dark:text-zinc-400">{labels.ssidLabel}</span>
                     <span className="font-mono font-bold text-slate-900 dark:text-white" dir="ltr">
-                      {SALON_INFO.media.wifiSsid}
+                      {SALON_WIFI_CONFIG.ssid}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1.5 border-t border-stone-200 dark:border-zinc-800">
+                    <span className="text-stone-500 dark:text-zinc-400">
+                      {pickLang(lang, {
+                        ar: 'الحماية:',
+                        fr: 'Sécurité :',
+                        amz: 'ⵜⴰⵏⴼⵔⵓⵜ:',
+                        en: 'Security:',
+                        es: 'Seguridad:',
+                      })}
+                    </span>
+                    <span className="inline-flex items-center gap-1 font-mono font-bold text-emerald-700 dark:text-emerald-400" dir="ltr">
+                      <Shield className="w-3 h-3" />
+                      <span>{SALON_WIFI_CONFIG.security}</span>
                     </span>
                   </div>
                   <div className="flex items-center justify-between pt-1.5 border-t border-stone-200 dark:border-zinc-800">
                     <span className="text-stone-500 dark:text-zinc-400">{labels.passLabel}</span>
                     <div className="flex items-center gap-2">
                       <span className="font-mono font-bold text-amber-700 dark:text-amber-400" dir="ltr">
-                        {SALON_INFO.media.wifiPassword}
+                        {SALON_WIFI_CONFIG.password}
                       </span>
                       <button
                         type="button"
@@ -1205,6 +1301,62 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                     </div>
                   </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <a
+                    href={buildSalonWifiUri()}
+                    onClick={handleQuickConnectWifi}
+                    className="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Wifi className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'اتصال مباشر',
+                        fr: 'Connexion Wi-Fi',
+                        amz: 'ⴰⵎⵢⴰⵡⴰⴹ Wi-Fi',
+                        en: 'Quick Connect',
+                        es: 'Conectar Wi-Fi',
+                      })}
+                    </span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={copyWifiPassword}
+                    className="py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    {wifiCopied ? <Check className="w-3.5 h-3.5 flex-shrink-0" /> : <Copy className="w-3.5 h-3.5 flex-shrink-0" />}
+                    <span>
+                      {wifiCopied
+                        ? pickLang(lang, {
+                            ar: 'تم النسخ!',
+                            fr: 'Copié !',
+                            amz: 'ⵉⵜⵜⵓⵏⵖⴰⵍ!',
+                            en: 'Copied!',
+                            es: '¡Copiado!',
+                          })
+                        : pickLang(lang, {
+                            ar: 'نسخ كلمة المرور',
+                            fr: 'Copier le code',
+                            amz: 'ⵏⵖⵍ ⴰⵙⴰⵔⵓⵜ',
+                            en: 'Copy Password',
+                            es: 'Copiar clave',
+                          })}
+                    </span>
+                  </button>
+                </div>
+
+                {wifiConnectFeedback && (
+                  <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-700/40 text-[11px] text-emerald-800 dark:text-emerald-300">
+                    {pickLang(lang, {
+                      ar: 'تم نسخ كلمة المرور (@SalonBoumlik) لتسهيل الاتصال بشبكة الصالون.',
+                      fr: 'Mot de passe copié (@SalonBoumlik) pour connexion rapide.',
+                      amz: 'ⵉⵜⵜⵓⵏⵖⴰⵍ ⵓⵙⴰⵔⵓⵜ (@SalonBoumlik).',
+                      en: 'Password copied (@SalonBoumlik) for quick Wi-Fi connection.',
+                      es: 'Contraseña copiada (@SalonBoumlik).',
+                    })}
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2 text-[11px] text-stone-600 dark:text-zinc-400 p-2 rounded-lg bg-stone-50 dark:bg-zinc-900/40">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                   <span>{labels.wifiNote}</span>

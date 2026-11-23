@@ -8,6 +8,9 @@ import {
   Copy,
   CheckCircle2,
   ExternalLink,
+  Shield,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
@@ -17,18 +20,41 @@ import {
   normalizeSalonWhatsappDigits,
 } from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
-import { safeCopyToClipboard } from '../utils/safeBrowser';
+import { buildWhatsAppInquiryMessage } from '../utils/whatsappAutomation';
+import {
+  SALON_WIFI_CONFIG,
+  buildSalonWifiUri,
+  copyWifiPasswordSafely,
+  copyWifiSsidSafely,
+} from '../utils/wifiConnect';
 
 export const QuickQrModals: React.FC = () => {
   const { lang } = useLanguage();
   const salonSettings = useSalonProfileSettings();
   const [activeModal, setActiveModal] = useState<'instagram' | 'wifi' | 'whatsapp' | 'reviews' | null>(null);
   const [copiedWifi, setCopiedWifi] = useState(false);
+  const [copiedSsid, setCopiedSsid] = useState(false);
+  const [wifiQrZoomed, setWifiQrZoomed] = useState(false);
+  const [wifiConnectFeedback, setWifiConnectFeedback] = useState(false);
 
   const handleCopyWifi = () => {
-    void safeCopyToClipboard(SALON_INFO.media.wifiPassword);
+    void copyWifiPasswordSafely();
     setCopiedWifi(true);
     setTimeout(() => setCopiedWifi(false), 2000);
+  };
+
+  const handleCopySsid = () => {
+    void copyWifiSsidSafely();
+    setCopiedSsid(true);
+    setTimeout(() => setCopiedSsid(false), 2000);
+  };
+
+  const handleQuickConnectWifi = () => {
+    void copyWifiPasswordSafely();
+    setCopiedWifi(true);
+    setWifiConnectFeedback(true);
+    setTimeout(() => setCopiedWifi(false), 2200);
+    setTimeout(() => setWifiConnectFeedback(false), 5000);
   };
 
   const modalTitles = {
@@ -217,20 +243,87 @@ export const QuickQrModals: React.FC = () => {
 
             {activeModal === 'wifi' && (
               <div className="space-y-4">
-                <div className="p-4 bg-stone-50 dark:bg-zinc-900 rounded-2xl border border-stone-200 dark:border-zinc-800 inline-block">
-                  <img
-                    src={SALON_INFO.media.qrWifi}
-                    alt="Wi-Fi QR Code"
-                    className="w-48 h-48 object-contain mx-auto rounded-lg"
-                  />
-                </div>
-                <div className="p-3 bg-stone-100 dark:bg-zinc-900 rounded-xl text-start text-xs space-y-1">
-                  <div className="flex justify-between items-center text-stone-500">
-                    <span>SSID:</span>
-                    <span className="font-mono font-bold text-slate-900 dark:text-white">{SALON_INFO.media.wifiSsid}</span>
+                <div className="space-y-2">
+                  <div className="p-4 bg-white rounded-2xl border border-stone-200 dark:border-zinc-700 inline-block">
+                    <img
+                      src={SALON_INFO.media.qrWifi}
+                      alt="Wi-Fi QR Code"
+                      className={`${
+                        wifiQrZoomed ? 'w-60 h-60' : 'w-44 h-44'
+                      } object-contain mx-auto rounded-lg transition-all duration-200`}
+                    />
                   </div>
-                  <div className="flex justify-between items-center text-stone-500">
-                    <span>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setWifiQrZoomed((prev) => !prev)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-[11px] font-bold text-slate-700 dark:text-zinc-200 cursor-pointer"
+                    >
+                      {wifiQrZoomed ? (
+                        <>
+                          <Minimize2 className="w-3.5 h-3.5" />
+                          <span>
+                            {pickLang(lang, {
+                              ar: 'تصغير الباركود',
+                              fr: 'Réduire QR',
+                              amz: 'ⵙⵉⵎⵥⵉ QR',
+                              en: 'Normal Size',
+                              es: 'Tamaño normal',
+                            })}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Maximize2 className="w-3.5 h-3.5" />
+                          <span>
+                            {pickLang(lang, {
+                              ar: 'تكبير الباركود',
+                              fr: 'Agrandir QR',
+                              amz: 'ⵙⵉⵎⵖⵓⵔ QR',
+                              en: 'Enlarge QR',
+                              es: 'Ampliar QR',
+                            })}
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-stone-100 dark:bg-zinc-900 rounded-xl border border-stone-200 dark:border-zinc-800 text-start text-xs space-y-2">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-stone-500">SSID:</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono font-bold text-slate-900 dark:text-white" dir="ltr">
+                        {SALON_WIFI_CONFIG.ssid}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopySsid}
+                        aria-label="Copy SSID"
+                        className="p-1 rounded bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-300 cursor-pointer"
+                      >
+                        {copiedSsid ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center gap-2 pt-1.5 border-t border-stone-200 dark:border-zinc-800">
+                    <span className="text-stone-500">
+                      {pickLang(lang, {
+                        ar: 'الحماية:',
+                        fr: 'Sécurité :',
+                        amz: 'ⵜⴰⵏⴼⵔⵓⵜ:',
+                        en: 'Security:',
+                        es: 'Seguridad:',
+                      })}
+                    </span>
+                    <span className="inline-flex items-center gap-1 font-mono font-bold text-emerald-700 dark:text-emerald-400" dir="ltr">
+                      <Shield className="w-3 h-3" />
+                      <span>{SALON_WIFI_CONFIG.security}</span>
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center gap-2 pt-1.5 border-t border-stone-200 dark:border-zinc-800">
+                    <span className="text-stone-500">
                       {pickLang(lang, {
                         ar: 'كلمة المرور:',
                         fr: 'Mot de passe :',
@@ -239,33 +332,66 @@ export const QuickQrModals: React.FC = () => {
                         es: 'Contraseña:',
                       })}
                     </span>
-                    <span className="font-mono font-bold text-amber-700 dark:text-amber-400">{SALON_INFO.media.wifiPassword}</span>
+                    <span className="font-mono font-bold text-amber-700 dark:text-amber-400" dir="ltr">
+                      {SALON_WIFI_CONFIG.password}
+                    </span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleCopyWifi}
-                  className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                >
-                  {copiedWifi ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  <span>
-                    {copiedWifi
-                      ? pickLang(lang, {
-                          ar: 'تم نسخ كلمة المرور!',
-                          fr: 'Mot de passe copié !',
-                          amz: 'ⵉⵜⵜⵓⵏⵖⵍ ⵓⵣⵔⴰⵢ!',
-                          en: 'Password copied!',
-                          es: '¡Contraseña copiada!',
-                        })
-                      : pickLang(lang, {
-                          ar: 'نسخ كلمة مرور الواي فاي',
-                          fr: 'Copier le mot de passe',
-                          amz: 'ⵏⵖⵍ ⵜⴰⴳⵓⵔⵉ ⵏ ⵡⴰⵢ ⴼⴰⵢ',
-                          en: 'Copy Wi-Fi Password',
-                          es: 'Copiar contraseña Wi-Fi',
-                        })}
-                  </span>
-                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <a
+                    href={buildSalonWifiUri()}
+                    onClick={handleQuickConnectWifi}
+                    className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Wifi className="w-4 h-4 flex-shrink-0" />
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'اتصال مباشر',
+                        fr: 'Connexion Wi-Fi',
+                        amz: 'ⴰⵎⵢⴰⵡⴰⴹ Wi-Fi',
+                        en: 'Quick Connect',
+                        es: 'Conectar Wi-Fi',
+                      })}
+                    </span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleCopyWifi}
+                    className="py-2.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    {copiedWifi ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Copy className="w-4 h-4 flex-shrink-0" />}
+                    <span>
+                      {copiedWifi
+                        ? pickLang(lang, {
+                            ar: 'تم النسخ!',
+                            fr: 'Copié !',
+                            amz: 'ⵉⵜⵜⵓⵏⵖⵍ!',
+                            en: 'Copied!',
+                            es: '¡Copiado!',
+                          })
+                        : pickLang(lang, {
+                            ar: 'نسخ كلمة المرور',
+                            fr: 'Copier le code',
+                            amz: 'ⵏⵖⵍ ⴰⵙⴰⵔⵓⵜ',
+                            en: 'Copy Password',
+                            es: 'Copiar clave',
+                          })}
+                    </span>
+                  </button>
+                </div>
+
+                {wifiConnectFeedback && (
+                  <p className="text-[11px] leading-relaxed text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-700/50 rounded-xl p-2.5 text-start">
+                    {pickLang(lang, {
+                      ar: 'تم نسخ كلمة المرور (@SalonBoumlik) للاتصال المباشر.',
+                      fr: 'Mot de passe copié (@SalonBoumlik) pour connexion rapide.',
+                      amz: 'ⵉⵜⵜⵓⵏⵖⴰⵍ ⵓⵙⴰⵔⵓⵜ (@SalonBoumlik).',
+                      en: 'Password copied (@SalonBoumlik) for quick Wi-Fi connect.',
+                      es: 'Contraseña copiada (@SalonBoumlik).',
+                    })}
+                  </p>
+                )}
               </div>
             )}
 
@@ -282,7 +408,13 @@ export const QuickQrModals: React.FC = () => {
                   {formatSalonDisplayPhone(salonSettings.salonWhatsapp)}
                 </p>
                 <a
-                  href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}`}
+                  href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}?text=${encodeURIComponent(
+                    buildWhatsAppInquiryMessage({
+                      lang,
+                      requestType: 'inquiry',
+                      includeMessagePrompt: true,
+                    })
+                  )}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors"

@@ -8,11 +8,17 @@ import {
   QrCode, 
   X,
   CheckCircle2,
-  Wind
+  Wind,
+  Shield,
+  Copy,
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
-import { safeCopyToClipboard } from '../utils/safeBrowser';
+import {
+  SALON_WIFI_CONFIG,
+  buildSalonWifiUri,
+  copyWifiPasswordSafely,
+} from '../utils/wifiConnect';
 
 export const AmenitiesSection: React.FC = () => {
   const { lang, t, isRtl } = useLanguage();
@@ -20,7 +26,7 @@ export const AmenitiesSection: React.FC = () => {
   const [copiedWifi, setCopiedWifi] = useState(false);
 
   const handleCopyPassword = () => {
-    void safeCopyToClipboard(SALON_INFO.media.wifiPassword);
+    void copyWifiPasswordSafely();
     setCopiedWifi(true);
     setTimeout(() => setCopiedWifi(false), 2000);
   };
@@ -182,30 +188,48 @@ export const AmenitiesSection: React.FC = () => {
                     {(item.desc as any)[lang] || item.desc.fr}
                   </p>
 
-                  {/* Explicit Wi-Fi Credentials Pill */}
+                  {/* Explicit Wi-Fi Credentials Card */}
                   {item.isWifiCard && (
                     <div className="p-3 rounded-2xl bg-zinc-950 border border-amber-500/30 space-y-2 mt-2">
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="text-zinc-400">{t.wifiNetworkTitle} :</span>
-                        <span className="font-mono font-bold text-amber-300">{SALON_INFO.media.wifiSsid}</span>
+                        <span className="font-mono font-bold text-amber-300" dir="ltr">{SALON_WIFI_CONFIG.ssid}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] border-t border-zinc-800/80 pt-1.5">
+                        <span className="text-zinc-400">{lang === 'ar' ? 'الحماية:' : 'WPA/WPA2:'}</span>
+                        <span className="font-mono font-bold text-emerald-400" dir="ltr">{SALON_WIFI_CONFIG.security}</span>
                       </div>
                       <div className="flex items-center justify-between text-[11px] border-t border-zinc-800/80 pt-1.5">
                         <span className="text-zinc-400">{t.wifiPasswordTitle} :</span>
-                        <span className="font-mono font-bold text-white">{SALON_INFO.media.wifiPassword}</span>
+                        <span className="font-mono font-bold text-white" dir="ltr">{SALON_WIFI_CONFIG.password}</span>
                       </div>
-                      <button
-                        onClick={handleCopyPassword}
-                        className="w-full mt-1 py-1.5 rounded-lg bg-amber-400/15 hover:bg-amber-400/25 border border-amber-400/30 text-amber-300 text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                      >
-                        {copiedWifi ? (
-                          <>
-                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                            <span className="text-emerald-400">{t.copied}</span>
-                          </>
-                        ) : (
-                          <span>{t.copyPassword}</span>
-                        )}
-                      </button>
+                      <div className="grid grid-cols-2 gap-1.5 pt-1">
+                        <a
+                          href={buildSalonWifiUri()}
+                          onClick={handleCopyPassword}
+                          className="py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Wifi className="w-3 h-3" />
+                          <span>{lang === 'ar' ? 'اتصال سريع' : 'Quick Connect'}</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={handleCopyPassword}
+                          className="py-1.5 px-2 rounded-lg bg-amber-400/15 hover:bg-amber-400/25 border border-amber-400/30 text-amber-300 text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                        >
+                          {copiedWifi ? (
+                            <>
+                              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                              <span className="text-emerald-400">{t.copied}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3" />
+                              <span>{t.copyPassword}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -293,30 +317,51 @@ export const AmenitiesSection: React.FC = () => {
               />
             </div>
 
-            <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-left text-xs space-y-1">
+            <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-left text-xs space-y-1.5">
               <div className="flex justify-between">
                 <span className="text-zinc-400">{t.wifiNetworkTitle} :</span>
-                <span className="font-mono font-bold text-amber-300">{SALON_INFO.media.wifiSsid}</span>
+                <span className="font-mono font-bold text-amber-300" dir="ltr">{SALON_WIFI_CONFIG.ssid}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-400">{lang === 'ar' ? 'الحماية :' : 'Security :'}</span>
+                <span className="inline-flex items-center gap-1 font-mono font-bold text-emerald-400" dir="ltr">
+                  <Shield className="w-3 h-3" />
+                  <span>{SALON_WIFI_CONFIG.security}</span>
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-400">{t.wifiPasswordTitle} :</span>
-                <span className="font-mono font-bold text-white">{SALON_INFO.media.wifiPassword}</span>
+                <span className="font-mono font-bold text-white" dir="ltr">{SALON_WIFI_CONFIG.password}</span>
               </div>
             </div>
 
-            <button
-              onClick={handleCopyPassword}
-              className="w-full py-2.5 rounded-xl bg-amber-400 text-zinc-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
-            >
-              {copiedWifi ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{t.copied}</span>
-                </>
-              ) : (
-                <span>{t.copyPassword}</span>
-              )}
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <a
+                href={buildSalonWifiUri()}
+                onClick={handleCopyPassword}
+                className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
+              >
+                <Wifi className="w-4 h-4" />
+                <span>{lang === 'ar' ? 'اتصال مباشر' : 'Quick Connect'}</span>
+              </a>
+              <button
+                type="button"
+                onClick={handleCopyPassword}
+                className="py-2.5 px-3 rounded-xl bg-amber-400 text-zinc-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
+              >
+                {copiedWifi ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{t.copied}</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>{t.copyPassword}</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

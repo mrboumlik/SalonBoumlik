@@ -162,7 +162,7 @@ export const MyAppointmentsModal: React.FC<MyAppointmentsModalProps> = ({
                   <a
                     href={createWhatsAppUrl(
                       normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp),
-                      createFormattedWhatsAppQuoteMessage(appt)
+                      createFormattedWhatsAppQuoteMessage(appt, lang)
                     )}
                     target="_blank"
                     rel="noopener noreferrer"

@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { ChevronUp, ChevronDown, ChevronsUp, ChevronsDown } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, GripHorizontal } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
 
@@ -7,9 +7,9 @@ interface QuickScrollControlProps {
   hidden?: boolean;
 }
 
-const getScrollMetrics = () => {
+const getScrollInfo = () => {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return { atTop: true, atBottom: true, scrollable: false };
+    return { scrollY: 0, maxScroll: 0, atTop: true, atBottom: true, scrollable: false };
   }
   const scrollY =
     window.pageYOffset !== undefined
@@ -23,6 +23,8 @@ const getScrollMetrics = () => {
   const maxScroll = Math.max(0, docHeight - viewHeight);
 
   return {
+    scrollY,
+    maxScroll,
     atTop: scrollY <= 12,
     atBottom: maxScroll <= 12 || scrollY >= maxScroll - 12,
     scrollable: maxScroll > 40,
@@ -31,10 +33,23 @@ const getScrollMetrics = () => {
 
 export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden = false }) => {
   const { lang } = useLanguage();
-  const [metrics, setMetrics] = useState(getScrollMetrics);
+  const [metrics, setMetrics] = useState(getScrollInfo);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragThumbOffset, setDragThumbOffset] = useState(0);
+  const dragStateRef = useRef<{
+    active: boolean;
+    startClientY: number;
+    startScrollY: number;
+    maxScroll: number;
+  }>({
+    active: false,
+    startClientY: 0,
+    startScrollY: 0,
+    maxScroll: 0,
+  });
 
   const refreshMetrics = useCallback(() => {
-    setMetrics(getScrollMetrics());
+    setMetrics(getScrollInfo());
   }, []);
 
   useEffect(() => {
@@ -59,6 +74,56 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
       }
     };
   }, [refreshMetrics]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!dragStateRef.current.active) return;
+      const deltaY = e.clientY - dragStateRef.current.startClientY;
+      const { startScrollY, maxScroll } = dragStateRef.current;
+
+      const multiplier = Math.max(2.2, maxScroll / 220);
+      const nextY = Math.max(0, Math.min(maxScroll, startScrollY + deltaY * multiplier));
+
+      setDragThumbOffset(Math.max(-6, Math.min(6, Math.round(deltaY * 0.14))));
+
+      try {
+        window.scrollTo({ top: nextY, behavior: 'instant' as ScrollBehavior });
+      } catch {
+        window.scrollTo(0, nextY);
+      }
+    };
+
+    const stopDragging = () => {
+      dragStateRef.current.active = false;
+      setIsDragging(false);
+      setDragThumbOffset(0);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
+    window.addEventListener('pointerup', stopDragging);
+    window.addEventListener('pointercancel', stopDragging);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopDragging);
+      window.removeEventListener('pointercancel', stopDragging);
+    };
+  }, [isDragging]);
+
+  const handleDragStart = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    const info = getScrollInfo();
+    dragStateRef.current = {
+      active: true,
+      startClientY: e.clientY,
+      startScrollY: info.scrollY,
+      maxScroll: info.maxScroll,
+    };
+    setDragThumbOffset(0);
+    setIsDragging(true);
+  };
 
   const scrollStepBy = (direction: -1 | 1) => {
     const viewHeight = window.innerHeight || 700;
@@ -107,6 +172,13 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
       en: 'Scroll up',
       es: 'Desplazar hacia arriba',
     }),
+    drag: pickLang(lang, {
+      ar: 'اسحب للأعلى أو للأسفل للتمرير السلس',
+      fr: 'Glisser vers le haut ou le bas pour défiler',
+      amz: 'ⵙⵎⵓⵜⵜⵉ ⵙ ⴰⴼⵍⵍⴰ ⵏⵖ ⵉⵣⴷⴰⵔ',
+      en: 'Drag up or down to scroll smoothly',
+      es: 'Arrastra arriba o abajo para desplazar',
+    }),
     down: pickLang(lang, {
       ar: 'تمرير للأسفل',
       fr: 'Défiler vers le bas',
@@ -128,7 +200,7 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
       dir="ltr"
       role="region"
       aria-label={labels.navAria}
-      className="hidden sm:flex fixed bottom-6 left-6 z-40 flex-col items-center gap-1 p-1.5 rounded-2xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-700 shadow-lg"
+      className="hidden sm:flex fixed right-3 lg:right-5 top-1/2 -translate-y-1/2 z-40 flex-col items-center gap-1 p-1.5 rounded-2xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-700 shadow-lg select-none"
     >
       <button
         type="button"
@@ -151,7 +223,7 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
         disabled={metrics.atTop}
         aria-label={labels.up}
         title={labels.up}
-        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors border ${
+        className={`w-10 h-9 rounded-xl flex items-center justify-center transition-colors border ${
           metrics.atTop
             ? 'bg-stone-50 dark:bg-zinc-900/60 border-stone-200/60 dark:border-zinc-800/60 text-stone-300 dark:text-zinc-600 cursor-not-allowed'
             : 'bg-stone-50 dark:bg-zinc-900 border-stone-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-100 hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:border-amber-300 dark:hover:border-amber-500/40 hover:text-amber-800 dark:hover:text-amber-300 cursor-pointer active:scale-95'
@@ -160,7 +232,23 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
         <ChevronUp className="w-5 h-5" />
       </button>
 
-      <div className="w-6 h-px bg-stone-200 dark:bg-zinc-800 my-0.5" aria-hidden="true" />
+      {/* Center Draggable Handle Button */}
+      <button
+        type="button"
+        onPointerDown={handleDragStart}
+        aria-label={labels.drag}
+        title={labels.drag}
+        style={{
+          transform: `translate3d(0, ${dragThumbOffset}px, 0)`,
+        }}
+        className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center border touch-none transition-colors ${
+          isDragging
+            ? 'bg-amber-600 border-amber-600 text-white cursor-grabbing shadow-md'
+            : 'bg-stone-100 dark:bg-zinc-800/90 border-stone-300 dark:border-zinc-600 text-stone-600 dark:text-zinc-300 hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-300 cursor-grab'
+        }`}
+      >
+        <GripHorizontal className="w-4 h-4" />
+      </button>
 
       <button
         type="button"
@@ -168,7 +256,7 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
         disabled={metrics.atBottom}
         aria-label={labels.down}
         title={labels.down}
-        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors border ${
+        className={`w-10 h-9 rounded-xl flex items-center justify-center transition-colors border ${
           metrics.atBottom
             ? 'bg-stone-50 dark:bg-zinc-900/60 border-stone-200/60 dark:border-zinc-800/60 text-stone-300 dark:text-zinc-600 cursor-not-allowed'
             : 'bg-amber-600 hover:bg-amber-500 border-amber-600 text-white cursor-pointer active:scale-95 shadow-xs'

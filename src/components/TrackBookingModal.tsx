@@ -62,7 +62,10 @@ import {
   playNotificationSound
 } from '../utils/notifications';
 import { registerClientPushSubscription } from '../utils/webPushClient';
-import { buildClientTicketWhatsAppMessage } from '../utils/whatsappAutomation';
+import {
+  buildClientTicketWhatsAppMessage,
+  buildWhatsAppInquiryMessage,
+} from '../utils/whatsappAutomation';
 import { CIH_BANK_DETAILS, processCihReceiptFile } from '../utils/cihReceipt';
 import { CihBankLogo } from './CihBankLogo';
 import { LoyaltyProgressCard } from './LoyaltyProgressCard';
@@ -2385,12 +2388,16 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
                       <a
                         href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}?text=${encodeURIComponent(
-                          pickLang(lang, {
-                            ar: `مرحباً صالون بومليك، هذا إيصال التحويل البنكي عبر CIH لتأكيد تذكرتي ${booking.ticketNumber} (${booking.clientName} - ${booking.date} الساعة ${booking.timeSlot}).`,
-                            fr: `Bonjour Salon Boumlik, voici mon reçu CIH pour confirmer le ticket ${booking.ticketNumber} (${booking.clientName} - ${booking.date} à ${booking.timeSlot}).`,
-                            amz: `ⴰⵣⵓⵍ Salon Boumlik, ⵀⴰⵜⵉⵏ ⵜⴰⵏⴼⵓⵍⵜ ⵏ CIH ⵉ ⵜⵉⴽⵉ ${booking.ticketNumber} (${booking.clientName} - ${booking.date} ${booking.timeSlot}).`,
-                            en: `Hello Salon Boumlik, here is my CIH transfer receipt to confirm ticket ${booking.ticketNumber} (${booking.clientName} - ${booking.date} at ${booking.timeSlot}).`,
-                            es: `Hola Salon Boumlik, aquí está mi recibo CIH para confirmar el ticket ${booking.ticketNumber} (${booking.clientName} - ${booking.date} a las ${booking.timeSlot}).`,
+                          buildWhatsAppInquiryMessage({
+                            lang,
+                            requestType: 'cih',
+                            ticketNumber: booking.ticketNumber,
+                            servicesText: (booking.cartItemsSummary || []).map((s) => s.name).join(' + ') || undefined,
+                            estimatedPriceMAD: booking.finalTotalMAD || undefined,
+                            barberName: booking.barberName,
+                            clientName: booking.clientName,
+                            date: booking.date,
+                            timeSlot: booking.timeSlot,
                           })
                         )}`}
                         target="_blank"

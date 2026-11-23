@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Menu, Sun, Moon } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
-import logoImage from '../assets/images/regenerated_image_1793760774705.png';
+import { PWAInstallButton } from './PWAInstallButton';
+import { BrandMark } from './BrandMark';
 
 interface NavbarProps {
   onOpenBooking?: () => void;
@@ -21,14 +22,55 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { lang } = useLanguage();
   const { isDark, toggleTheme } = useTheme();
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isHiddenOnScroll, setIsHiddenOnScroll] = useState(false);
+  const [isTopHovering, setIsTopHovering] = useState(false);
+  const [isHeaderHovering, setIsHeaderHovering] = useState(false);
+  const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
+  const lastScrollYRef = useRef<number>(0);
 
   useEffect(() => {
+    const getScrollY = () =>
+      window.pageYOffset !== undefined
+        ? window.pageYOffset
+        : document.documentElement.scrollTop || 0;
+
+    lastScrollYRef.current = getScrollY();
+
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 12);
+      const currentY = getScrollY();
+      const prevY = lastScrollYRef.current;
+
+      setIsScrolled(currentY > 12);
+
+      if (currentY <= 72) {
+        setIsHiddenOnScroll(false);
+      } else if (currentY > prevY + 8 && currentY > 96) {
+        setIsHiddenOnScroll(true);
+      } else if (currentY < prevY - 6) {
+        setIsHiddenOnScroll(false);
+      }
+
+      lastScrollYRef.current = currentY;
     };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (e.clientY <= 52) {
+        setIsTopHovering(true);
+      } else if (e.clientY > 88) {
+        setIsTopHovering(false);
+      }
+    };
+
     window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('mousemove', handleMouseMove);
+    };
   }, []);
+
+  const shouldHideHeader =
+    isHiddenOnScroll && !isTopHovering && !isHeaderHovering && !isLangMenuOpen;
 
   const themeToggleAria = isDark
     ? {
@@ -64,6 +106,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const handleLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
+    setIsHiddenOnScroll(false);
     if (onNavigateHome) {
       onNavigateHome();
       return;
@@ -76,74 +119,94 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header
-      className={`sticky top-0 z-40 transition-all duration-200 border-b ${
-        isScrolled
-          ? 'bg-white dark:bg-[#0B0C10] border-stone-200 dark:border-zinc-800 shadow-xs py-2.5'
-          : 'bg-[#FAF9F6] dark:bg-[#0B0C10] border-stone-200 dark:border-zinc-800 py-3'
-      }`}
-    >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-2.5 sm:gap-4">
-        {/* Logo & Brand Name ONLY */}
-        <a
-          href="#top"
-          onClick={handleLogoClick}
-          aria-label={homeAria}
-          title={homeAria}
-          className="flex items-center gap-2.5 sm:gap-3 group flex-shrink-0 min-w-0 cursor-pointer"
-        >
-          <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700/80 p-0.5 flex items-center justify-center shadow-2xs group-hover:border-amber-500/60 transition-colors">
-            <img
-              src={logoImage || SALON_INFO.media.logoClean}
-              alt="Salon Boumlik"
-              className="w-full h-full object-contain group-hover:scale-105 transition-transform"
-            />
+    <>
+      {/* Subtle Top-Edge Cursor Wake Sensor when header is auto-hidden */}
+      {shouldHideHeader && (
+        <div
+          aria-hidden="true"
+          onMouseEnter={() => setIsTopHovering(true)}
+          className="fixed top-0 inset-x-0 h-4 z-40"
+        />
+      )}
+
+      <header
+        onMouseEnter={() => setIsHeaderHovering(true)}
+        onMouseLeave={() => setIsHeaderHovering(false)}
+        className={`sticky top-0 z-40 border-b transform transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
+          shouldHideHeader
+            ? '-translate-y-full pointer-events-none'
+            : 'translate-y-0'
+        } ${
+          isScrolled
+            ? 'bg-white dark:bg-[#0B0C10] border-stone-200 dark:border-zinc-800 shadow-xs py-2'
+            : 'bg-[#FAF9F6] dark:bg-[#0B0C10] border-stone-200 dark:border-zinc-800 py-2.5'
+        }`}
+      >
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between gap-2 sm:gap-4">
+          {/* Zone 1: Clean Seamless Logo + Brand Title + Compact Slogan Underneath */}
+          <a
+            href="#top"
+            onClick={handleLogoClick}
+            aria-label={homeAria}
+            title={homeAria}
+            className="flex items-center gap-1.5 sm:gap-2.5 group flex-1 md:flex-initial min-w-0 cursor-pointer"
+          >
+            <BrandMark className="w-6 h-8 sm:w-8 sm:h-10 flex-shrink-0 group-hover:scale-105 transition-transform" />
+
+            <div className="min-w-0 flex-1">
+              <span className="font-display text-[13px] sm:text-lg font-black tracking-wide text-slate-900 dark:text-white whitespace-nowrap block leading-none">
+                SALON{' '}
+                <span className="text-amber-700 dark:text-amber-400">BOUMLIK</span>
+              </span>
+              <p
+                key={`nav-slogan-${lang}`}
+                className="text-[10px] sm:text-[11px] text-stone-600 dark:text-zinc-400 font-medium mt-0.5 truncate max-w-full sm:max-w-[240px] leading-tight lang-switch-transition"
+              >
+                {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
+              </p>
+            </div>
+          </a>
+
+          {/* Zone 2: Centered Balanced Desktop Language Switcher */}
+          <div className="hidden md:flex flex-1 items-center justify-center px-2">
+            <LanguageSwitcher mode="desktop" />
           </div>
 
-          <div className="min-w-0">
-            <span className="font-display text-base sm:text-lg font-black tracking-wider text-slate-900 dark:text-white whitespace-nowrap block leading-none">
-              SALON{' '}
-              <span className="text-amber-700 dark:text-amber-400">BOUMLIK</span>
-            </span>
-            <p
-              key={`nav-slogan-${lang}`}
-              className="hidden sm:block text-[10px] text-stone-500 dark:text-zinc-400 font-medium mt-0.5 truncate lang-switch-transition"
+          {/* Zone 3: Action Controls (Mobile Language Dropdown + Install Prompt + Theme + Drawer Menu) */}
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            <div className="md:hidden">
+              <LanguageSwitcher mode="mobile" onDropdownToggle={setIsLangMenuOpen} />
+            </div>
+
+            <PWAInstallButton variant="navbar" />
+
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-pressed={isDark}
+              aria-label={themeToggleAria}
+              title={themeToggleAria}
+              className="min-h-[34px] min-w-[34px] sm:min-h-[38px] sm:min-w-[38px] p-1.5 sm:p-2 rounded-xl bg-white hover:bg-stone-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-amber-400 transition-colors flex items-center justify-center cursor-pointer shadow-2xs active:scale-95"
             >
-              {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
-            </p>
+              {isDark ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-slate-700" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenDrawerMenu}
+              aria-label={menuAria}
+              title={menuAria}
+              className="min-h-[34px] min-w-[34px] sm:min-h-[38px] sm:min-w-[38px] p-1.5 sm:p-2 rounded-xl bg-white hover:bg-stone-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 transition-colors flex items-center justify-center cursor-pointer shadow-2xs active:scale-95"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
           </div>
-        </a>
-
-        {/* Minimal Controls: Language Switcher + Theme Toggle + Hamburger Menu */}
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-          <LanguageSwitcher />
-
-          <button
-            type="button"
-            onClick={toggleTheme}
-            aria-pressed={isDark}
-            aria-label={themeToggleAria}
-            title={themeToggleAria}
-            className="min-h-[38px] min-w-[38px] p-2 rounded-xl bg-white hover:bg-stone-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-amber-400 transition-colors flex items-center justify-center cursor-pointer shadow-2xs active:scale-95"
-          >
-            {isDark ? (
-              <Sun className="w-4 h-4 text-amber-400" />
-            ) : (
-              <Moon className="w-4 h-4 text-slate-700" />
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={onOpenDrawerMenu}
-            aria-label={menuAria}
-            title={menuAria}
-            className="min-h-[38px] min-w-[38px] p-2 rounded-xl bg-white hover:bg-stone-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 transition-colors flex items-center justify-center cursor-pointer shadow-2xs active:scale-95"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
         </div>
-      </div>
-    </header>
+      </header>
+    </>
   );
 };

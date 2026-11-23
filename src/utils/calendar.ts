@@ -1,5 +1,6 @@
-import { AppointmentBooking } from '../types';
+import { AppointmentBooking, Language } from '../types';
 import { SALON_INFO } from '../data/barbershopData';
+import { buildWhatsAppInquiryMessage } from './whatsappAutomation';
 
 export function getDrinkLabel(pref?: 'coffee' | 'tea' | 'none'): string {
   switch (pref) {
@@ -13,69 +14,70 @@ export function getDrinkLabel(pref?: 'coffee' | 'tea' | 'none'): string {
   }
 }
 
-export function createFormattedWhatsAppQuoteMessage(appointment: AppointmentBooking): string {
-  const serviceList = appointment.services.map((s, idx) => `  ${idx + 1}. ${s.name.fr} (${s.name.ar})`).join('\n');
-  const drink = getDrinkLabel(appointment.drinkPreference);
+export function createFormattedWhatsAppQuoteMessage(
+  appointment: AppointmentBooking,
+  langOverride?: Language
+): string {
+  const targetLang: Language = langOverride || appointment.clientLanguage || 'ar';
+  const servicesList =
+    (appointment.cartItemsSummary || []).map((s) => s.name).join(' + ') ||
+    (appointment.services || [])
+      .map((s) => s.name[targetLang] || s.name.fr)
+      .join(' + ');
 
-  return `*💈 DEMANDE DE RENDEZ-VOUS & DEVIS - SALON BOUMLIK 💈*
-_More than barber shop • Taroudant_
+  const fallbackEstimatedPrice =
+    typeof appointment.finalTotalMAD === 'number' && appointment.finalTotalMAD > 0
+      ? appointment.finalTotalMAD
+      : (appointment.services || []).reduce((sum, s) => sum + (s.basePrice || 0), 0);
 
-*👤 INFORMATIONS CLIENT :*
-• *Nom :* ${appointment.clientName || 'Non spécifié (Réservation rapide)'}
-• *Téléphone :* ${appointment.clientPhone || 'Non spécifié'}
-• *Email :* ${appointment.clientEmail || 'Non spécifié'}
-
-*✂️ BARBIER CHOISI :*
-• *Barbier :* ${appointment.barberName}
-
-*☕ BOISSON PENDANT L'ATTENTE :*
-• *Choix :* ${drink}
-
-*📅 DATE & CRÉNEAU SOUHAITÉS :*
-• *Date :* ${appointment.date || 'Dès que possible'}
-• *Heure :* ${appointment.timeSlot || 'Créneau libre'}
-
-*💈 PRESTATIONS SÉLECTIONNÉES :*
-${serviceList}
-• *Durée estimée :* ~${appointment.totalDurationMinutes} min
-
-*⚡ RÈGLE RÉSERVATION AVANCE (SANS ATTENTE) :*
-+10 DH de majoration est appliquée sur la coupe de cheveux pour réserver un créneau précis à l'avance et éviter l'attente au salon. Vous me contacterez dès que mon tour approche.
-
-${appointment.notes ? `*📝 REMARQUES PARTICULIÈRES :*\n${appointment.notes}\n` : ''}
-*📍 LIEU :*
-${SALON_INFO.address.fr}
-(Contact Salon: ${SALON_INFO.displayPhone})
-
----
-Salam, merci de me confirmer la disponibilité et de m'envoyer le devis personnalisé pour cette formule. بارك الله فيك !`;
+  return buildWhatsAppInquiryMessage({
+    lang: targetLang,
+    requestType: 'quote',
+    servicesText: servicesList || undefined,
+    estimatedPriceMAD: fallbackEstimatedPrice > 0 ? fallbackEstimatedPrice : undefined,
+    barberName: appointment.barberName,
+    clientName: appointment.clientName || undefined,
+    clientPhone: appointment.clientPhone || undefined,
+    ticketNumber: appointment.ticketNumber || undefined,
+    date: appointment.date || undefined,
+    timeSlot: appointment.timeSlot || undefined,
+    notes: appointment.notes || undefined,
+  });
 }
 
 export function createOwnerWhatsAppAlertMessage(appointment: AppointmentBooking): string {
-  const serviceList = appointment.services.map((s, idx) => `  ${idx + 1}. ${s.name.fr} (${s.name.ar})`).join('\n');
-  return `*💈 NOTIFICATION SALON BOUMLIK - ALERTE NOUVEAU RDV 💈*
-_Suivi automatique pour Hassan (Fondateur - 0635392503)_
+  const serviceList =
+    (appointment.cartItemsSummary || []).map((s) => s.name).join(' + ') ||
+    (appointment.services || []).map((s) => `${s.name.fr} (${s.name.ar})`).join(' + ');
 
-*📋 TICKET :* #${appointment.ticketNumber}
-*✂️ BARBIER ASSIGNÉ :* ${appointment.barberName}
+  const totalPrice =
+    typeof appointment.finalTotalMAD === 'number' && appointment.finalTotalMAD > 0
+      ? `${appointment.finalTotalMAD} MAD`
+      : null;
 
-*👤 CLIENT :*
-• *Nom :* ${appointment.clientName || 'Client'}
-• *Tél :* ${appointment.clientPhone || 'Non spécifié'}
-• *Email :* ${appointment.clientEmail || 'Non spécifié'}
-
-*📅 DATE & CRÉNEAU :*
-• ${appointment.date} à ${appointment.timeSlot}
-• *Boisson :* ${getDrinkLabel(appointment.drinkPreference)}
-
-*💈 FORMULE SÉLECTIONNÉE :*
-${serviceList}
-• Durée : ~${appointment.totalDurationMinutes} min
-• Règle Sans Attente (+10 DH)
-
-${appointment.notes ? `*📝 NOTES CLIENT :*\n${appointment.notes}\n` : ''}
----
-Alerte transmise pour que Hassan suive personnellement chaque demande client au Salon Boumlik.`;
+  return [
+    'السلام عليكم،',
+    [
+      'Salon Boumlik — Taroudant',
+      `Ticket : #${appointment.ticketNumber.replace(/^#+/, '')}`,
+    ].join('\n'),
+    [
+      `Service / Pack : ${serviceList}`,
+      totalPrice ? `Prix estimé : ${totalPrice}` : null,
+      `Barbier : ${appointment.barberName}`,
+      `Date & heure : ${appointment.date} — ${appointment.timeSlot}`,
+      `Boisson : ${getDrinkLabel(appointment.drinkPreference)}`,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    [
+      `Client : ${appointment.clientName || 'Client'}`,
+      appointment.clientPhone ? `Téléphone : ${appointment.clientPhone}` : null,
+      appointment.notes ? `Remarque : ${appointment.notes}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  ].join('\n\n');
 }
 
 export function createOwnerEmailNotificationUrl(appointment: AppointmentBooking): string {

@@ -13,6 +13,7 @@ import {
   QrCode,
   X,
   Wifi,
+  Shield,
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { createGmailComposeUrl, createWhatsAppUrl } from '../utils/calendar';
@@ -25,6 +26,15 @@ import {
 } from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
 import { safeCopyToClipboard } from '../utils/safeBrowser';
+import { buildWhatsAppInquiryMessage } from '../utils/whatsappAutomation';
+import {
+  SALON_WIFI_CONFIG,
+  buildSalonWifiUri,
+  copyWifiPasswordSafely,
+  copyWifiSsidSafely,
+} from '../utils/wifiConnect';
+
+type ContactQrKind = 'whatsapp' | 'instagram' | 'facebook' | 'wifi';
 
 export const ContactSection: React.FC = () => {
   const { lang, t } = useLanguage();
@@ -38,12 +48,18 @@ export const ContactSection: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [message, setMessage] = useState('');
   const [copiedEmail, setCopiedEmail] = useState(false);
+  const [copiedWifiPass, setCopiedWifiPass] = useState(false);
+  const [copiedWifiSsid, setCopiedWifiSsid] = useState(false);
+  const [wifiConnectFeedback, setWifiConnectFeedback] = useState(false);
   const [submittedInApp, setSubmittedInApp] = useState(false);
 
   const [activeQrModal, setActiveQrModal] = useState<{
+    kind: ContactQrKind;
     title: string;
     image: string;
     description: string;
+    actionUrl: string;
+    actionLabel: string;
   } | null>(null);
 
   const handleCopyEmail = () => {
@@ -51,6 +67,28 @@ export const ContactSection: React.FC = () => {
     setCopiedEmail(true);
     setTimeout(() => setCopiedEmail(false), 2000);
   };
+
+  const handleCopyWifiPass = () => {
+    void copyWifiPasswordSafely();
+    setCopiedWifiPass(true);
+    setTimeout(() => setCopiedWifiPass(false), 2200);
+  };
+
+  const handleCopyWifiSsid = () => {
+    void copyWifiSsidSafely();
+    setCopiedWifiSsid(true);
+    setTimeout(() => setCopiedWifiSsid(false), 2000);
+  };
+
+  const handleDirectWifiConnect = () => {
+    void copyWifiPasswordSafely();
+    setCopiedWifiPass(true);
+    setWifiConnectFeedback(true);
+    setTimeout(() => setCopiedWifiPass(false), 2200);
+    setTimeout(() => setWifiConnectFeedback(false), 5000);
+  };
+
+  const wifiUri = buildSalonWifiUri();
 
   const ui = {
     heading: pickLang(lang, {
@@ -193,6 +231,90 @@ export const ContactSection: React.FC = () => {
       en: 'Scan this code with your phone camera.',
       es: 'Escanea este código con la cámara de tu teléfono.',
     }),
+    socialStripTitle: pickLang(lang, {
+      ar: 'مواقع التواصل والاتصال المباشر',
+      fr: 'Réseaux Sociaux & Accès Direct',
+      amz: 'ⵉⵥⴹⵡⴰⵏ ⵏ ⵓⵎⵢⴰⵡⴰⴹ ⵓⵙⵔⵉⴷ',
+      en: 'Social Media & Direct Access',
+      es: 'Redes Sociales y Acceso Directo',
+    }),
+    socialStripSub: pickLang(lang, {
+      ar: 'ادخل مباشرة إلى صفحات صالون بومليك الرسمية أو راسلنا بنقرة واحدة',
+      fr: 'Accédez en un clic aux pages officielles du Salon Boumlik',
+      amz: 'ⴽⵛⵎ ⵓⵙⵔⵉⴷ ⵖⵔ ⵜⵙⵏⵉⵡⵉⵏ ⵏ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ',
+      en: 'Open Salon Boumlik official social pages or message us in one tap',
+      es: 'Abre las páginas oficiales de Salon Boumlik o escríbenos en un clic',
+    }),
+    openWhatsappBtn: pickLang(lang, {
+      ar: 'فتح واتساب',
+      fr: 'Ouvrir WhatsApp',
+      amz: 'ⵕⵥⵎ ⵡⴰⵜⵙⴰⴱ',
+      en: 'Open WhatsApp',
+      es: 'Abrir WhatsApp',
+    }),
+    openInstagramBtn: pickLang(lang, {
+      ar: 'فتح إنستغرام',
+      fr: 'Ouvrir Instagram',
+      amz: 'ⵕⵥⵎ ⵉⵏⵙⵜⴰⴳⵔⴰⵎ',
+      en: 'Open Instagram',
+      es: 'Abrir Instagram',
+    }),
+    openFacebookBtn: pickLang(lang, {
+      ar: 'فتح فيسبوك',
+      fr: 'Ouvrir Facebook',
+      amz: 'ⵕⵥⵎ ⴼⵉⵙⴱⵓⴽ',
+      en: 'Open Facebook',
+      es: 'Abrir Facebook',
+    }),
+    wifiQuickConnectBtn: pickLang(lang, {
+      ar: 'اتصال بالواي فاي',
+      fr: 'Connexion Wi-Fi',
+      amz: 'ⴰⵎⵢⴰⵡⴰⴹ Wi-Fi',
+      en: 'Connect Wi-Fi',
+      es: 'Conectar Wi-Fi',
+    }),
+    wifiCopyBtn: pickLang(lang, {
+      ar: 'نسخ كلمة المرور',
+      fr: 'Copier le code',
+      amz: 'ⵏⵖⵍ ⴰⵙⴰⵔⵓⵜ',
+      en: 'Copy Password',
+      es: 'Copiar clave',
+    }),
+    wifiCopiedBtn: pickLang(lang, {
+      ar: 'تم النسخ!',
+      fr: 'Copié !',
+      amz: 'ⵉⵜⵜⵓⵏⵖⴰⵍ!',
+      en: 'Copied!',
+      es: '¡Copiado!',
+    }),
+    wifiSsidLabel: pickLang(lang, {
+      ar: 'الشبكة:',
+      fr: 'Réseau :',
+      amz: 'ⴰⵥⵟⵟⴰ:',
+      en: 'SSID:',
+      es: 'Red:',
+    }),
+    wifiSecurityLabel: pickLang(lang, {
+      ar: 'الحماية:',
+      fr: 'Sécurité :',
+      amz: 'ⵜⴰⵏⴼⵔⵓⵜ:',
+      en: 'Security:',
+      es: 'Seguridad:',
+    }),
+    wifiPassLabel: pickLang(lang, {
+      ar: 'كلمة المرور:',
+      fr: 'Code :',
+      amz: 'ⴰⵙⴰⵔⵓⵜ:',
+      en: 'Password:',
+      es: 'Clave:',
+    }),
+    wifiFeedback: pickLang(lang, {
+      ar: 'تم نسخ كلمة المرور (@SalonBoumlik) للاتصال السريع.',
+      fr: 'Mot de passe copié (@SalonBoumlik) pour connexion rapide.',
+      amz: 'ⵉⵜⵜⵓⵏⵖⴰⵍ ⵓⵙⴰⵔⵓⵜ (@SalonBoumlik).',
+      en: 'Password copied (@SalonBoumlik) — select @SalonBoumlik in Wi-Fi settings if not auto-connected.',
+      es: 'Contraseña copiada (@SalonBoumlik) para conexión rápida.',
+    }),
     subjectLine: pickLang(lang, {
       ar: 'استفسار من موقع صالون بومليك',
       fr: 'Demande de renseignements / Devis Salon Boumlik',
@@ -218,12 +340,20 @@ Salon Boumlik Taroudant`;
     formattedBody
   );
 
-  const whatsappInquiryText = pickLang(lang, {
-    ar: `السلام عليكم سي حسن (صالون بومليك)، معكم ${fullName || 'زبون'}. ${message || 'أرغب في الاستفسار عن الخدمات والمواعيد المتاحة.'}`,
-    fr: `Salam Si Hassan (Salon Boumlik), je m'appelle ${fullName || 'un client'}. ${message || 'Je souhaite avoir des informations sur vos formules et disponibilités.'}`,
-    amz: `Azul Si Hassan (Salon Boumlik), ⵉⵙⵎ ⵉⵏⵓ ${fullName || 'ⴰⵎⵙⴰⵖ'}. ${message || 'ⵔⵉⵖ ⵉⵏⵖⵎⵉⵙⵏ ⵖⴼ ⵜⵡⵓⵔⵉⵡⵉⵏ.'}`,
-    en: `Hello Si Hassan (Salon Boumlik), my name is ${fullName || 'a client'}. ${message || 'I would like information about your services and availability.'}`,
-    es: `Hola Si Hassan (Salon Boumlik), soy ${fullName || 'un cliente'}. ${message || 'Me gustaría consultar sobre servicios y disponibilidad.'}`,
+  const starterWhatsappText = buildWhatsAppInquiryMessage({
+    lang,
+    requestType: 'inquiry',
+    includeMessagePrompt: true,
+  });
+  const directWhatsappUrl = createWhatsAppUrl(liveWhatsappDigits, starterWhatsappText);
+
+  const whatsappInquiryText = buildWhatsAppInquiryMessage({
+    lang,
+    requestType: 'inquiry',
+    clientName: fullName.trim() || undefined,
+    clientPhone: phone.trim() || undefined,
+    notes: message.trim() || undefined,
+    includeMessagePrompt: !message.trim(),
   });
   const whatsappComposeUrl = createWhatsAppUrl(liveWhatsappDigits, whatsappInquiryText);
 
@@ -241,8 +371,18 @@ Salon Boumlik Taroudant`;
     }, 4000);
   };
 
-  const qrSocials = [
+  const qrSocials: Array<{
+    kind: ContactQrKind;
+    title: string;
+    subtitle: string;
+    image: string;
+    icon: typeof MessageCircle;
+    actionUrl: string;
+    actionLabel: string;
+    buttonTone: string;
+  }> = [
     {
+      kind: 'whatsapp',
       title: pickLang(lang, {
         ar: `واتساب مباشر (${liveWhatsappCompact})`,
         amz: `ⵡⴰⵜⵙⴰⴱ ⵓⵙⵔⵉⴷ (${liveWhatsappCompact})`,
@@ -251,17 +391,20 @@ Salon Boumlik Taroudant`;
         fr: `WhatsApp Direct (${liveWhatsappCompact})`,
       }),
       subtitle: pickLang(lang, {
-        ar: 'امسح الباركود للتواصل مع حسن',
+        ar: 'امسح الباركود أو راسل حسن مباشرة',
         amz: 'ⵙⴽⴰⵏ ⵉ ⵓⵎⵢⴰⵡⴰⴹ ⴷ ⵃⴰⵙⴰⵏ',
-        en: 'Scan to message Hassan',
-        es: 'Escanea para escribir a Hassan',
-        fr: 'Scanner pour discuter avec Hassan',
+        en: 'Scan or message Hassan directly',
+        es: 'Escanea o escribe a Hassan',
+        fr: 'Scanner ou écrire à Hassan',
       }),
       image: SALON_INFO.media.qrWhatsApp,
       icon: MessageCircle,
-      actionUrl: `https://wa.me/${liveWhatsappDigits}`,
+      actionUrl: directWhatsappUrl,
+      actionLabel: ui.openWhatsappBtn,
+      buttonTone: 'bg-emerald-600 hover:bg-emerald-700 text-white',
     },
     {
+      kind: 'instagram',
       title: 'Instagram @SalonBoumlik',
       subtitle: pickLang(lang, {
         ar: 'صور وفيديوهات لقصات الشعر والتدريج',
@@ -273,8 +416,11 @@ Salon Boumlik Taroudant`;
       image: SALON_INFO.media.qrInstagram,
       icon: Instagram,
       actionUrl: SALON_INFO.social.instagram,
+      actionLabel: ui.openInstagramBtn,
+      buttonTone: 'bg-rose-600 hover:bg-rose-700 text-white',
     },
     {
+      kind: 'facebook',
       title: 'Facebook Salon Boumlik',
       subtitle: pickLang(lang, {
         ar: 'أخبار ومجتمع تارودانت',
@@ -286,8 +432,11 @@ Salon Boumlik Taroudant`;
       image: SALON_INFO.media.qrFacebook,
       icon: Facebook,
       actionUrl: SALON_INFO.social.facebook,
+      actionLabel: ui.openFacebookBtn,
+      buttonTone: 'bg-blue-600 hover:bg-blue-700 text-white',
     },
     {
+      kind: 'wifi',
       title: pickLang(lang, {
         ar: 'واي فاي مجاني بالصالون',
         amz: 'ⵡⴰⵢ-ⴼⴰⵢ ⴼⴰⴱⵓⵕ',
@@ -296,15 +445,17 @@ Salon Boumlik Taroudant`;
         fr: 'Wi-Fi Gratuit du Salon',
       }),
       subtitle: pickLang(lang, {
-        ar: 'اتصال تلقائي وسريع في الطابق الثاني',
+        ar: 'اتصال مباشر أو امسح الباركود في الطابق الثاني',
         amz: 'ⴰⵎⵢⴰⵡⴰⴹ ⴳ ⵓⵙⵡⵉⵔ 2',
-        en: 'Instant 2nd-floor connection',
-        es: 'Conexión rápida en 2º piso',
-        fr: 'Connexion automatique au 2ème étage',
+        en: 'Quick connect or scan at 2nd floor',
+        es: 'Conexión directa o escanea en 2º piso',
+        fr: 'Connexion directe ou scan au 2ème étage',
       }),
       image: SALON_INFO.media.qrWifi,
       icon: Wifi,
-      actionUrl: '#',
+      actionUrl: wifiUri,
+      actionLabel: ui.wifiQuickConnectBtn,
+      buttonTone: 'bg-amber-600 hover:bg-amber-500 text-white',
     },
   ];
 
@@ -315,7 +466,7 @@ Salon Boumlik Taroudant`;
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="text-center max-w-3xl mx-auto space-y-2.5 mb-10">
+        <div className="text-center max-w-3xl mx-auto space-y-2.5 mb-8">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 text-xs font-bold text-amber-700 dark:text-amber-400">
             <QrCode className="w-3.5 h-3.5" />
             <span>{t.navContact}</span>
@@ -330,21 +481,74 @@ Salon Boumlik Taroudant`;
           </p>
         </div>
 
+        {/* Dedicated Direct Social Media Buttons Strip ("مواقع التواصل") */}
+        <div className="rounded-2xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-800 p-4 sm:p-5 mb-6 shadow-2xs">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                {ui.socialStripTitle}
+              </h3>
+              <p className="text-xs text-stone-500 dark:text-zinc-400">
+                {ui.socialStripSub}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 md:min-w-[460px]">
+              <a
+                href={directWhatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-h-[44px] px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors shadow-2xs"
+              >
+                <MessageCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{ui.openWhatsappBtn}</span>
+                <ExternalLink className="w-3.5 h-3.5 opacity-85 flex-shrink-0" />
+              </a>
+
+              <a
+                href={SALON_INFO.social.instagram}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-h-[44px] px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors shadow-2xs"
+              >
+                <Instagram className="w-4 h-4 flex-shrink-0" />
+                <span>{ui.openInstagramBtn}</span>
+                <ExternalLink className="w-3.5 h-3.5 opacity-85 flex-shrink-0" />
+              </a>
+
+              <a
+                href={SALON_INFO.social.facebook}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-h-[44px] px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors shadow-2xs"
+              >
+                <Facebook className="w-4 h-4 flex-shrink-0" />
+                <span>{ui.openFacebookBtn}</span>
+                <ExternalLink className="w-3.5 h-3.5 opacity-85 flex-shrink-0" />
+              </a>
+            </div>
+          </div>
+        </div>
+
         {/* Official QR Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-          {qrSocials.map((item, idx) => {
+          {qrSocials.map((item) => {
             const Icon = item.icon;
+            const isWifiCard = item.kind === 'wifi';
             return (
               <div
-                key={idx}
+                key={item.kind}
                 className="rounded-2xl p-4 bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-800 hover:border-amber-500/50 transition-all flex flex-col items-center text-center shadow-2xs group"
               >
                 <div
                   onClick={() =>
                     setActiveQrModal({
+                      kind: item.kind,
                       title: item.title,
                       image: item.image,
                       description: item.subtitle,
+                      actionUrl: item.actionUrl,
+                      actionLabel: item.actionLabel,
                     })
                   }
                   className="w-32 h-32 rounded-2xl bg-white border border-stone-200 dark:border-transparent p-2 shadow-inner cursor-pointer hover:scale-105 transition-transform mb-3 relative flex items-center justify-center"
@@ -359,40 +563,87 @@ Salon Boumlik Taroudant`;
                   </div>
                 </div>
 
-                <div className="space-y-1 mb-3">
+                <div className="space-y-1 mb-3 w-full">
                   <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center justify-center gap-1.5">
                     <Icon className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                     <span>{item.title}</span>
                   </h4>
                   <p className="text-[11px] text-stone-500 dark:text-zinc-400">{item.subtitle}</p>
+
+                  {isWifiCard && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-stone-50 dark:bg-zinc-950 border border-stone-200 dark:border-zinc-800 text-[11px] space-y-1 text-start">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-stone-500 dark:text-zinc-400">{ui.wifiSsidLabel}</span>
+                        <span className="font-mono font-bold text-slate-900 dark:text-white" dir="ltr">
+                          {SALON_WIFI_CONFIG.ssid}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-stone-500 dark:text-zinc-400">{ui.wifiSecurityLabel}</span>
+                        <span className="font-mono font-semibold text-emerald-700 dark:text-emerald-400" dir="ltr">
+                          {SALON_WIFI_CONFIG.security}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-stone-500 dark:text-zinc-400">{ui.wifiPassLabel}</span>
+                        <span className="font-mono font-bold text-amber-700 dark:text-amber-400" dir="ltr">
+                          {SALON_WIFI_CONFIG.password}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="mt-auto w-full pt-2 border-t border-stone-200 dark:border-zinc-800 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setActiveQrModal({
-                        title: item.title,
-                        image: item.image,
-                        description: item.subtitle,
-                      })
-                    }
-                    className="flex-1 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 text-xs font-semibold cursor-pointer transition-colors"
-                  >
-                    {ui.zoomQr}
-                  </button>
-                  {item.actionUrl !== '#' && (
+                <div className="mt-auto w-full pt-2.5 border-t border-stone-200 dark:border-zinc-800 space-y-2">
+                  {isWifiCard ? (
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <a
+                        href={wifiUri}
+                        onClick={handleDirectWifiConnect}
+                        className={`py-2 px-2.5 rounded-xl ${item.buttonTone} text-[11px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer`}
+                      >
+                        <Wifi className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span>{item.actionLabel}</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={handleCopyWifiPass}
+                        className="py-2 px-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                      >
+                        {copiedWifiPass ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedWifiPass ? ui.wifiCopiedBtn : ui.wifiCopyBtn}</span>
+                      </button>
+                    </div>
+                  ) : (
                     <a
                       href={item.actionUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="p-1.5 rounded-xl bg-amber-600 text-white hover:bg-amber-500 transition-colors"
-                      title={ui.openLink}
-                      aria-label={ui.openLink}
+                      className={`w-full py-2 px-3 rounded-xl ${item.buttonTone} text-xs font-bold flex items-center justify-center gap-1.5 transition-colors`}
                     >
-                      <ExternalLink className="w-4 h-4" />
+                      <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>{item.actionLabel}</span>
+                      <ExternalLink className="w-3 h-3 opacity-85 flex-shrink-0" />
                     </a>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setActiveQrModal({
+                        kind: item.kind,
+                        title: item.title,
+                        image: item.image,
+                        description: item.subtitle,
+                        actionUrl: item.actionUrl,
+                        actionLabel: item.actionLabel,
+                      })
+                    }
+                    className="w-full py-1.5 px-3 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 text-xs font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <QrCode className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>{ui.zoomQr}</span>
+                  </button>
                 </div>
               </div>
             );
@@ -425,7 +676,7 @@ Salon Boumlik Taroudant`;
                     {liveDisplayPhone}
                   </a>
                   <a
-                    href={`https://wa.me/${liveWhatsappDigits}`}
+                    href={directWhatsappUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 transition-colors"
@@ -593,7 +844,7 @@ Salon Boumlik Taroudant`;
         </div>
       </div>
 
-      {/* QR Code Lightbox Modal */}
+      {/* QR Code Lightbox Modal with Direct Action & Wi-Fi Credentials */}
       {activeQrModal && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center p-4 sb-modal-backdrop"
@@ -628,6 +879,77 @@ Salon Boumlik Taroudant`;
                 className="w-full h-full object-contain"
               />
             </div>
+
+            {activeQrModal.kind === 'wifi' ? (
+              <div className="space-y-3">
+                <div className="p-3 bg-stone-100 dark:bg-zinc-900 rounded-xl border border-stone-200 dark:border-zinc-800 text-start text-xs space-y-2">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-stone-500 dark:text-zinc-400">{ui.wifiSsidLabel}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono font-bold text-slate-900 dark:text-white" dir="ltr">
+                        {SALON_WIFI_CONFIG.ssid}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyWifiSsid}
+                        aria-label={ui.wifiSsidLabel}
+                        className="p-1 rounded bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-300 cursor-pointer"
+                      >
+                        {copiedWifiSsid ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center gap-2 pt-1.5 border-t border-stone-200 dark:border-zinc-800">
+                    <span className="text-stone-500 dark:text-zinc-400">{ui.wifiSecurityLabel}</span>
+                    <span className="inline-flex items-center gap-1 font-mono font-bold text-emerald-700 dark:text-emerald-400" dir="ltr">
+                      <Shield className="w-3 h-3" />
+                      <span>{SALON_WIFI_CONFIG.security}</span>
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center gap-2 pt-1.5 border-t border-stone-200 dark:border-zinc-800">
+                    <span className="text-stone-500 dark:text-zinc-400">{ui.wifiPassLabel}</span>
+                    <span className="font-mono font-bold text-amber-700 dark:text-amber-400" dir="ltr">
+                      {SALON_WIFI_CONFIG.password}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <a
+                    href={wifiUri}
+                    onClick={handleDirectWifiConnect}
+                    className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Wifi className="w-4 h-4 flex-shrink-0" />
+                    <span>{ui.wifiQuickConnectBtn}</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleCopyWifiPass}
+                    className="py-2.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    {copiedWifiPass ? <Check className="w-4 h-4 flex-shrink-0" /> : <Copy className="w-4 h-4 flex-shrink-0" />}
+                    <span>{copiedWifiPass ? ui.wifiCopiedBtn : ui.wifiCopyBtn}</span>
+                  </button>
+                </div>
+
+                {wifiConnectFeedback && (
+                  <p className="text-[11px] leading-relaxed text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-700/50 rounded-xl p-2.5 text-start">
+                    {ui.wifiFeedback}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <a
+                href={activeQrModal.actionUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors"
+              >
+                <span>{activeQrModal.actionLabel}</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
 
             <p className="text-[11px] text-stone-500 dark:text-zinc-500">{ui.scanHint}</p>
           </div>

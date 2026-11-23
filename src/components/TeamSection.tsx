@@ -17,6 +17,7 @@ import { pickLang } from '../utils/i18n';
 import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore';
 import { useBarberRoster } from '../utils/barberRosterStore';
 import { getBarberIdentityTokens } from '../utils/barberIdentity';
+import { buildWhatsAppInquiryMessage } from '../utils/whatsappAutomation';
 
 interface TeamSectionProps {
   onSelectBarberToBook: (barberId: string) => void;
@@ -292,12 +293,11 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
 
                   <a
                     href={`https://wa.me/${barber.whatsappNumber || '212635392503'}?text=${encodeURIComponent(
-                      pickLang(lang, {
-                        ar: `السلام عليكم ${barber.name.ar}، أريد الاستفسار عن موعد في صالون بومليك.`,
-                        amz: `Azul ${firstName}, ⵔⵉⵖ ⴰⵙⵔⵓⵙ ⴳ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ.`,
-                        en: `Hello ${firstName}, I would like to book an appointment at Salon Boumlik.`,
-                        es: `Hola ${firstName}, me gustaría reservar una cita en Salon Boumlik.`,
-                        fr: `Salam ${firstName}, je souhaite réserver un créneau avec vous au Salon Boumlik.`,
+                      buildWhatsAppInquiryMessage({
+                        lang,
+                        requestType: 'booking',
+                        barberName: barber.name[lang] || barber.name.fr,
+                        includeMessagePrompt: true,
                       })
                     )}`}
                     target="_blank"

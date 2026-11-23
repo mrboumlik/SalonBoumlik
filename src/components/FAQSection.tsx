@@ -4,6 +4,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { SALON_INFO } from '../data/barbershopData';
 import { pickLang } from '../utils/i18n';
 import { normalizeSalonWhatsappDigits, useSalonProfileSettings } from '../utils/salonSettingsStore';
+import { buildWhatsAppInquiryMessage } from '../utils/whatsappAutomation';
 
 type FaqCategory = 'all' | 'booking' | 'services' | 'policies';
 
@@ -379,12 +380,10 @@ export const FAQSection: React.FC = () => {
 
           <a
             href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}?text=${encodeURIComponent(
-              pickLang(lang, {
-                ar: 'مرحباً صالون بومليك، لدي سؤال حول الخدمات والحجز في تارودانت:',
-                fr: 'Bonjour Salon Boumlik, j’ai une question concernant vos prestations à Taroudant :',
-                amz: 'ⴰⵣⵓⵍ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ, ⵖⵓⵔⵉ ⴰⵙⵇⵙⵉ ⵖⴼ ⵜⵡⵓⵔⵉⵡⵉⵏ ⴳ ⵜⴰⵔⵓⴷⴰⵏⵜ :',
-                en: 'Hello Salon Boumlik, I have a question about your services and booking in Taroudant:',
-                es: 'Hola Salon Boumlik, tengo una consulta sobre vuestros servicios y reservas en Taroudant:',
+              buildWhatsAppInquiryMessage({
+                lang,
+                requestType: 'inquiry',
+                includeMessagePrompt: true,
               })
             )}`}
             target="_blank"

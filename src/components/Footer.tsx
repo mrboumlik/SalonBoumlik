@@ -21,9 +21,11 @@ import {
   normalizeSalonWhatsappDigits,
 } from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
+import { buildWhatsAppInquiryMessage } from '../utils/whatsappAutomation';
 
 import type { HomepageSectionKey } from './DrawerMenu';
 import type { PublicInfoSection } from './PublicInfoModal';
+import { BrandMark } from './BrandMark';
 
 interface FooterProps {
   onOpenBooking: () => void;
@@ -231,22 +233,30 @@ export const Footer: React.FC<FooterProps> = ({
       en: 'Terms of Use',
       es: 'Términos de uso',
     }),
+    googleRatingBadge: pickLang(lang, {
+      ar: 'تقييم 5.0 ★ على Google — آراء الزبناء',
+      fr: 'Note 5.0 ★ sur Google — Voir les avis',
+      amz: 'ⵜⴰⵏⵏⴰⵢⵜ 5.0 ★ Google — ⵉⵙⵓⵜⴰⴳ',
+      en: '5.0 ★ Google Rating — Client Reviews',
+      es: 'Valoración 5.0 ★ en Google — Reseñas',
+    }),
+    locationBadge: pickLang(lang, {
+      ar: 'موقع الصالون — شارع بئر أنزران، تارودانت',
+      fr: 'Localisation — Rue Bir Anzarane, Taroudant',
+      amz: 'ⴰⴷⵖⴰⵔ — ⴱⵉⵔ ⴰⵏⵣⴰⵔⴰⵏ, ⵜⴰⵔⵓⴷⴰⵏⵜ',
+      en: 'Salon Location — Rue Bir Anzarane, Taroudant',
+      es: 'Ubicación — Rue Bir Anzarane, Taroudant',
+    }),
   };
 
   return (
     <footer className="relative z-10 bg-stone-100 dark:bg-[#0B0C10] border-t border-stone-200 dark:border-zinc-800/80 text-stone-600 dark:text-zinc-400 text-xs transition-colors">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 sm:py-10">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 sm:pt-10 sm:pb-20">
         {/* Main Responsive Footer Grid: Brand Identity + Quick Links + Client Services + Contact Card */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-12 gap-7 lg:gap-8 items-start">
           {/* 1. Brand Identity Column */}
           <div className="col-span-2 md:col-span-3 lg:col-span-4 flex flex-col items-center text-center lg:items-start lg:text-start pb-6 lg:pb-0 border-b lg:border-b-0 border-stone-200/80 dark:border-zinc-800/80 space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700/80 p-1 flex items-center justify-center shadow-2xs">
-              <img
-                src={SALON_INFO.media.logoClean}
-                alt="Salon Boumlik Logo"
-                className="w-full h-full object-contain"
-              />
-            </div>
+            <BrandMark className="w-10 h-12 flex-shrink-0" />
 
             <div className="space-y-1 max-w-md">
               <span className="font-display text-lg sm:text-xl font-black tracking-wide text-slate-900 dark:text-white block">
@@ -260,40 +270,84 @@ export const Footer: React.FC<FooterProps> = ({
               </p>
             </div>
 
-            {/* Social Media Icon Row */}
-            <div className="flex items-center justify-center lg:justify-start gap-3 pt-1">
-              <a
-                href={SALON_INFO.social.instagram}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white border border-stone-200 dark:border-zinc-800 flex items-center justify-center transition-all duration-200 shadow-2xs"
-                title="Instagram @SalonBoumlik"
-                aria-label="Instagram"
-              >
-                <Instagram className="w-4 h-4" />
-              </a>
+            {/* Clear Social Media Direct Buttons ("مواقع التواصل") */}
+            <div className="space-y-1.5 pt-1">
+              <div className="text-[11px] font-bold text-stone-500 dark:text-zinc-400">
+                {pickLang(lang, {
+                  ar: 'مواقع التواصل',
+                  fr: 'Réseaux sociaux',
+                  amz: 'ⵉⵥⴹⵡⴰⵏ ⵏ ⵓⵎⵢⴰⵡⴰⴹ',
+                  en: 'Social Media',
+                  es: 'Redes sociales',
+                })}
+              </div>
+              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
+                <a
+                  href={SALON_INFO.social.instagram}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-h-[36px] px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-200 border border-stone-200 dark:border-zinc-800 inline-flex items-center gap-1.5 text-[11px] font-bold transition-all duration-150 shadow-2xs"
+                  title="Instagram @SalonBoumlik"
+                  aria-label="Instagram"
+                >
+                  <Instagram className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 flex-shrink-0" />
+                  <span>
+                    {pickLang(lang, {
+                      ar: 'إنستغرام',
+                      fr: 'Instagram',
+                      amz: 'Instagram',
+                      en: 'Instagram',
+                      es: 'Instagram',
+                    })}
+                  </span>
+                </a>
 
-              <a
-                href={SALON_INFO.social.facebook}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white border border-stone-200 dark:border-zinc-800 flex items-center justify-center transition-all duration-200 shadow-2xs"
-                title="Facebook Salon Boumlik"
-                aria-label="Facebook"
-              >
-                <Facebook className="w-4 h-4" />
-              </a>
+                <a
+                  href={SALON_INFO.social.facebook}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-h-[36px] px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-200 border border-stone-200 dark:border-zinc-800 inline-flex items-center gap-1.5 text-[11px] font-bold transition-all duration-150 shadow-2xs"
+                  title="Facebook Salon Boumlik"
+                  aria-label="Facebook"
+                >
+                  <Facebook className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                  <span>
+                    {pickLang(lang, {
+                      ar: 'فيسبوك',
+                      fr: 'Facebook',
+                      amz: 'Facebook',
+                      en: 'Facebook',
+                      es: 'Facebook',
+                    })}
+                  </span>
+                </a>
 
-              <a
-                href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-stone-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 border border-stone-200 dark:border-zinc-800 flex items-center justify-center transition-all duration-200 shadow-2xs"
-                title={`WhatsApp ${formatSalonDisplayPhone(salonSettings.salonWhatsapp)}`}
-                aria-label="WhatsApp"
-              >
-                <MessageCircle className="w-4 h-4" />
-              </a>
+                <a
+                  href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}?text=${encodeURIComponent(
+                    buildWhatsAppInquiryMessage({
+                      lang,
+                      requestType: 'inquiry',
+                      includeMessagePrompt: true,
+                    })
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-h-[36px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 dark:border-emerald-500 inline-flex items-center gap-1.5 text-[11px] font-bold transition-all duration-150 shadow-2xs"
+                  title={`WhatsApp ${formatSalonDisplayPhone(salonSettings.salonWhatsapp)}`}
+                  aria-label="WhatsApp"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>
+                    {pickLang(lang, {
+                      ar: 'واتساب',
+                      fr: 'WhatsApp',
+                      amz: 'WhatsApp',
+                      en: 'WhatsApp',
+                      es: 'WhatsApp',
+                    })}
+                  </span>
+                </a>
+              </div>
             </div>
           </div>
 
@@ -469,7 +523,30 @@ export const Footer: React.FC<FooterProps> = ({
           </div>
         </div>
 
-        {/* 4. Public Info Links Bar (About, Contact, Privacy Policy, Terms of Use) */}
+        {/* 4. Centered Google Rating (Jumps to Reviews Section) + Location Actions */}
+        <div className="mt-7 pt-6 border-t border-stone-200/80 dark:border-zinc-800/80 flex flex-wrap items-center justify-center gap-3">
+          <a
+            href="#section-reviews"
+            onClick={(e) => handleSectionLink(e, 'reviews')}
+            className="min-h-[42px] px-4 py-2 rounded-xl bg-white dark:bg-[#13151B] border border-amber-200 dark:border-amber-500/35 hover:border-amber-400 dark:hover:border-amber-400/60 text-slate-900 dark:text-white font-bold text-xs inline-flex items-center gap-2 shadow-2xs transition-colors cursor-pointer"
+          >
+            <Star className="w-4 h-4 fill-amber-500 text-amber-500 flex-shrink-0" />
+            <span>{labels.googleRatingBadge}</span>
+          </a>
+
+          <a
+            href={salonSettings.googleMapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="min-h-[42px] px-4 py-2 rounded-xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-800 hover:border-amber-400 dark:hover:border-amber-500/40 text-slate-800 dark:text-zinc-200 font-bold text-xs inline-flex items-center gap-2 shadow-2xs transition-colors"
+          >
+            <MapPin className="w-4 h-4 text-amber-700 dark:text-amber-400 flex-shrink-0" />
+            <span>{labels.locationBadge}</span>
+            <ExternalLink className="w-3.5 h-3.5 text-stone-400 flex-shrink-0" />
+          </a>
+        </div>
+
+        {/* 5. Harmoniously Centered Public Info Links Bar (About, Contact, Privacy Policy, Terms of Use) */}
         {onOpenInfoModal && (
           <nav
             aria-label={pickLang(lang, {
@@ -479,7 +556,7 @@ export const Footer: React.FC<FooterProps> = ({
               en: 'Salon information and policies',
               es: 'Información y políticas',
             })}
-            className="mt-7 pt-5 border-t border-stone-200/80 dark:border-zinc-800/80 flex flex-wrap items-center justify-center sm:justify-start gap-x-5 gap-y-2 text-xs"
+            className="mt-5 pt-4 border-t border-stone-200/80 dark:border-zinc-800/80 flex flex-wrap items-center justify-center gap-x-2 gap-y-2 text-xs"
           >
             {(
               [
@@ -488,24 +565,28 @@ export const Footer: React.FC<FooterProps> = ({
                 { id: 'privacy', label: labels.privacyLink },
                 { id: 'terms', label: labels.termsLink },
               ] as { id: PublicInfoSection; label: string }[]
-            ).map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onOpenInfoModal(item.id)}
-                className="font-bold text-stone-600 dark:text-zinc-400 hover:text-amber-700 dark:hover:text-amber-400 transition-colors cursor-pointer py-1"
-              >
-                {item.label}
-              </button>
+            ).map((item, idx) => (
+              <React.Fragment key={item.id}>
+                {idx > 0 && (
+                  <span aria-hidden="true" className="text-stone-300 dark:text-zinc-700 hidden sm:inline">
+                    ·
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onOpenInfoModal(item.id)}
+                  className="min-h-[36px] px-3 py-1.5 rounded-lg font-bold text-stone-600 dark:text-zinc-300 hover:text-amber-700 dark:hover:text-amber-400 hover:bg-white dark:hover:bg-zinc-900 transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  {item.label}
+                </button>
+              </React.Fragment>
             ))}
           </nav>
         )}
 
-        {/* 5. Sleek Bottom Copyright Bar (Discreet double-click on rights reserved text opens staff login) */}
+        {/* 6. Sleek Bottom Copyright Bar (Discreet double-click on rights reserved text opens staff login) */}
         <div
-          className={`${
-            onOpenInfoModal ? 'mt-4 pt-4' : 'mt-7 pt-5'
-          } border-t border-stone-200/80 dark:border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px] text-stone-500 dark:text-zinc-400`}
+          className="mt-4 pt-4 border-t border-stone-200/80 dark:border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px] text-stone-500 dark:text-zinc-400"
         >
           <span>
             © {new Date().getFullYear()} {labels.rightsPrefix}{' '}

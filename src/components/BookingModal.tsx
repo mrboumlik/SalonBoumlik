@@ -346,7 +346,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <a
                     href={createWhatsAppUrl(
                       barberWhatsApp,
-                      createFormattedWhatsAppQuoteMessage(confirmedBooking)
+                      createFormattedWhatsAppQuoteMessage(confirmedBooking, lang)
                     )}
                     target="_blank"
                     rel="noopener noreferrer"

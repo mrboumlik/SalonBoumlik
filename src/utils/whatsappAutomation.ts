@@ -88,6 +88,262 @@ export function buildCreditWhatsAppReminderUrl(params: {
   return `https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`;
 }
 
+export type WhatsAppRequestKind = 'booking' | 'inquiry' | 'quote' | 'cih';
+
+export interface WhatsAppInquiryMessageParams {
+  lang: Language;
+  requestType?: WhatsAppRequestKind;
+  servicesText?: string;
+  estimatedPriceMAD?: number | null;
+  barberName?: string;
+  clientName?: string;
+  clientPhone?: string;
+  ticketNumber?: string;
+  date?: string;
+  timeSlot?: string;
+  notes?: string;
+  includeMessagePrompt?: boolean;
+}
+
+/**
+ * Formats outgoing WhatsApp (`wa.me`) booking & inquiry messages cleanly
+ * with clear line breaks and structured, readable fields.
+ */
+export function buildWhatsAppInquiryMessage(params: WhatsAppInquiryMessageParams): string {
+  const {
+    lang,
+    requestType = 'inquiry',
+    servicesText,
+    estimatedPriceMAD,
+    barberName,
+    clientName,
+    clientPhone,
+    ticketNumber,
+    date,
+    timeSlot,
+    notes,
+    includeMessagePrompt = false,
+  } = params;
+
+  const greeting =
+    lang === 'ar'
+      ? 'السلام عليكم،'
+      : lang === 'amz'
+      ? 'ⴰⵣⵓⵍ ⴼⵍⵍⴰⵡⵏ،'
+      : lang === 'en'
+      ? 'Hello,'
+      : lang === 'es'
+      ? 'Hola,'
+      : 'Bonjour,';
+
+  const salonHeader =
+    lang === 'ar'
+      ? 'صالون بومليك — تارودانت'
+      : lang === 'amz'
+      ? 'ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ — ⵜⴰⵔⵓⴷⴰⵏⵜ'
+      : 'Salon Boumlik — Taroudant';
+
+  const requestTypeLabel =
+    lang === 'ar'
+      ? 'نوع الطلب'
+      : lang === 'amz'
+      ? 'ⴰⵏⴰⵡ ⵏ ⵜⵓⵜⵜⵔⴰ'
+      : lang === 'en'
+      ? 'Request Type'
+      : lang === 'es'
+      ? 'Tipo de solicitud'
+      : 'Type de demande';
+
+  const requestTypeValue =
+    requestType === 'booking'
+      ? lang === 'ar'
+        ? 'حجز موعد'
+        : lang === 'amz'
+        ? 'ⴰⵙⵔⵓⵙ ⵏ ⵓⵙⵉⵀⵍ'
+        : lang === 'en'
+        ? 'Appointment Booking'
+        : lang === 'es'
+        ? 'Reserva de cita'
+        : 'Demande de rendez-vous'
+      : requestType === 'quote'
+      ? lang === 'ar'
+        ? 'حجز موعد واستفسار عن السعر'
+        : lang === 'amz'
+        ? 'ⴰⵙⵔⵓⵙ ⴷ ⵓⵜⵉⴳ'
+        : lang === 'en'
+        ? 'Booking & Price Inquiry'
+        : lang === 'es'
+        ? 'Reserva y presupuesto'
+        : 'Rendez-vous & devis'
+      : requestType === 'cih'
+      ? lang === 'ar'
+        ? 'إرسال إيصال التحويل البنكي CIH لتأكيد الحجز'
+        : lang === 'amz'
+        ? 'ⵜⴰⵏⴼⵓⵍⵜ ⵏ CIH ⵉ ⵓⵙⵏⵜⵎ'
+        : lang === 'en'
+        ? 'CIH Bank Transfer Receipt Confirmation'
+        : lang === 'es'
+        ? 'Confirmación de transferencia CIH'
+        : 'Confirmation de virement CIH'
+      : lang === 'ar'
+      ? 'استفسار عام'
+      : lang === 'amz'
+      ? 'ⴰⵙⵇⵙⵉ'
+      : lang === 'en'
+      ? 'General Inquiry'
+      : lang === 'es'
+      ? 'Consulta general'
+      : 'Demande de renseignements';
+
+  const headerLines = [salonHeader, `${requestTypeLabel}: ${requestTypeValue}`];
+  if (ticketNumber) {
+    const ticketLabel =
+      lang === 'ar'
+        ? 'رقم التذكرة'
+        : lang === 'amz'
+        ? 'ⵜⵉⴽⵉ'
+        : lang === 'en'
+        ? 'Ticket'
+        : lang === 'es'
+        ? 'Ticket'
+        : 'Ticket';
+    headerLines.push(`${ticketLabel}: #${ticketNumber.replace(/^#+/, '')}`);
+  }
+
+  const detailLines: string[] = [];
+
+  if (servicesText && servicesText.trim()) {
+    const label =
+      lang === 'ar'
+        ? 'الخدمة / الباقة المختارة'
+        : lang === 'amz'
+        ? 'ⵜⴰⵡⵓⵔⵉ ⵉⵜⵜⵓⵙⵜⵢⵏ'
+        : lang === 'en'
+        ? 'Selected Service / Pack'
+        : lang === 'es'
+        ? 'Servicio / Pack seleccionado'
+        : 'Service / Pack sélectionné';
+    detailLines.push(`${label}: ${servicesText.trim()}`);
+  }
+
+  if (typeof estimatedPriceMAD === 'number' && Number.isFinite(estimatedPriceMAD) && estimatedPriceMAD > 0) {
+    const label =
+      lang === 'ar'
+        ? 'السعر التقديري'
+        : lang === 'amz'
+        ? 'ⴰⵜⵉⴳ'
+        : lang === 'en'
+        ? 'Estimated Price'
+        : lang === 'es'
+        ? 'Precio estimado'
+        : 'Prix estimé';
+    detailLines.push(`${label}: ${Math.round(estimatedPriceMAD)} MAD`);
+  }
+
+  if (barberName && barberName.trim()) {
+    const label =
+      lang === 'ar'
+        ? 'الحلاق المفضل'
+        : lang === 'amz'
+        ? 'ⴰⵎⴽⵔⴰⴹ'
+        : lang === 'en'
+        ? 'Preferred Barber'
+        : lang === 'es'
+        ? 'Barbero preferido'
+        : 'Barbier souhaité';
+    detailLines.push(`${label}: ${barberName.trim()}`);
+  }
+
+  if (date && date.trim()) {
+    const label =
+      lang === 'ar'
+        ? 'التاريخ'
+        : lang === 'amz'
+        ? 'ⴰⵙⴰⴽⵓⴷ'
+        : lang === 'en'
+        ? 'Date'
+        : lang === 'es'
+        ? 'Fecha'
+        : 'Date';
+    detailLines.push(`${label}: ${date.trim()}`);
+  }
+
+  if (timeSlot && timeSlot.trim()) {
+    const label =
+      lang === 'ar'
+        ? 'التوقيت'
+        : lang === 'amz'
+        ? 'ⴰⴽⵓⴷ'
+        : lang === 'en'
+        ? 'Time'
+        : lang === 'es'
+        ? 'Hora'
+        : 'Horaire';
+    detailLines.push(`${label}: ${timeSlot.trim()}`);
+  }
+
+  const clientLines: string[] = [];
+  if (clientName && clientName.trim()) {
+    const label =
+      lang === 'ar'
+        ? 'الاسم'
+        : lang === 'amz'
+        ? 'ⵉⵙⵎ'
+        : lang === 'en'
+        ? 'Name'
+        : lang === 'es'
+        ? 'Nombre'
+        : 'Nom';
+    clientLines.push(`${label}: ${clientName.trim()}`);
+  }
+
+  if (clientPhone && clientPhone.trim()) {
+    const label =
+      lang === 'ar'
+        ? 'الهاتف'
+        : lang === 'amz'
+        ? 'ⵜⵉⵍⵉⴼⵓⵏ'
+        : lang === 'en'
+        ? 'Phone'
+        : lang === 'es'
+        ? 'Teléfono'
+        : 'Téléphone';
+    clientLines.push(`${label}: ${clientPhone.trim()}`);
+  }
+
+  const sections: string[] = [greeting, headerLines.join('\n')];
+  if (detailLines.length > 0) sections.push(detailLines.join('\n'));
+  if (clientLines.length > 0) sections.push(clientLines.join('\n'));
+
+  if (notes && notes.trim()) {
+    const msgLabel =
+      lang === 'ar'
+        ? 'الرسالة'
+        : lang === 'amz'
+        ? 'ⵜⴰⴱⵔⴰⵜ'
+        : lang === 'en'
+        ? 'Message'
+        : lang === 'es'
+        ? 'Mensaje'
+        : 'Message';
+    sections.push(`${msgLabel}:\n${notes.trim()}`);
+  } else if (includeMessagePrompt) {
+    const promptLabel =
+      lang === 'ar'
+        ? 'استفساري:'
+        : lang === 'amz'
+        ? 'ⴰⵙⵇⵙⵉ ⵉⵏⵓ:'
+        : lang === 'en'
+        ? 'My message:'
+        : lang === 'es'
+        ? 'Mi consulta:'
+        : 'Mon message :';
+    sections.push(`${promptLabel}\n`);
+  }
+
+  return sections.join('\n\n');
+}
+
 /**
  * Dynamically formats full booking details for manual WhatsApp clicks
  * on BOTH client tickets and admin dashboard tickets in the target language.
@@ -99,7 +355,9 @@ export function buildClientTicketWhatsAppMessage(
   const targetLang: Language = langOverride || booking.clientLanguage || 'ar';
   const cleanTicket = `#${booking.ticketNumber.replace(/^#+/, '')}`;
   const servicesList =
-    (booking.cartItemsSummary || []).map((s) => s.name).join(' + ') || 'Prestations Salon Boumlik';
+    (booking.cartItemsSummary || []).map((s) => s.name).join(' + ') ||
+    (booking.services || []).map((s) => s.name[targetLang] || s.name.fr).join(' + ') ||
+    'Salon Boumlik';
   const barber = booking.barberName;
   const total = booking.finalTotalMAD ?? 0;
 
@@ -107,23 +365,23 @@ export function buildClientTicketWhatsAppMessage(
   if (booking.status === 'confirmed') {
     statusText =
       targetLang === 'ar'
-        ? 'تم تأكيد وقبول الموعد ✅'
+        ? 'تم تأكيد وقبول الموعد'
         : targetLang === 'amz'
-        ? 'ⵉⵜⵜⵓⵙⵙⴷⴰ ⵓⵙⵔⵓⵙ ✅'
+        ? 'ⵉⵜⵜⵓⵙⵙⴷⴰ ⵓⵙⵔⵓⵙ'
         : targetLang === 'es'
-        ? 'Cita confirmada ✅'
+        ? 'Cita confirmada'
         : targetLang === 'en'
-        ? 'Appointment Confirmed ✅'
-        : 'Rendez-vous Confirmé ✅';
+        ? 'Appointment Confirmed'
+        : 'Rendez-vous confirmé';
   } else if (booking.status === 'rescheduled' && booking.rescheduledTo) {
     statusText =
       targetLang === 'ar'
-        ? `تم اقتراح موعد جديد: 📅 ${booking.rescheduledTo.date} الساعة ⏰ ${booking.rescheduledTo.time}`
+        ? `تم اقتراح موعد جديد: ${booking.rescheduledTo.date} — ${booking.rescheduledTo.time}`
         : targetLang === 'es'
-        ? `Nuevo horario propuesto: 📅 ${booking.rescheduledTo.date} a las ⏰ ${booking.rescheduledTo.time}`
+        ? `Nuevo horario propuesto: ${booking.rescheduledTo.date} — ${booking.rescheduledTo.time}`
         : targetLang === 'en'
-        ? `New time proposed: 📅 ${booking.rescheduledTo.date} at ⏰ ${booking.rescheduledTo.time}`
-        : `Nouvel horaire proposé : 📅 ${booking.rescheduledTo.date} à ⏰ ${booking.rescheduledTo.time}`;
+        ? `New time proposed: ${booking.rescheduledTo.date} — ${booking.rescheduledTo.time}`
+        : `Nouvel horaire proposé : ${booking.rescheduledTo.date} — ${booking.rescheduledTo.time}`;
   } else if (booking.status === 'cancelled') {
     statusText =
       targetLang === 'ar'
@@ -132,20 +390,20 @@ export function buildClientTicketWhatsAppMessage(
         ? 'Cita cancelada'
         : targetLang === 'en'
         ? 'Appointment Cancelled'
-        : 'Rendez-vous Annulé';
+        : 'Rendez-vous annulé';
   } else if (booking.status === 'flexible_pending') {
     statusText =
       targetLang === 'ar'
-        ? 'طلب مرن — سيختار الحلاق أفضل وقت متاح ⏳'
+        ? 'طلب مرن (في انتظار تحديد التوقيت)'
         : targetLang === 'es'
-        ? 'Horario flexible — el barbero asignará la hora ⏳'
+        ? 'Horario flexible (por asignar)'
         : targetLang === 'en'
-        ? 'Flexible time — Barber assigning optimal slot ⏳'
-        : 'Horaire flexible — Le barbier attribue le créneau ⏳';
+        ? 'Flexible queue (time pending)'
+        : 'File intelligente (créneau à confirmer)';
   } else if (booking.status === 'rejected') {
     statusText =
       targetLang === 'ar'
-        ? 'نعتذر، التوقيت غير متاح'
+        ? 'التوقيت غير متاح'
         : targetLang === 'es'
         ? 'Horario no disponible'
         : targetLang === 'en'
@@ -165,64 +423,139 @@ export function buildClientTicketWhatsAppMessage(
   const displayTime =
     booking.timeSlot === 'FLEXIBLE'
       ? targetLang === 'ar'
-        ? 'مرن (يختاره الحلاق)'
-        : 'Flexible (Assigné par le barbier)'
+        ? 'الطابور الذكي (مرن)'
+        : targetLang === 'en'
+        ? 'Smart Queue (Flexible)'
+        : targetLang === 'es'
+        ? 'Cola Inteligente (Flexible)'
+        : targetLang === 'amz'
+        ? 'ⴰⵙⵉⵀⵍ ⵉⵣⵎⵣⴰⵏ'
+        : 'File intelligente (Flexible)'
       : booking.timeSlot;
 
   const cihLine = booking.cihReceiptName
     ? targetLang === 'ar'
-      ? `\nإيصال تحويل CIH مرفق: ${booking.cihReceiptName}`
-      : `\nReçu CIH joint : ${booking.cihReceiptName}`
+      ? `إيصال CIH المرفق: ${booking.cihReceiptName}`
+      : `Reçu CIH joint : ${booking.cihReceiptName}`
     : '';
 
   if (targetLang === 'ar') {
-    return `مرحباً، بخصوص موعد صالون بومليك (تارودانت):
-الزبون: ${booking.clientName}
-التذكرة رقم: ${cleanTicket}
-الحلاق: ${barber}
-الموعد: 📅 ${booking.date} • ⏰ ${displayTime}
-الخدمات: ${servicesList}
-المجموع: ${total} MAD
-الحالة الحالية: ${statusText}${cihLine}`;
+    return [
+      'السلام عليكم،',
+      [
+        'صالون بومليك — تارودانت',
+        'نوع الطلب: متابعة / حجز موعد',
+        `رقم التذكرة: ${cleanTicket}`,
+      ].join('\n'),
+      [
+        `الخدمة / الباقة: ${servicesList}`,
+        `السعر التقديري: ${total} MAD`,
+        `الحلاق: ${barber}`,
+        `التاريخ والتوقيت: ${booking.date} — ${displayTime}`,
+      ].join('\n'),
+      [
+        `الزبون: ${booking.clientName}`,
+        `الحالة: ${statusText}`,
+        cihLine,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    ].join('\n\n');
   }
 
   if (targetLang === 'amz') {
-    return `Azul ${booking.clientName}, Salon Boumlik Taroudant:
-Tiki: ${cleanTicket}
-Amkrad: ${barber}
-Asakud: 📅 ${booking.date} • ⏰ ${booking.timeSlot}
-Tiwwuriwin: ${servicesList}
-Atig: ${total} MAD
-Addad: ${statusText}${cihLine}`;
+    return [
+      'ⴰⵣⵓⵍ ⴼⵍⵍⴰⵡⵏ،',
+      [
+        'ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ — ⵜⴰⵔⵓⴷⴰⵏⵜ',
+        'ⴰⵏⴰⵡ ⵏ ⵜⵓⵜⵜⵔⴰ: ⴰⵙⵔⵓⵙ',
+        `ⵜⵉⴽⵉ: ${cleanTicket}`,
+      ].join('\n'),
+      [
+        `ⵜⵉⵡⵓⵔⵉⵡⵉⵏ: ${servicesList}`,
+        `ⴰⵜⵉⴳ: ${total} MAD`,
+        `ⴰⵎⴽⵔⴰⴹ: ${barber}`,
+        `ⴰⵙⴰⴽⵓⴷ: ${booking.date} — ${displayTime}`,
+      ].join('\n'),
+      [
+        `ⴰⵎⵙⴰⵖ: ${booking.clientName}`,
+        `ⴰⴷⴷⴰⴷ: ${statusText}`,
+        cihLine,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    ].join('\n\n');
   }
 
   if (targetLang === 'en') {
-    return `Hello ${booking.clientName}, Salon Boumlik (Taroudant):
-Ticket: ${cleanTicket}
-Barber: ${barber}
-Date & Time: 📅 ${booking.date} • ⏰ ${booking.timeSlot}
-Services: ${servicesList}
-Total Price: ${total} MAD
-Status: ${statusText}${cihLine}`;
+    return [
+      'Hello,',
+      [
+        'Salon Boumlik — Taroudant',
+        'Request Type: Appointment Booking',
+        `Ticket: ${cleanTicket}`,
+      ].join('\n'),
+      [
+        `Selected Service / Pack: ${servicesList}`,
+        `Estimated Price: ${total} MAD`,
+        `Barber: ${barber}`,
+        `Date & Time: ${booking.date} — ${displayTime}`,
+      ].join('\n'),
+      [
+        `Client: ${booking.clientName}`,
+        `Status: ${statusText}`,
+        cihLine,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    ].join('\n\n');
   }
 
   if (targetLang === 'es') {
-    return `Hola ${booking.clientName}, Salon Boumlik (Taroudant):
-Ticket: ${cleanTicket}
-Barbero: ${barber}
-Fecha y hora: 📅 ${booking.date} • ⏰ ${booking.timeSlot}
-Servicios: ${servicesList}
-Total: ${total} MAD
-Estado: ${statusText}${cihLine}`;
+    return [
+      'Hola,',
+      [
+        'Salon Boumlik — Taroudant',
+        'Tipo de solicitud: Reserva de cita',
+        `Ticket: ${cleanTicket}`,
+      ].join('\n'),
+      [
+        `Servicio / Pack: ${servicesList}`,
+        `Precio estimado: ${total} MAD`,
+        `Barbero: ${barber}`,
+        `Fecha y hora: ${booking.date} — ${displayTime}`,
+      ].join('\n'),
+      [
+        `Cliente: ${booking.clientName}`,
+        `Estado: ${statusText}`,
+        cihLine,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    ].join('\n\n');
   }
 
-  return `Bonjour ${booking.clientName}, Salon Boumlik (Taroudant) :
-Ticket : ${cleanTicket}
-Barbier : ${barber}
-Rendez-vous : 📅 ${booking.date} • ⏰ ${booking.timeSlot}
-Prestations : ${servicesList}
-Total : ${total} MAD
-Statut actuel : ${statusText}${cihLine}`;
+  return [
+    'Bonjour,',
+    [
+      'Salon Boumlik — Taroudant',
+      'Type de demande : Suivi de rendez-vous',
+      `Ticket : ${cleanTicket}`,
+    ].join('\n'),
+    [
+      `Service / Pack : ${servicesList}`,
+      `Prix estimé : ${total} MAD`,
+      `Barbier : ${barber}`,
+      `Date & créneau : ${booking.date} — ${displayTime}`,
+    ].join('\n'),
+    [
+      `Client : ${booking.clientName}`,
+      `Statut : ${statusText}`,
+      cihLine,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  ].join('\n\n');
 }
 
 export type ReminderTriggerType = 'confirmation' | 'reschedule' | 'reminder_1h';
@@ -236,14 +569,14 @@ export function buildAutomatedReminderMessage(
     const lang = booking.clientLanguage || 'ar';
     const prefix =
       lang === 'ar'
-        ? '⏰ تذكير تلقائي باقتراب موعدك في صالون بومليك:'
+        ? 'تذكير تلقائي باقتراب موعدك في صالون بومليك:'
         : lang === 'en'
-        ? '⏰ Automatic Reminder for your upcoming Salon Boumlik appointment:'
+        ? 'Automatic reminder for your upcoming Salon Boumlik appointment:'
         : lang === 'es'
-        ? '⏰ Recordatorio automático de tu próxima cita en Salon Boumlik:'
+        ? 'Recordatorio automático de tu próxima cita en Salon Boumlik:'
         : lang === 'amz'
-        ? '⏰ ⴰⵙⴽⵜⵉ ⵏ ⵓⵙⵉⵀⵍ ⵏⵏⴽ ⴳ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ:'
-        : '⏰ Rappel automatique pour votre rendez-vous imminent au Salon Boumlik :';
+        ? 'ⴰⵙⴽⵜⵉ ⵏ ⵓⵙⵉⵀⵍ ⵏⵏⴽ ⴳ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ:'
+        : 'Rappel automatique pour votre rendez-vous au Salon Boumlik :';
     return `${prefix}\n\n${baseDetails}`;
   }
   return baseDetails;

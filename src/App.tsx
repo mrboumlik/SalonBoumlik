@@ -794,10 +794,17 @@ function SalonBoumlikApp() {
         }
       />
 
-      {/* 10. Floating Bottom-Right WhatsApp Quick Message Button */}
+      {/* 10. Floating Bottom WhatsApp Quick Message Button */}
       <FloatingWhatsAppButton
         pricingResult={pricingResult}
         selectedBarberId={selectedBarberId}
+        hidden={
+          isDrawerOpen ||
+          isBookingModalOpen ||
+          isTrackBookingOpen ||
+          isAdminOpen ||
+          Boolean(activePublicInfo)
+        }
       />
     </div>
   );
