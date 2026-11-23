@@ -17,6 +17,7 @@ import {
   normalizeSalonWhatsappDigits,
 } from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
+import { safeCopyToClipboard } from '../utils/safeBrowser';
 
 export const QuickQrModals: React.FC = () => {
   const { lang } = useLanguage();
@@ -25,7 +26,7 @@ export const QuickQrModals: React.FC = () => {
   const [copiedWifi, setCopiedWifi] = useState(false);
 
   const handleCopyWifi = () => {
-    navigator.clipboard.writeText(SALON_INFO.media.wifiPassword);
+    void safeCopyToClipboard(SALON_INFO.media.wifiPassword);
     setCopiedWifi(true);
     setTimeout(() => setCopiedWifi(false), 2000);
   };
@@ -168,7 +169,7 @@ export const QuickQrModals: React.FC = () => {
 
       {/* MODAL POPUP */}
       {activeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sb-modal-backdrop">
           <div className="bg-white dark:bg-[#111318] border border-stone-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-7 max-w-sm w-full shadow-2xl relative text-center space-y-4">
             <button
               type="button"

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
+import { safeCopyToClipboard } from '../utils/safeBrowser';
 
 export const AmenitiesSection: React.FC = () => {
   const { lang, t, isRtl } = useLanguage();
@@ -19,7 +20,7 @@ export const AmenitiesSection: React.FC = () => {
   const [copiedWifi, setCopiedWifi] = useState(false);
 
   const handleCopyPassword = () => {
-    navigator.clipboard.writeText(SALON_INFO.media.wifiPassword);
+    void safeCopyToClipboard(SALON_INFO.media.wifiPassword);
     setCopiedWifi(true);
     setTimeout(() => setCopiedWifi(false), 2000);
   };
@@ -262,7 +263,7 @@ export const AmenitiesSection: React.FC = () => {
 
       {/* Wi-Fi QR Lightbox with newly uploaded QR asset */}
       {wifiModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sb-modal-backdrop animate-in fade-in duration-150">
           <div className="bg-zinc-950 border border-amber-500/40 rounded-3xl max-w-xs sm:max-w-sm w-full p-6 text-center space-y-4 shadow-2xl relative">
             <button
               onClick={() => setWifiModalOpen(false)}

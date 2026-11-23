@@ -5,6 +5,7 @@ import { subscribeToCrmClients } from './crmStore';
 import { computeClientPointsSummary } from './loyaltyEngine';
 import { sendDualAlert } from './notifications';
 import { pickLang } from './i18n';
+import { safeStorageGet, safeStorageSet } from './safeBrowser';
 
 const TRACKED_TICKETS_KEY = 'salon_boumlik_tracked_tickets_v1';
 const TRACKED_PHONES_KEY = 'salon_boumlik_tracked_phones_v1';
@@ -12,8 +13,7 @@ const NOTIFIED_EVENTS_KEY = 'salon_boumlik_notified_events_v1';
 
 function readStringArray(key: string): string[] {
   try {
-    if (typeof window === 'undefined') return [];
-    const raw = localStorage.getItem(key);
+    const raw = safeStorageGet(key, 'local');
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
@@ -24,9 +24,8 @@ function readStringArray(key: string): string[] {
 
 function writeStringArray(key: string, items: string[], maxItems = 40): void {
   try {
-    if (typeof window === 'undefined') return;
     const deduped = Array.from(new Set(items)).slice(-maxItems);
-    localStorage.setItem(key, JSON.stringify(deduped));
+    safeStorageSet(key, JSON.stringify(deduped), 'local');
   } catch {
     // ignore storage errors
   }

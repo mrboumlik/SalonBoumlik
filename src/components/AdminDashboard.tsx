@@ -129,6 +129,7 @@ import { calculateCartPricing } from '../utils/pricingEngine';
 import { getBarberIdentityTokens } from '../utils/barberIdentity';
 import { useBarberRoster, authenticateStaffPin } from '../utils/barberRosterStore';
 import { useBarberProfiles, getMergedBarbers } from '../utils/barberProfileStore';
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '../utils/safeBrowser';
 import {
   addCaisseEntry,
   resolveCaisseBarberId,
@@ -151,6 +152,7 @@ import { AppointmentBooking, BookingStatus, StaffRole } from '../types';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
+import { ModalPortal } from './ModalPortal';
 
 interface AdminDashboardProps {
   isOpen: boolean;
@@ -190,15 +192,13 @@ const parseBookingStartMinutes = (timeSlot?: string): number => {
 
 const readInitialAdminSession = (): StaffSession | null => {
   try {
-    if (typeof window !== 'undefined') {
-      const raw = localStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
-      if (raw) {
-        const stored: StoredAdminSession = JSON.parse(raw);
-        if (stored && stored.expiresAt > Date.now()) {
-          return stored.session;
-        }
-        localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+    const raw = safeStorageGet(ADMIN_SESSION_STORAGE_KEY, 'local');
+    if (raw) {
+      const stored: StoredAdminSession = JSON.parse(raw);
+      if (stored && stored.expiresAt > Date.now()) {
+        return stored.session;
       }
+      safeStorageRemove(ADMIN_SESSION_STORAGE_KEY, 'local');
     }
   } catch (e) {
     console.warn('Error reading admin session:', e);
@@ -226,16 +226,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [pinError, setPinError] = useState(false);
   const [bookings, setBookings] = useState<AppointmentBooking[]>([]);
   
-  // Notification toggle state: stored in localStorage
+  // Notification toggle state: stored safely with storage fallback
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        return localStorage.getItem(ADMIN_NOTIFS_ENABLED_KEY) === 'true';
-      }
-    } catch {
-      // ignore
-    }
-    return true; // enabled by default for admin awareness
+    const saved = safeStorageGet(ADMIN_NOTIFS_ENABLED_KEY, 'local');
+    if (saved === null) return true;
+    return saved === 'true';
   });
 
   // Track known booking IDs, CIH receipts, and waitlist entries across real-time Firestore snapshot updates
@@ -904,11 +899,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         session: newSession,
         expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
       };
-      try {
-        localStorage.setItem(ADMIN_SESSION_STORAGE_KEY, JSON.stringify(stored));
-      } catch (err) {
-        console.warn('Error saving admin session:', err);
-      }
+      safeStorageSet(ADMIN_SESSION_STORAGE_KEY, JSON.stringify(stored), 'local');
 
       setSession(newSession);
       setWorkspaceSection(
@@ -941,11 +932,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleLogout = () => {
-    try {
-      localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
-    } catch {
-      // ignore
-    }
+    safeStorageRemove(ADMIN_SESSION_STORAGE_KEY, 'local');
     setSession(null);
     setPinInput('');
     setPinError(false);
@@ -964,9 +951,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           : { granted: false, subscribed: false };
 
       setNotificationsEnabled(true);
-      try {
-        localStorage.setItem(ADMIN_NOTIFS_ENABLED_KEY, 'true');
-      } catch {}
+      safeStorageSet(ADMIN_NOTIFS_ENABLED_KEY, 'true', 'local');
 
       playNotificationSound();
       showToast(
@@ -1004,9 +989,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       );
     } else {
       setNotificationsEnabled(false);
-      try {
-        localStorage.setItem(ADMIN_NOTIFS_ENABLED_KEY, 'false');
-      } catch {}
+      safeStorageSet(ADMIN_NOTIFS_ENABLED_KEY, 'false', 'local');
       showToast(
         pickLang(lang, {
           ar: 'تم إيقاف الإشعارات مؤقتاً',
@@ -2115,17 +2098,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   );
 
   return (
-    <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-2 sm:p-4 bg-black/75 dark:bg-black/90 backdrop-blur-md">
-      <div className="relative w-full max-w-5xl bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col my-3 sm:my-6 max-h-[94vh] overflow-hidden">
-        
-        {/* Subtle Per-Barber Identity Accent Line */}
-        <div
-          className="h-1 w-full transition-colors"
-          style={{ backgroundColor: session ? activeSessionTone.accentHex : '#D97706' }}
-        />
+    <ModalPortal>
+      <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-[70] overflow-y-auto flex items-center justify-center p-2 sm:p-4 lg:p-6 sb-modal-backdrop">
+        <div className="relative w-full max-w-7xl bg-stone-50 dark:bg-[#11141D] text-slate-900 dark:text-zinc-100 border border-stone-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col my-2 sm:my-4 max-h-[95vh] overflow-hidden">
+          
+          {/* Subtle Per-Barber Identity Accent Line */}
+          <div
+            className="h-1 w-full transition-colors"
+            style={{ backgroundColor: session ? activeSessionTone.accentHex : '#D97706' }}
+          />
 
-        {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-white dark:bg-zinc-900/80">
+          {/* Header */}
+          <div className="p-4 sm:p-5 lg:px-7 border-b border-stone-200 dark:border-zinc-800 flex items-center justify-between bg-white dark:bg-[#141720]">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 flex items-center justify-center text-amber-700 dark:text-amber-400 font-black flex-shrink-0">
               <Scissors className="w-5 h-5" />
@@ -2308,7 +2292,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         ) : (
           /* AUTHENTICATED STAFF DASHBOARD */
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-28 space-y-5">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-28 space-y-6">
 
             {/* DAILY REVENUE SUMMARY CARD (Shown for Master Admin on Bookings tab only — clean Caisse-first for barbers) */}
             {dailyRevenue && session.role === 'master' && workspaceSection === 'bookings' && (
@@ -3119,12 +3103,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {/* Collapsible Settings Panel (Google Business Profile & Maps Links) */}
             {isSettingsOpen && session.role !== 'caisse' && (
-              <div className="p-4 rounded-2xl bg-zinc-900/90 border border-amber-500/40 shadow-xl">
+              <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-amber-300 dark:border-amber-500/40 shadow-lg">
                 {/* Google Business Profile & Google Maps Links Configuration */}
-                <form onSubmit={handleSaveGoogleLinks} className="p-4 rounded-xl bg-black/50 border border-zinc-800 space-y-3 text-xs flex flex-col justify-between">
+                <form onSubmit={handleSaveGoogleLinks} className="p-4 sm:p-5 rounded-xl bg-stone-50 dark:bg-[#0D1017] border border-stone-200 dark:border-zinc-800 space-y-3.5 text-xs flex flex-col justify-between">
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
-                      <div className="flex items-center gap-2 font-bold text-blue-400">
+                    <div className="flex items-center justify-between border-b border-stone-200 dark:border-zinc-800 pb-2.5">
+                      <div className="flex items-center gap-2 font-bold text-blue-700 dark:text-blue-400">
                         <MapPin className="w-4 h-4" />
                         <span>
                           {pickLang(lang, {
@@ -3140,7 +3124,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         href={mapsUrlInput}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[11px] text-blue-300 hover:underline flex items-center gap-1"
+                        className="text-[11px] font-bold text-blue-700 dark:text-blue-300 hover:underline flex items-center gap-1"
                       >
                         <span>
                           {pickLang(lang, {
@@ -3156,7 +3140,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-[11px] text-zinc-400 mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">
                         {pickLang(lang, {
                           ar: 'رابط خرائط Google Maps المباشر للصالون',
                           fr: 'Lien direct Google Maps du salon',
@@ -3172,12 +3156,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         disabled={session.role !== 'master'}
                         value={mapsUrlInput}
                         onChange={(e) => setMapsUrlInput(e.target.value)}
-                        className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-[11px] disabled:opacity-60"
+                        className="w-full bg-white dark:bg-zinc-950 border border-stone-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white font-mono text-[11px] disabled:opacity-60"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[11px] text-zinc-400 mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">
                         {pickLang(lang, {
                           ar: 'رابط ملف Google Business وتقييمات الزبناء 5★',
                           fr: 'Lien avis Google Business 5★',
@@ -3193,14 +3177,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         disabled={session.role !== 'master'}
                         value={reviewUrlInput}
                         onChange={(e) => setReviewUrlInput(e.target.value)}
-                        className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-[11px] disabled:opacity-60"
+                        className="w-full bg-white dark:bg-zinc-950 border border-stone-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white font-mono text-[11px] disabled:opacity-60"
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-zinc-800/80">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-stone-200 dark:border-zinc-800/80">
                       <div>
-                        <label className="block text-[11px] text-zinc-400 mb-1 flex items-center gap-1">
-                          <Phone className="w-3 h-3 text-emerald-400" />
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1 flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                           <span>رقم الهاتف الرسمي في الموقع</span>
                         </label>
                         <input
@@ -3210,13 +3194,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           value={salonPhoneInput}
                           onChange={(e) => setSalonPhoneInput(e.target.value)}
                           placeholder="+212 635 392 503"
-                          className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-[11px] disabled:opacity-60"
+                          className="w-full bg-white dark:bg-zinc-950 border border-stone-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white font-mono text-[11px] disabled:opacity-60"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[11px] text-zinc-400 mb-1 flex items-center gap-1">
-                          <MessageCircle className="w-3 h-3 text-emerald-400" />
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1 flex items-center gap-1">
+                          <MessageCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                           <span>رقم واتساب الرسمي (مثال: 212635392503)</span>
                         </label>
                         <input
@@ -3226,13 +3210,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           value={salonWhatsappInput}
                           onChange={(e) => setSalonWhatsappInput(e.target.value)}
                           placeholder="212635392503"
-                          className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-[11px] disabled:opacity-60"
+                          className="w-full bg-white dark:bg-zinc-950 border border-stone-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white font-mono text-[11px] disabled:opacity-60"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-[11px] text-zinc-400 mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">
                         أرقام هواتف إضافية للعرض في الموقع (رقم في كل سطر — اختياري)
                       </label>
                       <textarea
@@ -3242,19 +3226,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         value={additionalPhonesText}
                         onChange={(e) => setAdditionalPhonesText(e.target.value)}
                         placeholder="+212 600 000 000"
-                        className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-[11px] disabled:opacity-60"
+                        className="w-full bg-white dark:bg-zinc-950 border border-stone-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white font-mono text-[11px] disabled:opacity-60"
                       />
                     </div>
 
                     {profileLinksError && (
-                      <div className="p-2 rounded-lg bg-red-950/60 border border-red-500/40 text-red-300 text-[11px]">
+                      <div className="p-2.5 rounded-lg bg-rose-50 dark:bg-red-950/60 border border-rose-200 dark:border-red-500/40 text-rose-700 dark:text-red-300 text-[11px] font-semibold">
                         {profileLinksError}
                       </div>
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80">
-                    <span className="text-[10px] text-zinc-500">
+                  <div className="flex items-center justify-between pt-2.5 border-t border-stone-200 dark:border-zinc-800/80">
+                    <span className="text-[11px] text-slate-500 dark:text-zinc-400">
                       {session.role === 'master'
                         ? pickLang(lang, {
                             ar: 'يتم التحديث الفوري في الهيدر، الفوتر وقسم التقييمات.',
@@ -3420,14 +3404,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {workspaceSection === 'bookings' && (
               <>
             {scannedTicketNotice && (
-              <div className="p-3 bg-blue-950/40 border border-blue-500/40 rounded-xl text-xs text-blue-200 flex flex-wrap items-center justify-between gap-2">
-                <span>{scannedTicketNotice}</span>
+              <div className="p-3.5 bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-500/40 rounded-xl text-xs text-blue-900 dark:text-blue-200 flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold">{scannedTicketNotice}</span>
                 <div className="flex items-center gap-2">
                   {onOpenClientTracking && scannedLookupQuery && (
                     <button
                       type="button"
                       onClick={() => onOpenClientTracking(scannedLookupQuery)}
-                      className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black text-[11px] flex items-center gap-1 cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black text-[11px] flex items-center gap-1 cursor-pointer"
                     >
                       <ExternalLink className="w-3 h-3" />
                       <span>
@@ -3447,7 +3431,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       setScannedTicketNotice(null);
                       setScannedLookupQuery(null);
                     }}
-                    className="text-zinc-400 hover:text-white cursor-pointer"
+                    className="p-1 text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -3457,7 +3441,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {/* Archive Date Filter Picker (Shown only in Archive tab) */}
             {activeTab === 'archive' && (
-              <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="p-3.5 rounded-xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 text-xs">
                 <span className="text-zinc-700 dark:text-zinc-300 font-semibold flex items-center gap-1.5">
                   <Archive className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                   <span>
@@ -5132,167 +5116,169 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* QR Code Scanner Dialog Modal (Forced Rear/Environment by default, with camera switcher & Client Tracking launch) */}
       {isScannerOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85">
-          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 max-w-sm w-full space-y-4 text-center">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
-              <div className="flex items-center gap-1.5 text-white font-bold text-sm">
-                <Camera className="w-4 h-4 text-blue-400" />
-                <span>
-                  {pickLang(lang, {
-                    ar: 'ماسح QR الزبناء والتذاكر',
-                    fr: 'Scanner QR Clients & Tickets',
-                    amz: 'ⴰⵙⴽⴰⵏⴰⵔ QR ⵏ ⵉⵎⵣⴷⴰⵖⵏ',
-                    en: 'Client & Ticket QR Scanner',
-                    es: 'Escáner QR de Clientes y Tickets',
-                  })}
-                </span>
+        <ModalPortal>
+          <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop">
+            <div className="bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 rounded-2xl p-5 sm:p-6 max-w-md w-full space-y-4 text-center shadow-2xl">
+              <div className="flex items-center justify-between border-b border-stone-200 dark:border-zinc-800 pb-3">
+                <div className="flex items-center gap-1.5 text-slate-900 dark:text-white font-bold text-sm">
+                  <Camera className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <span>
+                    {pickLang(lang, {
+                      ar: 'ماسح QR الزبناء والتذاكر',
+                      fr: 'Scanner QR Clients & Tickets',
+                      amz: 'ⴰⵙⴽⴰⵏⴰⵔ QR ⵏ ⵉⵎⵣⴷⴰⵖⵏ',
+                      en: 'Client & Ticket QR Scanner',
+                      es: 'Escáner QR de Clientes y Tickets',
+                    })}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {/* Switch Camera Button */}
+                  <button
+                    type="button"
+                    onClick={handleToggleCamera}
+                    className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-blue-700 dark:text-blue-300 text-xs font-semibold flex items-center gap-1 border border-stone-200 dark:border-zinc-700 transition-colors cursor-pointer"
+                    title={pickLang(lang, {
+                      ar: 'تبديل الكاميرا (خلفية / أمامية)',
+                      fr: 'Changer de caméra (Arrière / Avant)',
+                      amz: 'ⵙⵏⴼⵍ ⵜⴰⴽⴰⵎⵉⵕⴰ',
+                      en: 'Switch camera (Rear / Front)',
+                      es: 'Cambiar cámara (Trasera / Frontal)',
+                    })}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>
+                      {cameraFacingMode === 'environment'
+                        ? pickLang(lang, {
+                            ar: 'خلفية 🔄',
+                            fr: 'Arrière 🔄',
+                            amz: 'ⵜⴰⴹⴼⴼⵓⵔⵜ 🔄',
+                            en: 'Rear 🔄',
+                            es: 'Trasera 🔄',
+                          })
+                        : pickLang(lang, {
+                            ar: 'أمامية 🔄',
+                            fr: 'Avant 🔄',
+                            amz: 'ⵜⴰⵎⵣⵡⴰⵔⵓⵜ 🔄',
+                            en: 'Front 🔄',
+                            es: 'Frontal 🔄',
+                          })}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsScannerOpen(false)}
+                    className="p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
-              <div className="flex items-center gap-1.5">
-                {/* Switch Camera Button */}
+              {/* Scanner Action Mode Toggle */}
+              <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-stone-100 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 text-[10px] sm:text-[11px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => setScannerActionMode('checkin')}
+                  className={`py-2 px-1.5 rounded-lg transition-colors cursor-pointer ${
+                    scannerActionMode === 'checkin'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {pickLang(lang, {
+                    ar: 'تسجيل الوصول',
+                    fr: 'Check-In',
+                    amz: 'ⴰⴽⵛⵓⵎ',
+                    en: 'Check-In',
+                    es: 'Check-In',
+                  })}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScannerActionMode('tracking')}
+                  className={`py-2 px-1.5 rounded-lg transition-colors cursor-pointer ${
+                    scannerActionMode === 'tracking'
+                      ? 'bg-amber-500 text-black'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {pickLang(lang, {
+                    ar: 'تتبع الزبون',
+                    fr: 'Suivi Client',
+                    amz: 'ⴰⴹⴼⴰⵕ',
+                    en: 'Track Client',
+                    es: 'Seguir Cliente',
+                  })}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScannerActionMode('filter')}
+                  className={`py-2 px-1.5 rounded-lg transition-colors cursor-pointer ${
+                    scannerActionMode === 'filter'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {pickLang(lang, {
+                    ar: 'تصفية القائمة',
+                    fr: 'Filtrer Liste',
+                    amz: 'ⴰⵙⵜⴰⵢ',
+                    en: 'Filter List',
+                    es: 'Filtrar Lista',
+                  })}
+                </button>
+              </div>
+
+              {/* Error banner if browser denied or camera unavailable */}
+              {scannerCameraError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-red-950/60 border border-rose-200 dark:border-red-500/40 text-rose-700 dark:text-red-300 text-xs font-semibold">
+                  {scannerCameraError}
+                </div>
+              )}
+
+              <div id="qr-reader-container" className="w-full rounded-xl overflow-hidden bg-black min-h-[250px] border border-stone-200 dark:border-zinc-800" />
+
+              {/* Upload QR Image Alternative */}
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <label className="flex-1 min-h-[40px] px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-amber-300 dark:border-zinc-700 text-amber-800 dark:text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>
+                    {pickLang(lang, {
+                      ar: 'رفع صورة QR من الجهاز',
+                      fr: 'Importer image QR',
+                      amz: 'ⵙⴽⵛⵎ ⵜⴰⵡⵍⴰⴼⵜ QR',
+                      en: 'Upload QR Image',
+                      es: 'Subir imagen QR',
+                    })}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAdminQrImageUpload}
+                    className="hidden"
+                  />
+                </label>
+
                 <button
                   type="button"
                   onClick={handleToggleCamera}
-                  className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-blue-300 hover:text-white text-xs font-semibold flex items-center gap-1 border border-zinc-700 transition-colors cursor-pointer"
-                  title={pickLang(lang, {
-                    ar: 'تبديل الكاميرا (خلفية / أمامية)',
-                    fr: 'Changer de caméra (Arrière / Avant)',
-                    amz: 'ⵙⵏⴼⵍ ⵜⴰⴽⴰⵎⵉⵕⴰ',
-                    en: 'Switch camera (Rear / Front)',
-                    es: 'Cambiar cámara (Trasera / Frontal)',
-                  })}
+                  className="min-h-[40px] px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-blue-700 dark:text-blue-300 text-xs font-bold cursor-pointer"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>
-                    {cameraFacingMode === 'environment'
-                      ? pickLang(lang, {
-                          ar: 'خلفية 🔄',
-                          fr: 'Arrière 🔄',
-                          amz: 'ⵜⴰⴹⴼⴼⵓⵔⵜ 🔄',
-                          en: 'Rear 🔄',
-                          es: 'Trasera 🔄',
-                        })
-                      : pickLang(lang, {
-                          ar: 'أمامية 🔄',
-                          fr: 'Avant 🔄',
-                          amz: 'ⵜⴰⵎⵣⵡⴰⵔⵓⵜ 🔄',
-                          en: 'Front 🔄',
-                          es: 'Frontal 🔄',
-                        })}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsScannerOpen(false)}
-                  className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Scanner Action Mode Toggle */}
-            <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-zinc-900 border border-zinc-800 text-[10px] sm:text-[11px] font-bold">
-              <button
-                type="button"
-                onClick={() => setScannerActionMode('checkin')}
-                className={`py-2 px-1.5 rounded-lg transition-colors cursor-pointer ${
-                  scannerActionMode === 'checkin'
-                    ? 'bg-emerald-500 text-black'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                {pickLang(lang, {
-                  ar: 'تسجيل الوصول',
-                  fr: 'Check-In',
-                  amz: 'ⴰⴽⵛⵓⵎ',
-                  en: 'Check-In',
-                  es: 'Check-In',
-                })}
-              </button>
-              <button
-                type="button"
-                onClick={() => setScannerActionMode('tracking')}
-                className={`py-2 px-1.5 rounded-lg transition-colors cursor-pointer ${
-                  scannerActionMode === 'tracking'
-                    ? 'bg-amber-500 text-black'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                {pickLang(lang, {
-                  ar: 'تتبع الزبون',
-                  fr: 'Suivi Client',
-                  amz: 'ⴰⴹⴼⴰⵕ',
-                  en: 'Track Client',
-                  es: 'Seguir Cliente',
-                })}
-              </button>
-              <button
-                type="button"
-                onClick={() => setScannerActionMode('filter')}
-                className={`py-2 px-1.5 rounded-lg transition-colors cursor-pointer ${
-                  scannerActionMode === 'filter'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                {pickLang(lang, {
-                  ar: 'تصفية القائمة',
-                  fr: 'Filtrer Liste',
-                  amz: 'ⴰⵙⵜⴰⵢ',
-                  en: 'Filter List',
-                  es: 'Filtrar Lista',
-                })}
-              </button>
-            </div>
-
-            {/* Error banner if browser denied or camera unavailable */}
-            {scannerCameraError && (
-              <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs">
-                {scannerCameraError}
-              </div>
-            )}
-
-            <div id="qr-reader-container" className="w-full rounded-xl overflow-hidden bg-black min-h-[250px] border border-zinc-800" />
-
-            {/* Upload QR Image Alternative */}
-            <div className="flex items-center justify-between gap-2 pt-1">
-              <label className="flex-1 min-h-[40px] px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors">
-                <Upload className="w-3.5 h-3.5" />
-                <span>
                   {pickLang(lang, {
-                    ar: 'رفع صورة QR من الجهاز',
-                    fr: 'Importer image QR',
-                    amz: 'ⵙⴽⵛⵎ ⵜⴰⵡⵍⴰⴼⵜ QR',
-                    en: 'Upload QR Image',
-                    es: 'Subir imagen QR',
+                    ar: 'تبديل الكاميرا',
+                    fr: 'Changer caméra',
+                    amz: 'ⵙⵏⴼⵍ',
+                    en: 'Switch Camera',
+                    es: 'Cambiar cámara',
                   })}
-                </span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAdminQrImageUpload}
-                  className="hidden"
-                />
-              </label>
-
-              <button
-                type="button"
-                onClick={handleToggleCamera}
-                className="min-h-[40px] px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-blue-300 text-xs font-bold cursor-pointer"
-              >
-                {pickLang(lang, {
-                  ar: 'تبديل الكاميرا',
-                  fr: 'Changer caméra',
-                  amz: 'ⵙⵏⴼⵍ',
-                  en: 'Switch Camera',
-                  es: 'Cambiar cámara',
-                })}
-              </button>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {/* Hidden container for Admin QR file scanning */}
@@ -5317,285 +5303,301 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Reschedule Dialog Modal */}
       {reschedulingBooking && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80">
-          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 max-w-md w-full space-y-4">
-            <h3 className="font-bold text-white text-base">
-              {pickLang(lang, {
-                ar: `تعديل الموعد المقترح لـ ${reschedulingBooking.clientName}`,
-                fr: `Modifier le créneau de ${reschedulingBooking.clientName}`,
-                amz: `ⵙⵏⴼⵍ ⴰⵙⵉⵀⴰⵔ ⵏ ${reschedulingBooking.clientName}`,
-                en: `Reschedule appointment for ${reschedulingBooking.clientName}`,
-                es: `Reprogramar cita para ${reschedulingBooking.clientName}`,
-              })}
-            </h3>
-            
-            <form onSubmit={handleSaveReschedule} className="space-y-3">
-              <div>
-                <label className="block text-xs text-zinc-400 mb-1">
+        <ModalPortal>
+          <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop">
+            <div className="bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 rounded-2xl p-5 sm:p-6 max-w-lg w-full space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-stone-200 dark:border-zinc-800 pb-3">
+                <h3 className="font-bold text-slate-900 dark:text-white text-base">
                   {pickLang(lang, {
-                    ar: 'التاريخ الجديد :',
-                    fr: 'Nouvelle date :',
-                    amz: 'ⴰⵙⴰⴽⵓⴷ ⴰⵎⴰⵢⵏⵓ :',
-                    en: 'New Date:',
-                    es: 'Nueva fecha:',
+                    ar: `تعديل الموعد المقترح لـ ${reschedulingBooking.clientName}`,
+                    fr: `Modifier le créneau de ${reschedulingBooking.clientName}`,
+                    amz: `ⵙⵏⴼⵍ ⴰⵙⵉⵀⴰⵔ ⵏ ${reschedulingBooking.clientName}`,
+                    en: `Reschedule appointment for ${reschedulingBooking.clientName}`,
+                    es: `Reprogramar cita para ${reschedulingBooking.clientName}`,
                   })}
-                </label>
-                <input
-                  type="date"
-                  value={newDate}
-                  onChange={(e) => setNewDate(e.target.value)}
-                  required
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-zinc-400 mb-1">
-                  {pickLang(lang, {
-                    ar: 'التوقيت الجديد :',
-                    fr: 'Nouvel horaire :',
-                    amz: 'ⴰⴽⵓⴷ ⴰⵎⴰⵢⵏⵓ :',
-                    en: 'New Time:',
-                    es: 'Nueva hora:',
-                  })}
-                </label>
-                <input
-                  type="time"
-                  value={newTime}
-                  onChange={(e) => setNewTime(e.target.value)}
-                  required
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-zinc-400 mb-1">
-                  {pickLang(lang, {
-                    ar: 'رسالة توضيحية للزبون :',
-                    fr: 'Message pour le client :',
-                    amz: 'ⵜⵓⵣⵉⵏⵜ ⵉ ⵓⵎⵣⴷⴰⵖ :',
-                    en: 'Note for Client:',
-                    es: 'Mensaje para el cliente:',
-                  })}
-                </label>
-                <input
-                  type="text"
-                  value={rescheduleNote}
-                  onChange={(e) => setRescheduleNote(e.target.value)}
-                  placeholder={pickLang(lang, {
-                    ar: 'مثال: تم تأخير الموعد بـ 30 دقيقة لتفادي الانتظار بالصالون...',
-                    fr: 'Ex : Décalé de 30 min pour vous éviter l’attente...',
-                    amz: 'ⴰⵎⴷⵢⴰ: ⵉⵜⵜⵓⵙⵏⴼⵍ ⵡⴰⴽⵓⴷ...',
-                    en: 'e.g. Moved by 30 mins to avoid waiting at the salon...',
-                    es: 'Ej: Movido 30 min para evitar esperas...',
-                  })}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white"
-                />
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2">
+                </h3>
                 <button
                   type="button"
                   onClick={() => setReschedulingBooking(null)}
-                  className="px-3 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold cursor-pointer"
+                  className="p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-zinc-800 cursor-pointer"
                 >
-                  {pickLang(lang, {
-                    ar: 'إلغاء',
-                    fr: 'Annuler',
-                    amz: 'ⵙⵔ',
-                    en: 'Cancel',
-                    es: 'Cancelar',
-                  })}
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold cursor-pointer"
-                >
-                  {pickLang(lang, {
-                    ar: 'تحديث وإشعار الزبون',
-                    fr: 'Mettre à jour et notifier',
-                    amz: 'ⵙⴷⵖⵉ & ⵣⵏ',
-                    en: 'Update & Notify Client',
-                    es: 'Actualizar y Notificar',
-                  })}
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-            </form>
+              
+              <form onSubmit={handleSaveReschedule} className="space-y-3.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1">
+                    {pickLang(lang, {
+                      ar: 'التاريخ الجديد :',
+                      fr: 'Nouvelle date :',
+                      amz: 'ⴰⵙⴰⴽⵓⴷ ⴰⵎⴰⵢⵏⵓ :',
+                      en: 'New Date:',
+                      es: 'Nueva fecha:',
+                    })}
+                  </label>
+                  <input
+                    type="date"
+                    value={newDate}
+                    onChange={(e) => setNewDate(e.target.value)}
+                    required
+                    className="w-full bg-stone-50 dark:bg-zinc-900 border border-stone-300 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1">
+                    {pickLang(lang, {
+                      ar: 'التوقيت الجديد :',
+                      fr: 'Nouvel horaire :',
+                      amz: 'ⴰⴽⵓⴷ ⴰⵎⴰⵢⵏⵓ :',
+                      en: 'New Time:',
+                      es: 'Nueva hora:',
+                    })}
+                  </label>
+                  <input
+                    type="time"
+                    value={newTime}
+                    onChange={(e) => setNewTime(e.target.value)}
+                    required
+                    className="w-full bg-stone-50 dark:bg-zinc-900 border border-stone-300 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1">
+                    {pickLang(lang, {
+                      ar: 'رسالة توضيحية للزبون :',
+                      fr: 'Message pour le client :',
+                      amz: 'ⵜⵓⵣⵉⵏⵜ ⵉ ⵓⵎⵣⴷⴰⵖ :',
+                      en: 'Note for Client:',
+                      es: 'Mensaje para el cliente:',
+                    })}
+                  </label>
+                  <input
+                    type="text"
+                    value={rescheduleNote}
+                    onChange={(e) => setRescheduleNote(e.target.value)}
+                    placeholder={pickLang(lang, {
+                      ar: 'مثال: تم تأخير الموعد بـ 30 دقيقة لتفادي الانتظار بالصالون...',
+                      fr: 'Ex : Décalé de 30 min pour vous éviter l’attente...',
+                      amz: 'ⴰⵎⴷⵢⴰ: ⵉⵜⵜⵓⵙⵏⴼⵍ ⵡⴰⴽⵓⴷ...',
+                      en: 'e.g. Moved by 30 mins to avoid waiting at the salon...',
+                      es: 'Ej: Movido 30 min para evitar esperas...',
+                    })}
+                    className="w-full bg-stone-50 dark:bg-zinc-900 border border-stone-300 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div className="pt-2 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setReschedulingBooking(null)}
+                    className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-xs font-semibold cursor-pointer"
+                  >
+                    {pickLang(lang, {
+                      ar: 'إلغاء',
+                      fr: 'Annuler',
+                      amz: 'ⵙⵔ',
+                      en: 'Cancel',
+                      es: 'Cancelar',
+                    })}
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold cursor-pointer"
+                  >
+                    {pickLang(lang, {
+                      ar: 'تحديث وإشعار الزبون',
+                      fr: 'Mettre à jour et notifier',
+                      amz: 'ⵙⴷⵖⵉ & ⵣⵏ',
+                      en: 'Update & Notify Client',
+                      es: 'Actualizar y Notificar',
+                    })}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {/* CIH Receipt Preview Modal */}
       {previewReceipt && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85">
-          <div className="bg-zinc-950 border border-emerald-500/40 rounded-2xl p-5 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
-              <div className="text-xs">
-                <div className="font-bold text-emerald-400">
-                  {pickLang(lang, {
-                    ar: `إيصال تحويل CIH Bank — ${previewReceipt.ticketNumber}`,
-                    fr: `Reçu virement CIH Bank — ${previewReceipt.ticketNumber}`,
-                    amz: `ⵜⴰⵡⵔⵉⵇⵜ CIH Bank — ${previewReceipt.ticketNumber}`,
-                    en: `CIH Bank Receipt — ${previewReceipt.ticketNumber}`,
-                    es: `Recibo CIH Bank — ${previewReceipt.ticketNumber}`,
-                  })}
+        <ModalPortal>
+          <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop">
+            <div className="bg-white dark:bg-[#141720] border border-emerald-300 dark:border-emerald-500/40 rounded-2xl p-5 sm:p-6 max-w-lg w-full space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-stone-200 dark:border-zinc-800 pb-3">
+                <div className="text-xs">
+                  <div className="font-bold text-emerald-700 dark:text-emerald-400">
+                    {pickLang(lang, {
+                      ar: `إيصال تحويل CIH Bank — ${previewReceipt.ticketNumber}`,
+                      fr: `Reçu virement CIH Bank — ${previewReceipt.ticketNumber}`,
+                      amz: `ⵜⴰⵡⵔⵉⵇⵜ CIH Bank — ${previewReceipt.ticketNumber}`,
+                      en: `CIH Bank Receipt — ${previewReceipt.ticketNumber}`,
+                      es: `Recibo CIH Bank — ${previewReceipt.ticketNumber}`,
+                    })}
+                  </div>
+                  <div className="text-slate-500 dark:text-zinc-400 font-mono text-[11px]">{previewReceipt.clientName} • {previewReceipt.fileName}</div>
                 </div>
-                <div className="text-zinc-400 font-mono text-[11px]">{previewReceipt.clientName} • {previewReceipt.fileName}</div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewReceipt(null)}
+                  className="p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-zinc-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setPreviewReceipt(null)}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="bg-black rounded-xl overflow-hidden border border-zinc-800 flex items-center justify-center max-h-[65vh]">
-              <img
-                src={previewReceipt.src}
-                alt={previewReceipt.fileName}
-                className="max-w-full max-h-[62vh] object-contain"
-              />
+              <div className="bg-stone-100 dark:bg-black rounded-xl overflow-hidden border border-stone-200 dark:border-zinc-800 flex items-center justify-center max-h-[65vh]">
+                <img
+                  src={previewReceipt.src}
+                  alt={previewReceipt.fileName}
+                  className="max-w-full max-h-[62vh] object-contain"
+                />
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {/* QR Arrival Check-In Confirmation Modal */}
       {checkInConfirmModal && (
-        <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
-          <div className="bg-zinc-950 border-2 border-emerald-500/50 rounded-2xl p-5 max-w-md w-full space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <div className="flex items-center gap-2 text-emerald-300 font-black text-sm">
-                <ScanLine className="w-5 h-5" />
-                <span>
-                  {pickLang(lang, {
-                    ar: 'تسجيل وصول الزبون عبر QR Check-In ✓',
-                    fr: 'Arrivée enregistrée via QR Check-In ✓',
-                    amz: 'ⴰⴽⵛⵓⵎ ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵙ QR ✓',
-                    en: 'Client Checked In via QR ✓',
-                    es: 'Llegada registrada por QR ✓',
-                  })}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCheckInConfirmModal(null)}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/35 space-y-2 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-black text-white text-base">
-                  {checkInConfirmModal.booking.clientName}
-                </span>
-                <span className="font-mono font-bold text-amber-300 bg-black/60 px-2 py-0.5 rounded border border-amber-500/30">
-                  {checkInConfirmModal.booking.ticketNumber}
-                </span>
-              </div>
-              <div className="text-zinc-300">
-                {pickLang(lang, {
-                  ar: 'الحلاق:',
-                  fr: 'Barbier :',
-                  amz: 'ⴰⵎⴽⵕⴰⴹ :',
-                  en: 'Barber:',
-                  es: 'Barbero:',
-                })}{' '}
-                <span className="font-bold text-white">{checkInConfirmModal.booking.barberName}</span> ·{' '}
-                <span className="font-mono">{checkInConfirmModal.booking.date} ({checkInConfirmModal.booking.timeSlot})</span>
-              </div>
-              {(checkInConfirmModal.booking.clientPhone || checkInConfirmModal.booking.checkInToken) && (
-                <div className="text-[11px] font-mono text-emerald-300">
-                  {pickLang(lang, {
-                    ar: 'معرّف الزبون:',
-                    fr: 'ID Client :',
-                    amz: 'ⵜⴰⵎⴰⵜⴰⵔⵜ :',
-                    en: 'Client ID:',
-                    es: 'ID Cliente:',
-                  })}{' '}
-                  <span dir="ltr">
-                    {(() => {
-                      const digits = String(checkInConfirmModal.booking.clientPhone || '').replace(/\D/g, '');
-                      if (digits.startsWith('212') && digits.length >= 11) return `0${digits.slice(3)}`;
-                      if (digits.length === 9 && /^[567]/.test(digits)) return `0${digits}`;
-                      if (digits.length >= 6) return digits;
-                      return checkInConfirmModal.booking.checkInToken || '';
-                    })()}
-                  </span>{' '}
-                  {checkInConfirmModal.tokenMatched
-                    ? pickLang(lang, {
-                        ar: '(مطابق ✓)',
-                        fr: '(Conforme ✓)',
-                        amz: '(ⵉⵎⵙⴰⵙⴰ ✓)',
-                        en: '(Matched ✓)',
-                        es: '(Verificado ✓)',
-                      })
-                    : ''}
-                </div>
-              )}
-              <div className="text-[11px] text-zinc-300">
-                {pickLang(lang, {
-                  ar: 'الخدمات:',
-                  fr: 'Prestations :',
-                  amz: 'ⵜⵉⵡⵓⵔⵉⵡⵉⵏ :',
-                  en: 'Services:',
-                  es: 'Servicios:',
-                })}{' '}
-                {(checkInConfirmModal.booking.services || []).map((s) => s.name?.[lang] || s.name?.ar || s.id).join(' + ')}
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2">
-              {checkInConfirmModal.booking.status !== 'completed' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = checkInConfirmModal.booking;
-                    setCheckInConfirmModal(null);
-                    void handleMarkCompleted(target);
-                  }}
-                  className="flex-1 min-h-[42px] px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Award className="w-4 h-4" />
+        <ModalPortal>
+          <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop">
+            <div className="bg-white dark:bg-[#141720] border-2 border-emerald-400 dark:border-emerald-500/50 rounded-2xl p-5 sm:p-6 max-w-lg w-full space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-stone-200 dark:border-zinc-800 pb-3">
+                <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-black text-sm">
+                  <ScanLine className="w-5 h-5" />
                   <span>
                     {pickLang(lang, {
-                      ar: 'تأكيد الحضور والولاء + إضافة للاكيس',
-                      fr: 'Confirmer Présence + Fidélité + Caisse',
-                      amz: 'ⵙⵏⵜⵎ ⵜⵉⵍⵉⵏⵜ + ⵍⴰⴽⵉⵙ',
-                      en: 'Confirm Attendance & Add to Caisse',
-                      es: 'Confirmar Asistencia + Caja',
+                      ar: 'تسجيل وصول الزبون عبر QR Check-In ✓',
+                      fr: 'Arrivée enregistrée via QR Check-In ✓',
+                      amz: 'ⴰⴽⵛⵓⵎ ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵙ QR ✓',
+                      en: 'Client Checked In via QR ✓',
+                      es: 'Llegada registrada por QR ✓',
                     })}
                   </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCheckInConfirmModal(null)}
+                  className="p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-zinc-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setCheckInConfirmModal(null)}
-                className="min-h-[42px] px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs cursor-pointer"
-              >
-                {pickLang(lang, {
-                  ar: 'إغلاق (تم تسجيل الوصول)',
-                  fr: 'Fermer (Arrivée enregistrée)',
-                  amz: 'ⵇⵇⵏ (ⵉⵜⵜⵓⵣⵎⵎⴻⵎ)',
-                  en: 'Close (Checked In)',
-                  es: 'Cerrar (Registrado)',
-                })}
-              </button>
+              </div>
+
+              <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-500/35 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-slate-900 dark:text-white text-base">
+                    {checkInConfirmModal.booking.clientName}
+                  </span>
+                  <span className="font-mono font-bold text-amber-800 dark:text-amber-300 bg-white dark:bg-black/60 px-2.5 py-0.5 rounded border border-amber-300 dark:border-amber-500/30">
+                    {checkInConfirmModal.booking.ticketNumber}
+                  </span>
+                </div>
+                <div className="text-slate-700 dark:text-zinc-300">
+                  {pickLang(lang, {
+                    ar: 'الحلاق:',
+                    fr: 'Barbier :',
+                    amz: 'ⴰⵎⴽⵕⴰⴹ :',
+                    en: 'Barber:',
+                    es: 'Barbero:',
+                  })}{' '}
+                  <span className="font-bold text-slate-900 dark:text-white">{checkInConfirmModal.booking.barberName}</span> ·{' '}
+                  <span className="font-mono">{checkInConfirmModal.booking.date} ({checkInConfirmModal.booking.timeSlot})</span>
+                </div>
+                {(checkInConfirmModal.booking.clientPhone || checkInConfirmModal.booking.checkInToken) && (
+                  <div className="text-[11px] font-mono text-emerald-700 dark:text-emerald-300 font-bold">
+                    {pickLang(lang, {
+                      ar: 'معرّف الزبون:',
+                      fr: 'ID Client :',
+                      amz: 'ⵜⴰⵎⴰⵜⴰⵔⵜ :',
+                      en: 'Client ID:',
+                      es: 'ID Cliente:',
+                    })}{' '}
+                    <span dir="ltr">
+                      {(() => {
+                        const digits = String(checkInConfirmModal.booking.clientPhone || '').replace(/\D/g, '');
+                        if (digits.startsWith('212') && digits.length >= 11) return `0${digits.slice(3)}`;
+                        if (digits.length === 9 && /^[567]/.test(digits)) return `0${digits}`;
+                        if (digits.length >= 6) return digits;
+                        return checkInConfirmModal.booking.checkInToken || '';
+                      })()}
+                    </span>{' '}
+                    {checkInConfirmModal.tokenMatched
+                      ? pickLang(lang, {
+                          ar: '(مطابق ✓)',
+                          fr: '(Conforme ✓)',
+                          amz: '(ⵉⵎⵙⴰⵙⴰ ✓)',
+                          en: '(Matched ✓)',
+                          es: '(Verificado ✓)',
+                        })
+                      : ''}
+                  </div>
+                )}
+                <div className="text-[11px] text-slate-700 dark:text-zinc-300">
+                  {pickLang(lang, {
+                    ar: 'الخدمات:',
+                    fr: 'Prestations :',
+                    amz: 'ⵜⵉⵡⵓⵔⵉⵡⵉⵏ :',
+                    en: 'Services:',
+                    es: 'Servicios:',
+                  })}{' '}
+                  {(checkInConfirmModal.booking.services || []).map((s) => s.name?.[lang] || s.name?.ar || s.id).join(' + ')}
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                {checkInConfirmModal.booking.status !== 'completed' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = checkInConfirmModal.booking;
+                      setCheckInConfirmModal(null);
+                      void handleMarkCompleted(target);
+                    }}
+                    className="flex-1 min-h-[42px] px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Award className="w-4 h-4" />
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'تأكيد الحضور والولاء + إضافة للاكيس',
+                        fr: 'Confirmer Présence + Fidélité + Caisse',
+                        amz: 'ⵙⵏⵜⵎ ⵜⵉⵍⵉⵏⵜ + ⵍⴰⴽⵉⵙ',
+                        en: 'Confirm Attendance & Add to Caisse',
+                        es: 'Confirmar Asistencia + Caja',
+                      })}
+                    </span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setCheckInConfirmModal(null)}
+                  className="min-h-[42px] px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 font-bold text-xs cursor-pointer"
+                >
+                  {pickLang(lang, {
+                    ar: 'إغلاق (تم تسجيل الوصول)',
+                    fr: 'Fermer (Arrivée enregistrée)',
+                    amz: 'ⵇⵇⵏ (ⵉⵜⵜⵓⵣⵎⵎⴻⵎ)',
+                    en: 'Close (Checked In)',
+                    es: 'Cerrar (Registrado)',
+                  })}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {/* Attendance-to-Caisse Prompt Modal (Never triggered on booking creation — only on attendance confirmation) */}
       {caissePromptBooking && (
-        <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/75 dark:bg-black/85 backdrop-blur-sm">
-          <form
-            onSubmit={handleConfirmCaisseFromBooking}
-            className="bg-white dark:bg-zinc-950 border-2 border-emerald-400 dark:border-emerald-500/50 rounded-2xl p-5 max-w-md w-full space-y-4 shadow-2xl"
-          >
+        <ModalPortal>
+          <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop">
+            <form
+              onSubmit={handleConfirmCaisseFromBooking}
+              className="bg-white dark:bg-[#141720] border-2 border-emerald-400 dark:border-emerald-500/50 rounded-2xl p-5 sm:p-6 max-w-lg w-full space-y-4 shadow-2xl"
+            >
             <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-3">
               <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-black text-sm">
                 <Wallet className="w-5 h-5" />
@@ -5868,18 +5870,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </form>
         </div>
+        </ModalPortal>
       )}
 
       {/* Master Admin Direct Walk-In Booking Modal (Bypasses 2-Booking Anti-Spam Limit) */}
       {isWalkInModalOpen && session?.role === 'master' && (
-        <div
-          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4"
-          onClick={() => setIsWalkInModalOpen(false)}
-        >
+        <ModalPortal>
           <div
-            className="w-full max-w-3xl max-h-[92vh] rounded-3xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
+            dir={isRtl ? 'rtl' : 'ltr'}
+            className="fixed inset-0 z-[100] sb-modal-backdrop flex items-center justify-center p-3 sm:p-5"
+            onClick={() => setIsWalkInModalOpen(false)}
           >
+            <div
+              className="w-full max-w-3xl max-h-[92vh] rounded-3xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
             <div className="px-4 sm:px-5 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2 bg-stone-50 dark:bg-zinc-900">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center flex-shrink-0">
@@ -5945,7 +5950,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               />
             </div>
           </div>
-        </div>
+          </div>
+        </ModalPortal>
       )}
 
       {/* Centered Interactive Booking KPI / Queue Details Modal (Mobile & Desktop) */}
@@ -6039,14 +6045,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const activeCfg = modalConfig[bookingKpiModal];
 
         return (
-          <div
-            className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-5 bg-black/65 backdrop-blur-sm"
-            onClick={() => setBookingKpiModal(null)}
-          >
+          <ModalPortal>
             <div
-              className="w-full max-w-2xl rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
-              onClick={(e) => e.stopPropagation()}
+              dir={isRtl ? 'rtl' : 'ltr'}
+              className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 sb-modal-backdrop"
+              onClick={() => setBookingKpiModal(null)}
             >
+              <div
+                className="w-full max-w-3xl rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+                onClick={(e) => e.stopPropagation()}
+              >
               <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3 bg-zinc-50 dark:bg-zinc-900/90">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -6235,6 +6243,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
           </div>
+          </ModalPortal>
         );
       })()}
 
@@ -6249,17 +6258,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const canConfirmDelete = !creditSummary.hasCredit || deleteBookingCreditAck;
 
         return (
-          <div
-            className="fixed inset-0 z-[130] bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
-            onClick={() => {
-              if (!deleteBookingBusy) setDeleteTargetBooking(null);
-            }}
-          >
+          <ModalPortal>
             <div
-              className="w-full max-w-lg rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-right"
-              dir="rtl"
-              onClick={(e) => e.stopPropagation()}
+              className="fixed inset-0 z-[130] sb-modal-backdrop flex items-center justify-center p-3 sm:p-4"
+              onClick={() => {
+                if (!deleteBookingBusy) setDeleteTargetBooking(null);
+              }}
             >
+              <div
+                className="w-full max-w-lg rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-right"
+                dir="rtl"
+                onClick={(e) => e.stopPropagation()}
+              >
               <div className="px-4 py-3.5 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-rose-50/70 dark:bg-rose-950/30">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-rose-100 dark:bg-rose-500/20 border border-rose-200 dark:border-rose-500/40 flex items-center justify-center text-rose-700 dark:text-rose-300">
@@ -6386,10 +6396,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
               </div>
             </div>
-          </div>
+            </div>
+          </ModalPortal>
         );
       })()}
 
-    </div>
+      </div>
+    </ModalPortal>
   );
 };

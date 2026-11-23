@@ -20,6 +20,7 @@ import {
   formatSalonDisplayPhone,
   normalizeSalonTelHref,
 } from '../utils/salonSettingsStore';
+import { safeCopyToClipboard } from '../utils/safeBrowser';
 
 interface LocationSectionProps {
   onOpenBooking: () => void;
@@ -32,7 +33,7 @@ export const LocationSection: React.FC<LocationSectionProps> = ({ onOpenBooking 
   const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
 
   const handleCopyAddress = () => {
-    navigator.clipboard.writeText(SALON_INFO.address[lang] || SALON_INFO.address.fr);
+    void safeCopyToClipboard(SALON_INFO.address[lang] || SALON_INFO.address.fr);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };

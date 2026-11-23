@@ -251,11 +251,11 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
   return (
     <div className="space-y-4 text-xs">
       {/* Header & Program Rules */}
-      <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-950/30 via-zinc-900/90 to-zinc-950 border border-amber-500/35 space-y-3">
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-amber-300 dark:border-amber-500/35 shadow-xs space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
-              <Coins className="w-4 h-4 text-amber-400" />
+            <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <Coins className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <span>
                 {pickLang(lang, {
                   ar: 'نظام نقاط الولاء والمكافآت',
@@ -266,7 +266,7 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
                 })}
               </span>
             </h3>
-            <p className="text-[11px] text-zinc-400 mt-0.5">
+            <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-0.5">
               {pickLang(lang, {
                 ar: `يكتسب الزبون +${POINTS_PER_VISIT} نقاط ولاء تلقائياً عند كل زيارة مكتملة، ويمكنه استبدالها بخصومات فورية على خدماته القادمة.`,
                 fr: `Le client gagne automatiquement +${POINTS_PER_VISIT} points à chaque visite terminée et peut les échanger contre des remises immédiates.`,
@@ -281,7 +281,7 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
             {LOYALTY_POINT_TIERS.map((tier) => (
               <span
                 key={tier.id}
-                className="px-2.5 py-1 rounded-lg bg-black/60 border border-amber-500/30 text-amber-300"
+                className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-zinc-900 border border-amber-300 dark:border-amber-500/30 text-amber-800 dark:text-amber-300"
               >
                 {tier.pointsCost} pts → -{tier.discountMAD} MAD
               </span>
@@ -291,41 +291,41 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
 
         {/* Program KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-          <div className="p-3 rounded-xl bg-black/50 border border-zinc-800">
-            <span className="text-[10px] text-zinc-400 block">
+          <div className="p-3 rounded-xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800">
+            <span className="text-[10px] text-slate-500 dark:text-zinc-400 block">
               {pickLang(lang, { ar: 'إجمالي النقاط المتاحة', fr: 'Total points actifs', amz: 'ⵜⵉⵏⵇⵇⵉⴹⵉⵏ ⵉⵍⵍⴰⵏ', en: 'Total Active Points', es: 'Puntos activos totales' })}
             </span>
-            <span className="text-xl font-black text-amber-400 font-mono tabular-nums">
+            <span className="text-xl font-black text-amber-700 dark:text-amber-400 font-mono tabular-nums">
               {kpis.totalActivePoints.toLocaleString('en-US')} <span className="text-[11px]">pts</span>
             </span>
           </div>
 
-          <div className="p-3 rounded-xl bg-black/50 border border-zinc-800">
-            <span className="text-[10px] text-zinc-400 block">
+          <div className="p-3 rounded-xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800">
+            <span className="text-[10px] text-slate-500 dark:text-zinc-400 block">
               {pickLang(lang, { ar: 'إجمالي النقاط المكتسبة', fr: 'Total points gagnés', amz: 'ⵜⵉⵏⵇⵇⵉⴹⵉⵏ ⵉⵜⵜⵓⵙⴽⵔⵏ', en: 'Total Earned Points', es: 'Puntos ganados totales' })}
             </span>
-            <span className="text-xl font-black text-white font-mono tabular-nums">
-              {kpis.totalEarnedPoints.toLocaleString('en-US')} <span className="text-[11px] text-zinc-400">pts</span>
+            <span className="text-xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
+              {kpis.totalEarnedPoints.toLocaleString('en-US')} <span className="text-[11px] text-slate-500 dark:text-zinc-400">pts</span>
             </span>
           </div>
 
-          <div className="p-3 rounded-xl bg-black/50 border border-zinc-800">
-            <span className="text-[10px] text-zinc-400 block">
+          <div className="p-3 rounded-xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800">
+            <span className="text-[10px] text-slate-500 dark:text-zinc-400 block">
               {pickLang(lang, { ar: 'النقاط المستبدلة', fr: 'Points échangés', amz: 'ⵜⵉⵏⵇⵇⵉⴹⵉⵏ ⵉⵜⵜⵓⵙⵏⴼⵍⵏ', en: 'Redeemed Points', es: 'Puntos canjeados' })}
             </span>
-            <span className="text-xl font-black text-emerald-400 font-mono tabular-nums">
+            <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 font-mono tabular-nums">
               {kpis.totalRedeemedPoints.toLocaleString('en-US')} <span className="text-[11px]">pts</span>
             </span>
           </div>
 
-          <div className="p-3 rounded-xl bg-black/50 border border-zinc-800">
-            <span className="text-[10px] text-zinc-400 block">
+          <div className="p-3 rounded-xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800">
+            <span className="text-[10px] text-slate-500 dark:text-zinc-400 block">
               {pickLang(lang, { ar: 'خصومات نشطة غير مستخدمة', fr: 'Remises actives non utilisées', amz: 'ⵉⵙⵏⵇⵙⵏ ⵉⵔⵎⵉⴷⵏ', en: 'Unused Active Discounts', es: 'Descuentos activos sin usar' })}
             </span>
-            <span className="text-xl font-black text-cyan-300 font-mono tabular-nums">
+            <span className="text-xl font-black text-cyan-700 dark:text-cyan-300 font-mono tabular-nums">
               {kpis.activeDiscountMAD.toLocaleString('en-US')} <span className="text-[11px]">MAD</span>
             </span>
-            <span className="text-[10px] text-zinc-500 block">
+            <span className="text-[10px] text-slate-500 dark:text-zinc-500 block">
               {pickLang(lang, {
                 ar: `لدى ${kpis.activeDiscountClients} زبناء`,
                 fr: `Chez ${kpis.activeDiscountClients} clients`,
@@ -339,9 +339,9 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
       </div>
 
       {/* Search & Filter Toolbar */}
-      <div className="p-3.5 rounded-2xl bg-zinc-900/75 border border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-2.5">
+      <div className="p-3.5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-2.5">
         <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-slate-400 dark:text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={search}
@@ -353,7 +353,7 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
               en: 'Search by client name or phone...',
               es: 'Buscar por nombre o teléfono...',
             })}
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+            className="w-full bg-stone-50 dark:bg-zinc-950 border border-stone-200 dark:border-zinc-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-amber-500"
           />
         </div>
 
@@ -371,7 +371,7 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
               className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
                 filterMode === tab.id
                   ? 'bg-amber-500 text-black'
-                  : 'bg-zinc-800 text-zinc-300 hover:text-white'
+                  : 'bg-stone-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-stone-200 dark:hover:bg-zinc-700'
               }`}
             >
               {tab.label}
@@ -382,7 +382,7 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
 
       {/* Client Loyalty Points Cards */}
       {filteredClients.length === 0 ? (
-        <div className="p-8 text-center rounded-2xl bg-zinc-900/50 border border-zinc-800 text-zinc-400">
+        <div className="p-8 text-center rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 text-slate-500 dark:text-zinc-400">
           {pickLang(lang, {
             ar: 'لا توجد حسابات زبناء مطابقة للبحث في برنامج النقاط.',
             fr: 'Aucun profil client correspondant dans le programme de points.',
@@ -392,7 +392,7 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
           })}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {filteredClients.map((c) => {
             const maxTier = LOYALTY_POINT_TIERS[LOYALTY_POINT_TIERS.length - 1];
             const nextTier =
@@ -407,33 +407,33 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
             return (
               <div
                 key={c.id}
-                className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 hover:border-amber-500/35 transition-colors space-y-3"
+                className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 hover:border-amber-400 dark:hover:border-amber-500/35 shadow-2xs transition-colors space-y-3"
               >
                 {/* Header Row */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-black text-white text-sm truncate">
+                      <span className="font-black text-slate-900 dark:text-white text-sm truncate">
                         {c.clientName}
                       </span>
                       {c.isVip && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[10px] font-bold">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/20 border border-amber-300 dark:border-amber-400/50 text-amber-800 dark:text-amber-300 text-[10px] font-bold">
                           <Crown className="w-2.5 h-2.5" />
                           <span>VIP</span>
                         </span>
                       )}
                     </div>
-                    <span dir="ltr" className="text-[11px] font-mono text-zinc-400 block mt-0.5">
+                    <span dir="ltr" className="text-[11px] font-mono text-slate-500 dark:text-zinc-400 block mt-0.5">
                       {c.phoneDisplay} · {c.verifiedVisits}{' '}
                       {pickLang(lang, { ar: 'زيارة مؤكدة', fr: 'visites confirmées', amz: 'ⵜⵉⵔⵣⴰ', en: 'verified visits', es: 'visitas confirmadas' })}
                     </span>
                   </div>
 
                   <div className="text-right flex-shrink-0">
-                    <div className="text-xl font-black text-amber-400 font-mono tabular-nums leading-none">
-                      {c.loyaltyPoints} <span className="text-[11px] text-amber-300">pts</span>
+                    <div className="text-xl font-black text-amber-700 dark:text-amber-400 font-mono tabular-nums leading-none">
+                      {c.loyaltyPoints} <span className="text-[11px] text-amber-600 dark:text-amber-300">pts</span>
                     </div>
-                    <div className="text-[10px] text-zinc-500 font-mono tabular-nums mt-1">
+                    <div className="text-[10px] text-slate-500 dark:text-zinc-500 font-mono tabular-nums mt-1">
                       +{c.pointsEarnedTotal} {pickLang(lang, { ar: 'مكتسبة', fr: 'gagnés', amz: 'ⵉⵜⵜⵓⵙⴽⵔⵏ', en: 'earned', es: 'ganados' })} · -{c.pointsRedeemedTotal} {pickLang(lang, { ar: 'مستبدلة', fr: 'échangés', amz: 'ⵉⵜⵜⵓⵙⵏⴼⵍⵏ', en: 'redeemed', es: 'canjeados' })}
                     </div>
                   </div>
@@ -441,7 +441,7 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
 
                 {/* Progress Bar toward Next Reward */}
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono tabular-nums">
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-zinc-400 font-mono tabular-nums">
                     <span>
                       {c.loyaltyPoints >= maxTier.pointsCost
                         ? pickLang(lang, {
@@ -459,13 +459,13 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
                             es: `Próxima meta: ${nextTierLabel} (${nextTier.pointsCost} pts)`,
                           })}
                     </span>
-                    <span className="text-amber-300 font-bold">
+                    <span className="text-amber-700 dark:text-amber-300 font-bold">
                       {c.loyaltyPoints} / {nextTier.pointsCost}
                     </span>
                   </div>
-                  <div className="h-2 w-full rounded-full bg-zinc-950 border border-zinc-800 overflow-hidden">
+                  <div className="h-2 w-full rounded-full bg-stone-200 dark:bg-zinc-950 border border-stone-300 dark:border-zinc-800 overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-300"
+                      className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all duration-300"
                       style={{ width: `${progressPct}%` }}
                     />
                   </div>
@@ -473,9 +473,9 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
 
                 {/* Active Discount Credit Banner */}
                 {c.customDiscountMAD > 0 && (
-                  <div className="px-3 py-2 rounded-xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between gap-2 text-[11px]">
-                    <span className="text-emerald-300 font-bold flex items-center gap-1.5">
-                      <Ticket className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                  <div className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-500/40 flex items-center justify-between gap-2 text-[11px]">
+                    <span className="text-emerald-800 dark:text-emerald-300 font-bold flex items-center gap-1.5">
+                      <Ticket className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                       <span>
                         {pickLang(lang, {
                           ar: `خصم جاهز للحجز القادم: -${c.customDiscountMAD} MAD`,
@@ -490,7 +490,7 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
                       type="button"
                       disabled={Boolean(isBusy)}
                       onClick={() => handleResetActiveDiscount(c)}
-                      className="px-2 py-0.5 rounded-lg bg-black/50 hover:bg-black border border-emerald-500/30 text-emerald-200 text-[10px] font-bold cursor-pointer disabled:opacity-50"
+                      className="px-2 py-0.5 rounded-lg bg-white hover:bg-stone-100 dark:bg-black/50 dark:hover:bg-black border border-emerald-300 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-200 text-[10px] font-bold cursor-pointer disabled:opacity-50"
                     >
                       {pickLang(lang, { ar: 'تصفير', fr: 'Réinitialiser', amz: 'ⵙⴼⵔ', en: 'Clear', es: 'Limpiar' })}
                     </button>
@@ -499,8 +499,8 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
 
                 {/* Redeem Tiers Row */}
                 <div className="space-y-1.5">
-                  <div className="text-[10px] text-zinc-400 font-bold flex items-center gap-1">
-                    <Gift className="w-3 h-3 text-amber-400" />
+                  <div className="text-[10px] text-slate-600 dark:text-zinc-400 font-bold flex items-center gap-1">
+                    <Gift className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                     <span>
                       {pickLang(lang, {
                         ar: 'استبدال النقاط بخصم فوري للزبون:',
@@ -522,8 +522,8 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
                           onClick={() => handleRedeemTier(c, tier)}
                           className={`py-1.5 px-2 rounded-xl border text-[10px] font-bold text-center transition-all ${
                             canRedeem
-                              ? 'bg-amber-500/15 hover:bg-amber-500 hover:text-black border-amber-500/45 text-amber-200 cursor-pointer'
-                              : 'bg-zinc-950/60 border-zinc-800 text-zinc-600 cursor-not-allowed'
+                              ? 'bg-amber-50 hover:bg-amber-500 hover:text-black dark:bg-amber-500/15 dark:hover:bg-amber-500 dark:hover:text-black border-amber-300 dark:border-amber-500/45 text-amber-900 dark:text-amber-200 cursor-pointer'
+                              : 'bg-stone-100 dark:bg-zinc-950 border-stone-200 dark:border-zinc-800 text-slate-400 dark:text-zinc-600 cursor-not-allowed'
                           }`}
                         >
                           <div className="font-mono font-black tabular-nums">{tier.pointsCost} pts</div>
@@ -535,13 +535,13 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
                 </div>
 
                 {/* Admin Points Controls */}
-                <div className="pt-2 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-1.5">
+                <div className="pt-2 border-t border-stone-200 dark:border-zinc-800/80 flex flex-wrap items-center justify-between gap-1.5">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
                       disabled={Boolean(isBusy)}
                       onClick={() => handleAwardBonusPoints(c, POINTS_PER_VISIT)}
-                      className="px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-600/20 dark:hover:bg-emerald-600/35 border border-emerald-300 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
                     >
                       <Plus className="w-3 h-3" />
                       <span>
@@ -554,9 +554,9 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
                       type="button"
                       disabled={Boolean(isBusy)}
                       onClick={() => handleCustomPointsAdjust(c)}
-                      className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      className="px-2.5 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-stone-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
                     >
-                      <Sparkles className="w-3 h-3 text-amber-400" />
+                      <Sparkles className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                       <span>
                         {pickLang(lang, { ar: 'تعديل النقاط', fr: 'Ajuster points', amz: 'ⵙⵏⴼⵍ ⵜⵉⵏⵇⵇⵉⴹⵉⵏ', en: 'Adjust Points', es: 'Ajustar puntos' })}
                       </span>
@@ -567,7 +567,7 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
                     <button
                       type="button"
                       onClick={() => onOpenClientTracking(c.phoneDisplay || c.normalizedPhone || c.id)}
-                      className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-amber-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-amber-300 dark:border-zinc-700 text-amber-800 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                     >
                       <ExternalLink className="w-3 h-3" />
                       <span>
@@ -583,8 +583,8 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
       )}
 
       {/* Footer note */}
-      <div className="px-3 py-2 rounded-xl bg-zinc-900/50 border border-zinc-800/80 text-[11px] text-zinc-400 flex items-center gap-2">
-        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+      <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 text-[11px] text-slate-600 dark:text-zinc-400 flex items-center gap-2">
+        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
         <span>
           {pickLang(lang, {
             ar: 'تُطبق الخصومات المستبدلة تلقائياً على إجمالي الطلب عند إدخال رقم هاتف الزبون في خطوة التأكيد بنموذج الحجز.',

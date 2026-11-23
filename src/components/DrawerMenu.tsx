@@ -32,6 +32,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSalonProfileSettings } from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
+import { safeCopyToClipboard } from '../utils/safeBrowser';
 import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore';
 import { useBarberRoster } from '../utils/barberRosterStore';
 import { ServiceDefinition } from '../utils/pricingEngine';
@@ -301,7 +302,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   };
 
   const copyWifiPassword = () => {
-    navigator.clipboard.writeText(SALON_INFO.media.wifiPassword);
+    void safeCopyToClipboard(SALON_INFO.media.wifiPassword);
     setWifiCopied(true);
     setTimeout(() => setWifiCopied(false), 2000);
   };
@@ -713,14 +714,14 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
     <MotionConfig reducedMotion="user">
       <AnimatePresence>
         {isOpen && (
-          <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-50 overflow-hidden">
+          <div dir={isRtl ? 'rtl' : 'ltr'} className="fixed inset-0 z-[60] overflow-hidden">
             {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="fixed inset-0 bg-black/60 dark:bg-black/75 backdrop-blur-sm"
+              className="fixed inset-0 sb-modal-backdrop"
               onClick={handleCloseDrawer}
             />
 

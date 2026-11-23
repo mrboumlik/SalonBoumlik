@@ -15,13 +15,14 @@ import {
 import { INITIAL_GALLERY, TEAM_MEMBERS, SALON_INFO } from '../data/barbershopData';
 import { GalleryItem } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { safeStorageGet, safeStorageSet } from '../utils/safeBrowser';
 
 export const GallerySection: React.FC = () => {
   const { lang, t, isRtl } = useLanguage();
 
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(() => {
     try {
-      const stored = localStorage.getItem('salon_boumlik_gallery_v1');
+      const stored = safeStorageGet('salon_boumlik_gallery_v1', 'local');
       if (stored) return JSON.parse(stored);
     } catch (e) {
       console.error(e);
@@ -42,7 +43,7 @@ export const GallerySection: React.FC = () => {
 
   useEffect(() => {
     try {
-      localStorage.setItem('salon_boumlik_gallery_v1', JSON.stringify(galleryItems));
+      safeStorageSet('salon_boumlik_gallery_v1', JSON.stringify(galleryItems), 'local');
     } catch (e) {
       console.error(e);
     }
@@ -215,7 +216,7 @@ export const GallerySection: React.FC = () => {
                   <div className="absolute top-3 right-3 flex items-center justify-end">
                     <button
                       onClick={(e) => handleLike(item.id, e)}
-                      className="px-2.5 py-1 rounded-full bg-zinc-950/80 backdrop-blur-md text-rose-400 hover:text-rose-300 border border-zinc-800 flex items-center gap-1 text-[11px] font-bold transition-transform active:scale-90"
+                      className="px-2.5 py-1 rounded-full bg-zinc-950 text-rose-400 hover:text-rose-300 border border-zinc-800 flex items-center gap-1 text-[11px] font-bold transition-transform active:scale-90"
                     >
                       <Heart className="w-3 h-3 fill-rose-500 text-rose-500" />
                       <span>{item.likes || 0}</span>
@@ -250,7 +251,7 @@ export const GallerySection: React.FC = () => {
       {selectedPhoto && (
         <div 
           onClick={() => setSelectedPhoto(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-150"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 sb-modal-backdrop animate-in fade-in duration-150"
         >
           <div 
             onClick={(e) => e.stopPropagation()}
@@ -297,7 +298,7 @@ export const GallerySection: React.FC = () => {
 
       {/* Add Photo Modal for Hassan / Staff */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sb-modal-backdrop animate-in fade-in duration-150">
           <div className="bg-[#0C0E14] border border-amber-500/40 rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
             <button
               onClick={() => setIsAddModalOpen(false)}

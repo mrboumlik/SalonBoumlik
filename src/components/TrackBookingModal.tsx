@@ -35,6 +35,7 @@ import {
 import { Html5Qrcode } from 'html5-qrcode';
 import QRCode from 'qrcode';
 import { useLanguage } from '../context/LanguageContext';
+import { safeCopyToClipboard } from '../utils/safeBrowser';
 import { buildBookingCheckInQrPayload, parseScannedQrResult } from '../utils/clientQr';
 import { 
   subscribeToBookings,
@@ -74,6 +75,7 @@ import {
   useSalonProfileSettings,
 } from '../utils/salonSettingsStore';
 import { submitBarberReview, useFirestoreReviews } from '../utils/reviewsStore';
+import { ModalPortal } from './ModalPortal';
 
 interface TrackBookingModalProps {
   isOpen: boolean;
@@ -113,9 +115,9 @@ const CheckInQrPassBox: React.FC<{ booking: AppointmentBooking; lang: Language }
   }
 
   return (
-    <div className="p-3 rounded-xl bg-black/60 border border-emerald-500/35 flex items-center justify-between gap-3">
+    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-[#151A24] border border-emerald-200 dark:border-emerald-500/35 flex items-center justify-between gap-3">
       <div className="space-y-1 text-xs min-w-0">
-        <div className="font-black text-emerald-300 flex items-center gap-1.5">
+        <div className="font-black text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
           <ScanLine className="w-4 h-4 shrink-0" />
           <span>
             {pickLang(lang, {
@@ -127,7 +129,7 @@ const CheckInQrPassBox: React.FC<{ booking: AppointmentBooking; lang: Language }
             })}
           </span>
         </div>
-        <p className="text-[11px] text-zinc-400 leading-relaxed">
+        <p className="text-[11px] text-stone-600 dark:text-zinc-400 leading-relaxed">
           {booking.checkedInAt
             ? pickLang(lang, {
                 ar: '✓ تم تسجيل وصولك بالصالون بنجاح!',
@@ -146,7 +148,7 @@ const CheckInQrPassBox: React.FC<{ booking: AppointmentBooking; lang: Language }
         </p>
         <div className="flex flex-wrap items-center gap-2 pt-0.5">
           {(booking.clientPhone || booking.checkInToken) && (
-            <span dir="ltr" className="font-mono text-[10px] px-2 py-0.5 rounded bg-zinc-900 border border-zinc-700 text-amber-300">
+            <span dir="ltr" className="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 text-amber-700 dark:text-amber-300 font-bold">
               ID:{' '}
               {(() => {
                 const digits = String(booking.clientPhone || '').replace(/\D/g, '');
@@ -158,7 +160,7 @@ const CheckInQrPassBox: React.FC<{ booking: AppointmentBooking; lang: Language }
             </span>
           )}
           {booking.checkedInAt && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-bold">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 border border-emerald-300 dark:border-emerald-400/50 text-emerald-800 dark:text-emerald-300 font-bold">
               {pickLang(lang, {
                 ar: 'وصلت للصالون ✓',
                 fr: 'Arrivé ✓',
@@ -172,12 +174,12 @@ const CheckInQrPassBox: React.FC<{ booking: AppointmentBooking; lang: Language }
       </div>
 
       {qrUrl ? (
-        <div className="p-1.5 bg-white rounded-xl shrink-0 shadow-md">
+        <div className="p-1.5 bg-white border border-stone-200 dark:border-transparent rounded-xl shrink-0 shadow-md">
           <img src={qrUrl} alt={`Check-In QR ${booking.ticketNumber}`} className="w-20 h-20 block" />
         </div>
       ) : (
-        <div className="w-20 h-20 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
-          <QrCode className="w-6 h-6 text-zinc-500" />
+        <div className="w-20 h-20 rounded-xl bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 flex items-center justify-center shrink-0">
+          <QrCode className="w-6 h-6 text-stone-400 dark:text-zinc-500" />
         </div>
       )}
     </div>
@@ -546,13 +548,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
   if (!isOpen) return null;
 
   const handleCopy = (ticket: string) => {
-    navigator.clipboard.writeText(ticket);
+    void safeCopyToClipboard(ticket);
     setCopiedTicket(ticket);
     setTimeout(() => setCopiedTicket(null), 2000);
   };
 
   const handleCopyCihDetail = (field: 'holder' | 'account', value: string) => {
-    navigator.clipboard.writeText(value);
+    void safeCopyToClipboard(value);
     setCopiedCihField(field);
     setTimeout(() => setCopiedCihField(null), 2000);
   };
@@ -742,7 +744,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     switch (status) {
       case 'completed':
         return (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-600/20 border border-emerald-400/50 text-emerald-300 font-bold text-xs">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-600/20 border border-emerald-300 dark:border-emerald-400/50 text-emerald-800 dark:text-emerald-300 font-bold text-xs">
             <Award className="w-3.5 h-3.5" />
             <span>
               {pickLang(lang, {
@@ -757,7 +759,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
         );
       case 'confirmed':
         return (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-xs">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 font-bold text-xs">
             <CheckCircle2 className="w-3.5 h-3.5" />
             <span>
               {pickLang(lang, {
@@ -772,7 +774,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
         );
       case 'rescheduled':
         return (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-400 font-bold text-xs animate-pulse">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-500/15 border border-blue-200 dark:border-blue-500/30 text-blue-700 dark:text-blue-400 font-bold text-xs animate-pulse">
             <Clock3 className="w-3.5 h-3.5" />
             <span>
               {pickLang(lang, {
@@ -787,7 +789,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
         );
       case 'no_show':
         return (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/15 border border-orange-500/40 text-orange-300 font-bold text-xs">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-50 dark:bg-orange-500/15 border border-orange-200 dark:border-orange-500/40 text-orange-700 dark:text-orange-300 font-bold text-xs">
             <AlertCircle className="w-3.5 h-3.5" />
             <span>
               {pickLang(lang, {
@@ -802,8 +804,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
         );
       case 'cancelled':
         return (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-400 font-bold text-xs">
-            <XCircle className="w-3.5 h-3.5 text-zinc-500" />
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-400 font-bold text-xs">
+            <XCircle className="w-3.5 h-3.5 text-stone-500 dark:text-zinc-500" />
             <span>
               {pickLang(lang, {
                 ar: 'موعد ملغى وتم تحرير الكرسي',
@@ -817,7 +819,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
         );
       case 'rejected':
         return (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 font-bold text-xs">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-400 font-bold text-xs">
             <XCircle className="w-3.5 h-3.5" />
             <span>
               {pickLang(lang, {
@@ -832,7 +834,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
         );
       case 'flexible_pending':
         return (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/15 border border-purple-400/40 text-purple-300 font-bold text-xs">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 dark:bg-purple-500/15 border border-purple-200 dark:border-purple-400/40 text-purple-700 dark:text-purple-300 font-bold text-xs">
             <Clock className="w-3.5 h-3.5" />
             <span>
               {pickLang(lang, {
@@ -848,7 +850,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
       case 'pending':
       default:
         return (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold text-xs animate-pulse">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-400 font-bold text-xs animate-pulse">
             <Clock className="w-3.5 h-3.5" />
             <span>
               {pickLang(lang, {
@@ -1015,204 +1017,205 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] overflow-y-auto flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-      <div className="relative w-full max-w-xl bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col my-8">
-        
-        {/* Header with barber pole top line */}
-        <div className="h-1.5 w-full bg-gradient-to-r from-red-600 via-white to-blue-600" />
-        
-        <div className="p-6 border-b border-zinc-800 flex items-start justify-between bg-zinc-900/40">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-blue-400">
-              <Ticket className="w-5 h-5 text-red-500" />
-            </div>
-            <div>
-              <h2 className="text-lg font-black text-white">{ui.title}</h2>
-              <p className="text-xs text-zinc-400 mt-0.5">{ui.subtitle}</p>
-            </div>
-          </div>
-
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Search Bar & Client-Side QR Scanner Button */}
-        <div className="p-6 pb-2">
-          <form 
-            onSubmit={(e) => {
-              e.preventDefault();
-              performSearch(searchTerm);
-            }}
-            className="flex flex-col sm:flex-row gap-2"
-          >
-            <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder={ui.placeholder}
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-red-500"
-              />
+    <ModalPortal>
+      <div className="fixed inset-0 z-[85] overflow-y-auto flex items-center justify-center p-3 sm:p-6 sb-modal-backdrop">
+        <div className="relative w-full max-w-2xl bg-white dark:bg-[#11141D] border border-stone-200 dark:border-zinc-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col my-6 text-slate-900 dark:text-white">
+          
+          {/* Header with barber pole top line */}
+          <div className="h-1.5 w-full bg-gradient-to-r from-red-600 via-stone-200 dark:via-white to-blue-600" />
+          
+          <div className="p-5 sm:p-6 border-b border-stone-200 dark:border-zinc-800 flex items-start justify-between bg-stone-50 dark:bg-[#161923]">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                <Ticket className="w-5 h-5 text-red-500" />
+              </div>
+              <div>
+                <h2 className="text-lg font-black text-slate-900 dark:text-white">{ui.title}</h2>
+                <p className="text-xs text-stone-600 dark:text-zinc-400 mt-0.5">{ui.subtitle}</p>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Camera Scanner Button */}
-              <button
-                type="button"
-                onClick={handleOpenClientScanner}
-                className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-blue-300 hover:text-white font-bold text-xs rounded-xl border border-zinc-700 transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                title="Scanner le QR code du ticket avec la caméra"
-              >
-                <Camera className="w-4 h-4 text-blue-400" />
-                <span>
-                  {pickLang(lang, {
-                    ar: 'مسح الكاميرا',
-                    fr: 'Scanner Caméra',
-                    amz: 'ⴰⵙⴽⴰⵏⵉ ⵙ ⵜⴽⴰⵎⵉⵔⴰ',
-                    en: 'Camera Scan',
-                    es: 'Cámara QR',
-                  })}
-                </span>
-              </button>
-
-              {/* Upload QR Image File Button */}
-              <label 
-                className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-amber-300 hover:text-white font-bold text-xs rounded-xl border border-zinc-700 transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Upload className="w-4 h-4 text-amber-400" />
-                <span>
-                  {pickLang(lang, {
-                    ar: 'تحميل صورة QR',
-                    fr: 'Uploader Image QR',
-                    amz: 'ⵙⵙⴽⵛⵎ ⵜⴰⵡⵍⴰⴼⵜ QR',
-                    en: 'Upload QR Image',
-                    es: 'Subir imagen QR',
-                  })}
-                </span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleQrImageUpload}
-                  className="hidden"
-                />
-              </label>
-
-              {/* Submit Search Button */}
-              <button
-                type="submit"
-                className="flex-1 sm:flex-initial px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl transition-colors shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <span>{ui.searchBtn}</span>
-              </button>
-            </div>
-          </form>
-
-          {/* Hidden container for off-screen QR file scanning */}
-          <div id="qr-temp-scanner-hidden" className="hidden" aria-hidden="true" />
-
-          {/* Quick Notification Permission Bell Button for Client */}
-          <div className="mt-2.5 flex items-center justify-between px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-[11px]">
-            <span className="text-zinc-400 flex items-center gap-1.5">
-              <Bell className="w-3.5 h-3.5 text-amber-400" />
-              <span>
-                {pickLang(lang, {
-                  ar: 'تفعيل رنين وإشعارات الموعد في المتصفح',
-                  fr: 'Alertes sonores & notifications',
-                  amz: 'ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵓⵙⵉⵀⵍ',
-                  en: 'Browser sound & push alerts',
-                  es: 'Alertas y notificaciones',
-                })}
-              </span>
-            </span>
             <button
-              type="button"
-              onClick={handleEnableNotifications}
-              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+              onClick={onClose}
+              className="p-2 rounded-xl text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-200/70 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
             >
-              <Bell className="w-3 h-3 text-amber-400" />
-              <span>
-                {notifStatus === 'granted'
-                  ? pickLang(lang, {
-                      ar: 'الإشعارات مفعلة ✓',
-                      fr: 'Activé ✓',
-                      amz: 'ⵉⵕⵥⵎ ✓',
-                      en: 'Enabled ✓',
-                      es: 'Activado ✓',
-                    })
-                  : pickLang(lang, {
-                      ar: '🔔 تفعيل الإشعارات',
-                      fr: '🔔 Activer',
-                      amz: '🔔 ⵕⵥⵎ',
-                      en: '🔔 Enable',
-                      es: '🔔 Activar',
-                    })}
-              </span>
+              <X className="w-5 h-5" />
             </button>
           </div>
-        </div>
 
-        {/* Client QR Scanner Modal Dialog (Strictly facingMode: environment) */}
-        {isClientScannerOpen && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/90">
-            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 max-w-sm w-full space-y-4 text-center">
-              <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
-                <div className="flex items-center gap-1.5 text-white font-bold text-sm">
-                  <Camera className="w-4 h-4 text-blue-400" />
+          {/* Search Bar & Client-Side QR Scanner Button */}
+          <div className="p-5 sm:p-6 pb-2">
+            <form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                performSearch(searchTerm);
+              }}
+              className="flex flex-col sm:flex-row gap-2"
+            >
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 dark:text-zinc-400" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder={ui.placeholder}
+                  className="w-full bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 dark:text-white placeholder-stone-400 dark:placeholder-zinc-500 focus:outline-none focus:border-red-500"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Camera Scanner Button */}
+                <button
+                  type="button"
+                  onClick={handleOpenClientScanner}
+                  className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-blue-700 dark:text-blue-300 hover:text-slate-900 dark:hover:text-white font-bold text-xs rounded-xl border border-stone-200 dark:border-zinc-700 transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  title="Scanner le QR code du ticket avec la caméra"
+                >
+                  <Camera className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                   <span>
                     {pickLang(lang, {
-                      ar: 'مسح رمز التذكرة بالكاميرا',
-                      fr: 'Scanner le ticket QR',
-                      amz: 'ⴰⵙⴽⴰⵏⵉ ⵏ QR ⵙ ⵜⴽⴰⵎⵉⵔⴰ',
-                      en: 'Scan Ticket QR',
-                      es: 'Escanear QR del ticket',
+                      ar: 'مسح الكاميرا',
+                      fr: 'Scanner Caméra',
+                      amz: 'ⴰⵙⴽⴰⵏⵉ ⵙ ⵜⴽⴰⵎⵉⵔⴰ',
+                      en: 'Camera Scan',
+                      es: 'Cámara QR',
+                    })}
+                  </span>
+                </button>
+
+                {/* Upload QR Image File Button */}
+                <label 
+                  className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-amber-800 dark:text-amber-300 hover:text-slate-900 dark:hover:text-white font-bold text-xs rounded-xl border border-stone-200 dark:border-zinc-700 transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Upload className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    {pickLang(lang, {
+                      ar: 'تحميل صورة QR',
+                      fr: 'Uploader Image QR',
+                      amz: 'ⵙⵙⴽⵛⵎ ⵜⴰⵡⵍⴰⴼⵜ QR',
+                      en: 'Upload QR Image',
+                      es: 'Subir imagen QR',
+                    })}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleQrImageUpload}
+                    className="hidden"
+                  />
+                </label>
+
+                {/* Submit Search Button */}
+                <button
+                  type="submit"
+                  className="flex-1 sm:flex-initial px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl transition-colors shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <span>{ui.searchBtn}</span>
+                </button>
+              </div>
+            </form>
+
+            {/* Hidden container for off-screen QR file scanning */}
+            <div id="qr-temp-scanner-hidden" className="hidden" aria-hidden="true" />
+
+            {/* Quick Notification Permission Bell Button for Client */}
+            <div className="mt-2.5 flex items-center justify-between px-3 py-2 rounded-xl bg-stone-50 dark:bg-zinc-900/60 border border-stone-200 dark:border-zinc-800/80 text-[11px]">
+              <span className="text-stone-600 dark:text-zinc-400 flex items-center gap-1.5">
+                <Bell className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>
+                  {pickLang(lang, {
+                    ar: 'تفعيل رنين وإشعارات الموعد في المتصفح',
+                    fr: 'Alertes sonores & notifications',
+                    amz: 'ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵓⵙⵉⵀⵍ',
+                    en: 'Browser sound & push alerts',
+                    es: 'Alertas y notificaciones',
+                  })}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={handleEnableNotifications}
+                className="px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 dark:bg-amber-500/20 dark:hover:bg-amber-500/30 border border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-300 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <Bell className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                <span>
+                  {notifStatus === 'granted'
+                    ? pickLang(lang, {
+                        ar: 'الإشعارات مفعلة ✓',
+                        fr: 'Activé ✓',
+                        amz: 'ⵉⵕⵥⵎ ✓',
+                        en: 'Enabled ✓',
+                        es: 'Activado ✓',
+                      })
+                    : pickLang(lang, {
+                        ar: '🔔 تفعيل الإشعارات',
+                        fr: '🔔 Activer',
+                        amz: '🔔 ⵕⵥⵎ',
+                        en: '🔔 Enable',
+                        es: '🔔 Activar',
+                      })}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* Client QR Scanner Modal Dialog (Strictly facingMode: environment) */}
+          {isClientScannerOpen && (
+            <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 sb-modal-backdrop">
+              <div className="bg-white dark:bg-[#11141D] border border-stone-200 dark:border-zinc-800 rounded-2xl p-5 max-w-sm w-full space-y-4 text-center shadow-2xl">
+                <div className="flex items-center justify-between border-b border-stone-200 dark:border-zinc-800 pb-2.5">
+                  <div className="flex items-center gap-1.5 text-slate-900 dark:text-white font-bold text-sm">
+                    <Camera className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'مسح رمز التذكرة بالكاميرا',
+                        fr: 'Scanner le ticket QR',
+                        amz: 'ⴰⵙⴽⴰⵏⵉ ⵏ QR ⵙ ⵜⴽⴰⵎⵉⵔⴰ',
+                        en: 'Scan Ticket QR',
+                        es: 'Escanear QR del ticket',
+                      })}
+                    </span>
+                  </div>
+
+                  <button 
+                    onClick={() => setIsClientScannerOpen(false)}
+                    className="p-1.5 rounded-lg text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {clientScannerError && (
+                  <div className="p-2.5 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-500/40 text-red-700 dark:text-red-300 text-xs">
+                    {clientScannerError}
+                  </div>
+                )}
+
+                <div 
+                  id="client-qr-reader-container" 
+                  className="w-full rounded-xl overflow-hidden bg-black min-h-[260px] border border-stone-200 dark:border-zinc-800" 
+                />
+
+                <div className="text-[11px] text-stone-500 dark:text-zinc-400">
+                  <span>
+                    {pickLang(lang, {
+                      ar: 'قم بتوجيه الكاميرا الخلفية نحو رمز الـ QR للتذكرة',
+                      fr: 'Visez le QR code avec votre caméra arrière',
+                      amz: 'ⵙⵙⵡⴰⵍⴰ ⵜⴰⴽⴰⵎⵉⵔⴰ ⵜⴰⵎⴰⴳⵓⵣⵜ ⵖⵔ ⵓⵏⴳⴰⵍ QR',
+                      en: 'Point your rear camera at the ticket QR code',
+                      es: 'Apunta la cámara trasera al código QR del ticket',
                     })}
                   </span>
                 </div>
-
-                <button 
-                  onClick={() => setIsClientScannerOpen(false)}
-                  className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {clientScannerError && (
-                <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs">
-                  {clientScannerError}
-                </div>
-              )}
-
-              <div 
-                id="client-qr-reader-container" 
-                className="w-full rounded-xl overflow-hidden bg-black min-h-[260px] border border-zinc-800" 
-              />
-
-              <div className="text-[11px] text-zinc-400">
-                <span>
-                  {pickLang(lang, {
-                    ar: 'قم بتوجيه الكاميرا الخلفية نحو رمز الـ QR للتذكرة',
-                    fr: 'Visez le QR code avec votre caméra arrière',
-                    amz: 'ⵙⵙⵡⴰⵍⴰ ⵜⴰⴽⴰⵎⵉⵔⴰ ⵜⴰⵎⴰⴳⵓⵣⵜ ⵖⵔ ⵓⵏⴳⴰⵍ QR',
-                    en: 'Point your rear camera at the ticket QR code',
-                    es: 'Apunta la cámara trasera al código QR del ticket',
-                  })}
-                </span>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
         {/* Results List */}
-        <div className="p-6 pt-3 space-y-4 max-h-[60vh] overflow-y-auto">
+        <div className="p-5 sm:p-6 pt-3 space-y-4 max-h-[60vh] overflow-y-auto">
           {isSyncingFirestore && foundBookings.length === 0 ? (
-            <div className="text-center py-8 text-zinc-400 text-xs">
-              <RefreshCw className="w-7 h-7 text-amber-400 mx-auto mb-2 animate-spin" />
+            <div className="text-center py-8 text-stone-500 dark:text-zinc-400 text-xs">
+              <RefreshCw className="w-7 h-7 text-amber-600 dark:text-amber-400 mx-auto mb-2 animate-spin" />
               <p>
                 {pickLang(lang, {
                   ar: 'جاري جلب التذاكر من السحابة...',
@@ -1233,24 +1236,24 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                 lang={lang}
               />
 
-              <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/12 via-zinc-900/95 to-zinc-900 border border-amber-500/35 space-y-3 text-xs">
+              <div className="p-5 rounded-2xl bg-amber-50/70 dark:bg-gradient-to-br dark:from-amber-500/12 dark:via-zinc-900/95 dark:to-zinc-900 border border-amber-300 dark:border-amber-500/35 space-y-3 text-xs">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <div className="text-sm font-black text-white flex items-center gap-2">
+                    <div className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
                       <span>{searchedCrmFallback.clientName}</span>
                       {searchedCrmFallback.isVip && (
-                        <span className="text-amber-300 text-xs font-bold">· 👑 VIP</span>
+                        <span className="text-amber-700 dark:text-amber-300 text-xs font-bold">· 👑 VIP</span>
                       )}
                     </div>
-                    <div dir="ltr" className="text-zinc-400 font-mono mt-0.5">
+                    <div dir="ltr" className="text-stone-600 dark:text-zinc-400 font-mono mt-0.5">
                       {searchedCrmFallback.phoneDisplay || searchedCrmFallback.normalizedPhone}
                     </div>
                   </div>
-                  <div className="font-mono font-black text-amber-400 text-base tabular-nums">
+                  <div className="font-mono font-black text-amber-700 dark:text-amber-400 text-base tabular-nums">
                     {loyaltyProgress.verifiedVisits} / {loyaltyProgress.nextMilestone}
                   </div>
                 </div>
-                <p className="text-zinc-400">
+                <p className="text-stone-600 dark:text-zinc-400">
                   {pickLang(lang, {
                     ar: 'تم التعرف على ملف الزبون بنجاح في برنامج الولاء (لا توجد حجوزات نشطة حالياً).',
                     fr: 'Profil client reconnu dans le programme de fidélité (aucune réservation active).',
@@ -1261,10 +1264,10 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                 </p>
 
               {/* Loyalty Points Balance & Redeem Box inside CRM-only Profile */}
-              <div className="pt-3 border-t border-zinc-800/80 space-y-2.5">
+              <div className="pt-3 border-t border-amber-200 dark:border-zinc-800/80 space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 font-black text-amber-300">
-                    <Coins className="w-4 h-4 text-amber-400" />
+                  <div className="flex items-center gap-1.5 font-black text-amber-800 dark:text-amber-300">
+                    <Coins className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                     <span>
                       {pickLang(lang, {
                         ar: 'نقاط الولاء والاستبدال بخصم',
@@ -1275,9 +1278,9 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       })}
                     </span>
                   </div>
-                  <div className="font-mono font-black text-amber-400 text-sm tabular-nums">
+                  <div className="font-mono font-black text-amber-700 dark:text-amber-400 text-sm tabular-nums">
                     {pointsSummary.pointsBalance} pts
-                    <span className="text-[10px] text-zinc-400 font-normal ms-1.5">
+                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 font-normal ms-1.5">
                       (+{pointsSummary.pointsPerVisit}/
                       {pickLang(lang, {
                         ar: 'زيارة',
@@ -1292,7 +1295,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                 </div>
 
                 {pointsSummary.activeDiscountMAD > 0 && (
-                  <div className="px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-bold flex items-center justify-between">
+                  <div className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-between">
                     <span>
                       {pickLang(lang, {
                         ar: 'رصيد خصم نشط للحجز القادم:',
@@ -1310,8 +1313,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   <div
                     className={`p-2.5 rounded-xl border text-[11px] font-semibold ${
                       redeemFeedback.type === 'success'
-                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                        : 'bg-red-500/15 border-red-500/40 text-red-300'
+                        ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300'
+                        : 'bg-red-50 dark:bg-red-500/15 border-red-200 dark:border-red-500/40 text-red-700 dark:text-red-300'
                     }`}
                   >
                     {redeemFeedback.message}
@@ -1332,15 +1335,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         onClick={() => handleRedeemPointsTier(tier)}
                         className={`p-2.5 rounded-xl border text-left rtl:text-right transition-all flex flex-col justify-between gap-1.5 ${
                           canRedeem
-                            ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/50 text-white cursor-pointer'
-                            : 'bg-black/40 border-zinc-800 text-zinc-500 opacity-70 cursor-not-allowed'
+                            ? 'bg-amber-100/80 hover:bg-amber-200/80 dark:bg-amber-500/15 dark:hover:bg-amber-500/25 border-amber-400/60 text-slate-900 dark:text-white cursor-pointer'
+                            : 'bg-stone-100 dark:bg-black/40 border-stone-200 dark:border-zinc-800 text-stone-500 dark:text-zinc-500 opacity-75 cursor-not-allowed'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-1">
-                          <span className="font-mono font-black text-amber-300 text-[11px] tabular-nums">
+                          <span className="font-mono font-black text-amber-800 dark:text-amber-300 text-[11px] tabular-nums">
                             {tier.pointsCost} pts
                           </span>
-                          <span className="font-mono font-black text-emerald-400 text-[11px] tabular-nums">
+                          <span className="font-mono font-black text-emerald-700 dark:text-emerald-400 text-[11px] tabular-nums">
                             -{tier.discountMAD} MAD
                           </span>
                         </div>
@@ -1371,8 +1374,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
             </div>
             </div>
           ) : foundBookings.length === 0 && hasSearched ? (
-            <div className="text-center py-8 text-zinc-400 text-xs">
-              <AlertCircle className="w-8 h-8 text-amber-500/80 mx-auto mb-2" />
+            <div className="text-center py-8 text-stone-500 dark:text-zinc-400 text-xs">
+              <AlertCircle className="w-8 h-8 text-amber-600 dark:text-amber-500/80 mx-auto mb-2" />
               <p>{ui.noResults}</p>
             </div>
           ) : (
@@ -1387,14 +1390,14 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   pointsSummary={pointsSummary}
                   lang={lang}
                 />
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/12 via-zinc-900/95 to-zinc-900 border border-amber-500/35 space-y-3.5 shadow-lg">
+                <div className="p-4 rounded-2xl bg-stone-50 dark:bg-gradient-to-br dark:from-amber-500/12 dark:via-zinc-900/95 dark:to-zinc-900 border border-amber-300 dark:border-amber-500/35 space-y-3.5 shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/35 flex items-center justify-center flex-shrink-0 text-amber-400">
                         <Award className="w-5 h-5" />
                       </div>
                       <div className="min-w-0">
-                        <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+                        <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
                           <span>
                             {pickLang(lang, {
                               ar: 'برنامج الولاء والمكافآت',
@@ -1405,10 +1408,10 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                             })}
                           </span>
                           {crmClientProfile?.isVip && (
-                            <span className="text-[11px] font-bold text-amber-300">· 👑 VIP</span>
+                            <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300">· 👑 VIP</span>
                           )}
                         </h3>
-                        <p className="text-[11px] text-zinc-400 truncate">
+                        <p className="text-[11px] text-stone-600 dark:text-zinc-400 truncate">
                           {pickLang(lang, {
                             ar: `زيارات مؤكدة بالحضور: ${loyaltyProgress.verifiedVisits} · المستوى ${loyaltyProgress.currentTierNumber}`,
                             fr: `Visites confirmées : ${loyaltyProgress.verifiedVisits} · Palier ${loyaltyProgress.currentTierNumber}`,
@@ -1421,10 +1424,10 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     </div>
 
                     <div className="flex items-baseline gap-1 font-mono tabular-nums">
-                      <span className="text-lg font-black text-amber-400">
+                      <span className="text-lg font-black text-amber-700 dark:text-amber-400">
                         {loyaltyProgress.verifiedVisits}
                       </span>
-                      <span className="text-xs text-zinc-500 font-bold">
+                      <span className="text-xs text-stone-500 dark:text-zinc-500 font-bold">
                         / {loyaltyProgress.nextMilestone}
                       </span>
                     </div>
@@ -1437,10 +1440,10 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         key={tier.targetVisits}
                         className={`px-2.5 py-1 rounded-xl border text-[10px] font-bold flex items-center gap-1.5 transition-colors ${
                           tier.unlocked
-                            ? 'bg-emerald-500/15 border-emerald-400/50 text-emerald-300'
+                            ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-300 dark:border-emerald-400/50 text-emerald-800 dark:text-emerald-300'
                             : tier.isCurrentTarget
-                            ? 'bg-amber-500/15 border-amber-400/60 text-amber-300'
-                            : 'bg-black/40 border-zinc-800 text-zinc-500'
+                            ? 'bg-amber-100 dark:bg-amber-500/15 border-amber-300 dark:border-amber-400/60 text-amber-900 dark:text-amber-300'
+                            : 'bg-white dark:bg-black/40 border-stone-200 dark:border-zinc-800 text-stone-500 dark:text-zinc-500'
                         }`}
                       >
                         <span className="font-mono font-black tabular-nums">
@@ -1453,7 +1456,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
                   {/* Active 5-Step Bracket Track toward Next Milestone */}
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono tabular-nums">
+                    <div className="flex items-center justify-between text-[10px] text-stone-500 dark:text-zinc-400 font-mono tabular-nums">
                       <span>
                         {pickLang(lang, {
                           ar: `المرحلة الحالية (${loyaltyProgress.previousMilestone} ← ${loyaltyProgress.nextMilestone})`,
@@ -1463,14 +1466,14 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                           es: `Tramo actual (${loyaltyProgress.previousMilestone} → ${loyaltyProgress.nextMilestone})`,
                         })}
                       </span>
-                      <span className="text-amber-300 font-bold">
+                      <span className="text-amber-700 dark:text-amber-300 font-bold">
                         {loyaltyProgress.stepsInCurrentBracket} / 5
                       </span>
                     </div>
 
-                    <div className="h-2 w-full rounded-full bg-zinc-800 overflow-hidden flex justify-start">
+                    <div className="h-2 w-full rounded-full bg-stone-200 dark:bg-zinc-800 overflow-hidden flex justify-start">
                       <div
-                        className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-300"
+                        className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-300"
                         style={{
                           width: `${
                             loyaltyProgress.justUnlockedMilestone
@@ -1499,17 +1502,17 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                             className={`py-1.5 px-1 rounded-xl border text-center flex flex-col items-center justify-center gap-0.5 transition-colors ${
                               isEarned
                                 ? isRewardStep
-                                  ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-300'
-                                  : 'bg-amber-500/20 border-amber-400/50 text-amber-300'
-                                : 'bg-black/40 border-zinc-800 text-zinc-500'
+                                  ? 'bg-emerald-50 dark:bg-emerald-500/20 border-emerald-300 dark:border-emerald-400/60 text-emerald-800 dark:text-emerald-300'
+                                  : 'bg-amber-50 dark:bg-amber-500/20 border-amber-300 dark:border-amber-400/50 text-amber-800 dark:text-amber-300'
+                                : 'bg-white dark:bg-black/40 border-stone-200 dark:border-zinc-800 text-stone-400 dark:text-zinc-500'
                             }`}
                           >
                             {isRewardStep ? (
-                              <Gift className={`w-3.5 h-3.5 ${isEarned ? 'text-emerald-400' : 'text-zinc-500'}`} />
+                              <Gift className={`w-3.5 h-3.5 ${isEarned ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-400 dark:text-zinc-500'}`} />
                             ) : isEarned ? (
-                              <Check className="w-3.5 h-3.5 text-amber-400 stroke-[3]" />
+                              <Check className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 stroke-[3]" />
                             ) : (
-                              <Star className="w-3 h-3 text-zinc-600" />
+                              <Star className="w-3 h-3 text-stone-300 dark:text-zinc-600" />
                             )}
                             <span className="text-[10px] font-mono font-bold tabular-nums">
                               #{stampNumber}
@@ -1521,10 +1524,10 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   </div>
 
                   {/* Unlocked / Next Milestone Summary & Verification Note */}
-                  <div className="space-y-1.5 pt-2 border-t border-zinc-800/80 text-[11px]">
+                  <div className="space-y-1.5 pt-2 border-t border-stone-200 dark:border-zinc-800/80 text-[11px]">
                     {loyaltyProgress.justUnlockedMilestone && (
-                      <div className="flex items-center gap-1.5 text-emerald-300 font-bold">
-                        <Gift className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                      <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-bold">
+                        <Gift className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                         <span>
                           {pickLang(lang, {
                             ar: `مبروك! أكملت ${loyaltyProgress.justUnlockedMilestone} زيارات (${loyaltyProgress.justUnlockedRewardTitle}) — هدفك القادم: ${loyaltyProgress.nextMilestone}!`,
@@ -1538,7 +1541,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     )}
 
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-zinc-300 font-medium">
+                      <span className="text-stone-700 dark:text-zinc-300 font-medium">
                         {pickLang(lang, {
                           ar: `متبقي ${loyaltyProgress.visitsRemaining} ${loyaltyProgress.visitsRemaining === 1 ? 'زيارة مؤكدة واحدة' : 'زيارات مؤكدة'} نحو مكافأة ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`,
                           fr: `Plus que ${loyaltyProgress.visitsRemaining} visite(s) confirmée(s) avant le palier ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`,
@@ -1549,7 +1552,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       </span>
 
                       {(crmClientProfile?.customDiscountMAD ?? 0) > 0 && (
-                        <span className="font-mono font-bold text-amber-300 tabular-nums">
+                        <span className="font-mono font-bold text-amber-700 dark:text-amber-300 tabular-nums">
                           {pickLang(lang, {
                             ar: `خصم نشط: -${crmClientProfile?.customDiscountMAD} MAD`,
                             fr: `Remise active : -${crmClientProfile?.customDiscountMAD} MAD`,
@@ -1561,7 +1564,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       )}
                     </div>
 
-                    <p className="text-[10px] text-zinc-500">
+                    <p className="text-[10px] text-stone-500 dark:text-zinc-500">
                       {pickLang(lang, {
                         ar: 'ملاحظة: تُحتسب نقاط الولاء تلقائياً فقط عند تأكيد حضورك في الصالون.',
                         fr: 'Note : Les points sont validés uniquement après confirmation de votre présence au salon.',
@@ -1573,20 +1576,20 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   </div>
 
                   {crmClientProfile?.rewardNote && (
-                    <div className="text-[11px] text-emerald-300 font-semibold">
+                    <div className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold">
                       {crmClientProfile.rewardNote}
                     </div>
                   )}
 
                   {/* Loyalty Points Balance & Discount Redemption Section */}
-                  <div className="pt-3 border-t border-zinc-800/80 space-y-2.5">
+                  <div className="pt-3 border-t border-stone-200 dark:border-zinc-800/80 space-y-2.5">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/35 flex items-center justify-center text-amber-400">
+                        <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/35 flex items-center justify-center text-amber-600 dark:text-amber-400">
                           <Coins className="w-4 h-4" />
                         </div>
                         <div>
-                          <div className="text-xs font-black text-white flex items-center gap-1.5">
+                          <div className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
                             <span>
                               {pickLang(lang, {
                                 ar: 'نقاط الولاء • خصم الخدمات القادمة',
@@ -1597,7 +1600,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                               })}
                             </span>
                           </div>
-                          <div className="text-[10px] text-zinc-400">
+                          <div className="text-[10px] text-stone-500 dark:text-zinc-400">
                             {pickLang(lang, {
                               ar: `تكسب +${pointsSummary.pointsPerVisit} نقاط عن كل زيارة مكتملة · المكتسب: ${pointsSummary.pointsEarnedTotal} | المستبدل: ${pointsSummary.pointsRedeemedTotal}`,
                               fr: `+${pointsSummary.pointsPerVisit} pts / visite confirmée · Gagnés : ${pointsSummary.pointsEarnedTotal} | Utilisés : ${pointsSummary.pointsRedeemedTotal}`,
@@ -1610,7 +1613,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       </div>
 
                       <div className="text-right rtl:text-left">
-                        <div className="font-mono font-black text-base text-amber-400 tabular-nums">
+                        <div className="font-mono font-black text-base text-amber-700 dark:text-amber-400 tabular-nums">
                           {pointsSummary.pointsBalance} <span className="text-[11px] font-bold">pts</span>
                         </div>
                       </div>
@@ -1619,7 +1622,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     {/* Progress bar toward next redeemable points tier */}
                     {pointsSummary.nextTier && (
                       <div className="space-y-1">
-                        <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono tabular-nums">
+                        <div className="flex items-center justify-between text-[10px] text-stone-500 dark:text-zinc-400 font-mono tabular-nums">
                           <span>
                             {pickLang(lang, {
                               ar: `الهدف القادم للاستبدال: ${pointsSummary.nextTier.pointsCost} نقطة ← خصم -${pointsSummary.nextTier.discountMAD} MAD`,
@@ -1629,13 +1632,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                               es: `Próximo nivel: ${pointsSummary.nextTier.pointsCost} pts → -${pointsSummary.nextTier.discountMAD} MAD`,
                             })}
                           </span>
-                          <span className="text-amber-300 font-bold">
+                          <span className="text-amber-700 dark:text-amber-300 font-bold">
                             {pointsSummary.pointsBalance} / {pointsSummary.nextTier.pointsCost}
                           </span>
                         </div>
-                        <div className="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+                        <div className="h-1.5 w-full rounded-full bg-stone-200 dark:bg-zinc-800 overflow-hidden">
                           <div
-                            className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-300"
+                            className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all duration-300"
                             style={{ width: `${pointsSummary.progressToNextTierPct}%` }}
                           />
                         </div>
@@ -1644,7 +1647,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
                     {/* Active Discount Credit Ready for Next Booking */}
                     {pointsSummary.activeDiscountMAD > 0 && (
-                      <div className="px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center justify-between gap-2">
+                      <div className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold flex items-center justify-between gap-2">
                         <span>
                           {pickLang(lang, {
                             ar: '🎟️ لديك رصيد خصم نشط سيُخصم تلقائياً عند الحجز القادم:',
@@ -1664,8 +1667,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       <div
                         className={`p-2.5 rounded-xl border text-[11px] font-semibold ${
                           redeemFeedback.type === 'success'
-                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                            : 'bg-red-500/15 border-red-500/40 text-red-300'
+                            ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300'
+                            : 'bg-red-50 dark:bg-red-500/15 border-red-200 dark:border-red-500/40 text-red-700 dark:text-red-300'
                         }`}
                       >
                         {redeemFeedback.message}
@@ -1687,20 +1690,20 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                             onClick={() => handleRedeemPointsTier(tier)}
                             className={`p-2.5 rounded-xl border text-left rtl:text-right transition-all flex flex-col justify-between gap-1 ${
                               canRedeem
-                                ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/50 text-white cursor-pointer shadow-sm'
-                                : 'bg-black/40 border-zinc-800 text-zinc-500 opacity-75 cursor-not-allowed'
+                                ? 'bg-amber-100/80 hover:bg-amber-200/80 dark:bg-amber-500/15 dark:hover:bg-amber-500/25 border-amber-400/60 text-slate-900 dark:text-white cursor-pointer shadow-xs'
+                                : 'bg-white dark:bg-black/40 border-stone-200 dark:border-zinc-800 text-stone-500 dark:text-zinc-500 opacity-75 cursor-not-allowed'
                             }`}
                           >
                             <div className="flex items-center justify-between gap-1">
-                              <span className="font-mono font-black text-amber-300 text-[11px] tabular-nums">
+                              <span className="font-mono font-black text-amber-800 dark:text-amber-300 text-[11px] tabular-nums">
                                 {tier.pointsCost} pts
                               </span>
-                              <span className="font-mono font-black text-emerald-400 text-xs tabular-nums">
+                              <span className="font-mono font-black text-emerald-700 dark:text-emerald-400 text-xs tabular-nums">
                                 -{tier.discountMAD} MAD
                               </span>
                             </div>
                             <div className="text-[11px] font-bold truncate">{tier.label[langKey]}</div>
-                            <div className="text-[10px] font-semibold text-zinc-300">
+                            <div className="text-[10px] font-semibold text-stone-600 dark:text-zinc-300">
                               {isBusy
                                 ? '...'
                                 : canRedeem
@@ -1726,14 +1729,14 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   </div>
 
                   {/* Dedicated Loyalty History Log (Every Confirmed Attended Visit) */}
-                  <div className="pt-2 border-t border-zinc-800/80 space-y-2">
+                  <div className="pt-2 border-t border-stone-200 dark:border-zinc-800/80 space-y-2">
                     <button
                       type="button"
                       onClick={() => setShowLoyaltyHistoryLog((prev) => !prev)}
                       className="w-full flex items-center justify-between gap-2 text-left rtl:text-right cursor-pointer"
                     >
-                      <span className="text-[11px] font-black text-white flex items-center gap-1.5">
-                        <History className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="text-[11px] font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <History className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                         <span>
                           {pickLang(lang, {
                             ar: `سجل نقاط الولاء والزيارات المؤكدة (${loyaltyHistoryEntries.length})`,
@@ -1745,15 +1748,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         </span>
                       </span>
                       {showLoyaltyHistoryLog ? (
-                        <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
+                        <ChevronUp className="w-3.5 h-3.5 text-stone-400 dark:text-zinc-400" />
                       ) : (
-                        <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                        <ChevronDown className="w-3.5 h-3.5 text-stone-400 dark:text-zinc-400" />
                       )}
                     </button>
 
                     {showLoyaltyHistoryLog && (
                       loyaltyHistoryEntries.length === 0 ? (
-                        <div className="p-2.5 rounded-xl bg-black/40 border border-zinc-800 text-[11px] text-zinc-400">
+                        <div className="p-2.5 rounded-xl bg-white dark:bg-black/40 border border-stone-200 dark:border-zinc-800 text-[11px] text-stone-500 dark:text-zinc-400">
                           {pickLang(lang, {
                             ar: 'لا توجد زيارات مكتملة مسجلة بعد. سيظهر كل موعد مؤكد بالحضور هنا مع توقيت التوثيق.',
                             fr: 'Aucune visite confirmée enregistrée pour le moment. Votre historique horodaté apparaîtra après votre passage.',
@@ -1799,25 +1802,25 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                                 key={`loyalty-log-${visit.id}`}
                                 className={`p-2.5 rounded-xl border text-[11px] flex flex-wrap items-center justify-between gap-2 ${
                                   isMilestoneVisit
-                                    ? 'bg-emerald-950/35 border-emerald-500/45'
-                                    : 'bg-black/45 border-zinc-800/80'
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/35 border-emerald-200 dark:border-emerald-500/45'
+                                    : 'bg-white dark:bg-black/45 border-stone-200 dark:border-zinc-800/80'
                                 }`}
                               >
                                 <div className="flex items-start gap-2 min-w-0 flex-1">
                                   <span
                                     className={`px-2 py-0.5 rounded-lg font-mono font-black text-[10px] tabular-nums flex-shrink-0 ${
                                       isMilestoneVisit
-                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50'
-                                        : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                                        ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-400/50'
+                                        : 'bg-amber-50 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30'
                                     }`}
                                   >
                                     #{visitNumber}{isMilestoneVisit ? ' 🏆' : ''}
                                   </span>
                                   <div className="min-w-0">
-                                    <div className="font-bold text-white truncate">
+                                    <div className="font-bold text-slate-900 dark:text-white truncate">
                                       {serviceLabels}
                                     </div>
-                                    <div className="text-[10px] text-zinc-400 flex flex-wrap items-center gap-2 font-mono tabular-nums">
+                                    <div className="text-[10px] text-stone-500 dark:text-zinc-400 flex flex-wrap items-center gap-2 font-mono tabular-nums">
                                       <span>{visit.ticketNumber}</span>
                                       <span>•</span>
                                       <span>{visit.barberName}</span>
@@ -1827,7 +1830,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                                   </div>
                                 </div>
 
-                                <span className="font-mono font-bold text-emerald-400 text-[11px] tabular-nums flex-shrink-0">
+                                <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 text-[11px] tabular-nums flex-shrink-0">
                                   +1 pt · {visit.finalTotalMAD ?? 0} MAD
                                 </span>
                               </div>
@@ -1844,25 +1847,25 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
               {foundBookings.map((booking) => (
               <div
                 key={booking.id}
-                className="p-5 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-4 hover:border-zinc-700 transition-all shadow-lg"
+                className="p-5 rounded-2xl bg-stone-50 dark:bg-zinc-900/90 border border-stone-200 dark:border-zinc-800 space-y-4 hover:border-stone-300 dark:hover:border-zinc-700 transition-all shadow-sm"
               >
                 {/* Top card bar: Ticket & Status */}
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 dark:border-zinc-800/80 pb-3">
                   <div className="flex items-center gap-2">
                     <span 
                       className="w-3 h-3 rounded-full flex-shrink-0"
                       style={{ backgroundColor: booking.barberColor || '#D97706' }}
                     />
-                    <span className="font-mono text-base font-black text-white tracking-wider">
+                    <span className="font-mono text-base font-black text-slate-900 dark:text-white tracking-wider">
                       {booking.ticketNumber}
                     </span>
                     <button
                       onClick={() => handleCopy(booking.ticketNumber)}
-                      className="p-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors text-xs flex items-center gap-1"
+                      className="p-1.5 rounded-lg bg-white dark:bg-zinc-800 hover:bg-stone-100 dark:hover:bg-zinc-700 border border-stone-200 dark:border-transparent text-stone-600 dark:text-zinc-300 transition-colors text-xs flex items-center gap-1 cursor-pointer"
                       title="Copier le ticket"
                     >
                       {copiedTicket === booking.ticketNumber ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                       ) : (
                         <Copy className="w-3.5 h-3.5" />
                       )}
@@ -1874,11 +1877,11 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
                 {/* Reschedule alert banner with explicit Client Acceptance / Rejection */}
                 {booking.status === 'rescheduled' && booking.rescheduledTo && (
-                  <div className="p-4 bg-blue-950/50 border border-blue-500/50 rounded-xl text-xs space-y-3">
+                  <div className="p-4 bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-500/50 rounded-xl text-xs space-y-3">
                     <div className="flex items-start gap-2">
-                      <Clock3 className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                      <Clock3 className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
                       <div>
-                        <span className="font-bold text-blue-300 block text-xs">
+                        <span className="font-bold text-blue-800 dark:text-blue-300 block text-xs">
                           {pickLang(lang, {
                             ar: '🔔 اقترح الحلاق توقيتاً جديداً لموعدك:',
                             fr: '🔔 Le barbier propose un nouvel horaire :',
@@ -1887,10 +1890,10 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                             es: '🔔 El barbero ha propuesto un nuevo horario:',
                           })}
                         </span>
-                        <p className="font-mono text-sm font-black text-amber-300 mt-1">
+                        <p className="font-mono text-sm font-black text-amber-700 dark:text-amber-300 mt-1">
                           📅 {booking.rescheduledTo.date} • ⏰ {booking.rescheduledTo.time}
                         </p>
-                        <p className="text-[11px] text-zinc-300 mt-1">
+                        <p className="text-[11px] text-stone-700 dark:text-zinc-300 mt-1">
                           {pickLang(lang, {
                             ar: 'يرجى قبول التوقيت الجديد لتأكيد الموعد وقفل المقعد، أو الرفض لتحرير الكرسي.',
                             fr: 'Veuillez accepter le nouvel horaire pour confirmer le créneau ou refuser pour libérer la place.',
@@ -1905,7 +1908,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     <div className="grid grid-cols-2 gap-2 pt-1">
                       <button
                         onClick={() => handleClientRescheduleDecision(booking.id, true)}
-                        className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950 transition-all cursor-pointer"
+                        className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>
@@ -1921,7 +1924,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
                       <button
                         onClick={() => handleClientRescheduleDecision(booking.id, false)}
-                        className="w-full py-2 px-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-red-950 transition-all cursor-pointer"
+                        className="w-full py-2 px-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
                       >
                         <XCircle className="w-3.5 h-3.5" />
                         <span>
@@ -1940,9 +1943,9 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
                 {/* Staff Note from Dashboard (Visible to Client) */}
                 {booking.adminNotes && (
-                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-200 space-y-1">
-                    <div className="font-bold flex items-center gap-1.5 text-amber-300 text-[11px]">
-                      <MessageCircle className="w-3.5 h-3.5 text-amber-400" />
+                  <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl text-xs text-amber-900 dark:text-amber-200 space-y-1">
+                    <div className="font-bold flex items-center gap-1.5 text-amber-800 dark:text-amber-300 text-[11px]">
+                      <MessageCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                       <span>
                         {pickLang(lang, {
                           ar: 'ملاحظة خاصة من الحلاق:',
@@ -1953,7 +1956,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         })}
                       </span>
                     </div>
-                    <p className="text-xs text-zinc-200 font-medium leading-relaxed italic">
+                    <p className="text-xs text-stone-700 dark:text-zinc-200 font-medium leading-relaxed italic">
                       "{booking.adminNotes}"
                     </p>
                   </div>
@@ -1961,8 +1964,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
                 {/* Details Grid */}
                 <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="p-2.5 rounded-lg bg-black/40 border border-zinc-800/80">
-                    <span className="text-[10px] text-zinc-400 uppercase font-semibold block">
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-black/40 border border-stone-200 dark:border-zinc-800/80">
+                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 uppercase font-semibold block">
                       {pickLang(lang, {
                         ar: 'الزبون',
                         fr: 'Client',
@@ -1971,12 +1974,12 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         es: 'Cliente',
                       })}
                     </span>
-                    <span className="font-bold text-white truncate block">{booking.clientName}</span>
-                    <span dir="ltr" className="text-[11px] font-mono text-zinc-400 block">{booking.clientPhone}</span>
+                    <span className="font-bold text-slate-900 dark:text-white truncate block">{booking.clientName}</span>
+                    <span dir="ltr" className="text-[11px] font-mono text-stone-500 dark:text-zinc-400 block">{booking.clientPhone}</span>
                   </div>
 
-                  <div className="p-2.5 rounded-lg bg-black/40 border border-zinc-800/80">
-                    <span className="text-[10px] text-zinc-400 uppercase font-semibold block">
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-black/40 border border-stone-200 dark:border-zinc-800/80">
+                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 uppercase font-semibold block">
                       {pickLang(lang, {
                         ar: 'الحلاق المختار',
                         fr: 'Barbier Assigné',
@@ -1985,8 +1988,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         es: 'Barbero Asignado',
                       })}
                     </span>
-                    <span className="font-bold text-red-400 truncate block">{booking.barberName}</span>
-                    <span className="text-[11px] text-zinc-400 block">
+                    <span className="font-bold text-red-600 dark:text-red-400 truncate block">{booking.barberName}</span>
+                    <span className="text-[11px] text-stone-500 dark:text-zinc-400 block">
                       {pickLang(lang, {
                         ar: 'كرسي خاص',
                         fr: 'Fauteuil réservé',
@@ -1997,8 +2000,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     </span>
                   </div>
 
-                  <div className="p-2.5 rounded-lg bg-black/40 border border-zinc-800/80">
-                    <span className="text-[10px] text-zinc-400 uppercase font-semibold block">
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-black/40 border border-stone-200 dark:border-zinc-800/80">
+                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 uppercase font-semibold block">
                       {pickLang(lang, {
                         ar: 'التاريخ المجدول',
                         fr: 'Date de passage',
@@ -2007,11 +2010,11 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         es: 'Fecha programada',
                       })}
                     </span>
-                    <span className="font-mono font-bold text-white block">{booking.date}</span>
+                    <span className="font-mono font-bold text-slate-900 dark:text-white block">{booking.date}</span>
                   </div>
 
-                  <div className="p-2.5 rounded-lg bg-black/40 border border-zinc-800/80">
-                    <span className="text-[10px] text-zinc-400 uppercase font-semibold block">
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-black/40 border border-stone-200 dark:border-zinc-800/80">
+                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 uppercase font-semibold block">
                       {pickLang(lang, {
                         ar: 'التوقيت المختار',
                         fr: 'Heure de Passage',
@@ -2020,7 +2023,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         es: 'Hora seleccionada',
                       })}
                     </span>
-                    <span className="font-mono font-bold text-blue-400 block">
+                    <span className="font-mono font-bold text-blue-600 dark:text-blue-400 block">
                       {booking.timeSlot === 'FLEXIBLE'
                         ? pickLang(lang, {
                             ar: 'مرن (بانتظار تحديد الحلاق)',
@@ -2035,8 +2038,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                 </div>
 
                 {/* Cart summary */}
-                <div className="p-3 bg-black/50 rounded-xl border border-zinc-800/80 space-y-2 text-xs">
-                  <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block">
+                <div className="p-3 bg-white dark:bg-black/50 rounded-xl border border-stone-200 dark:border-zinc-800/80 space-y-2 text-xs">
+                  <span className="text-[10px] text-stone-500 dark:text-zinc-400 uppercase font-bold tracking-wider block">
                     {pickLang(lang, {
                       ar: 'الخدمات المحجوزة',
                       fr: 'Prestations Demandées',
@@ -2047,17 +2050,17 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   </span>
                   <div className="space-y-1">
                     {(booking.cartItemsSummary || []).map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-zinc-300">
-                        <span>• {item.name} {item.discountApplied ? <span className="text-[10px] text-emerald-400">({item.discountApplied})</span> : null}</span>
-                        <span className={`font-mono font-bold ${item.finalPrice === 0 ? 'text-emerald-300' : 'text-white'}`}>
+                      <div key={idx} className="flex justify-between items-center text-stone-700 dark:text-zinc-300">
+                        <span>• {item.name} {item.discountApplied ? <span className="text-[10px] text-emerald-600 dark:text-emerald-400">({item.discountApplied})</span> : null}</span>
+                        <span className={`font-mono font-bold ${item.finalPrice === 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-white'}`}>
                           {item.finalPrice === 0 ? `🎁 ${getGiftLabel(lang)}` : `${item.finalPrice} MAD`}
                         </span>
                       </div>
                     ))}
                   </div>
 
-                  <div className="pt-2 border-t border-zinc-800 flex justify-between items-center font-bold">
-                    <span className="text-zinc-300">
+                  <div className="pt-2 border-t border-stone-200 dark:border-zinc-800 flex justify-between items-center font-bold">
+                    <span className="text-stone-700 dark:text-zinc-300">
                       {pickLang(lang, {
                         ar: 'المجموع النهائي:',
                         fr: 'Montant Total :',
@@ -2068,7 +2071,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     </span>
                     <div className="text-right">
                       {(booking.totalSavingsMAD || 0) > 0 && (
-                        <span className="text-[10px] text-emerald-400 block font-normal">
+                        <span className="text-[10px] text-emerald-700 dark:text-emerald-400 block font-normal">
                           {pickLang(lang, {
                             ar: `وفّرت: ${booking.totalSavingsMAD} MAD`,
                             fr: `Économie : ${booking.totalSavingsMAD} MAD`,
@@ -2078,14 +2081,14 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                           })}
                         </span>
                       )}
-                      <span className="text-base text-red-500 font-black font-mono">
+                      <span className="text-base text-red-600 dark:text-red-500 font-black font-mono">
                         {booking.finalTotalMAD ?? 0} MAD
                       </span>
                     </div>
                   </div>
                   {booking.clientNotes && (
-                    <div className="mt-2 pt-2 border-t border-zinc-800 text-[11px] text-amber-200/95 space-y-0.5">
-                      <span className="text-[10px] text-amber-400 font-bold uppercase block">
+                    <div className="mt-2 pt-2 border-t border-stone-200 dark:border-zinc-800 text-[11px] text-amber-900 dark:text-amber-200/95 space-y-0.5">
+                      <span className="text-[10px] text-amber-700 dark:text-amber-400 font-bold uppercase block">
                         {pickLang(lang, {
                           ar: 'ملاحظات الزبون وتفضيلات الحلاقة:',
                           fr: 'Notes Client & Préférences :',
@@ -2094,15 +2097,15 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                           es: 'Notas y Preferencias del Cliente:',
                         })}
                       </span>
-                      <p className="text-zinc-200 leading-relaxed break-words">
+                      <p className="text-stone-700 dark:text-zinc-200 leading-relaxed break-words">
                         {booking.clientNotes}
                       </p>
                     </div>
                   )}
                   {booking.cihReceiptName && (
-                    <div className="mt-2 pt-2 border-t border-zinc-800 flex items-center justify-between gap-2 text-[11px] text-emerald-300">
+                    <div className="mt-2 pt-2 border-t border-stone-200 dark:border-zinc-800 flex items-center justify-between gap-2 text-[11px] text-emerald-700 dark:text-emerald-300">
                       <span className="flex items-center gap-1.5 font-semibold">
-                        <Building2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <Building2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                         <span>
                           {pickLang(lang, {
                             ar: 'إيصال تحويل CIH مرفق:',
@@ -2113,7 +2116,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                           })}
                         </span>
                       </span>
-                      <span className="font-mono text-zinc-200 truncate max-w-[160px]">{booking.cihReceiptName}</span>
+                      <span className="font-mono text-stone-700 dark:text-zinc-200 truncate max-w-[160px]">{booking.cihReceiptName}</span>
                     </div>
                   )}
                 </div>
@@ -2122,18 +2125,18 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                 <CheckInQrPassBox booking={booking} lang={lang} />
 
                 {/* Post-Booking CIH Payment Info & Receipt Upload (Expandable) */}
-                <div className="rounded-xl bg-black/50 border border-zinc-800 overflow-hidden">
+                <div className="rounded-xl bg-white dark:bg-black/50 border border-stone-200 dark:border-zinc-800 overflow-hidden">
                   <button
                     type="button"
                     onClick={() =>
                       setExpandedCihId((prev) => (prev === booking.id ? null : booking.id))
                     }
-                    className="w-full p-3 flex items-center justify-between gap-2 text-left rtl:text-right hover:bg-zinc-900/70 transition-colors cursor-pointer"
+                    className="w-full p-3 flex items-center justify-between gap-2 text-left rtl:text-right hover:bg-stone-50 dark:hover:bg-zinc-900/70 transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <CihBankLogo className="w-7 h-7" />
                       <div className="min-w-0">
-                        <span className="text-xs font-bold text-white block truncate">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white block truncate">
                           {pickLang(lang, {
                             ar: 'معلومات الأداء البنكي ورفع إيصال CIH',
                             fr: 'Infos Bancaires CIH & Envoi du Reçu',
@@ -2142,7 +2145,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                             es: 'Datos CIH y Envío de Recibo',
                           })}
                         </span>
-                        <span className="text-[10px] text-zinc-400 block truncate">
+                        <span className="text-[10px] text-stone-500 dark:text-zinc-400 block truncate">
                           {booking.cihReceiptName
                             ? pickLang(lang, {
                                 ar: 'تم إرفاق الإيصال — اضغط للتحديث',
@@ -2164,25 +2167,25 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {booking.cihReceiptName && (
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold">
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 border border-emerald-300 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold">
                           ✓
                         </span>
                       )}
                       {expandedCihId === booking.id ? (
-                        <ChevronUp className="w-4 h-4 text-zinc-400" />
+                        <ChevronUp className="w-4 h-4 text-stone-400 dark:text-zinc-400" />
                       ) : (
-                        <ChevronDown className="w-4 h-4 text-zinc-400" />
+                        <ChevronDown className="w-4 h-4 text-stone-400 dark:text-zinc-400" />
                       )}
                     </div>
                   </button>
 
                   {expandedCihId === booking.id && (
-                    <div className="p-3.5 pt-2 border-t border-zinc-800/80 space-y-3 bg-zinc-950/70 text-xs">
+                    <div className="p-3.5 pt-2 border-t border-stone-200 dark:border-zinc-800/80 space-y-3 bg-stone-50 dark:bg-zinc-950/70 text-xs">
                       <div className="flex items-center gap-2.5">
                         <CihBankLogo className="w-10 h-10" />
                         <div>
-                          <div className="font-black text-white text-xs">CIH Bank — Salon Boumlik</div>
-                          <div className="text-[11px] text-emerald-300/90 leading-relaxed">
+                          <div className="font-black text-slate-900 dark:text-white text-xs">CIH Bank — Salon Boumlik</div>
+                          <div className="text-[11px] text-emerald-700 dark:text-emerald-300/90 leading-relaxed">
                             {pickLang(lang, {
                               ar: 'التحويل البنكي CIH (اختياري) - مستحسن لتأكيد الموعد مسبقاً دون الحاجة للتنقل للمحل',
                               fr: 'Virement CIH (optionnel) — recommandé pour confirmer à l’avance sans vous déplacer au salon.',
@@ -2195,9 +2198,9 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       </div>
 
                       {/* Account Holder + Account Number with Copy Buttons */}
-                      <div className="p-3 rounded-xl bg-black/70 border border-zinc-800 space-y-2.5">
+                      <div className="p-3 rounded-xl bg-white dark:bg-black/70 border border-stone-200 dark:border-zinc-800 space-y-2.5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-zinc-400 font-semibold text-[11px]">
+                          <span className="text-stone-500 dark:text-zinc-400 font-semibold text-[11px]">
                             {pickLang(lang, {
                               ar: 'صاحب الحساب:',
                               fr: 'Titulaire :',
@@ -2207,7 +2210,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                             })}
                           </span>
                           <div className="flex items-center gap-2">
-                            <span dir="ltr" className="font-mono font-black text-white text-xs">
+                            <span dir="ltr" className="font-mono font-black text-slate-900 dark:text-white text-xs">
                               {CIH_BANK_DETAILS.accountHolder}
                             </span>
                             <button
@@ -2216,7 +2219,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                               className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer ${
                                 copiedCihField === 'holder'
                                   ? 'bg-emerald-600 text-white'
-                                  : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+                                  : 'bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200'
                               }`}
                             >
                               {copiedCihField === 'holder' ? (
@@ -2250,8 +2253,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/80">
-                          <span className="text-zinc-400 font-semibold text-[11px]">
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-stone-200 dark:border-zinc-800/80">
+                          <span className="text-stone-500 dark:text-zinc-400 font-semibold text-[11px]">
                             {pickLang(lang, {
                               ar: 'رقم الحساب :',
                               fr: 'N° Compte :',
@@ -2261,7 +2264,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                             })}
                           </span>
                           <div className="flex items-center gap-2">
-                            <span dir="ltr" className="font-mono font-black text-amber-300 tracking-wider text-xs sm:text-sm">
+                            <span dir="ltr" className="font-mono font-black text-amber-700 dark:text-amber-300 tracking-wider text-xs sm:text-sm">
                               {CIH_BANK_DETAILS.accountNumber}
                             </span>
                             <button
@@ -2270,7 +2273,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                               className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer ${
                                 copiedCihField === 'account'
                                   ? 'bg-emerald-600 text-white'
-                                  : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+                                  : 'bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200'
                               }`}
                             >
                               {copiedCihField === 'account' ? (
@@ -2306,20 +2309,20 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       </div>
 
                       {booking.cihReceiptPreview && (
-                        <div className="rounded-xl overflow-hidden border border-emerald-500/30 bg-black p-2 text-center space-y-1.5">
+                        <div className="rounded-xl overflow-hidden border border-emerald-300 dark:border-emerald-500/30 bg-white dark:bg-black p-2 text-center space-y-1.5">
                           <img
                             src={booking.cihReceiptPreview}
                             alt={booking.cihReceiptName || 'CIH Receipt'}
                             className="max-h-36 mx-auto rounded-lg object-contain"
                           />
-                          <div className="text-[10px] font-mono text-emerald-300 truncate">
+                          <div className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 truncate">
                             {booking.cihReceiptName}
                           </div>
                         </div>
                       )}
 
                       {cihUploadError && (
-                        <div className="p-2 rounded-lg bg-red-950/60 border border-red-500/40 text-red-300 text-[11px]">
+                        <div className="p-2 rounded-lg bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-500/40 text-red-700 dark:text-red-300 text-[11px]">
                           {cihUploadError}
                         </div>
                       )}
@@ -2327,13 +2330,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       <label
                         className={`w-full py-2.5 px-3.5 rounded-xl border border-dashed border-emerald-500/60 text-xs font-bold flex items-center justify-center gap-2 transition-colors ${
                           uploadingCihId === booking.id
-                            ? 'bg-zinc-900 text-zinc-400 cursor-wait'
-                            : 'bg-emerald-950/30 hover:bg-emerald-950/50 text-emerald-300 cursor-pointer'
+                            ? 'bg-stone-100 dark:bg-zinc-900 text-stone-500 dark:text-zinc-400 cursor-wait'
+                            : 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 cursor-pointer'
                         }`}
                       >
                         {uploadingCihId === booking.id ? (
                           <>
-                            <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+                            <RefreshCw className="w-4 h-4 animate-spin text-emerald-600 dark:text-emerald-400" />
                             <span>
                               {pickLang(lang, {
                                 ar: 'جاري رفع ومزامنة الإيصال...',
@@ -2346,7 +2349,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                           </>
                         ) : booking.cihReceiptName ? (
                           <>
-                            <FileCheck className="w-4 h-4 text-emerald-400" />
+                            <FileCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                             <span>
                               {pickLang(lang, {
                                 ar: 'تحديث أو استبدال إيصال CIH (.jpg, .png, .pdf)',
@@ -2359,7 +2362,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                           </>
                         ) : (
                           <>
-                            <Upload className="w-4 h-4 text-emerald-400" />
+                            <Upload className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                             <span>
                               {pickLang(lang, {
                                 ar: 'رفع إيصال التحويل CIH (.jpg, .png, .pdf)',
@@ -2392,7 +2395,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         )}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                        className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-xs"
                       >
                         <MessageCircle className="w-3.5 h-3.5" />
                         <span>
@@ -2420,9 +2423,9 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
                   if (existingReview) {
                     return (
-                      <div className="p-3 rounded-xl bg-emerald-950/35 border border-emerald-500/40 flex items-center justify-between gap-2 text-xs">
-                        <div className="flex items-center gap-2 text-emerald-300 font-bold">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-500/40 flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-bold">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                           <span>
                             {pickLang(lang, {
                               ar: 'شكراً على تقييمك لهذه الزيارة!',
@@ -2439,8 +2442,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                               key={st}
                               className={`w-3.5 h-3.5 ${
                                 st <= existingReview.rating
-                                  ? 'text-amber-400 fill-amber-400'
-                                  : 'text-zinc-700'
+                                  ? 'text-amber-500 dark:text-amber-400 fill-amber-500 dark:fill-amber-400'
+                                  : 'text-stone-300 dark:text-zinc-700'
                               }`}
                             />
                           ))}
@@ -2450,10 +2453,10 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   }
 
                   return (
-                    <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/35 space-y-2.5 text-xs">
+                    <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/35 space-y-2.5 text-xs">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="font-black text-amber-200 flex items-center gap-1.5">
-                          <Star className="w-4 h-4 text-amber-400 fill-amber-400 flex-shrink-0" />
+                        <div className="font-black text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                          <Star className="w-4 h-4 text-amber-500 dark:text-amber-400 fill-amber-500 dark:fill-amber-400 flex-shrink-0" />
                           <span>
                             {pickLang(lang, {
                               ar: `قيّم تجربتك السريعة مع ${booking.barberName}`,
@@ -2481,8 +2484,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                               <Star
                                 className={`w-5 h-5 transition-transform ${
                                   starNum <= chosenStars
-                                    ? 'text-amber-400 fill-amber-400 scale-105'
-                                    : 'text-zinc-600'
+                                    ? 'text-amber-500 dark:text-amber-400 fill-amber-500 dark:fill-amber-400 scale-105'
+                                    : 'text-stone-300 dark:text-zinc-600'
                                 }`}
                               />
                             </button>
@@ -2508,7 +2511,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                             en: 'Add a quick note (optional)...',
                             es: 'Comentario breve (opcional)...',
                           })}
-                          className="flex-1 bg-black/55 border border-zinc-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-400"
+                          className="flex-1 bg-white dark:bg-black/55 border border-stone-200 dark:border-zinc-700/80 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-stone-400 dark:placeholder-zinc-500 focus:outline-none focus:border-amber-400"
                         />
                         <button
                           type="button"
@@ -2537,14 +2540,14 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                 })()}
 
                 {/* Direct Help Button & Client-Side Cancellation Action */}
-                <div className="pt-2 border-t border-zinc-800/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="pt-2 border-t border-stone-200 dark:border-zinc-800/60 flex flex-wrap items-center justify-between gap-2 text-xs">
                   <a
                     href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}?text=${encodeURIComponent(
                       buildClientTicketWhatsAppMessage(booking, lang)
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 font-bold transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition-colors"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
                     <span>
@@ -2561,7 +2564,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   {booking.status !== 'cancelled' && booking.status !== 'rejected' && booking.status !== 'completed' && (
                     <button
                       onClick={() => handleClientCancel(booking)}
-                      className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-red-950/60 border border-zinc-700 hover:border-red-600/50 text-zinc-300 hover:text-red-400 text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-red-50 dark:bg-zinc-800 dark:hover:bg-red-950/60 border border-stone-200 dark:border-zinc-700 hover:border-red-300 dark:hover:border-red-600/50 text-stone-700 dark:text-zinc-300 hover:text-red-700 dark:hover:text-red-400 text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer"
                     >
                       <XCircle className="w-3.5 h-3.5 text-red-500" />
                       <span>
@@ -2583,16 +2586,16 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
           {/* Full Past Booking History (CRM Archive) & Loyalty Progress Card */}
           {foundBookings.length > 0 && fullClientCrmHistory.length > 0 && (
-            <div className="p-4 rounded-xl bg-zinc-900/70 border border-amber-500/30 space-y-3 text-xs">
+            <div className="p-4 rounded-2xl bg-stone-50 dark:bg-zinc-900/70 border border-amber-300 dark:border-amber-500/30 space-y-3 text-xs">
               <button
                 type="button"
                 onClick={() => setShowFullHistoryArchive((prev) => !prev)}
                 className="w-full flex items-center justify-between gap-2 text-left rtl:text-right cursor-pointer"
               >
                 <div className="flex items-center gap-2">
-                  <History className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <History className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                   <div>
-                    <span className="font-black text-white block">
+                    <span className="font-black text-slate-900 dark:text-white block">
                       {pickLang(lang, {
                         ar: `سجل الحجوزات السابق والولاء (${fullClientCrmHistory.length})`,
                         fr: `Historique Complet & Fidélité CRM (${fullClientCrmHistory.length})`,
@@ -2601,7 +2604,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                         es: `Historial Completo y Fidelidad (${fullClientCrmHistory.length})`,
                       })}
                     </span>
-                    <span className="text-[10px] text-zinc-400">
+                    <span className="text-[10px] text-stone-500 dark:text-zinc-400">
                       {crmClientProfile?.isVip ? '👑 VIP • ' : ''}
                       {pickLang(lang, {
                         ar: `الزيارات المؤكدة: ${loyaltyProgress.verifiedVisits} (${loyaltyProgress.verifiedVisits}/${loyaltyProgress.nextMilestone})`,
@@ -2614,37 +2617,37 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   </div>
                 </div>
                 {showFullHistoryArchive ? (
-                  <ChevronUp className="w-4 h-4 text-zinc-400" />
+                  <ChevronUp className="w-4 h-4 text-stone-400 dark:text-zinc-400" />
                 ) : (
-                  <ChevronDown className="w-4 h-4 text-zinc-400" />
+                  <ChevronDown className="w-4 h-4 text-stone-400 dark:text-zinc-400" />
                 )}
               </button>
 
               {showFullHistoryArchive && (
-                <div className="space-y-2 pt-2 border-t border-zinc-800/80">
+                <div className="space-y-2 pt-2 border-t border-stone-200 dark:border-zinc-800/80">
                   {/* Chronological past/other bookings list */}
                   <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
                     {fullClientCrmHistory.map((hist) => (
                       <div
                         key={`hist-${hist.id}`}
-                        className="p-2.5 rounded-lg bg-black/40 border border-zinc-800/70 flex flex-wrap items-center justify-between gap-2 text-[11px]"
+                        className="p-2.5 rounded-xl bg-white dark:bg-black/40 border border-stone-200 dark:border-zinc-800/70 flex flex-wrap items-center justify-between gap-2 text-[11px]"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <span
                             className="w-2 h-2 rounded-full flex-shrink-0"
                             style={{ backgroundColor: hist.barberColor || '#D97706' }}
                           />
-                          <span className="font-mono font-bold text-white">{hist.ticketNumber}</span>
-                          <span className="text-zinc-400 font-mono">
+                          <span className="font-mono font-bold text-slate-900 dark:text-white">{hist.ticketNumber}</span>
+                          <span className="text-stone-500 dark:text-zinc-400 font-mono">
                             {hist.date} • {hist.timeSlot}
                           </span>
-                          <span className="text-zinc-300 truncate">{hist.barberName}</span>
+                          <span className="text-stone-700 dark:text-zinc-300 truncate">{hist.barberName}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-amber-300">
+                          <span className="font-mono font-bold text-amber-700 dark:text-amber-300">
                             {hist.finalTotalMAD ?? 0} MAD
                           </span>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-semibold">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-stone-100 dark:bg-zinc-800 text-stone-700 dark:text-zinc-300 font-semibold">
                             {hist.status}
                           </span>
                         </div>
@@ -2658,9 +2661,9 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-zinc-800 bg-zinc-900/60 flex items-center justify-between">
-          <span className="text-xs text-zinc-400 flex items-center gap-1.5">
-            <RefreshCw className="w-3 h-3 text-emerald-400 animate-spin" />
+        <div className="p-4 sm:px-6 border-t border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-[#161923] flex items-center justify-between">
+          <span className="text-xs text-stone-600 dark:text-zinc-400 flex items-center gap-1.5">
+            <RefreshCw className="w-3 h-3 text-emerald-600 dark:text-emerald-400 animate-spin" />
             <span>
               {pickLang(lang, {
                 ar: 'التحديث التلقائي الفوري مفعّل',
@@ -2674,7 +2677,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
           <button
             onClick={onClose}
-            className="px-4 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold transition-colors"
+            className="px-4 py-2 rounded-xl bg-white hover:bg-stone-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-stone-200 dark:border-zinc-700 text-slate-900 dark:text-white text-xs font-bold transition-colors cursor-pointer"
           >
             {pickLang(lang, {
               ar: 'إغلاق',
@@ -2688,5 +2691,6 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
 
       </div>
     </div>
+    </ModalPortal>
   );
 };

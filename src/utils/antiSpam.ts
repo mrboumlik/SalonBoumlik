@@ -1,5 +1,6 @@
 import { AppointmentBooking, BookingStatus } from '../types';
 import { normalizeMoroccanPhoneDigits } from './bookingStore';
+import { safeStorageGet, safeStorageSet } from './safeBrowser';
 
 export const MAX_ACTIVE_BOOKINGS_PER_CLIENT = 2;
 
@@ -46,21 +47,24 @@ export function getLocalTodayStr(): string {
 export function getOrCreateDeviceFingerprint(): string {
   if (typeof window === 'undefined') return 'srv-device';
 
+  const existing = safeStorageGet(DEVICE_FP_STORAGE_KEY, 'local');
+  if (existing && /^[a-zA-Z0-9_-]{8,96}$/.test(existing)) {
+    return existing;
+  }
+
+  let timeZone = '';
   try {
-    const existing = window.localStorage.getItem(DEVICE_FP_STORAGE_KEY);
-    if (existing && /^[a-zA-Z0-9_-]{8,96}$/.test(existing)) {
-      return existing;
+    if (typeof Intl !== 'undefined' && typeof Intl.DateTimeFormat === 'function') {
+      timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
     }
   } catch {
-    // ignore storage blocks
+    timeZone = '';
   }
 
   const traits = [
     typeof navigator !== 'undefined' ? navigator.userAgent : '',
     typeof navigator !== 'undefined' ? navigator.language : '',
-    typeof Intl !== 'undefined'
-      ? Intl.DateTimeFormat().resolvedOptions().timeZone || ''
-      : '',
+    timeZone,
     typeof screen !== 'undefined' ? `${screen.width}x${screen.height}x${screen.colorDepth}` : '',
     typeof navigator !== 'undefined' ? String(navigator.hardwareConcurrency || '') : '',
   ].join('|');
@@ -69,25 +73,17 @@ export function getOrCreateDeviceFingerprint(): string {
   const randSalt = Math.random().toString(36).slice(2, 8);
   const fp = `dev_${traitHash}_${randSalt}`.slice(0, 64);
 
-  try {
-    window.localStorage.setItem(DEVICE_FP_STORAGE_KEY, fp);
-  } catch {
-    // ignore
-  }
+  safeStorageSet(DEVICE_FP_STORAGE_KEY, fp, 'local');
   return fp;
 }
 
 export function getCachedClientIpHash(): string | undefined {
   if (inMemoryIpHash) return inMemoryIpHash;
   if (typeof window === 'undefined') return undefined;
-  try {
-    const stored = window.sessionStorage.getItem(IP_HASH_SESSION_KEY);
-    if (stored && /^ip_[a-zA-Z0-9]{4,48}$/.test(stored)) {
-      inMemoryIpHash = stored;
-      return stored;
-    }
-  } catch {
-    // ignore
+  const stored = safeStorageGet(IP_HASH_SESSION_KEY, 'session');
+  if (stored && /^ip_[a-zA-Z0-9]{4,48}$/.test(stored)) {
+    inMemoryIpHash = stored;
+    return stored;
   }
   return undefined;
 }
@@ -103,28 +99,27 @@ export async function prefetchClientIpHash(): Promise<string | undefined> {
   if (ipFetchPromise) return ipFetchPromise;
 
   ipFetchPromise = (async () => {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 1600);
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? window.setTimeout(() => controller.abort(), 1600) : null;
     try {
-      const res = await fetch('https://api64.ipify.org?format=json', {
-        signal: controller.signal,
-      });
+      const res = await fetch(
+        'https://api64.ipify.org?format=json',
+        controller ? { signal: controller.signal } : undefined
+      );
       if (!res.ok) return undefined;
       const json = (await res.json()) as { ip?: string };
       const rawIp = typeof json?.ip === 'string' ? json.ip.trim() : '';
       if (!rawIp || rawIp.length < 4) return undefined;
       const hashed = `ip_${hashStringFnv1a(`sb_salt_2026_${rawIp}`)}`.slice(0, 48);
       inMemoryIpHash = hashed;
-      try {
-        window.sessionStorage.setItem(IP_HASH_SESSION_KEY, hashed);
-      } catch {
-        // ignore
-      }
+      safeStorageSet(IP_HASH_SESSION_KEY, hashed, 'session');
       return hashed;
     } catch {
       return undefined;
     } finally {
-      window.clearTimeout(timer);
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
       ipFetchPromise = null;
     }
   })();

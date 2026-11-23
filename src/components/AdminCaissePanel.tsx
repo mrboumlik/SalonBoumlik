@@ -85,6 +85,7 @@ import { buildCreditWhatsAppReminderUrl } from '../utils/whatsappAutomation';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
 import { showToast } from '../utils/notifications';
+import { ModalPortal } from './ModalPortal';
 
 interface AdminCaissePanelProps {
   sessionRole: StaffRole;
@@ -1541,7 +1542,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     const gridBarbers = sessionRole === 'master' ? allCaisseBarbers : activeCaisseBarbers;
     return (
       <div className="space-y-4 pb-28">
-        <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center text-emerald-700 dark:text-emerald-300 shrink-0">
               <Wallet className="w-5 h-5" />
@@ -1618,7 +1619,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                   setAutoTimerSecondsLeft(null);
                   setSelectedBarberId(b.id);
                 }}
-                className={`p-5 rounded-2xl border bg-white dark:bg-zinc-900/90 border-zinc-200 dark:border-zinc-800 hover:border-amber-400 dark:hover:border-amber-500/50 text-start transition-all shadow-sm hover:shadow-md cursor-pointer space-y-2 ${bTone.borderLeftClass}`}
+                className={`p-5 rounded-2xl border bg-white dark:bg-[#141720] border-stone-200 dark:border-zinc-800 hover:border-amber-400 dark:hover:border-amber-500/50 text-start transition-all shadow-sm hover:shadow-md cursor-pointer space-y-2 ${bTone.borderLeftClass}`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className={`w-3 h-3 rounded-full ${bTone.dotClass}`} />
@@ -1677,7 +1678,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
       {/* Top Header + Barber Switcher (Master / Caisse) + Date Picker */}
       <div
-        className={`p-4 sm:p-5 rounded-2xl border bg-white dark:bg-zinc-900/90 border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4 ${activeTone.borderLeftClass}`}
+        className={`p-5 sm:p-6 rounded-2xl border bg-white dark:bg-[#141720] border-stone-200 dark:border-zinc-800 shadow-sm space-y-4 ${activeTone.borderLeftClass}`}
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -2659,18 +2660,19 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
       {/* Centered Modal 1: غانحط في المجر (Prices strictly hidden on services; quick suggestion chips on amount input) */}
       {openForm === 'income' && (
-        <div
-          className="fixed inset-0 z-70 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs"
-          onClick={() => {
-            setOpenForm('none');
-            setDuplicateWarning(null);
-          }}
-        >
-          <form
-            onSubmit={(e) => handleSubmitIncome(e, false)}
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg max-h-[92vh] overflow-y-auto p-4 sm:p-5 rounded-2xl bg-white dark:bg-zinc-950 border-2 border-emerald-500/45 shadow-2xl space-y-4 text-xs"
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 sb-modal-backdrop"
+            onClick={() => {
+              setOpenForm('none');
+              setDuplicateWarning(null);
+            }}
           >
+            <form
+              onSubmit={(e) => handleSubmitIncome(e, false)}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-xl max-h-[92vh] overflow-y-auto p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border-2 border-emerald-400 dark:border-emerald-500/50 shadow-2xl space-y-4 text-xs"
+            >
             <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
               <span className="font-black text-sm text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
                 <PlusCircle className="w-4 h-4" />
@@ -2940,22 +2942,24 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             </div>
           </form>
         </div>
+        </ModalPortal>
       )}
 
       {/* Centered Modal 2: غانهز من المجر (Expense / Withdrawal) */}
       {openForm === 'expense' && (
-        <div
-          className="fixed inset-0 z-70 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs"
-          onClick={() => {
-            setOpenForm('none');
-            setDuplicateWarning(null);
-          }}
-        >
-          <form
-            onSubmit={(e) => handleSubmitExpense(e, false)}
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-5 rounded-2xl bg-white dark:bg-zinc-950 border-2 border-rose-500/45 shadow-2xl space-y-4 text-xs"
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 sb-modal-backdrop"
+            onClick={() => {
+              setOpenForm('none');
+              setDuplicateWarning(null);
+            }}
           >
+            <form
+              onSubmit={(e) => handleSubmitExpense(e, false)}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border-2 border-rose-400 dark:border-rose-500/50 shadow-2xl space-y-4 text-xs"
+            >
             <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
               <span className="font-black text-sm text-rose-700 dark:text-rose-300 flex items-center gap-2">
                 <MinusCircle className="w-4 h-4" />
@@ -3107,19 +3111,21 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             </div>
           </form>
         </div>
+        </ModalPortal>
       )}
 
       {/* Centered Modal 3: فلوس الصرف (Master Admin Float) */}
       {sessionRole === 'master' && openForm === 'float' && (
-        <div
-          className="fixed inset-0 z-70 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs"
-          onClick={() => setOpenForm('none')}
-        >
-          <form
-            onSubmit={handleSubmitFloat}
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-5 rounded-2xl bg-white dark:bg-zinc-950 border-2 border-amber-500/45 shadow-2xl space-y-4 text-xs"
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 sb-modal-backdrop"
+            onClick={() => setOpenForm('none')}
           >
+            <form
+              onSubmit={handleSubmitFloat}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border-2 border-amber-400 dark:border-amber-500/50 shadow-2xl space-y-4 text-xs"
+            >
             <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
               <span className="font-black text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2">
                 <Coins className="w-4 h-4" />
@@ -3181,6 +3187,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             </div>
           </form>
         </div>
+        </ModalPortal>
       )}
 
       {/* Open Credits Section (Persists Across ALL Dates Until Repaid; Editable by Barber & Master) */}
@@ -3283,7 +3290,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                           href={waUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] inline-flex items-center gap-1 hover:bg-emerald-100 dark:hover:bg-emerald-500/25"
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] inline-flex items-center gap-1 shadow-xs transition-colors"
                           title="إرسال تذكير مباشر عبر واتساب"
                         >
                           <MessageCircle className="w-3.5 h-3.5" />
@@ -3559,11 +3566,12 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       {editingEntry &&
         (sessionRole === 'master' ||
           (sessionRole === 'barber' && editingEntry.barberId === activeBarberId)) && (
-        <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <form
-            onSubmit={handleSaveEntryEdit}
-            className="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 p-5 space-y-3.5 shadow-2xl text-xs"
-          >
+        <ModalPortal>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop">
+            <form
+              onSubmit={handleSaveEntryEdit}
+              className="w-full max-w-lg rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 p-5 sm:p-6 space-y-4 shadow-2xl text-xs"
+            >
             <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
               <span className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-amber-500" />
@@ -3691,11 +3699,12 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             </div>
           </form>
         </div>
+        </ModalPortal>
       )}
 
       {/* Master Admin Only: Comprehensive Accountant & Reporting Suite */}
       {sessionRole === 'master' && (
-        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 space-y-4">
+        <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-3">
             <div>
               <h4 className="text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
@@ -4120,17 +4129,18 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
       {/* Interactive Drill-Down Modal for Caisse KPI & Summary Boxes (List -> Detailed Entry Breakdown) */}
       {drillModal && drillViewData && (
-        <div
-          className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs"
-          onClick={() => {
-            setSelectedDrillEntry(null);
-            setDrillModal(null);
-          }}
-        >
+        <ModalPortal>
           <div
-            className="w-full max-w-xl max-h-[85vh] flex flex-col rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop"
+            onClick={() => {
+              setSelectedDrillEntry(null);
+              setDrillModal(null);
+            }}
           >
+            <div
+              className="w-full max-w-2xl max-h-[86vh] flex flex-col rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs"
+              onClick={(e) => e.stopPropagation()}
+            >
             {/* Modal Header */}
             <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 flex items-start justify-between gap-3">
               <div className="min-w-0 space-y-0.5">
@@ -4299,7 +4309,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                               href={waUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300 font-bold inline-flex items-center gap-1.5"
+                              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold inline-flex items-center gap-1.5 shadow-xs transition-colors"
                             >
                               <MessageCircle className="w-4 h-4" />
                               <span>تذكير واتساب للزبون</span>
@@ -4418,7 +4428,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                           href={waUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300 shrink-0"
+                          className="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 shadow-xs transition-colors"
                           title="تذكير مباشر عبر واتساب"
                         >
                           <MessageCircle className="w-3.5 h-3.5" />
@@ -4431,18 +4441,20 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* Master Admin "المجر ككل — المجموع والتفريق" Modal */}
       {sessionRole === 'master' && drawerModalOpen && (
-        <div
-          className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs"
-          onClick={() => setDrawerModalOpen(false)}
-        >
+        <ModalPortal>
           <div
-            className="w-full max-w-2xl max-h-[88vh] flex flex-col rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop"
+            onClick={() => setDrawerModalOpen(false)}
           >
+            <div
+              className="w-full max-w-3xl max-h-[88vh] flex flex-col rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs"
+              onClick={(e) => e.stopPropagation()}
+            >
             {/* Header */}
             <div className="p-4 sm:p-5 border-b border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 bg-emerald-50/50 dark:bg-emerald-950/20">
               <div className="flex items-center gap-2.5">
@@ -4667,6 +4679,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );

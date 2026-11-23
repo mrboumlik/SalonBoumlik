@@ -25,6 +25,7 @@ import { parseScannedQrResult, scanQrImageFile } from '../utils/clientQr';
 import { computeClientPointsSummary, getVerifiedVisitsCount } from '../utils/loyaltyEngine';
 import { db } from '../utils/firebase';
 import { pickLang } from '../utils/i18n';
+import { ModalPortal } from './ModalPortal';
 
 export interface RecognizedClientData {
   clientName: string;
@@ -273,27 +274,28 @@ export const ReturningClientLookupModal: React.FC<ReturningClientLookupModalProp
   };
 
   return (
-    <MotionConfig reducedMotion="user">
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            key="returning-lookup-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="fixed inset-0 z-[75] flex items-end sm:items-center justify-center p-2 sm:p-4 bg-black/65 backdrop-blur-sm"
-            onClick={onClose}
-          >
+    <ModalPortal>
+      <MotionConfig reducedMotion="user">
+        <AnimatePresence>
+          {isOpen && (
             <motion.div
-              key="returning-lookup-dialog"
-              initial={{ opacity: 0, y: 18, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 12, scale: 0.98 }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md max-h-[88vh] overflow-y-auto overscroll-contain bg-white dark:bg-[#0E1016] border border-stone-200 dark:border-zinc-800 rounded-3xl shadow-2xl"
+              key="returning-lookup-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="fixed inset-0 z-[75] flex items-end sm:items-center justify-center p-2 sm:p-4 sb-modal-backdrop"
+              onClick={onClose}
             >
+              <motion.div
+                key="returning-lookup-dialog"
+                initial={{ opacity: 0, y: 18, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.98 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-lg max-h-[88vh] overflow-y-auto overscroll-contain bg-white dark:bg-[#11141D] border border-stone-200 dark:border-zinc-800 rounded-3xl shadow-2xl"
+              >
               <div className="p-4 sm:p-5 space-y-3.5">
                 {/* Header */}
                 <div className="flex items-start justify-between gap-3">
@@ -555,5 +557,6 @@ export const ReturningClientLookupModal: React.FC<ReturningClientLookupModalProp
         )}
       </AnimatePresence>
     </MotionConfig>
+    </ModalPortal>
   );
 };

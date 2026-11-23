@@ -41,7 +41,7 @@ export const MyAppointmentsModal: React.FC<MyAppointmentsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sb-modal-backdrop animate-in fade-in duration-200">
       <div className="bg-[#0C0E14] border border-zinc-800 rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl relative max-h-[85vh] overflow-y-auto">
         
         <button

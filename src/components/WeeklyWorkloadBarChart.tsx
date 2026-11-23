@@ -121,12 +121,12 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
       : 0;
 
   return (
-    <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/85 border border-zinc-800 space-y-4">
+    <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-4">
       {/* Header + Range Toggle */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-zinc-800/80 pb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-stone-200 dark:border-zinc-800/80 pb-3">
         <div>
-          <h4 className="text-sm font-black text-white flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-amber-400" />
+          <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-amber-600 dark:text-amber-400" />
             <span>
               {pickLang(lang, {
                 ar: 'توزيع المواعيد المكتملة هذا الأسبوع',
@@ -137,7 +137,7 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
               })}
             </span>
           </h4>
-          <p className="text-[11px] text-zinc-400 mt-0.5">
+          <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
             {pickLang(lang, {
               ar: `عدد المواعيد المكتملة لكل حلاق لمتابعة توازن ضغط العمل بين أعضاء الفريق (${bounds.label})`,
               fr: `Nombre de rendez-vous terminés par barbier pour suivre l’équilibre de charge (${bounds.label})`,
@@ -149,14 +149,14 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="inline-flex rounded-xl bg-zinc-950 border border-zinc-800 p-0.5 text-[11px] font-bold">
+          <div className="inline-flex rounded-xl bg-stone-100 dark:bg-zinc-950 border border-stone-200 dark:border-zinc-800 p-0.5 text-[11px] font-bold">
             <button
               type="button"
               onClick={() => setRangeMode('calendar_week')}
               className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
                 rangeMode === 'calendar_week'
                   ? 'bg-amber-500 text-black'
-                  : 'text-zinc-400 hover:text-white'
+                  : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               {pickLang(lang, { ar: 'هذا الأسبوع', fr: 'Cette semaine', amz: 'ⵉⵎⴰⵍⴰⵙⵙ ⴰⴷ', en: 'This Week', es: 'Esta semana' })}
@@ -167,14 +167,14 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
               className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
                 rangeMode === 'rolling_7d'
                   ? 'bg-amber-500 text-black'
-                  : 'text-zinc-400 hover:text-white'
+                  : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               {pickLang(lang, { ar: 'آخر 7 أيام', fr: '7 derniers jours', amz: '7 ⵡⵓⵙⵙⴰⵏ', en: 'Last 7 Days', es: 'Últimos 7 días' })}
             </button>
           </div>
 
-          <span className="text-[11px] font-mono font-bold text-emerald-300 tabular-nums">
+          <span className="text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">
             {pickLang(lang, { ar: 'المجموع:', fr: 'Total :', amz: 'ⴰⵎⴰⵜⴰⵢ:', en: 'Total:', es: 'Total:' })} {chartStats.totalCompleted}
           </span>
         </div>
@@ -186,7 +186,7 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
           {/* Y-Axis Scale */}
           <div
             dir="ltr"
-            className="w-7 flex flex-col justify-between text-right text-[10px] font-mono text-zinc-500 tabular-nums h-44 select-none"
+            className="w-7 flex flex-col justify-between text-right text-[10px] font-mono text-slate-500 dark:text-zinc-500 tabular-nums h-44 select-none"
           >
             {yTicks.map((tick, idx) => (
               <span key={`${tick}-${idx}`} className="leading-none -translate-y-1">
@@ -196,13 +196,13 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
           </div>
 
           {/* Plot Grid + Columns */}
-          <div className="flex-1 relative h-44 border-b border-l border-zinc-800/90">
+          <div className="flex-1 relative h-44 border-b border-l border-stone-200 dark:border-zinc-800/90">
             {/* Horizontal Gridlines */}
             <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
               {yTicks.slice(0, -1).map((_, idx) => (
                 <div
                   key={idx}
-                  className="w-full border-t border-dashed border-zinc-800/70"
+                  className="w-full border-t border-dashed border-stone-200 dark:border-zinc-800/70"
                 />
               ))}
               <div className="w-full" />
@@ -211,10 +211,10 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
             {/* Team Average Reference Line */}
             {chartStats.totalCompleted > 0 && (
               <div
-                className="absolute left-0 right-0 border-t border-dashed border-amber-400/70 pointer-events-none z-10 flex justify-end"
+                className="absolute left-0 right-0 border-t border-dashed border-amber-500/70 dark:border-amber-400/70 pointer-events-none z-10 flex justify-end"
                 style={{ bottom: `${avgPctFromBottom}%` }}
               >
-                <span className=" -translate-y-4 px-1.5 py-0.5 rounded bg-zinc-950/90 border border-amber-500/35 text-[9px] font-mono text-amber-300 tabular-nums">
+                <span className="-translate-y-4 px-1.5 py-0.5 rounded bg-amber-50 dark:bg-zinc-950 border border-amber-300 dark:border-amber-500/35 text-[9px] font-mono text-amber-800 dark:text-amber-300 tabular-nums">
                   {pickLang(lang, { ar: 'المتوسط:', fr: 'Moy. :', amz: 'ⴰⵏⴰⵎⵎⴰⵙ:', en: 'Avg:', es: 'Prom.:' })} {chartStats.avgCount.toFixed(1)}
                 </span>
               </div>
@@ -246,7 +246,7 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
                     title={`${barberLabel}: ${count} (${sharePct}%)`}
                   >
                     {/* Count Label Above Bar */}
-                    <div className="mb-1 text-[11px] font-mono font-black text-white tabular-nums transition-transform group-hover:scale-110 flex-shrink-0">
+                    <div className="mb-1 text-[11px] font-mono font-black text-slate-900 dark:text-white tabular-nums transition-transform group-hover:scale-110 flex-shrink-0">
                       {count}
                     </div>
 
@@ -256,8 +256,8 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
                         className="w-full rounded-t-xl transition-all duration-500 border border-b-0"
                         style={{
                           height: count === 0 ? '4px' : `${Math.max(8, heightPct)}%`,
-                          backgroundColor: count === 0 ? '#27272a' : `${color}CC`,
-                          borderColor: count === 0 ? '#3f3f46' : color,
+                          backgroundColor: count === 0 ? 'rgba(148,163,184,0.35)' : `${color}CC`,
+                          borderColor: count === 0 ? 'rgba(148,163,184,0.6)' : color,
                         }}
                       />
                     </div>
@@ -287,14 +287,14 @@ export const WeeklyWorkloadBarChart: React.FC<WeeklyWorkloadBarChartProps> = ({
 
               return (
                 <div key={barber.id} className="min-w-0 space-y-0.5">
-                  <div className="flex items-center justify-center gap-1 text-xs font-bold text-white truncate">
+                  <div className="flex items-center justify-center gap-1 text-xs font-bold text-slate-900 dark:text-white truncate">
                     <span
                       className="w-2 h-2 rounded-full flex-shrink-0"
                       style={{ backgroundColor: color }}
                     />
                     <span className="truncate">{barberFirst}</span>
                   </div>
-                  <div className="text-[10px] font-mono text-zinc-400 tabular-nums">
+                  <div className="text-[10px] font-mono text-slate-500 dark:text-zinc-400 tabular-nums">
                     {sharePct}% · {count}{' '}
                     {pickLang(lang, { ar: 'موعد', fr: 'RDV', amz: 'ⴰⵎⵓⵄⵉⴷ', en: 'visits', es: 'citas' })}
                   </div>

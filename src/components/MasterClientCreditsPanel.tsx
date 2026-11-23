@@ -43,6 +43,7 @@ import { buildCreditWhatsAppReminderUrl } from '../utils/whatsappAutomation';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
 import { showToast } from '../utils/notifications';
+import { ModalPortal } from './ModalPortal';
 
 interface MasterClientCreditsPanelProps {
   staffName: string;
@@ -675,14 +676,15 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
 
       {/* Contact Picker Modal */}
       {contactPickerOpen && (
-        <div
-          className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs"
-          onClick={() => setContactPickerOpen(false)}
-        >
+        <ModalPortal>
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-5 max-w-lg w-full max-h-[82vh] flex flex-col gap-3 shadow-2xl text-xs"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop"
+            onClick={() => setContactPickerOpen(false)}
           >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 rounded-2xl p-5 sm:p-6 max-w-xl w-full max-h-[84vh] flex flex-col gap-3.5 shadow-2xl text-xs"
+            >
             <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
               <div className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-2">
                 <Users className="w-4 h-4 text-amber-500" />
@@ -745,10 +747,11 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* Search & Filter Toolbar */}
-      <div className="p-3.5 rounded-2xl bg-white dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs">
+      <div className="p-3.5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs">
         <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 text-zinc-400 absolute start-3 top-1/2 -translate-y-1/2" />
           <input
@@ -786,11 +789,12 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
 
       {/* Edit Modal */}
       {editingRecord && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-          <form
-            onSubmit={handleSaveEdit}
-            className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 max-w-md w-full space-y-3 text-xs shadow-2xl"
-          >
+        <ModalPortal>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop">
+            <form
+              onSubmit={handleSaveEdit}
+              className="bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 rounded-2xl p-5 sm:p-6 max-w-lg w-full space-y-3.5 text-xs shadow-2xl"
+            >
             <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-2.5">
               <span className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-amber-500" />
@@ -884,6 +888,7 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
             </div>
           </form>
         </div>
+        </ModalPortal>
       )}
 
       {/* Manual Credits List */}
@@ -912,8 +917,8 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
                 key={rec.id}
                 className={`p-3.5 sm:p-4 rounded-2xl border transition-all text-xs space-y-2.5 ${
                   isPaid
-                    ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-500/30 opacity-85'
-                    : 'bg-white dark:bg-zinc-900/90 border-zinc-200 dark:border-zinc-800 border-s-4 border-s-orange-500 shadow-2xs'
+                    ? 'bg-emerald-50/70 dark:bg-emerald-950/25 border-emerald-200 dark:border-emerald-500/30 opacity-85'
+                    : 'bg-white dark:bg-[#141720] border-stone-200 dark:border-zinc-800 border-s-4 border-s-orange-500 shadow-2xs'
                 }`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -995,7 +1000,7 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
                         href={waUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="min-h-[34px] px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300 font-bold inline-flex items-center gap-1"
+                        className="min-h-[34px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold inline-flex items-center gap-1 shadow-xs transition-colors"
                         title="تذكير مباشر عبر واتساب"
                       >
                         <MessageCircle className="w-3.5 h-3.5" />
@@ -1063,7 +1068,7 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
 
       {/* Unified Caisse Appointment Credits Section */}
       {filteredCaisseCredits.length > 0 && (
-        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 space-y-3 text-xs">
+        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 space-y-3 text-xs">
           <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
             <div className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-2">
               <Wallet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
@@ -1113,7 +1118,7 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
                         href={waUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300 font-bold inline-flex items-center gap-1"
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold inline-flex items-center gap-1 shadow-xs transition-colors"
                         title="تذكير عبر واتساب"
                       >
                         <MessageCircle className="w-3.5 h-3.5" />

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Language } from '../types';
 import { UI_TRANSLATIONS } from '../data/barbershopData';
+import { safeStorageGet, safeStorageSet } from '../utils/safeBrowser';
 
 interface LanguageContextType {
   lang: Language;
@@ -13,24 +14,16 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [lang, setLangState] = useState<Language>(() => {
-    try {
-      const saved = localStorage.getItem('salon_boumlik_lang') as Language;
-      if (saved && (saved === 'fr' || saved === 'ar' || saved === 'en' || saved === 'amz' || saved === 'es')) {
-        return saved;
-      }
-    } catch {
-      // ignore
+    const saved = safeStorageGet('salon_boumlik_lang', 'local') as Language | null;
+    if (saved && (saved === 'fr' || saved === 'ar' || saved === 'en' || saved === 'amz' || saved === 'es')) {
+      return saved;
     }
     return 'ar';
   });
 
   const setLang = (newLang: Language) => {
     setLangState(newLang);
-    try {
-      localStorage.setItem('salon_boumlik_lang', newLang);
-    } catch {
-      // ignore
-    }
+    safeStorageSet('salon_boumlik_lang', newLang, 'local');
   };
 
   const isRtl = lang === 'ar';

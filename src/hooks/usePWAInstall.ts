@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { safeMatchMedia } from '../utils/safeBrowser';
 
 interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
@@ -15,7 +16,7 @@ export function usePWAInstall() {
     if (typeof window === 'undefined') return;
 
     const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
+      safeMatchMedia('(display-mode: standalone)').matches ||
       (window.navigator as unknown as { standalone?: boolean }).standalone === true;
     setIsInstalled(isStandalone);
 

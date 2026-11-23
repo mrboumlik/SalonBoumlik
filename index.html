@@ -26,11 +26,17 @@
     <script>
       (function () {
         try {
-          var saved = localStorage.getItem('salon_boumlik_theme');
+          var saved = window.localStorage ? window.localStorage.getItem('salon_boumlik_theme') : null;
           var isDark = saved === 'luxury_gold' || saved === 'charcoal';
           var root = document.documentElement;
-          root.classList.toggle('dark', isDark);
-          root.style.colorScheme = isDark ? 'dark' : 'light';
+          if (isDark) {
+            root.classList.add('dark');
+          } else {
+            root.classList.remove('dark');
+          }
+          if (root.style) {
+            root.style.colorScheme = isDark ? 'dark' : 'light';
+          }
         } catch (e) {}
       })();
     </script>

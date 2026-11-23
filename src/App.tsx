@@ -17,6 +17,7 @@ import { DrawerMenu, HomepageSectionKey } from './components/DrawerMenu';
 import { TrackBookingModal } from './components/TrackBookingModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { ToastContainer } from './components/ToastContainer';
+import { ModalPortal } from './components/ModalPortal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { FloatingWhatsAppButton } from './components/FloatingWhatsAppButton';
 import {
@@ -594,79 +595,81 @@ function SalonBoumlikApp() {
       />
 
       {/* 4. Direct Booking Modal Overlay (Full 6-Step Progressive Wizard) */}
-      <MotionConfig reducedMotion="user">
-        <AnimatePresence>
-          {isBookingModalOpen && (
-            <motion.div
-              key="booking-modal-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/65 backdrop-blur-sm"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="booking-modal-heading"
-              onClick={() => setIsBookingModalOpen(false)}
-            >
+      <ModalPortal>
+        <MotionConfig reducedMotion="user">
+          <AnimatePresence>
+            {isBookingModalOpen && (
               <motion.div
-                key="booking-modal-dialog"
-                initial={{ opacity: 0, y: 20, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 14, scale: 0.98 }}
-                transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-                className="w-full max-w-2xl max-h-[92vh] sm:max-h-[88vh] flex flex-col rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#0D0F14] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden"
-                onClick={(e) => e.stopPropagation()}
+                key="booking-modal-backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-6 sb-modal-backdrop"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="booking-modal-heading"
+                onClick={() => setIsBookingModalOpen(false)}
               >
-                {/* Modal Header Bar */}
-                <div className="px-4 sm:px-5 py-3 border-b border-stone-200/80 dark:border-zinc-800/80 bg-stone-50/90 dark:bg-[#111318] flex items-center justify-between gap-3 flex-shrink-0">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
-                      <Scissors className="w-4 h-4" />
+                <motion.div
+                  key="booking-modal-dialog"
+                  initial={{ opacity: 0, y: 20, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 14, scale: 0.98 }}
+                  transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                  className="w-full max-w-3xl max-h-[92vh] sm:max-h-[88vh] flex flex-col rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#0D0F14] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Modal Header Bar */}
+                  <div className="px-4 sm:px-6 py-3.5 border-b border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-[#111318] flex items-center justify-between gap-3 flex-shrink-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+                        <Scissors className="w-4 h-4" />
+                      </div>
+                      <h2
+                        id="booking-modal-heading"
+                        className="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate"
+                      >
+                        {ui.bookingModalTitle}
+                      </h2>
                     </div>
-                    <h2
-                      id="booking-modal-heading"
-                      className="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate"
+
+                    <button
+                      type="button"
+                      onClick={() => setIsBookingModalOpen(false)}
+                      aria-label={ui.closeModalAria}
+                      className="min-h-[40px] min-w-[40px] p-2 rounded-xl text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-200/70 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center"
                     >
-                      {ui.bookingModalTitle}
-                    </h2>
+                      <X className="w-5 h-5" />
+                    </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setIsBookingModalOpen(false)}
-                    aria-label={ui.closeModalAria}
-                    className="min-h-[40px] min-w-[40px] p-2 rounded-xl text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-200/70 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                {/* Embedded 6-Step Booking Wizard */}
-                <div className="flex-1 overflow-y-auto overscroll-contain px-3 sm:px-5">
-                  <BookingSection
-                    isEmbeddedModal
-                    onRequestClose={() => setIsBookingModalOpen(false)}
-                    pricingResult={pricingResult}
-                    colorConfig={colorConfig}
-                    proteinPrice={proteinPrice}
-                    selectedBarberId={selectedBarberId}
-                    onSelectBarberId={setSelectedBarberId}
-                    selectedServiceIds={selectedServiceIds}
-                    onToggleServiceId={handleToggleServiceId}
-                    onSetServiceIds={setSelectedServiceIds}
-                    onBookingConfirmed={(booking) => {
-                      if (booking.clientPhone) setActiveClientPhone(booking.clientPhone);
-                    }}
-                    onClientIdentified={(phone) => setActiveClientPhone(phone)}
-                    onOpenTrackBooking={handleOpenTrackWithTicket}
-                  />
-                </div>
+                  {/* Embedded 6-Step Booking Wizard */}
+                  <div className="flex-1 overflow-y-auto overscroll-contain px-3 sm:px-6">
+                    <BookingSection
+                      isEmbeddedModal
+                      onRequestClose={() => setIsBookingModalOpen(false)}
+                      pricingResult={pricingResult}
+                      colorConfig={colorConfig}
+                      proteinPrice={proteinPrice}
+                      selectedBarberId={selectedBarberId}
+                      onSelectBarberId={setSelectedBarberId}
+                      selectedServiceIds={selectedServiceIds}
+                      onToggleServiceId={handleToggleServiceId}
+                      onSetServiceIds={setSelectedServiceIds}
+                      onBookingConfirmed={(booking) => {
+                        if (booking.clientPhone) setActiveClientPhone(booking.clientPhone);
+                      }}
+                      onClientIdentified={(phone) => setActiveClientPhone(phone)}
+                      onOpenTrackBooking={handleOpenTrackWithTicket}
+                    />
+                  </div>
+                </motion.div>
               </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </MotionConfig>
+            )}
+          </AnimatePresence>
+        </MotionConfig>
+      </ModalPortal>
 
       {/* 5. Slide-Out Drawer Menu */}
       <DrawerMenu
@@ -723,7 +726,7 @@ function SalonBoumlikApp() {
       {/* 8. Floating Mobile Quick Action Bar */}
       <aside
         aria-label={ui.mobileBarAria}
-        className="sm:hidden fixed bottom-3 inset-x-3 z-40 max-w-md mx-auto bg-white/95 dark:bg-[#13151B]/95 backdrop-blur-md p-2 rounded-2xl border border-stone-200/90 dark:border-zinc-800 shadow-lg flex items-center gap-2"
+        className="sm:hidden fixed bottom-3 inset-x-3 z-40 max-w-md mx-auto bg-white dark:bg-[#13151B] p-2 rounded-2xl border border-stone-200 dark:border-zinc-800 shadow-lg flex items-center gap-2"
       >
         <a
           href={normalizeSalonTelHref(salonSettings.salonPhone)}

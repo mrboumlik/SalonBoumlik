@@ -47,6 +47,7 @@ import confetti from 'canvas-confetti';
 import QRCode from 'qrcode';
 import { useLanguage } from '../context/LanguageContext';
 import { SALON_INFO } from '../data/barbershopData';
+import { ModalPortal } from './ModalPortal';
 import { createNewBooking, subscribeToBookings, getAllBookings, normalizeMoroccanPhoneDigits } from '../utils/bookingStore';
 import {
   PricingEngineResult,
@@ -64,6 +65,7 @@ import {
 import { downloadTicketAsPng } from '../utils/ticketCanvas';
 import { buildBookingCheckInQrPayload } from '../utils/clientQr';
 import { buildClientTicketWhatsAppMessage } from '../utils/whatsappAutomation';
+import { safeCopyToClipboard } from '../utils/safeBrowser';
 import { CIH_BANK_DETAILS, processCihReceiptFile } from '../utils/cihReceipt';
 import { CihBankLogo } from './CihBankLogo';
 import {
@@ -1893,19 +1895,19 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
   };
 
   const handleCopyTicket = (ticket: string) => {
-    navigator.clipboard.writeText(ticket);
+    void safeCopyToClipboard(ticket);
     setCopiedTicket(true);
     setTimeout(() => setCopiedTicket(false), 2000);
   };
 
   const handleCopyHolderName = () => {
-    navigator.clipboard.writeText(CIH_BANK_DETAILS.accountHolder);
+    void safeCopyToClipboard(CIH_BANK_DETAILS.accountHolder);
     setCopiedHolderName(true);
     setTimeout(() => setCopiedHolderName(false), 2000);
   };
 
   const handleCopyAccountNumber = () => {
-    navigator.clipboard.writeText(CIH_BANK_DETAILS.accountNumber);
+    void safeCopyToClipboard(CIH_BANK_DETAILS.accountNumber);
     setCopiedAccountNumber(true);
     setTimeout(() => setCopiedAccountNumber(false), 2000);
   };
@@ -2199,8 +2201,8 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       : timeSlot;
 
   const stickyNavClass = isEmbeddedModal
-    ? 'sticky bottom-0 z-30 p-2 rounded-2xl bg-white/95 dark:bg-[#0D0F14]/95 backdrop-blur-md border border-stone-200 dark:border-zinc-800 shadow-lg grid grid-cols-3 gap-2.5'
-    : 'sticky bottom-[76px] sm:bottom-3 z-30 p-2 rounded-2xl bg-white/95 dark:bg-[#0D0F14]/95 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 shadow-lg grid grid-cols-3 gap-2.5';
+    ? 'sticky bottom-0 z-30 p-2 rounded-2xl bg-white dark:bg-[#0D0F14] border border-stone-200 dark:border-zinc-800 shadow-lg grid grid-cols-3 gap-2.5'
+    : 'sticky bottom-[76px] sm:bottom-3 z-30 p-2 rounded-2xl bg-white dark:bg-[#0D0F14] border border-zinc-200 dark:border-zinc-800 shadow-lg grid grid-cols-3 gap-2.5';
 
   const stepOffsetX = stepDirection === 'next' ? (isRtl ? -14 : 14) : isRtl ? 14 : -14;
 
@@ -4843,7 +4845,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                                 )}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="w-full py-2.5 px-3.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-white dark:text-black font-bold text-xs flex items-center justify-center gap-2 transition-all"
+                                className="w-full py-2.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-sm"
                               >
                                 <MessageCircle className="w-4 h-4 flex-shrink-0" />
                                 <span>
@@ -5116,25 +5118,26 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       </div>
 
       {/* ADVANCED DIGITAL TICKET MODAL (With Barber Color-Coding, QR Code, and Image Download) */}
-      <MotionConfig reducedMotion="user">
-        <AnimatePresence>
-          {createdBooking && (
-            <motion.div
-              key="ticket-confirmation-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md"
-            >
+      <ModalPortal>
+        <MotionConfig reducedMotion="user">
+          <AnimatePresence>
+            {createdBooking && (
               <motion.div
-                key="ticket-confirmation-card"
-                initial={{ opacity: 0, scale: 0.96, y: 14 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, y: 10 }}
-                transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-                className="bg-[#0E1015] border border-amber-500/40 rounded-3xl p-5 sm:p-6 max-w-sm sm:max-w-md w-full shadow-2xl space-y-4 text-center max-h-[92vh] overflow-y-auto text-white"
+                key="ticket-confirmation-backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-[65] flex items-center justify-center p-3 sm:p-6 sb-modal-backdrop"
               >
+                <motion.div
+                  key="ticket-confirmation-card"
+                  initial={{ opacity: 0, scale: 0.96, y: 14 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: 10 }}
+                  transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                  className="bg-white dark:bg-[#12151E] border border-amber-300 dark:border-amber-500/40 rounded-3xl p-5 sm:p-6 max-w-md sm:max-w-lg w-full shadow-2xl space-y-4 text-center max-h-[92vh] overflow-y-auto text-slate-900 dark:text-white"
+                >
             
             {/* The Actual Digital Ticket Card Preview */}
             <div 
@@ -5345,9 +5348,9 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
             </div>
 
             {/* Recommendation Banner for Instant Confirmation */}
-            <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-950/40 via-amber-900/30 to-amber-950/40 border border-amber-500/50 text-center space-y-1 shadow-xs">
-              <div className="flex items-center justify-center gap-1.5 text-amber-400 font-bold text-xs">
-                <Sparkles className="w-4 h-4 text-amber-400 animate-pulse flex-shrink-0" />
+            <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/35 border border-amber-300 dark:border-amber-500/50 text-center space-y-1 shadow-xs">
+              <div className="flex items-center justify-center gap-1.5 text-amber-800 dark:text-amber-400 font-bold text-xs">
+                <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400 animate-pulse flex-shrink-0" />
                 <span>
                   {pickLang(lang, {
                     ar: 'تأكيد فوري وسريع',
@@ -5358,7 +5361,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                   })}
                 </span>
               </div>
-              <p className="text-[11px] text-amber-200/95 leading-relaxed font-semibold">
+              <p className="text-[11px] text-amber-900 dark:text-amber-200/95 leading-relaxed font-semibold">
                 {pickLang(lang, {
                   ar: 'للحصول على تأكيد ورد سريع، يُنصح بالتواصل معنا الآن عبر الواتساب أو الاتصال.',
                   fr: 'Pour une confirmation immédiate et un traitement prioritaire, nous vous recommandons vivement de nous contacter dès maintenant.',
@@ -5425,9 +5428,9 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                   )}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="py-2 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-emerald-300 dark:border-zinc-700 text-emerald-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
+                  <MessageCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                   <span>
                     {pickLang(lang, {
                       ar: 'واتساب حسن',
@@ -5441,22 +5444,22 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
 
                 <a
                   href={normalizeSalonTelHref(salonSettings.salonPhone)}
-                  className="py-2 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="py-2.5 px-3 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-slate-900 dark:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  <PhoneCall className="w-3.5 h-3.5 text-blue-400" />
+                  <PhoneCall className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                   <span dir="ltr">{liveSalonDisplayPhone}</span>
                 </a>
               </div>
             </div>
 
             {/* Quick Actions: Copy Ticket, Track, Close */}
-            <div className="space-y-2 pt-2 border-t border-zinc-800/80">
+            <div className="space-y-2 pt-2 border-t border-stone-200 dark:border-zinc-800/80">
               <button
                 type="button"
                 onClick={() => handleCopyTicket(createdBooking.ticketNumber)}
-                className="w-full py-2 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                className="w-full py-2.5 px-4 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-slate-900 dark:text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
               >
-                <Copy className="w-4 h-4 text-amber-400" />
+                <Copy className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                 <span>
                   {copiedTicket
                     ? pickLang(lang, {
@@ -5484,7 +5487,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                     setCreatedBooking(null);
                     onOpenTrackBooking(tNum);
                   }}
-                  className="w-full py-2 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
                 >
                   <Ticket className="w-4 h-4" />
                   <span>
@@ -5501,8 +5504,8 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
 
               {typeof window !== 'undefined' && 'Notification' in window && (
                 notifSubscribedForTicket || Notification.permission === 'granted' ? (
-                  <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold flex items-center justify-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <div className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold flex items-center justify-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     <span>
                       {pickLang(lang, {
                         ar: 'إشعارات متابعة التذكرة مفعلة على هذا الجهاز ✓',
@@ -5517,9 +5520,9 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowNotifConsentModal(true)}
-                    className="w-full py-2 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    className="w-full py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/15 dark:hover:bg-amber-500/25 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
-                    <BellRing className="w-3.5 h-3.5 text-amber-400" />
+                    <BellRing className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                     <span>
                       {pickLang(lang, {
                         ar: 'تفعيل إشعارات تأكيد الموعد ونقاط الولاء',
@@ -5541,7 +5544,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                   setCurrentStep(1);
                   if (onRequestClose) onRequestClose();
                 }}
-                className="w-full py-1.5 text-xs text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                className="w-full py-2 text-xs font-bold text-stone-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
               >
                 {pickLang(lang, {
                   ar: 'إغلاق النافذة',
@@ -5553,11 +5556,12 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
               </button>
             </div>
 
+                </motion.div>
               </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </MotionConfig>
+            )}
+          </AnimatePresence>
+        </MotionConfig>
+      </ModalPortal>
 
       {createdBooking && (
         <NotificationConsentModal

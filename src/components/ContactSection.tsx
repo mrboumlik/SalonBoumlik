@@ -24,6 +24,7 @@ import {
   normalizeSalonWhatsappDigits,
 } from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
+import { safeCopyToClipboard } from '../utils/safeBrowser';
 
 export const ContactSection: React.FC = () => {
   const { lang, t } = useLanguage();
@@ -46,7 +47,7 @@ export const ContactSection: React.FC = () => {
   } | null>(null);
 
   const handleCopyEmail = () => {
-    navigator.clipboard.writeText(SALON_INFO.email);
+    void safeCopyToClipboard(SALON_INFO.email);
     setCopiedEmail(true);
     setTimeout(() => setCopiedEmail(false), 2000);
   };
@@ -595,7 +596,7 @@ Salon Boumlik Taroudant`;
       {/* QR Code Lightbox Modal */}
       {activeQrModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 sb-modal-backdrop"
           onClick={() => setActiveQrModal(null)}
         >
           <div

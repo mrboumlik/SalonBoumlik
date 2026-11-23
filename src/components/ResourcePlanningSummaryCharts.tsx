@@ -19,6 +19,7 @@ import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore
 import { useBarberRoster } from '../utils/barberRosterStore';
 import { ALL_SALON_CONFIGURABLE_HOURS } from '../utils/barberScheduleStore';
 import { useLanguage } from '../context/LanguageContext';
+import { useTheme } from '../context/ThemeContext';
 import { pickLang } from '../utils/i18n';
 
 interface ResourcePlanningSummaryChartsProps {
@@ -70,6 +71,14 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
   ownBarberId = 'all',
 }) => {
   const { lang } = useLanguage();
+  const { isDark } = useTheme();
+  const gridStroke = isDark ? '#27272a' : '#e7e5e4';
+  const axisStroke = isDark ? '#71717a' : '#94a3b8';
+  const axisLineStroke = isDark ? '#3f3f46' : '#cbd5e1';
+  const tickFill = isDark ? '#a1a1aa' : '#475569';
+  const barberTickFill = isDark ? '#e4e4e7' : '#0f172a';
+  const emptyBarFill = isDark ? '#27272a' : '#e7e5e4';
+  const dotStroke = isDark ? '#09090b' : '#ffffff';
   const roster = useBarberRoster();
   const profilesMap = useBarberProfiles();
   const mergedBarbers = useMemo(
@@ -285,10 +294,10 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
   return (
     <div className="space-y-5">
       {/* Summary View Header & Interactive Filters */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-amber-400" />
+          <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-amber-600 dark:text-amber-400" />
             <span>
               {pickLang(lang, {
                 ar: 'ملخص وتخطيط الموارد',
@@ -299,7 +308,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
               })}
             </span>
           </h3>
-          <p className="text-[11px] text-zinc-400 mt-0.5">
+          <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-0.5">
             {pickLang(lang, {
               ar: `تحليل ساعات الذروة ومقارنة أداء الحلاقين لتوزيع المناوبات وتقليل ضغط الانتظار (${periodLabel})`,
               fr: `Analyse des heures de pointe et performance des barbiers pour optimiser les créneaux (${periodLabel})`,
@@ -312,7 +321,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Period Segmented Filter */}
-          <div className="inline-flex rounded-xl bg-zinc-950 border border-zinc-800 p-0.5 text-[11px] font-bold">
+          <div className="inline-flex rounded-xl bg-stone-100 dark:bg-zinc-950 border border-stone-200 dark:border-zinc-800 p-0.5 text-[11px] font-bold">
             {(
               [
                 { id: '7d', label: pickLang(lang, { ar: '7 أيام', fr: '7 jours', amz: '7 ⵡⵓⵙⵙⴰⵏ', en: '7 Days', es: '7 días' }) },
@@ -327,7 +336,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                 className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   period === opt.id
                     ? 'bg-amber-500 text-black'
-                    : 'text-zinc-400 hover:text-white'
+                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 {opt.label}
@@ -347,7 +356,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                 en: 'Filter peak hours by barber',
                 es: 'Filtrar horas pico por barbero',
               })}
-              className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-500"
+              className="bg-stone-50 dark:bg-zinc-950 border border-stone-300 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-amber-500"
             >
               <option value="all">
                 {pickLang(lang, {
@@ -370,8 +379,8 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
 
       {/* Top Resource Planning KPI Summary Strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-1">
-          <span className="text-[11px] font-bold text-zinc-400 block">
+        <div className="p-4 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 dark:text-zinc-400 block">
             {pickLang(lang, {
               ar: 'ساعة الذروة الأعلى طلباً',
               fr: 'Heure de pointe',
@@ -380,10 +389,10 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
               es: 'Hora pico',
             })}
           </span>
-          <div className="text-2xl font-black text-amber-400 font-mono tabular-nums" dir="ltr">
+          <div className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono tabular-nums" dir="ltr">
             {summaryStats.peakHourRow ? summaryStats.peakHourRow.hour : '—'}
           </div>
-          <span className="text-[11px] text-zinc-400 font-mono tabular-nums block">
+          <span className="text-[11px] text-slate-500 dark:text-zinc-400 font-mono tabular-nums block">
             {summaryStats.peakHourRow
               ? pickLang(lang, {
                   ar: `${summaryStats.peakHourRow.activeDemand} حجز (${summaryStats.peakHourRow.sharePct}% من الطلب)`,
@@ -396,8 +405,8 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
           </span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-1">
-          <span className="text-[11px] font-bold text-zinc-400 block">
+        <div className="p-4 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 dark:text-zinc-400 block">
             {pickLang(lang, {
               ar: `إجمالي الطلب الفعّال (${periodLabel})`,
               fr: `Demande active (${periodLabel})`,
@@ -406,17 +415,17 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
               es: `Demanda activa (${periodLabel})`,
             })}
           </span>
-          <div className="text-2xl font-black text-white font-mono tabular-nums">
+          <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
             {summaryStats.activeTotal}
           </div>
-          <span className="text-[11px] text-emerald-400 font-mono tabular-nums block">
+          <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono tabular-nums block">
             {summaryStats.completedTotal} {pickLang(lang, { ar: 'مكتمل', fr: 'terminés', amz: 'ⵉⵎⴷⵏ', en: 'completed', es: 'completadas' })} ({summaryStats.completionRatePct}%)
             {summaryStats.flexibleCount > 0 ? ` · ${summaryStats.flexibleCount} ${pickLang(lang, { ar: 'مرن', fr: 'flexibles', amz: 'ⵉⵏⵓⵥⵓⵕⵏ', en: 'flexible', es: 'flexibles' })}` : ''}
           </span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-1">
-          <span className="text-[11px] font-bold text-zinc-400 block">
+        <div className="p-4 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 dark:text-zinc-400 block">
             {pickLang(lang, {
               ar: 'الإيرادات المحققة (المكتملة)',
               fr: 'Revenus réalisés (terminés)',
@@ -425,11 +434,11 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
               es: 'Ingresos realizados',
             })}
           </span>
-          <div className="text-2xl font-black text-emerald-400 font-mono tabular-nums">
+          <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">
             {summaryStats.revenueTotal.toLocaleString('en-US')}{' '}
             <span className="text-xs font-bold">MAD</span>
           </div>
-          <span className="text-[11px] text-zinc-400 font-mono tabular-nums block">
+          <span className="text-[11px] text-slate-500 dark:text-zinc-400 font-mono tabular-nums block">
             {pickLang(lang, { ar: 'متوسط التذكرة:', fr: 'Ticket moyen :', amz: 'ⴰⵏⴰⵎⵎⴰⵙ:', en: 'Avg ticket:', es: 'Ticket medio:' })}{' '}
             {summaryStats.completedTotal > 0
               ? Math.round(summaryStats.revenueTotal / summaryStats.completedTotal)
@@ -438,8 +447,8 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
           </span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-1">
-          <span className="text-[11px] font-bold text-zinc-400 block">
+        <div className="p-4 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 dark:text-zinc-400 block">
             {pickLang(lang, {
               ar: 'أعلى حلاق أداءً في الفترة',
               fr: 'Meilleur barbier de la période',
@@ -448,12 +457,12 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
               es: 'Mejor barbero del período',
             })}
           </span>
-          <div className="text-xl font-black text-white truncate">
+          <div className="text-xl font-black text-slate-900 dark:text-white truncate">
             {summaryStats.topBarber && summaryStats.topBarber.totalHandled > 0
               ? summaryStats.topBarber.fullName
               : '—'}
           </div>
-          <span className="text-[11px] text-amber-300 font-mono tabular-nums block">
+          <span className="text-[11px] text-amber-700 dark:text-amber-300 font-mono tabular-nums block">
             {summaryStats.topBarber && summaryStats.topBarber.totalHandled > 0
               ? `${summaryStats.topBarber.completedCount} ${pickLang(lang, { ar: 'مكتمل', fr: 'terminés', amz: 'ⵉⵎⴷⵏ', en: 'completed', es: 'completadas' })} · ${summaryStats.topBarber.revenueMAD.toLocaleString('en-US')} MAD`
               : pickLang(lang, { ar: 'بانتظار حجوزات', fr: 'En attente de RDV', amz: 'ⴰⵔ ⵉⵜⵜⵕⴰⵊⵓ', en: 'Awaiting bookings', es: 'Esperando citas' })}
@@ -464,11 +473,11 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
       {/* Recharts Grid: Peak Hours + Barber Performance */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {/* CHART 1: PEAK BOOKING HOURS */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 pb-3">
+        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 dark:border-zinc-800 pb-3">
             <div>
-              <h4 className="text-sm font-black text-white flex items-center gap-2">
-                <Clock className="w-4 h-4 text-amber-400" />
+              <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                 <span>
                   {pickLang(lang, {
                     ar: 'توزيع ساعات الذروة',
@@ -479,7 +488,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                   })}
                 </span>
               </h4>
-              <p className="text-[11px] text-zinc-400 mt-0.5">
+              <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-0.5">
                 {pickLang(lang, {
                   ar: 'كثافة الحجوزات حسب الساعة لتحديد أوقات الاستراحة والضغط العالي',
                   fr: 'Densité des réservations par heure pour planifier pauses et affluence',
@@ -490,15 +499,15 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
               </p>
             </div>
             {summaryStats.peakHourRow && (
-              <span className="text-[11px] font-mono font-bold text-red-400 tabular-nums">
+              <span className="text-[11px] font-mono font-bold text-red-600 dark:text-red-400 tabular-nums">
                 {pickLang(lang, { ar: 'الذروة:', fr: 'Pointe :', amz: 'ⴰⴼⵍⵍⴰ:', en: 'Peak:', es: 'Pico:' })} {summaryStats.peakHourRow.hour} ({summaryStats.peakHourRow.activeDemand})
               </span>
             )}
           </div>
 
           {summaryStats.activeTotal === 0 ? (
-            <div className="h-[270px] flex flex-col items-center justify-center text-center text-zinc-500 text-xs gap-2">
-              <AlertCircle className="w-6 h-6 text-zinc-600" />
+            <div className="h-[270px] flex flex-col items-center justify-center text-center text-slate-500 dark:text-zinc-500 text-xs gap-2">
+              <AlertCircle className="w-6 h-6 text-slate-400 dark:text-zinc-600" />
               <p>
                 {pickLang(lang, {
                   ar: 'لا توجد حجوزات نشطة ضمن الفترة المحددة لعرض مخطط ساعات الذروة.',
@@ -518,20 +527,20 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                 >
                   <CartesianGrid
                     strokeDasharray="3 3"
-                    stroke="#27272a"
+                    stroke={gridStroke}
                     vertical={false}
                   />
                   <XAxis
                     dataKey="hour"
-                    stroke="#71717a"
-                    tick={{ fill: '#a1a1aa', fontSize: 11, fontFamily: 'monospace' }}
-                    axisLine={{ stroke: '#3f3f46' }}
+                    stroke={axisStroke}
+                    tick={{ fill: tickFill, fontSize: 11, fontFamily: 'monospace' }}
+                    axisLine={{ stroke: axisLineStroke }}
                     tickLine={false}
                   />
                   <YAxis
                     allowDecimals={false}
-                    stroke="#71717a"
-                    tick={{ fill: '#a1a1aa', fontSize: 11, fontFamily: 'monospace' }}
+                    stroke={axisStroke}
+                    tick={{ fill: tickFill, fontSize: 11, fontFamily: 'monospace' }}
                     axisLine={false}
                     tickLine={false}
                   />
@@ -541,19 +550,19 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                       if (!active || !payload || !payload.length) return null;
                       const d = payload[0].payload;
                       return (
-                        <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-700 shadow-xl text-xs space-y-1 text-start" dir={dirAttr}>
-                          <div className="font-mono font-black text-amber-400 flex items-center justify-between gap-4">
+                        <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-stone-200 dark:border-zinc-700 shadow-xl text-xs space-y-1 text-start" dir={dirAttr}>
+                          <div className="font-mono font-black text-amber-600 dark:text-amber-400 flex items-center justify-between gap-4">
                             <span>{pickLang(lang, { ar: `الساعة ${d.hour}`, fr: `Heure ${d.hour}`, amz: `ⵜⴰⵙⵔⴰⴳⵜ ${d.hour}`, en: `Hour ${d.hour}`, es: `Hora ${d.hour}` })}</span>
                             {d.isPeak && (
-                              <span className="text-red-400 text-[10px]">
+                              <span className="text-red-600 dark:text-red-400 text-[10px]">
                                 {pickLang(lang, { ar: 'وقت الذروة', fr: 'Heure de pointe', amz: 'ⴰⴼⵍⵍⴰ', en: 'Peak', es: 'Pico' })}
                               </span>
                             )}
                           </div>
-                          <div className="text-zinc-200 font-mono tabular-nums">
+                          <div className="text-slate-800 dark:text-zinc-200 font-mono tabular-nums">
                             {pickLang(lang, { ar: 'إجمالي الطلب النشط:', fr: 'Demande active :', amz: 'ⴰⵎⴰⵜⴰⵢ:', en: 'Active demand:', es: 'Demanda activa:' })} <strong>{d.activeDemand}</strong> ({d.sharePct}%)
                           </div>
-                          <div className="text-emerald-400 font-mono tabular-nums text-[11px]">
+                          <div className="text-emerald-700 dark:text-emerald-400 font-mono tabular-nums text-[11px]">
                             {pickLang(lang, {
                               ar: `مكتمل: ${d.completed} · مؤكد: ${d.confirmed} · معلق: ${d.pending}`,
                               fr: `Terminés : ${d.completed} · Confirmés : ${d.confirmed} · Attente : ${d.pending}`,
@@ -562,7 +571,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                               es: `Hechas: ${d.completed} · Confirmadas: ${d.confirmed} · Pend.: ${d.pending}`,
                             })}
                           </div>
-                          <div className="text-zinc-400 font-mono tabular-nums text-[11px]">
+                          <div className="text-slate-500 dark:text-zinc-400 font-mono tabular-nums text-[11px]">
                             {pickLang(lang, { ar: 'إيرادات هذه الساعة:', fr: 'Revenus :', amz: 'ⵉⴷⵔⵉⵎⵏ:', en: 'Hour revenue:', es: 'Ingresos:' })} {d.revenueMAD.toLocaleString('en-US')} MAD
                           </div>
                         </div>
@@ -583,7 +592,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                             ? '#EF4444'
                             : entry.activeDemand > 0
                             ? '#F59E0B'
-                            : '#27272a'
+                            : emptyBarFill
                         }
                       />
                     ))}
@@ -595,10 +604,10 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
 
           {/* Planning Hint Footer */}
           {summaryStats.peakHourRow && (
-            <div className="pt-2 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-400">
+            <div className="pt-2 border-t border-stone-200 dark:border-zinc-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 dark:text-zinc-400">
               <span>
                 {pickLang(lang, { ar: 'أكثر ساعة ازدحاماً:', fr: 'Heure la plus chargée :', amz: 'ⵜⴰⵙⵔⴰⴳⵜ ⵉⵛⵛⵓⵕⵏ:', en: 'Busiest hour:', es: 'Hora más ocupada:' })}{' '}
-                <strong className="font-mono text-red-400" dir="ltr">
+                <strong className="font-mono text-red-600 dark:text-red-400" dir="ltr">
                   {summaryStats.peakHourRow.hour}
                 </strong>{' '}
                 {pickLang(lang, {
@@ -613,7 +622,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                 summaryStats.quietestOpenRow.hour !== summaryStats.peakHourRow.hour && (
                   <span>
                     {pickLang(lang, { ar: 'الوقت الأهدأ للاستراحة:', fr: 'Créneau calme pour pause :', amz: 'ⴰⴽⵓⴷ ⵉⵔⵙⴰⵏ:', en: 'Quietest break slot:', es: 'Hora tranquila:' })}{' '}
-                    <strong className="font-mono text-emerald-400" dir="ltr">
+                    <strong className="font-mono text-emerald-600 dark:text-emerald-400" dir="ltr">
                       {summaryStats.quietestOpenRow.hour}
                     </strong>
                   </span>
@@ -623,11 +632,11 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
         </div>
 
         {/* CHART 2: BARBER PERFORMANCE COMPARISON */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 pb-3">
+        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 dark:border-zinc-800 pb-3">
             <div>
-              <h4 className="text-sm font-black text-white flex items-center gap-2">
-                <Users className="w-4 h-4 text-emerald-400" />
+              <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <span>
                   {pickLang(lang, {
                     ar: 'أداء الحلاقين',
@@ -638,7 +647,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                   })}
                 </span>
               </h4>
-              <p className="text-[11px] text-zinc-400 mt-0.5">
+              <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-0.5">
                 {pickLang(lang, {
                   ar: 'مقارنة المواعيد المكتملة والقادمة والعائد أو الالتزام لكل حلاق',
                   fr: 'Comparaison des visites terminées, à venir, revenus et assiduité par barbier',
@@ -649,14 +658,14 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
               </p>
             </div>
 
-            <div className="inline-flex rounded-xl bg-zinc-950 border border-zinc-800 p-0.5 text-[10px] font-bold">
+            <div className="inline-flex rounded-xl bg-stone-100 dark:bg-zinc-950 border border-stone-200 dark:border-zinc-800 p-0.5 text-[10px] font-bold">
               <button
                 type="button"
                 onClick={() => setBarberMetricView('volume_revenue')}
                 className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
                   barberMetricView === 'volume_revenue'
-                    ? 'bg-emerald-500 text-black'
-                    : 'text-zinc-400 hover:text-white'
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 {pickLang(lang, { ar: 'المواعيد والدخل', fr: 'Visites & Revenus', amz: 'ⵉⵎⵓⵄⵉⴷⵏ ⴷ ⵉⴷⵔⵉⵎⵏ', en: 'Volume & Revenue', es: 'Citas e Ingresos' })}
@@ -666,8 +675,8 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                 onClick={() => setBarberMetricView('efficiency_rating')}
                 className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
                   barberMetricView === 'efficiency_rating'
-                    ? 'bg-emerald-500 text-black'
-                    : 'text-zinc-400 hover:text-white'
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 {pickLang(lang, { ar: 'الالتزام والتقييم', fr: 'Assiduité & Note', amz: 'ⴰⵙⵏⵜⵎ ⴷ ⵓⵙⵜⴰⵍ', en: 'Reliability & Rating', es: 'Puntualidad y Nota' })}
@@ -684,29 +693,29 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                 >
                   <CartesianGrid
                     strokeDasharray="3 3"
-                    stroke="#27272a"
+                    stroke={gridStroke}
                     vertical={false}
                   />
                   <XAxis
                     dataKey="name"
-                    stroke="#71717a"
-                    tick={{ fill: '#e4e4e7', fontSize: 12, fontWeight: 700 }}
-                    axisLine={{ stroke: '#3f3f46' }}
+                    stroke={axisStroke}
+                    tick={{ fill: barberTickFill, fontSize: 12, fontWeight: 700 }}
+                    axisLine={{ stroke: axisLineStroke }}
                     tickLine={false}
                   />
                   <YAxis
                     yAxisId="left"
                     allowDecimals={false}
-                    stroke="#71717a"
-                    tick={{ fill: '#a1a1aa', fontSize: 11, fontFamily: 'monospace' }}
+                    stroke={axisStroke}
+                    tick={{ fill: tickFill, fontSize: 11, fontFamily: 'monospace' }}
                     axisLine={false}
                     tickLine={false}
                   />
                   <YAxis
                     yAxisId="right"
                     orientation="right"
-                    stroke="#10b981"
-                    tick={{ fill: '#34d399', fontSize: 10, fontFamily: 'monospace' }}
+                    stroke="#059669"
+                    tick={{ fill: isDark ? '#34d399' : '#059669', fontSize: 10, fontFamily: 'monospace' }}
                     axisLine={false}
                     tickLine={false}
                   />
@@ -716,24 +725,24 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                       if (!active || !payload || !payload.length) return null;
                       const d = payload[0].payload;
                       return (
-                        <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-700 shadow-xl text-xs space-y-1 text-start" dir={dirAttr}>
-                          <div className="font-black text-white flex items-center gap-1.5">
+                        <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-stone-200 dark:border-zinc-700 shadow-xl text-xs space-y-1 text-start" dir={dirAttr}>
+                          <div className="font-black text-slate-900 dark:text-white flex items-center gap-1.5">
                             <span
                               className="w-2.5 h-2.5 rounded-full inline-block"
                               style={{ backgroundColor: d.color }}
                             />
                             <span>{d.fullName}</span>
                           </div>
-                          <div className="text-emerald-400 font-mono tabular-nums">
+                          <div className="text-emerald-700 dark:text-emerald-400 font-mono tabular-nums">
                             {pickLang(lang, { ar: 'المكتملة:', fr: 'Terminés :', amz: 'ⵉⵎⴷⵏ:', en: 'Completed:', es: 'Completadas:' })} <strong>{d.completedCount}</strong>
                           </div>
-                          <div className="text-blue-400 font-mono tabular-nums">
+                          <div className="text-blue-700 dark:text-blue-400 font-mono tabular-nums">
                             {pickLang(lang, { ar: 'القادمة / قيد المراجعة:', fr: 'À venir / en attente :', amz: 'ⴷ-ⵉⴷⴷⴰⵏ:', en: 'Upcoming / pending:', es: 'Próximas / pend.:' })} <strong>{d.upcomingCount}</strong>
                           </div>
-                          <div className="text-amber-300 font-mono tabular-nums">
+                          <div className="text-amber-700 dark:text-amber-300 font-mono tabular-nums">
                             {pickLang(lang, { ar: 'الأرباح:', fr: 'Revenus :', amz: 'ⵉⴷⵔⵉⵎⵏ:', en: 'Revenue:', es: 'Ingresos:' })} <strong>{d.revenueMAD.toLocaleString('en-US')} MAD</strong>
                           </div>
-                          <div className="text-zinc-400 font-mono tabular-nums text-[11px]">
+                          <div className="text-slate-500 dark:text-zinc-400 font-mono tabular-nums text-[11px]">
                             {pickLang(lang, { ar: 'متوسط التذكرة:', fr: 'Ticket moyen :', amz: 'ⴰⵏⴰⵎⵎⴰⵙ:', en: 'Avg ticket:', es: 'Media:' })} {d.avgTicketMAD} MAD · {d.avgRating}★
                           </div>
                         </div>
@@ -743,7 +752,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                   <Legend
                     wrapperStyle={{ fontSize: '11px', paddingTop: '6px' }}
                     formatter={(value) => (
-                      <span className="text-zinc-300 font-bold">{value}</span>
+                      <span className="text-slate-700 dark:text-zinc-300 font-bold">{value}</span>
                     )}
                   />
                   <Bar
@@ -769,7 +778,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                     name={pickLang(lang, { ar: 'الإيرادات (MAD)', fr: 'Revenus (MAD)', amz: 'ⵉⴷⵔⵉⵎⵏ (MAD)', en: 'Revenue (MAD)', es: 'Ingresos (MAD)' })}
                     stroke="#F59E0B"
                     strokeWidth={2.5}
-                    dot={{ r: 4, fill: '#F59E0B', strokeWidth: 2, stroke: '#09090b' }}
+                    dot={{ r: 4, fill: '#F59E0B', strokeWidth: 2, stroke: dotStroke }}
                     activeDot={{ r: 6 }}
                   />
                 </ComposedChart>
@@ -780,21 +789,21 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                 >
                   <CartesianGrid
                     strokeDasharray="3 3"
-                    stroke="#27272a"
+                    stroke={gridStroke}
                     vertical={false}
                   />
                   <XAxis
                     dataKey="name"
-                    stroke="#71717a"
-                    tick={{ fill: '#e4e4e7', fontSize: 12, fontWeight: 700 }}
-                    axisLine={{ stroke: '#3f3f46' }}
+                    stroke={axisStroke}
+                    tick={{ fill: barberTickFill, fontSize: 12, fontWeight: 700 }}
+                    axisLine={{ stroke: axisLineStroke }}
                     tickLine={false}
                   />
                   <YAxis
                     yAxisId="left"
                     domain={[0, 100]}
-                    stroke="#71717a"
-                    tick={{ fill: '#a1a1aa', fontSize: 11, fontFamily: 'monospace' }}
+                    stroke={axisStroke}
+                    tick={{ fill: tickFill, fontSize: 11, fontFamily: 'monospace' }}
                     axisLine={false}
                     tickLine={false}
                   />
@@ -802,8 +811,8 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                     yAxisId="right"
                     orientation="right"
                     domain={[0, 5]}
-                    stroke="#f59e0b"
-                    tick={{ fill: '#fbbf24', fontSize: 10, fontFamily: 'monospace' }}
+                    stroke="#d97706"
+                    tick={{ fill: isDark ? '#fbbf24' : '#b45309', fontSize: 10, fontFamily: 'monospace' }}
                     axisLine={false}
                     tickLine={false}
                   />
@@ -813,15 +822,15 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                       if (!active || !payload || !payload.length) return null;
                       const d = payload[0].payload;
                       return (
-                        <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-700 shadow-xl text-xs space-y-1 text-start" dir={dirAttr}>
-                          <div className="font-black text-white">{d.fullName}</div>
-                          <div className="text-emerald-400 font-mono tabular-nums">
+                        <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-stone-200 dark:border-zinc-700 shadow-xl text-xs space-y-1 text-start" dir={dirAttr}>
+                          <div className="font-black text-slate-900 dark:text-white">{d.fullName}</div>
+                          <div className="text-emerald-700 dark:text-emerald-400 font-mono tabular-nums">
                             {pickLang(lang, { ar: 'نسبة الالتزام بالحضور:', fr: 'Taux de présence :', amz: 'ⴰⵜⵉⴳ ⵏ ⵜⵉⵍⵉⵜ:', en: 'Attendance reliability:', es: 'Asistencia:' })} <strong>{d.reliabilityPct}%</strong>
                           </div>
-                          <div className="text-amber-300 font-mono tabular-nums">
+                          <div className="text-amber-700 dark:text-amber-300 font-mono tabular-nums">
                             {pickLang(lang, { ar: 'تقييم الزبناء:', fr: 'Note clients :', amz: 'ⴰⵙⵜⴰⵍ:', en: 'Client rating:', es: 'Valoración:' })} <strong>{d.avgRating} / 5.0 ★</strong>
                           </div>
-                          <div className="text-zinc-400 font-mono tabular-nums text-[11px]">
+                          <div className="text-slate-500 dark:text-zinc-400 font-mono tabular-nums text-[11px]">
                             {pickLang(lang, { ar: 'إجمالي المواعيد:', fr: 'Total RDV :', amz: 'ⴰⵎⴰⵜⴰⵢ:', en: 'Total bookings:', es: 'Total citas:' })} {d.totalHandled}
                           </div>
                         </div>
@@ -831,7 +840,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                   <Legend
                     wrapperStyle={{ fontSize: '11px', paddingTop: '6px' }}
                     formatter={(value) => (
-                      <span className="text-zinc-300 font-bold">{value}</span>
+                      <span className="text-slate-700 dark:text-zinc-300 font-bold">{value}</span>
                     )}
                   />
                   <Bar
@@ -852,7 +861,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                     name={pickLang(lang, { ar: 'تقييم الزبناء (من 5)', fr: 'Note clients (/5)', amz: 'ⴰⵙⵜⴰⵍ (/5)', en: 'Client Rating (/5)', es: 'Nota (/5)' })}
                     stroke="#FBBF24"
                     strokeWidth={2.5}
-                    dot={{ r: 4, fill: '#FBBF24', stroke: '#09090b', strokeWidth: 2 }}
+                    dot={{ r: 4, fill: '#FBBF24', stroke: dotStroke, strokeWidth: 2 }}
                   />
                 </ComposedChart>
               )}
@@ -860,9 +869,9 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
           </div>
 
           {/* Barber Compact Tabular Legend */}
-          <div className="pt-2 border-t border-zinc-800/80 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+          <div className="pt-2 border-t border-stone-200 dark:border-zinc-800/80 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
             {barberPerformanceData.map((b) => (
-              <div key={b.id} className="flex items-center justify-between gap-1 font-mono tabular-nums text-zinc-300">
+              <div key={b.id} className="flex items-center justify-between gap-1 font-mono tabular-nums text-slate-700 dark:text-zinc-300">
                 <span className="font-sans font-bold truncate flex items-center gap-1">
                   <span
                     className="w-2 h-2 rounded-full flex-shrink-0"
@@ -870,7 +879,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                   />
                   <span className="truncate">{b.name}</span>
                 </span>
-                <span className="text-emerald-400 font-bold">
+                <span className="text-emerald-700 dark:text-emerald-400 font-bold">
                   {b.completedCount}/{b.totalHandled}
                 </span>
               </div>
@@ -880,10 +889,10 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
       </div>
 
       {/* Compact Data Table for Resource Allocation Comparison */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/85 border border-zinc-800 space-y-3">
-        <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
-          <h4 className="text-sm font-black text-white flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-amber-400" />
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-3">
+        <div className="flex items-center justify-between border-b border-stone-200 dark:border-zinc-800 pb-2.5">
+          <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-amber-600 dark:text-amber-400" />
             <span>
               {pickLang(lang, {
                 ar: `جدول مقارنة الفريق لتوزيع الموارد (${periodLabel})`,
@@ -894,7 +903,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
               })}
             </span>
           </h4>
-          <span className="text-[11px] font-mono text-zinc-400 tabular-nums">
+          <span className="text-[11px] font-mono text-slate-500 dark:text-zinc-400 tabular-nums">
             {barberPerformanceData.length} {pickLang(lang, { ar: 'حلاقين', fr: 'barbiers', amz: 'ⵉⵎⵣⵣⴰⴳⵏ', en: 'barbers', es: 'barberos' })}
           </span>
         </div>
@@ -902,7 +911,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-start border-collapse">
             <thead>
-              <tr className="border-b border-zinc-800 text-[11px] text-zinc-400">
+              <tr className="border-b border-stone-200 dark:border-zinc-800 text-[11px] text-slate-500 dark:text-zinc-400">
                 <th className="py-2 px-2 font-bold">{pickLang(lang, { ar: 'الحلاق', fr: 'Barbier', amz: 'ⴰⵎⵣⵣⴰⴳ', en: 'Barber', es: 'Barbero' })}</th>
                 <th className="py-2 px-2 font-bold text-center">{pickLang(lang, { ar: 'مكتملة', fr: 'Terminés', amz: 'ⵉⵎⴷⵏ', en: 'Done', es: 'Hechas' })}</th>
                 <th className="py-2 px-2 font-bold text-center">{pickLang(lang, { ar: 'قادمة / معلقة', fr: 'À venir', amz: 'ⴷ-ⵉⴷⴷⴰⵏ', en: 'Upcoming', es: 'Próximas' })}</th>
@@ -911,25 +920,25 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
                 <th className="py-2 px-2 font-bold text-end">{pickLang(lang, { ar: 'الأرباح (MAD)', fr: 'Revenus (MAD)', amz: 'ⵉⴷⵔⵉⵎⵏ (MAD)', en: 'Revenue (MAD)', es: 'Ingresos (MAD)' })}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800/70 font-mono tabular-nums">
+            <tbody className="divide-y divide-stone-200 dark:divide-zinc-800/70 font-mono tabular-nums">
               {barberPerformanceData.map((row) => (
-                <tr key={row.id} className="hover:bg-zinc-950/60 transition-colors">
-                  <td className="py-2.5 px-2 font-sans font-bold text-white whitespace-nowrap">
+                <tr key={row.id} className="hover:bg-stone-50 dark:hover:bg-zinc-950/60 transition-colors">
+                  <td className="py-2.5 px-2 font-sans font-bold text-slate-900 dark:text-white whitespace-nowrap">
                     {row.fullName}
                   </td>
-                  <td className="py-2.5 px-2 text-center text-emerald-400 font-bold">
+                  <td className="py-2.5 px-2 text-center text-emerald-700 dark:text-emerald-400 font-bold">
                     {row.completedCount}
                   </td>
-                  <td className="py-2.5 px-2 text-center text-blue-400 font-bold">
+                  <td className="py-2.5 px-2 text-center text-blue-700 dark:text-blue-400 font-bold">
                     {row.upcomingCount}
                   </td>
-                  <td className="py-2.5 px-2 text-center text-zinc-300">
+                  <td className="py-2.5 px-2 text-center text-slate-700 dark:text-zinc-300">
                     {row.reliabilityPct}%
                   </td>
-                  <td className="py-2.5 px-2 text-center text-amber-300">
+                  <td className="py-2.5 px-2 text-center text-amber-700 dark:text-amber-300">
                     {row.avgRating.toFixed(1)} ★
                   </td>
-                  <td className="py-2.5 px-2 text-end text-emerald-300 font-black">
+                  <td className="py-2.5 px-2 text-end text-emerald-700 dark:text-emerald-300 font-black">
                     {row.revenueMAD.toLocaleString('en-US')} MAD
                   </td>
                 </tr>

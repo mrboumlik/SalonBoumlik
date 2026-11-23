@@ -302,7 +302,7 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ onSelectBarberToBook }
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full py-2 px-3 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-emerald-700 dark:text-emerald-400 border border-stone-200 dark:border-zinc-800 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors"
+                    className="w-full py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
                     <span>WhatsApp {firstName}</span>

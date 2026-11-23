@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { AppTheme } from '../types';
+import { safeStorageGet, safeStorageSet } from '../utils/safeBrowser';
 
 interface ThemeContextType {
   theme: AppTheme;
@@ -59,13 +60,9 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<AppTheme>(() => {
-    try {
-      const saved = localStorage.getItem('salon_boumlik_theme') as AppTheme;
-      if (saved && (saved === 'luxury_gold' || saved === 'charcoal' || saved === 'minimal_light')) {
-        return saved;
-      }
-    } catch {
-      // ignore
+    const saved = safeStorageGet('salon_boumlik_theme', 'local') as AppTheme | null;
+    if (saved && (saved === 'luxury_gold' || saved === 'charcoal' || saved === 'minimal_light')) {
+      return saved;
     }
     return 'minimal_light';
   });
@@ -74,11 +71,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setTheme = (newTheme: AppTheme) => {
     setThemeState(newTheme);
-    try {
-      localStorage.setItem('salon_boumlik_theme', newTheme);
-    } catch {
-      // ignore
-    }
+    safeStorageSet('salon_boumlik_theme', newTheme, 'local');
   };
 
   const toggleTheme = () => {
@@ -87,8 +80,16 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle('dark', isDark);
-    root.style.colorScheme = isDark ? 'dark' : 'light';
+    if (isDark) {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    try {
+      root.style.colorScheme = isDark ? 'dark' : 'light';
+    } catch {
+      // ignore unsupported colorScheme property on older browsers
+    }
     root.classList.remove('theme-gold', 'theme-charcoal', 'theme-light');
     if (theme === 'luxury_gold') {
       root.classList.add('theme-gold');

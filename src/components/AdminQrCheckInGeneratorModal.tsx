@@ -37,6 +37,8 @@ import { formatMoroccanWhatsAppNumber } from '../utils/whatsappAutomation';
 import { sendDualAlert, showToast } from '../utils/notifications';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
+import { safeCopyToClipboard } from '../utils/safeBrowser';
+import { ModalPortal } from './ModalPortal';
 
 interface AdminQrCheckInGeneratorModalProps {
   isOpen: boolean;
@@ -415,7 +417,7 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
   };
 
   const handleCopyPayload = () => {
-    navigator.clipboard.writeText(activeClientContext.qrPayload);
+    void safeCopyToClipboard(activeClientContext.qrPayload);
     setCopiedPayload(true);
     setTimeout(() => setCopiedPayload(false), 1800);
   };
@@ -529,300 +531,302 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
   });
 
   return (
-    <div
-      dir={isRtl ? 'rtl' : 'ltr'}
-      className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm overflow-y-auto"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="qr-generator-modal-title"
-    >
-      <div className="w-full max-w-2xl rounded-3xl bg-zinc-950 border border-amber-500/40 shadow-2xl overflow-hidden my-auto">
-        {/* Top Modal Header */}
-        <div className="p-4 sm:p-5 border-b border-zinc-800 bg-zinc-900/70 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-400 flex items-center justify-center flex-shrink-0">
-              <QrCode className="w-5 h-5" />
+    <ModalPortal>
+      <div
+        dir={isRtl ? 'rtl' : 'ltr'}
+        className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 sb-modal-backdrop overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="qr-generator-modal-title"
+      >
+        <div className="w-full max-w-3xl rounded-3xl bg-white dark:bg-[#141720] border border-amber-300 dark:border-amber-500/40 shadow-2xl overflow-hidden my-auto">
+          {/* Top Modal Header */}
+          <div className="p-4 sm:p-5 border-b border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-[#191D28] flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-500/15 border border-amber-300 dark:border-amber-500/40 text-amber-700 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+                <QrCode className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3
+                  id="qr-generator-modal-title"
+                  className="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate"
+                >
+                  {ui.title}
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate">{ui.subtitle}</p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <h3
-                id="qr-generator-modal-title"
-                className="text-sm sm:text-base font-black text-white truncate"
-              >
-                {ui.title}
-              </h3>
-              <p className="text-[11px] text-zinc-400 truncate">{ui.subtitle}</p>
-            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={ui.closeAria}
+              className="p-2 rounded-xl text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={ui.closeAria}
-            className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+          {/* Body Grid */}
+          <div className="p-5 sm:p-6 grid grid-cols-1 md:grid-cols-12 gap-5">
+            {/* Left Column */}
+            <div className="md:col-span-6 space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-stone-100 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('booking');
+                    setLastAttributedMsg(null);
+                  }}
+                  className={`min-h-[38px] px-2.5 py-1.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                    mode === 'booking'
+                      ? 'bg-amber-500 text-black'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <ScanLine className="w-3.5 h-3.5" />
+                  <span>{ui.modeBooking}</span>
+                </button>
 
-        {/* Body Grid */}
-        <div className="p-4 sm:p-5 grid grid-cols-1 md:grid-cols-12 gap-5">
-          {/* Left Column */}
-          <div className="md:col-span-6 space-y-3.5 text-xs">
-            <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-zinc-900 border border-zinc-800">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('booking');
-                  setLastAttributedMsg(null);
-                }}
-                className={`min-h-[38px] px-2.5 py-1.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                  mode === 'booking'
-                    ? 'bg-amber-500 text-black'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <ScanLine className="w-3.5 h-3.5" />
-                <span>{ui.modeBooking}</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('walkin');
+                    setLastAttributedMsg(null);
+                  }}
+                  className={`min-h-[38px] px-2.5 py-1.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                    mode === 'walkin'
+                      ? 'bg-amber-500 text-black'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>{ui.modeWalkin}</span>
+                </button>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('walkin');
-                  setLastAttributedMsg(null);
-                }}
-                className={`min-h-[38px] px-2.5 py-1.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                  mode === 'walkin'
-                    ? 'bg-amber-500 text-black'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>{ui.modeWalkin}</span>
-              </button>
-            </div>
+              {mode === 'booking' ? (
+                <div className="space-y-2.5">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500 absolute start-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={bookingSearch}
+                      onChange={(e) => setBookingSearch(e.target.value)}
+                      placeholder={ui.searchPlaceholder}
+                      className="w-full min-h-[40px] bg-stone-50 dark:bg-zinc-900 border border-stone-300 dark:border-zinc-800 rounded-xl ps-9 pe-3 py-2 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
 
-            {mode === 'booking' ? (
-              <div className="space-y-2.5">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-zinc-500 absolute start-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={bookingSearch}
-                    onChange={(e) => setBookingSearch(e.target.value)}
-                    placeholder={ui.searchPlaceholder}
-                    className="w-full min-h-[40px] bg-zinc-900 border border-zinc-800 rounded-xl ps-9 pe-3 py-2 text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div className="max-h-60 overflow-y-auto space-y-1.5 pe-0.5">
-                  {eligibleBookings.length === 0 ? (
-                    <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 text-center text-zinc-400">
-                      {ui.emptyBookings}
-                    </div>
-                  ) : (
-                    eligibleBookings.map((b) => {
-                      const isSelected = selectedBooking?.id === b.id;
-                      return (
-                        <button
-                          key={b.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedBookingId(b.id);
-                            setLastAttributedMsg(null);
-                          }}
-                          className={`w-full p-2.5 rounded-xl border text-start transition-all cursor-pointer flex items-center justify-between gap-2 ${
-                            isSelected
-                              ? 'bg-amber-500/15 border-amber-500 text-white'
-                              : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:border-zinc-700'
-                          }`}
-                        >
-                          <div className="min-w-0">
-                            <div className="font-bold truncate">{b.clientName}</div>
-                            <div className="text-[10px] text-zinc-400 font-mono truncate" dir="ltr">
-                              {b.ticketNumber} · {b.date} ({b.timeSlot})
-                            </div>
-                          </div>
-                          <span
-                            className={`text-[10px] px-2 py-0.5 rounded font-bold flex-shrink-0 ${
-                              b.status === 'completed'
-                                ? 'bg-teal-500/20 text-teal-300'
-                                : 'bg-emerald-500/20 text-emerald-300'
+                  <div className="max-h-60 overflow-y-auto space-y-1.5 pe-0.5">
+                    {eligibleBookings.length === 0 ? (
+                      <div className="p-4 rounded-xl bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 text-center text-slate-500 dark:text-zinc-400">
+                        {ui.emptyBookings}
+                      </div>
+                    ) : (
+                      eligibleBookings.map((b) => {
+                        const isSelected = selectedBooking?.id === b.id;
+                        return (
+                          <button
+                            key={b.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedBookingId(b.id);
+                              setLastAttributedMsg(null);
+                            }}
+                            className={`w-full p-2.5 rounded-xl border text-start transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                              isSelected
+                                ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-500 text-slate-900 dark:text-white'
+                                : 'bg-stone-50 dark:bg-zinc-900 border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:border-stone-300 dark:hover:border-zinc-700'
                             }`}
                           >
-                            {b.status === 'completed' ? ui.completedBadge : ui.expectedBadge}
-                          </span>
-                        </button>
-                      );
-                    })
-                  )}
+                            <div className="min-w-0">
+                              <div className="font-bold truncate">{b.clientName}</div>
+                              <div className="text-[10px] text-slate-500 dark:text-zinc-400 font-mono truncate" dir="ltr">
+                                {b.ticketNumber} · {b.date} ({b.timeSlot})
+                              </div>
+                            </div>
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded font-bold flex-shrink-0 ${
+                                b.status === 'completed'
+                                  ? 'bg-teal-100 dark:bg-teal-500/20 text-teal-800 dark:text-teal-300'
+                                  : 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300'
+                              }`}
+                            >
+                              {b.status === 'completed' ? ui.completedBadge : ui.expectedBadge}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="space-y-3 p-3.5 rounded-2xl bg-zinc-900/70 border border-zinc-800">
-                <div>
-                  <label className="block text-[11px] font-bold text-zinc-400 mb-1">
-                    {ui.walkinNameLabel}
-                  </label>
-                  <input
-                    type="text"
-                    value={walkinName}
-                    onChange={(e) => setWalkinName(e.target.value)}
-                    placeholder={ui.walkinNamePlaceholder}
-                    className="w-full min-h-[40px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-zinc-400 mb-1">
-                    {ui.walkinPhoneLabel}
-                  </label>
-                  <input
-                    type="tel"
-                    dir="ltr"
-                    value={walkinPhone}
-                    onChange={(e) => setWalkinPhone(e.target.value)}
-                    placeholder="06XXXXXXXX"
-                    className="w-full min-h-[40px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono text-white text-left focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-zinc-400 mb-1">
-                    {ui.barberLabel}
-                  </label>
-                  <select
-                    value={walkinBarberId}
-                    onChange={(e) => setWalkinBarberId(e.target.value)}
-                    className="w-full min-h-[40px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                  >
-                    {mergedBarbers.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name[lang] || b.name.fr}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleRegenerateToken}
-                  className="w-full min-h-[38px] px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-amber-300 font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>{ui.regenerateBtn}</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Right Column */}
-          <div className="md:col-span-6 p-4 rounded-2xl bg-zinc-900/60 border border-zinc-800 flex flex-col items-center justify-between gap-3.5 text-center">
-            <div className="w-full space-y-1">
-              <div className="text-sm font-black text-white truncate">
-                {activeClientContext.clientName}
-              </div>
-              <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-zinc-400 font-mono tabular-nums">
-                <span className="text-amber-300 font-bold">{activeClientContext.token}</span>
-                <span aria-hidden="true">·</span>
-                <span className="text-emerald-300 font-bold">
-                  {activeClientContext.pointsBalance} {ui.pointsUnit}
-                </span>
-                <span aria-hidden="true">·</span>
-                <span>
-                  {activeClientContext.verifiedVisits} {ui.visitsUnit}
-                </span>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-2xl bg-white border-4 border-zinc-800 shadow-xl w-44 h-44 flex items-center justify-center">
-              {isGenerating || !qrDataUrl ? (
-                <RefreshCw className="w-6 h-6 animate-spin text-amber-600" />
               ) : (
-                <img
-                  src={qrDataUrl}
-                  alt={`Check-In QR ${activeClientContext.token}`}
-                  className="w-full h-full object-contain"
-                />
-              )}
-            </div>
+                <div className="space-y-3 p-3.5 rounded-2xl bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-zinc-400 mb-1">
+                      {ui.walkinNameLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={walkinName}
+                      onChange={(e) => setWalkinName(e.target.value)}
+                      placeholder={ui.walkinNamePlaceholder}
+                      className="w-full min-h-[40px] bg-white dark:bg-zinc-950 border border-stone-300 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
 
-            <div className="w-full space-y-2">
-              <button
-                type="button"
-                disabled={isAwardingPoints}
-                onClick={() => void handleQuickAwardPoints(POINTS_PER_VISIT)}
-                className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20 cursor-pointer disabled:opacity-60 transition-colors"
-              >
-                <Award className="w-4 h-4 flex-shrink-0" />
-                <span>
-                  {isAwardingPoints
-                    ? ui.awarding
-                    : mode === 'booking' &&
-                      selectedBooking &&
-                      !activeClientContext.isBookingCompleted
-                    ? ui.confirmAndAward
-                    : ui.awardArrivalOnly}
-                </span>
-              </button>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-zinc-400 mb-1">
+                      {ui.walkinPhoneLabel}
+                    </label>
+                    <input
+                      type="tel"
+                      dir="ltr"
+                      value={walkinPhone}
+                      onChange={(e) => setWalkinPhone(e.target.value)}
+                      placeholder="06XXXXXXXX"
+                      className="w-full min-h-[40px] bg-white dark:bg-zinc-950 border border-stone-300 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-white text-left focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
 
-              {lastAttributedMsg && (
-                <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center justify-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                  <span>{lastAttributedMsg}</span>
-                </div>
-              )}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-zinc-400 mb-1">
+                      {ui.barberLabel}
+                    </label>
+                    <select
+                      value={walkinBarberId}
+                      onChange={(e) => setWalkinBarberId(e.target.value)}
+                      className="w-full min-h-[40px] bg-white dark:bg-zinc-950 border border-stone-300 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-amber-500"
+                    >
+                      {mergedBarbers.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name[lang] || b.name.fr}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
-                <button
-                  type="button"
-                  onClick={handleDownloadQrPng}
-                  disabled={!qrDataUrl}
-                  className="min-h-[38px] px-2 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-bold flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
-                >
-                  <Download className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>PNG</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleCopyPayload}
-                  className="min-h-[38px] px-2 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-bold flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  {copiedPayload ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5 text-blue-400" />
-                  )}
-                  <span>{copiedPayload ? ui.copied : ui.copy}</span>
-                </button>
-
-                {clientWa ? (
-                  <a
-                    href={`https://wa.me/${clientWa}?text=${encodeURIComponent(waText)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="min-h-[38px] px-2 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-bold flex items-center justify-center gap-1"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" />
-                    <span>{ui.whatsapp}</span>
-                  </a>
-                ) : (
                   <button
                     type="button"
-                    onClick={() => void handleQuickAwardPoints(20)}
-                    disabled={isAwardingPoints}
-                    className="min-h-[38px] px-2 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold flex items-center justify-center gap-1 cursor-pointer"
+                    onClick={handleRegenerateToken}
+                    className="w-full min-h-[38px] px-3 py-2 rounded-xl bg-stone-200 hover:bg-stone-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-amber-800 dark:text-amber-300 font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                   >
-                    <Coins className="w-3.5 h-3.5" />
-                    <span>+20</span>
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>{ui.regenerateBtn}</span>
                   </button>
+                </div>
+              )}
+            </div>
+
+            {/* Right Column */}
+            <div className="md:col-span-6 p-4 sm:p-5 rounded-2xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800 flex flex-col items-center justify-between gap-3.5 text-center">
+              <div className="w-full space-y-1">
+                <div className="text-sm font-black text-slate-900 dark:text-white truncate">
+                  {activeClientContext.clientName}
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-slate-500 dark:text-zinc-400 font-mono tabular-nums">
+                  <span className="text-amber-700 dark:text-amber-300 font-bold">{activeClientContext.token}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-emerald-700 dark:text-emerald-300 font-bold">
+                    {activeClientContext.pointsBalance} {ui.pointsUnit}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    {activeClientContext.verifiedVisits} {ui.visitsUnit}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-white border-4 border-stone-200 dark:border-zinc-800 shadow-lg w-44 h-44 flex items-center justify-center">
+                {isGenerating || !qrDataUrl ? (
+                  <RefreshCw className="w-6 h-6 animate-spin text-amber-600" />
+                ) : (
+                  <img
+                    src={qrDataUrl}
+                    alt={`Check-In QR ${activeClientContext.token}`}
+                    className="w-full h-full object-contain"
+                  />
                 )}
+              </div>
+
+              <div className="w-full space-y-2">
+                <button
+                  type="button"
+                  disabled={isAwardingPoints}
+                  onClick={() => void handleQuickAwardPoints(POINTS_PER_VISIT)}
+                  className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-teal-600/20 cursor-pointer disabled:opacity-60 transition-colors"
+                >
+                  <Award className="w-4 h-4 flex-shrink-0" />
+                  <span>
+                    {isAwardingPoints
+                      ? ui.awarding
+                      : mode === 'booking' &&
+                        selectedBooking &&
+                        !activeClientContext.isBookingCompleted
+                      ? ui.confirmAndAward
+                      : ui.awardArrivalOnly}
+                  </span>
+                </button>
+
+                {lastAttributedMsg && (
+                  <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold flex items-center justify-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>{lastAttributedMsg}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={handleDownloadQrPng}
+                    disabled={!qrDataUrl}
+                    className="min-h-[38px] px-2 py-1.5 rounded-xl bg-white hover:bg-stone-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-stone-200 dark:border-zinc-700 text-slate-900 dark:text-white font-bold flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>PNG</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyPayload}
+                    className="min-h-[38px] px-2 py-1.5 rounded-xl bg-white hover:bg-stone-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-stone-200 dark:border-zinc-700 text-slate-900 dark:text-white font-bold flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    {copiedPayload ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    )}
+                    <span>{copiedPayload ? ui.copied : ui.copy}</span>
+                  </button>
+
+                  {clientWa ? (
+                    <a
+                      href={`https://wa.me/${clientWa}?text=${encodeURIComponent(waText)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-h-[38px] px-2 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-1 shadow-xs transition-colors"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>{ui.whatsapp}</span>
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleQuickAwardPoints(20)}
+                      disabled={isAwardingPoints}
+                      className="min-h-[38px] px-2 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/15 dark:hover:bg-amber-500/25 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 font-bold flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <Coins className="w-3.5 h-3.5" />
+                      <span>+20</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 };

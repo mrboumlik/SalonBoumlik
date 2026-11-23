@@ -1,5 +1,13 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import {
+  getAuth,
+  initializeAuth,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  inMemoryPersistence,
+  type Auth,
+} from 'firebase/auth';
 import {
   getFirestore,
   initializeFirestore,
@@ -31,8 +39,29 @@ function initDb(): Firestore {
   }
 }
 
+function initAuth(): Auth {
+  try {
+    return initializeAuth(app, {
+      persistence: [
+        indexedDBLocalPersistence,
+        browserLocalPersistence,
+        browserSessionPersistence,
+        inMemoryPersistence,
+      ],
+    });
+  } catch {
+    try {
+      return getAuth(app);
+    } catch {
+      return initializeAuth(app, {
+        persistence: inMemoryPersistence,
+      });
+    }
+  }
+}
+
 export const db = initDb();
-export const auth = getAuth(app);
+export const auth = initAuth();
 
 export enum OperationType {
   CREATE = 'create',

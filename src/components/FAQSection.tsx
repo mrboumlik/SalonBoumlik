@@ -389,7 +389,7 @@ export const FAQSection: React.FC = () => {
             )}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-400 hover:underline"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors"
           >
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>{sectionUi.ctaText}</span>

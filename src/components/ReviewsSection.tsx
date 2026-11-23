@@ -18,6 +18,7 @@ import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore
 import { useBarberRoster } from '../utils/barberRosterStore';
 import { submitBarberReview, useFirestoreReviews } from '../utils/reviewsStore';
 import { pickLang } from '../utils/i18n';
+import { safeStorageGet } from '../utils/safeBrowser';
 
 export const ReviewsSection: React.FC = () => {
   const { lang, isRtl } = useLanguage();
@@ -34,7 +35,7 @@ export const ReviewsSection: React.FC = () => {
 
   const [localCustomReviews, setLocalCustomReviews] = useState<CustomerReview[]>(() => {
     try {
-      const stored = localStorage.getItem('salon_boumlik_reviews_v3');
+      const stored = safeStorageGet('salon_boumlik_reviews_v3', 'local');
       if (stored) {
         const parsed = JSON.parse(stored) as CustomerReview[];
         return Array.isArray(parsed)
@@ -476,7 +477,7 @@ export const ReviewsSection: React.FC = () => {
 
       {/* QR CODE MODAL - High Quality Google Review Code */}
       {isQrModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+        <div className="fixed inset-0 z-[60] overflow-y-auto flex items-center justify-center p-4 sb-modal-backdrop">
           <div className="relative w-full max-w-sm bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-5 text-center shadow-2xl">
             
             <button
@@ -551,7 +552,7 @@ export const ReviewsSection: React.FC = () => {
 
       {/* LEAVE A REVIEW MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+        <div className="fixed inset-0 z-[60] overflow-y-auto flex items-center justify-center p-4 sb-modal-backdrop">
           <div className="relative w-full max-w-md bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-2xl p-6 sm:p-8 space-y-5 shadow-2xl">
             
             <button

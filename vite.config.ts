@@ -1,14 +1,125 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
-import {defineConfig} from 'vite';
+import {transform as lightningTransform} from 'lightningcss';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {defineConfig, type Plugin} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
+
+const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+function stripAtSupportsColorMix(input: string): string {
+  let out = '';
+  let i = 0;
+  const marker = '@supports (color:color-mix(';
+  while (i < input.length) {
+    const idx = input.indexOf(marker, i);
+    if (idx === -1) {
+      out += input.slice(i);
+      break;
+    }
+    out += input.slice(i, idx);
+    const braceStart = input.indexOf('{', idx);
+    if (braceStart === -1) {
+      out += input.slice(idx);
+      break;
+    }
+    let depth = 0;
+    let j = braceStart;
+    while (j < input.length) {
+      if (input[j] === '{') depth++;
+      else if (input[j] === '}') {
+        depth--;
+        if (depth === 0) {
+          j++;
+          break;
+        }
+      }
+      j++;
+    }
+    i = j;
+  }
+  return out;
+}
+
+function unwrapAtLayers(input: string): string {
+  const cleaned = input.replace(/@layer\s+[a-zA-Z0-9_,\s-]+;/g, '');
+  let out = '';
+  let i = 0;
+  while (i < cleaned.length) {
+    const idx = cleaned.indexOf('@layer ', i);
+    if (idx === -1) {
+      out += cleaned.slice(i);
+      break;
+    }
+    out += cleaned.slice(i, idx);
+    const braceStart = cleaned.indexOf('{', idx);
+    if (braceStart === -1) {
+      out += cleaned.slice(idx);
+      break;
+    }
+    let depth = 0;
+    let j = braceStart;
+    while (j < cleaned.length) {
+      if (cleaned[j] === '{') depth++;
+      else if (cleaned[j] === '}') {
+        depth--;
+        if (depth === 0) {
+          out += cleaned.slice(braceStart + 1, j);
+          j++;
+          break;
+        }
+      }
+      j++;
+    }
+    i = j;
+  }
+  return out;
+}
+
+function downlevelLegacyCss(rawCss: string, filename: string, minify: boolean): string {
+  let css = stripAtSupportsColorMix(rawCss);
+  css = unwrapAtLayers(css);
+  // Make space-*/divide-* utilities work on Chrome < 88 without :where()
+  css = css.replace(/:where\((\.(?:space|divide)-[xy]-[^)]+>:not\(:last-child\))\)/g, '$1');
+
+  const result = lightningTransform({
+    filename,
+    code: Buffer.from(css, 'utf8'),
+    minify,
+    targets: {
+      chrome: 79 << 16,
+      safari: 13 << 16,
+      firefox: 78 << 16,
+    },
+  });
+  return Buffer.from(result.code).toString('utf8');
+}
+
+function legacyCssCompatibilityPlugin(): Plugin {
+  return {
+    name: 'salon-boumlik-legacy-css-compat',
+    enforce: 'post',
+    generateBundle(_options, bundle) {
+      for (const [fileName, chunk] of Object.entries(bundle)) {
+        if (chunk.type === 'asset' && fileName.endsWith('.css')) {
+          const sourceText =
+            typeof chunk.source === 'string'
+              ? chunk.source
+              : Buffer.from(chunk.source).toString('utf8');
+          chunk.source = downlevelLegacyCss(sourceText, fileName, true);
+        }
+      }
+    },
+  };
+}
 
 export default defineConfig(() => {
   return {
     plugins: [
       react(),
       tailwindcss(),
+      legacyCssCompatibilityPlugin(),
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: [
@@ -95,9 +206,13 @@ export default defineConfig(() => {
         },
       }),
     ],
+    build: {
+      target: ['es2020', 'chrome79', 'safari14', 'firefox78'],
+      cssTarget: ['chrome79', 'safari13', 'firefox78'],
+    },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': ROOT_DIR,
       },
     },
     server: {

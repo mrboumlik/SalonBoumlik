@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant dark (html.dark &);
 
 @theme {
   --font-serif: 'Cinzel', serif;
@@ -22,36 +22,63 @@
   font-family: 'Noto Sans Tifinagh', serif;
 }
 
-/* Gold gradient text & accents (WCAG AA contrast across light & dark) */
+/* Solid high-contrast modal scrim fallback (zero backdrop-filter or color-mix dependency) */
+.sb-modal-backdrop {
+  background-color: #090D16;
+  background-color: rgba(9, 13, 22, 0.92);
+}
+html.dark .sb-modal-backdrop {
+  background-color: #050608;
+  background-color: rgba(5, 6, 8, 0.95);
+}
+
+/* Gold gradient text & accents (WCAG AA contrast + solid fallback for older Chrome/Cast TVs) */
 .text-gold-gradient {
-  background: linear-gradient(135deg, #92400E 0%, #B45309 45%, #D97706 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #B45309;
 }
-
 html.dark .text-gold-gradient {
-  background: linear-gradient(135deg, #FFF0B3 0%, #E6C265 40%, #B88B27 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #E6C265;
 }
-
 .text-gold-metallic {
-  background: linear-gradient(180deg, #451A03 0%, #B45309 55%, #78350F 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #92400E;
+}
+html.dark .text-gold-metallic {
+  color: #E6C265;
 }
 
-html.dark .text-gold-metallic {
-  background: linear-gradient(180deg, #FFFFFF 0%, #E6C265 50%, #996F16 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+@supports (-webkit-background-clip: text) and (-webkit-text-fill-color: transparent) {
+  .text-gold-gradient {
+    background: linear-gradient(135deg, #92400E 0%, #B45309 45%, #D97706 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  html.dark .text-gold-gradient {
+    background: linear-gradient(135deg, #FFF0B3 0%, #E6C265 40%, #B88B27 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .text-gold-metallic {
+    background: linear-gradient(180deg, #451A03 0%, #B45309 55%, #78350F 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  html.dark .text-gold-metallic {
+    background: linear-gradient(180deg, #FFFFFF 0%, #E6C265 50%, #996F16 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
 }
 
 .bg-gold-gradient {
+  background-color: #CFA032;
   background: linear-gradient(135deg, #E6C265 0%, #CFA032 50%, #9E7416 100%);
 }
 
 .bg-gold-gradient-hover:hover {
+  background-color: #DFB03E;
   background: linear-gradient(135deg, #F5D37E 0%, #DFB03E 50%, #B3861E 100%);
 }
 

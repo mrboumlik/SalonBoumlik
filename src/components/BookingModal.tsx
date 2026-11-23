@@ -167,7 +167,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   return (
     <div
       dir={isRtl ? 'rtl' : 'ltr'}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4 sb-modal-backdrop animate-in fade-in duration-200"
     >
       <div className="bg-[#0C0E14] border border-amber-500/40 rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl relative max-h-[92vh] overflow-y-auto">
         

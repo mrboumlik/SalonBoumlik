@@ -24,6 +24,8 @@ import {
   normalizeSalonWhatsappDigits,
 } from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
+import { safeCopyToClipboard } from '../utils/safeBrowser';
+import { ModalPortal } from './ModalPortal';
 import heroLogoImage from '../assets/images/regenerated_image_1793760774705.png';
 
 interface HeroProps {
@@ -46,7 +48,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
   }, []);
 
   const handleCopyWifi = () => {
-    navigator.clipboard.writeText(SALON_INFO.media.wifiPassword);
+    void safeCopyToClipboard(SALON_INFO.media.wifiPassword);
     setCopiedWifi(true);
     setTimeout(() => setCopiedWifi(false), 2000);
   };
@@ -253,9 +255,9 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
                 href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="min-h-[46px] px-4 py-2.5 rounded-2xl bg-white hover:bg-stone-50 dark:bg-zinc-950/80 dark:hover:bg-zinc-900 border border-stone-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors"
+                className="min-h-[46px] px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 dark:border-emerald-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors shadow-xs"
               >
-                <MessageCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <MessageCircle className="w-4 h-4 text-white" />
                 <span>{labels.whatsapp}</span>
               </a>
 
@@ -275,60 +277,62 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
 
       {/* Compact Wi-Fi QR Popup */}
       {isWifiModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
-          onClick={() => setIsWifiModalOpen(false)}
-        >
+        <ModalPortal>
           <div
-            className="bg-white dark:bg-[#111318] border border-stone-200 dark:border-zinc-800 rounded-3xl p-6 max-w-xs w-full shadow-2xl relative text-center space-y-4"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4 sb-modal-backdrop"
+            onClick={() => setIsWifiModalOpen(false)}
           >
-            <button
-              type="button"
-              onClick={() => setIsWifiModalOpen(false)}
-              aria-label={labels.closeLabel}
-              className="absolute top-3.5 right-3.5 rtl:right-auto rtl:left-3.5 p-2 rounded-xl text-stone-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+            <div
+              className="bg-white dark:bg-[#111318] border border-stone-200 dark:border-zinc-800 rounded-3xl p-6 max-w-xs w-full shadow-2xl relative text-center space-y-4"
+              onClick={(e) => e.stopPropagation()}
             >
-              <X className="w-4 h-4" />
-            </button>
+              <button
+                type="button"
+                onClick={() => setIsWifiModalOpen(false)}
+                aria-label={labels.closeLabel}
+                className="absolute top-3.5 right-3.5 rtl:right-auto rtl:left-3.5 p-2 rounded-xl text-stone-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
 
-            <h3 className="text-sm font-black text-slate-900 dark:text-white pt-1">
-              {labels.wifiTitle}
-            </h3>
+              <h3 className="text-sm font-black text-slate-900 dark:text-white pt-1">
+                {labels.wifiTitle}
+              </h3>
 
-            <div className="p-3 bg-stone-50 dark:bg-zinc-900 rounded-2xl border border-stone-200 dark:border-zinc-800 inline-block">
-              <img
-                src={SALON_INFO.media.qrWifi}
-                alt="Wi-Fi QR Code"
-                className="w-44 h-44 object-contain mx-auto rounded-lg"
-              />
-            </div>
-
-            <div className="p-3 bg-stone-100 dark:bg-zinc-900 rounded-xl text-start text-xs space-y-1">
-              <div className="flex justify-between items-center text-stone-500 dark:text-zinc-400">
-                <span>SSID:</span>
-                <span className="font-mono font-bold text-slate-900 dark:text-white" dir="ltr">
-                  {SALON_INFO.media.wifiSsid}
-                </span>
+              <div className="p-3 bg-stone-50 dark:bg-zinc-900 rounded-2xl border border-stone-200 dark:border-zinc-800 inline-block">
+                <img
+                  src={SALON_INFO.media.qrWifi}
+                  alt="Wi-Fi QR Code"
+                  className="w-44 h-44 object-contain mx-auto rounded-lg"
+                />
               </div>
-              <div className="flex justify-between items-center text-stone-500 dark:text-zinc-400">
-                <span>Code:</span>
-                <span className="font-mono font-bold text-amber-700 dark:text-amber-400" dir="ltr">
-                  {SALON_INFO.media.wifiPassword}
-                </span>
-              </div>
-            </div>
 
-            <button
-              type="button"
-              onClick={handleCopyWifi}
-              className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
-            >
-              {copiedWifi ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              <span>{copiedWifi ? labels.copiedWifi : labels.copyWifi}</span>
-            </button>
+              <div className="p-3 bg-stone-100 dark:bg-zinc-900 rounded-xl text-start text-xs space-y-1">
+                <div className="flex justify-between items-center text-stone-500 dark:text-zinc-400">
+                  <span>SSID:</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white" dir="ltr">
+                    {SALON_INFO.media.wifiSsid}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-stone-500 dark:text-zinc-400">
+                  <span>Code:</span>
+                  <span className="font-mono font-bold text-amber-700 dark:text-amber-400" dir="ltr">
+                    {SALON_INFO.media.wifiPassword}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCopyWifi}
+                className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                {copiedWifi ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedWifi ? labels.copiedWifi : labels.copyWifi}</span>
+              </button>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </section>
   );

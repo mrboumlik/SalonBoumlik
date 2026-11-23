@@ -1,4 +1,5 @@
 import { AppointmentBooking, Language } from '../types';
+import { safeStorageGet, safeStorageSet } from './safeBrowser';
 
 export type WhatsAppProvider = 'green-api' | 'ultramsg';
 
@@ -28,12 +29,10 @@ const DEFAULT_CONFIG: WhatsAppAutomationConfig = {
 
 export function getWhatsAppAutomationConfig(): WhatsAppAutomationConfig {
   try {
-    if (typeof window !== 'undefined') {
-      const raw = localStorage.getItem(WHATSAPP_AUTOMATION_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        return { ...DEFAULT_CONFIG, ...parsed };
-      }
+    const raw = safeStorageGet(WHATSAPP_AUTOMATION_STORAGE_KEY, 'local');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return { ...DEFAULT_CONFIG, ...parsed };
     }
   } catch (err) {
     console.warn('Could not read WhatsApp automation config:', err);
@@ -43,9 +42,7 @@ export function getWhatsAppAutomationConfig(): WhatsAppAutomationConfig {
 
 export function saveWhatsAppAutomationConfig(config: WhatsAppAutomationConfig): void {
   try {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(WHATSAPP_AUTOMATION_STORAGE_KEY, JSON.stringify(config));
-    }
+    safeStorageSet(WHATSAPP_AUTOMATION_STORAGE_KEY, JSON.stringify(config), 'local');
   } catch (err) {
     console.warn('Could not save WhatsApp automation config:', err);
   }

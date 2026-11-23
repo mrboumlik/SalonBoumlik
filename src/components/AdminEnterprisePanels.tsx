@@ -82,9 +82,11 @@ import {
   scanQrImageFile,
 } from '../utils/clientQr';
 import { ClientQrModal } from './ClientQrModal';
+import { ModalPortal } from './ModalPortal';
 import { getCrmDocId } from '../utils/crmStore';
 import { getBookingByTicket, normalizeMoroccanPhoneDigits } from '../utils/bookingStore';
 import { downloadCrmAccountingCsv } from '../utils/csvExport';
+import { safeStorageGet } from '../utils/safeBrowser';
 import { WeeklyWorkloadBarChart } from './WeeklyWorkloadBarChart';
 import { useFirestoreReviews } from '../utils/reviewsStore';
 import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore';
@@ -116,12 +118,10 @@ function getBookingRevenueMAD(b: AppointmentBooking): number {
 
 function readStoredClientReviews(): CustomerReview[] {
   try {
-    if (typeof window !== 'undefined') {
-      const raw = localStorage.getItem('salon_boumlik_reviews_v3');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
+    const raw = safeStorageGet('salon_boumlik_reviews_v3', 'local');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
   } catch {
     // ignore storage fallback
@@ -652,30 +652,30 @@ export const FinancialAnalyticsPanel: React.FC<{
   return (
     <div className="space-y-5">
       {/* Analytics Header + Month Picker */}
-      <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
+          <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             <span>{ui.title}</span>
           </h3>
-          <p className="text-[11px] text-zinc-400 mt-0.5">
+          <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-0.5">
             {role === 'master' ? ui.subtitleMaster : ui.subtitleBarber}
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          <label className="text-[11px] font-bold text-zinc-400">{ui.monthLabel}</label>
+          <label className="text-[11px] font-bold text-slate-600 dark:text-zinc-400">{ui.monthLabel}</label>
           <input
             type="month"
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value || currentMonthPrefix)}
-            className="bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
+            className="bg-stone-50 dark:bg-zinc-950 border border-stone-300 dark:border-zinc-700 rounded-xl px-3 py-1.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-emerald-500"
           />
           {selectedMonth !== currentMonthPrefix && (
             <button
               type="button"
               onClick={() => setSelectedMonth(currentMonthPrefix)}
-              className="px-2.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-bold cursor-pointer"
+              className="px-2.5 py-1.5 rounded-xl bg-stone-100 dark:bg-zinc-800 hover:bg-stone-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 text-[11px] font-bold cursor-pointer border border-stone-200 dark:border-zinc-700"
             >
               {ui.currentMonthBtn}
             </button>
@@ -685,67 +685,67 @@ export const FinancialAnalyticsPanel: React.FC<{
 
       {/* Top KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="p-4 rounded-2xl bg-zinc-900/90 border border-emerald-500/30 space-y-1">
-          <span className="text-[11px] font-bold text-emerald-400 block">
+        <div className="p-4 rounded-2xl bg-white dark:bg-[#141720] border border-emerald-300 dark:border-emerald-500/30 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 block">
             {ui.dailyIncomeTitle}
           </span>
-          <div className="text-2xl font-black text-white font-mono tabular-nums">
+          <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
             {dailyCompletedIncome.toLocaleString('en-US')}{' '}
-            <span className="text-xs text-emerald-400">MAD</span>
+            <span className="text-xs text-emerald-600 dark:text-emerald-400">MAD</span>
           </div>
-          <span className="text-[10px] text-zinc-400">{ui.dailyIncomeSub}</span>
+          <span className="text-[10px] text-slate-500 dark:text-zinc-400">{ui.dailyIncomeSub}</span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-zinc-900/90 border border-blue-500/30 space-y-1">
-          <span className="text-[11px] font-bold text-blue-400 block">
+        <div className="p-4 rounded-2xl bg-white dark:bg-[#141720] border border-blue-300 dark:border-blue-500/30 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-blue-700 dark:text-blue-400 block">
             {ui.weeklyIncomeTitle}
           </span>
-          <div className="text-2xl font-black text-white font-mono tabular-nums">
+          <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
             {weeklyCompletedIncome.toLocaleString('en-US')}{' '}
-            <span className="text-xs text-blue-400">MAD</span>
+            <span className="text-xs text-blue-600 dark:text-blue-400">MAD</span>
           </div>
-          <span className="text-[10px] text-zinc-400">{ui.weeklyIncomeSub}</span>
+          <span className="text-[10px] text-slate-500 dark:text-zinc-400">{ui.weeklyIncomeSub}</span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-zinc-900/90 border border-amber-500/35 space-y-1">
-          <span className="text-[11px] font-bold text-amber-400 block">
+        <div className="p-4 rounded-2xl bg-white dark:bg-[#141720] border border-amber-300 dark:border-amber-500/35 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 block">
             {ui.monthlyIncomeTitle}
           </span>
-          <div className="text-2xl font-black text-white font-mono tabular-nums">
+          <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
             {monthlyCompletedIncome.toLocaleString('en-US')}{' '}
-            <span className="text-xs text-amber-400">MAD</span>
+            <span className="text-xs text-amber-600 dark:text-amber-400">MAD</span>
           </div>
-          <span className="text-[10px] text-zinc-400">
+          <span className="text-[10px] text-slate-500 dark:text-zinc-400">
             {ui.fromCompletedVisits(monthlyCompletedBookings.length)}
           </span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-zinc-900/90 border border-purple-500/30 space-y-1">
-          <span className="text-[11px] font-bold text-purple-400 block">
+        <div className="p-4 rounded-2xl bg-white dark:bg-[#141720] border border-purple-300 dark:border-purple-500/30 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-purple-700 dark:text-purple-400 block">
             {ui.totalCumTitle}
           </span>
-          <div className="text-2xl font-black text-white font-mono tabular-nums">
+          <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
             {totalCompletedRevenue.toLocaleString('en-US')}{' '}
-            <span className="text-xs text-purple-400">MAD</span>
+            <span className="text-xs text-purple-600 dark:text-purple-400">MAD</span>
           </div>
-          <span className="text-[10px] text-zinc-400">
+          <span className="text-[10px] text-slate-500 dark:text-zinc-400">
             {ui.fromTotalVisits(completedBookings.length)}
           </span>
         </div>
       </div>
 
       {/* TOP PERFORMERS CARD */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-950/25 via-zinc-900/90 to-zinc-950 border border-amber-500/35 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-zinc-800 pb-3">
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-amber-300 dark:border-amber-500/35 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-stone-200 dark:border-zinc-800 pb-3">
           <div>
-            <h4 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-amber-400" />
+            <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <Trophy className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <span>{ui.topPerformersTitle}</span>
             </h4>
-            <p className="text-[11px] text-zinc-400 mt-0.5">{ui.topPerformersSub}</p>
+            <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-0.5">{ui.topPerformersSub}</p>
           </div>
 
-          <div className="inline-flex rounded-xl bg-zinc-950 border border-zinc-800 p-0.5 text-[11px] font-bold flex-shrink-0">
+          <div className="inline-flex rounded-xl bg-stone-100 dark:bg-zinc-950 border border-stone-200 dark:border-zinc-800 p-0.5 text-[11px] font-bold flex-shrink-0">
             {[
               { id: 'combined', label: ui.sortCombined },
               { id: 'revenue', label: ui.sortRevenue },
@@ -758,7 +758,7 @@ export const FinancialAnalyticsPanel: React.FC<{
                 className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
                   performerSort === opt.id
                     ? 'bg-amber-500 text-black'
-                    : 'text-zinc-400 hover:text-white'
+                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 {opt.label}
@@ -773,12 +773,12 @@ export const FinancialAnalyticsPanel: React.FC<{
             const rank = idx + 1;
             const rankStyle =
               rank === 1
-                ? 'bg-amber-500 text-black border-amber-300'
+                ? 'bg-amber-500 text-black border-amber-400'
                 : rank === 2
-                ? 'bg-zinc-200 text-black border-zinc-300'
+                ? 'bg-stone-200 text-slate-900 border-stone-300'
                 : rank === 3
                 ? 'bg-amber-700 text-white border-amber-600'
-                : 'bg-zinc-900 text-zinc-400 border-zinc-700';
+                : 'bg-stone-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 border-stone-300 dark:border-zinc-700';
             const revPct = Math.round((entry.revenue / maxPerformerRevenue) * 100);
             const hideOtherCash = role === 'barber' && entry.barber.id !== ownBarberId;
             const displayName = getBarberDisplayName(entry.barber);
@@ -788,8 +788,8 @@ export const FinancialAnalyticsPanel: React.FC<{
                 key={entry.barber.id}
                 className={`p-3.5 rounded-2xl border space-y-2.5 ${
                   rank === 1
-                    ? 'bg-amber-950/20 border-amber-500/45'
-                    : 'bg-zinc-950/75 border-zinc-800'
+                    ? 'bg-amber-50/70 dark:bg-amber-950/20 border-amber-300 dark:border-amber-500/45'
+                    : 'bg-stone-50 dark:bg-[#191D28] border-stone-200 dark:border-zinc-800'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2.5">
@@ -807,16 +807,16 @@ export const FinancialAnalyticsPanel: React.FC<{
                     />
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-black text-white text-xs sm:text-sm truncate">
+                        <span className="font-black text-slate-900 dark:text-white text-xs sm:text-sm truncate">
                           {displayName}
                         </span>
                         {role === 'barber' && entry.barber.id === ownBarberId && (
-                          <span className="text-[10px] font-bold text-amber-300">
+                          <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300">
                             {ui.youBadge}
                           </span>
                         )}
                       </div>
-                      <span className="text-[10px] text-zinc-400 font-mono tabular-nums">
+                      <span className="text-[10px] text-slate-500 dark:text-zinc-400 font-mono tabular-nums">
                         {ui.visitsAndReliability(entry.completedVisits, entry.reliabilityPct)}
                       </span>
                     </div>
@@ -824,12 +824,12 @@ export const FinancialAnalyticsPanel: React.FC<{
 
                   {/* Client Satisfaction Score */}
                   <div className="text-end flex-shrink-0">
-                    <div className="inline-flex items-center gap-1 font-mono font-black text-xs sm:text-sm text-amber-300 tabular-nums">
-                      <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                    <div className="inline-flex items-center gap-1 font-mono font-black text-xs sm:text-sm text-amber-700 dark:text-amber-300 tabular-nums">
+                      <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400" />
                       <span>{entry.satisfactionScore.toFixed(1)}</span>
-                      <span className="text-[10px] text-zinc-400">/ 5.0</span>
+                      <span className="text-[10px] text-slate-500 dark:text-zinc-400">/ 5.0</span>
                     </div>
-                    <div className="text-[10px] text-emerald-400 font-mono tabular-nums">
+                    <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-mono tabular-nums">
                       {ui.satisfactionLabel(entry.satisfactionPct)}
                     </div>
                   </div>
@@ -838,14 +838,14 @@ export const FinancialAnalyticsPanel: React.FC<{
                 {/* Revenue Progress Bar */}
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-zinc-400">{ui.monthRevLabel}</span>
-                    <span className="font-mono font-black text-emerald-400 tabular-nums">
+                    <span className="text-slate-500 dark:text-zinc-400">{ui.monthRevLabel}</span>
+                    <span className="font-mono font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
                       {hideOtherCash
                         ? '— MAD'
                         : `${entry.revenue.toLocaleString('en-US')} MAD`}
                     </span>
                   </div>
-                  <div className="h-1.5 rounded-full bg-zinc-900 overflow-hidden border border-zinc-800">
+                  <div className="h-1.5 rounded-full bg-stone-200 dark:bg-zinc-900 overflow-hidden border border-stone-300 dark:border-zinc-800">
                     <div
                       className="h-full rounded-full transition-all duration-500"
                       style={{
@@ -865,16 +865,16 @@ export const FinancialAnalyticsPanel: React.FC<{
       <WeeklyWorkloadBarChart bookings={bookings} todayStr={todayStr} />
 
       {/* Individual Barber Performance */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/85 border border-zinc-800 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 pb-3">
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 dark:border-zinc-800 pb-3">
           <div>
-            <h4 className="text-sm font-black text-white flex items-center gap-2">
-              <Award className="w-4 h-4 text-amber-400" />
+            <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <Award className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <span>{ui.indivTitle}</span>
             </h4>
-            <p className="text-[11px] text-zinc-400 mt-0.5">{ui.indivSub}</p>
+            <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-0.5">{ui.indivSub}</p>
           </div>
-          <span className="text-[11px] font-mono text-emerald-300 font-bold tabular-nums">
+          <span className="text-[11px] font-mono text-emerald-700 dark:text-emerald-300 font-bold tabular-nums">
             {ui.totalMonthVisits} {monthlyCompletedBookings.length}
           </span>
         </div>
@@ -892,7 +892,7 @@ export const FinancialAnalyticsPanel: React.FC<{
             return (
               <div
                 key={stat.barber.id}
-                className="p-4 rounded-2xl bg-zinc-950/80 border border-zinc-800 space-y-3"
+                className="p-4 rounded-2xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800 space-y-3"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5 min-w-0">
@@ -902,16 +902,16 @@ export const FinancialAnalyticsPanel: React.FC<{
                     />
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-black text-white text-sm truncate">
+                        <span className="font-black text-slate-900 dark:text-white text-sm truncate">
                           {barberDisplay}
                         </span>
                         {isLeader && (
-                          <span className="text-[10px] font-bold text-amber-300">
+                          <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300">
                             {ui.leaderBadge}
                           </span>
                         )}
                       </div>
-                      <span className="text-[11px] text-zinc-400 font-mono">
+                      <span className="text-[11px] text-slate-500 dark:text-zinc-400 font-mono">
                         {lang === 'ar' || !stat.barber.role
                           ? stat.barber.name.fr
                           : stat.barber.role[lang] || stat.barber.role.fr}
@@ -920,19 +920,19 @@ export const FinancialAnalyticsPanel: React.FC<{
                   </div>
 
                   <div className="text-end flex-shrink-0">
-                    <div className="text-lg font-black text-emerald-400 font-mono tabular-nums">
+                    <div className="text-lg font-black text-emerald-700 dark:text-emerald-400 font-mono tabular-nums">
                       {stat.revenueGenerated.toLocaleString('en-US')}{' '}
                       <span className="text-[11px]">MAD</span>
                     </div>
                     {role === 'master' && (
-                      <div className="text-[10px] text-zinc-400 font-mono tabular-nums">
+                      <div className="text-[10px] text-slate-500 dark:text-zinc-400 font-mono tabular-nums">
                         {ui.shareOfMonth(stat.sharePct)}
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="h-2 rounded-full bg-zinc-900 overflow-hidden border border-zinc-800">
+                <div className="h-2 rounded-full bg-stone-200 dark:bg-zinc-900 overflow-hidden border border-stone-300 dark:border-zinc-800">
                   <div
                     className="h-full rounded-full transition-all duration-500"
                     style={{ width: `${barWidth}%`, backgroundColor: color }}
@@ -940,38 +940,38 @@ export const FinancialAnalyticsPanel: React.FC<{
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 pt-1 text-center">
-                  <div className="py-1.5 px-2 rounded-xl bg-zinc-900/70 border border-zinc-800/80">
-                    <span className="text-[10px] text-zinc-400 block">
+                  <div className="py-1.5 px-2 rounded-xl bg-white dark:bg-zinc-900/70 border border-stone-200 dark:border-zinc-800/80">
+                    <span className="text-[10px] text-slate-500 dark:text-zinc-400 block">
                       {ui.completedVisitsCol}
                     </span>
-                    <span className="font-mono font-black text-sm text-white tabular-nums">
+                    <span className="font-mono font-black text-sm text-slate-900 dark:text-white tabular-nums">
                       {stat.completedVisits}
                     </span>
                   </div>
 
-                  <div className="py-1.5 px-2 rounded-xl bg-zinc-900/70 border border-zinc-800/80">
-                    <span className="text-[10px] text-zinc-400 block">
+                  <div className="py-1.5 px-2 rounded-xl bg-white dark:bg-zinc-900/70 border border-stone-200 dark:border-zinc-800/80">
+                    <span className="text-[10px] text-slate-500 dark:text-zinc-400 block">
                       {ui.avgTicketCol}
                     </span>
-                    <span className="font-mono font-black text-sm text-amber-300 tabular-nums">
+                    <span className="font-mono font-black text-sm text-amber-700 dark:text-amber-300 tabular-nums">
                       {stat.avgTicketMAD} <span className="text-[10px]">MAD</span>
                     </span>
                   </div>
 
-                  <div className="py-1.5 px-2 rounded-xl bg-zinc-900/70 border border-zinc-800/80">
-                    <span className="text-[10px] text-zinc-400 block">
+                  <div className="py-1.5 px-2 rounded-xl bg-white dark:bg-zinc-900/70 border border-stone-200 dark:border-zinc-800/80">
+                    <span className="text-[10px] text-slate-500 dark:text-zinc-400 block">
                       {ui.confirmedUpcomingCol}
                     </span>
-                    <span className="font-mono font-bold text-xs text-blue-300 tabular-nums">
+                    <span className="font-mono font-bold text-xs text-blue-700 dark:text-blue-300 tabular-nums">
                       {stat.confirmedUpcomingCount} ({stat.confirmedPipelineRevenue} MAD)
                     </span>
                   </div>
                 </div>
 
                 {stat.topServiceName && (
-                  <div className="text-[11px] text-zinc-400 flex items-center justify-between pt-1 border-t border-zinc-800/70">
+                  <div className="text-[11px] text-slate-500 dark:text-zinc-400 flex items-center justify-between pt-1 border-t border-stone-200 dark:border-zinc-800/70">
                     <span>{ui.topServiceLabel}</span>
-                    <span className="font-bold text-zinc-200 truncate max-w-[60%]">
+                    <span className="font-bold text-slate-800 dark:text-zinc-200 truncate max-w-[60%]">
                       {stat.topServiceName}
                     </span>
                   </div>
@@ -983,17 +983,17 @@ export const FinancialAnalyticsPanel: React.FC<{
       </div>
 
       {/* Top-Selling Services */}
-      <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3">
-        <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
-          <h4 className="text-sm font-black text-white flex items-center gap-2">
-            <Scissors className="w-4 h-4 text-emerald-400" />
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-3">
+        <div className="flex items-center justify-between border-b border-stone-200 dark:border-zinc-800 pb-2.5">
+          <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+            <Scissors className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             <span>{ui.topServicesTitle}</span>
           </h4>
-          <span className="text-[10px] text-zinc-400">{ui.completedServicesTag}</span>
+          <span className="text-[10px] text-slate-500 dark:text-zinc-400">{ui.completedServicesTag}</span>
         </div>
 
         {topServices.length === 0 ? (
-          <p className="text-xs text-zinc-500 py-5 text-center">
+          <p className="text-xs text-slate-500 dark:text-zinc-500 py-5 text-center">
             {ui.noMonthServices}
           </p>
         ) : (
@@ -1001,17 +1001,17 @@ export const FinancialAnalyticsPanel: React.FC<{
             {topServices.map((srv, idx) => (
               <div
                 key={srv.name}
-                className="p-2.5 rounded-xl bg-black/40 border border-zinc-800/80 flex items-center justify-between text-xs"
+                className="p-2.5 rounded-xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800/80 flex items-center justify-between text-xs"
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-6 h-6 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-mono font-black text-[11px] flex items-center justify-center flex-shrink-0">
+                  <span className="w-6 h-6 rounded-lg bg-amber-100 dark:bg-amber-500/15 border border-amber-300 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 font-mono font-black text-[11px] flex items-center justify-center flex-shrink-0">
                     #{idx + 1}
                   </span>
-                  <span className="font-bold text-white truncate">{srv.name}</span>
+                  <span className="font-bold text-slate-900 dark:text-white truncate">{srv.name}</span>
                 </div>
                 <div className="flex items-center gap-2.5 flex-shrink-0 font-mono tabular-nums">
-                  <span className="text-[11px] text-zinc-400">{srv.count}×</span>
-                  <span className="font-bold text-emerald-400">{srv.revenue} MAD</span>
+                  <span className="text-[11px] text-slate-500 dark:text-zinc-400">{srv.count}×</span>
+                  <span className="font-bold text-emerald-700 dark:text-emerald-400">{srv.revenue} MAD</span>
                 </div>
               </div>
             ))}
@@ -1487,14 +1487,14 @@ export const BarberSchedulePanel: React.FC<{
   return (
     <div className="space-y-4 text-xs">
       {/* Top Bar */}
-      <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-3">
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-black text-white flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-amber-400" />
+            <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <span>{ui.headerTitle}</span>
             </h3>
-            <p className="text-[11px] text-zinc-400 mt-0.5">{ui.headerSub}</p>
+            <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-0.5">{ui.headerSub}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -1509,7 +1509,7 @@ export const BarberSchedulePanel: React.FC<{
                   className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 border transition-all cursor-pointer ${
                     active
                       ? 'text-white shadow-md'
-                      : 'bg-zinc-950 text-zinc-400 hover:text-white border-zinc-800'
+                      : 'bg-stone-50 dark:bg-zinc-950 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white border-stone-200 dark:border-zinc-800'
                   }`}
                   style={{
                     backgroundColor: active ? color : undefined,
@@ -1528,12 +1528,12 @@ export const BarberSchedulePanel: React.FC<{
         </div>
 
         {/* Week Navigation */}
-        <div className="pt-3 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-2">
+        <div className="pt-3 border-t border-stone-200 dark:border-zinc-800/80 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setWeekOffset((w) => w - 1)}
-              className="px-3 py-1.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-bold flex items-center gap-1 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-stone-50 dark:bg-zinc-950 hover:bg-stone-100 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 font-bold flex items-center gap-1 cursor-pointer"
             >
               <ChevronRight className="w-3.5 h-3.5 rtl:rotate-0 ltr:rotate-180" />
               <span>{ui.prevWeek}</span>
@@ -1544,7 +1544,7 @@ export const BarberSchedulePanel: React.FC<{
               className={`px-3 py-1.5 rounded-xl font-bold border cursor-pointer ${
                 weekOffset === 0
                   ? 'bg-amber-500 text-black border-amber-400'
-                  : 'bg-zinc-950 hover:bg-zinc-800 border-zinc-800 text-zinc-200'
+                  : 'bg-stone-50 dark:bg-zinc-950 hover:bg-stone-100 dark:hover:bg-zinc-800 border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200'
               }`}
             >
               {ui.currWeek}
@@ -1552,7 +1552,7 @@ export const BarberSchedulePanel: React.FC<{
             <button
               type="button"
               onClick={() => setWeekOffset((w) => w + 1)}
-              className="px-3 py-1.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-bold flex items-center gap-1 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-stone-50 dark:bg-zinc-950 hover:bg-stone-100 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 font-bold flex items-center gap-1 cursor-pointer"
             >
               <span>{ui.nextWeek}</span>
               <ChevronLeft className="w-3.5 h-3.5 rtl:rotate-0 ltr:rotate-180" />
@@ -1560,18 +1560,18 @@ export const BarberSchedulePanel: React.FC<{
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono tabular-nums">
-            <span className="text-zinc-400" dir="ltr">
+            <span className="text-slate-500 dark:text-zinc-400" dir="ltr">
               {weekDays[0].dateStr} → {weekDays[6].dateStr}
             </span>
-            {saving && <span className="text-amber-400 font-sans font-bold">{ui.saving}</span>}
+            {saving && <span className="text-amber-600 dark:text-amber-400 font-sans font-bold">{ui.saving}</span>}
           </div>
         </div>
       </div>
 
       {/* Quick Weekly Break Bar & Legend */}
-      <div className="p-3 rounded-2xl bg-zinc-900/70 border border-zinc-800 flex flex-wrap items-center justify-between gap-3">
+      <div className="p-3.5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+          <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
             <Coffee className="w-3.5 h-3.5" />
             <span>{ui.quickLunchLabel}</span>
           </span>
@@ -1590,8 +1590,8 @@ export const BarberSchedulePanel: React.FC<{
                 onClick={() => handleToggleWeekLunchPreset(preset)}
                 className={`px-2.5 py-1.5 rounded-lg font-mono font-bold text-[11px] border transition-all cursor-pointer ${
                   allBlocked
-                    ? 'bg-red-950/70 border-red-500/60 text-red-200'
-                    : 'bg-black/50 border-zinc-700 text-zinc-200 hover:border-amber-500/60'
+                    ? 'bg-red-50 dark:bg-red-950/70 border-red-300 dark:border-red-500/60 text-red-700 dark:text-red-200'
+                    : 'bg-stone-50 dark:bg-[#191D28] border-stone-300 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:border-amber-500/60'
                 }`}
               >
                 {allBlocked ? ui.unblockWeek(preset) : ui.blockWeek(preset)}
@@ -1601,32 +1601,32 @@ export const BarberSchedulePanel: React.FC<{
         </div>
 
         <div className="flex flex-wrap items-center gap-3 text-[10px]">
-          <span className="flex items-center gap-1 text-emerald-300">
-            <span className="w-2.5 h-2.5 rounded bg-emerald-600/40 border border-emerald-500/60 inline-block" />
+          <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-300 font-semibold">
+            <span className="w-2.5 h-2.5 rounded bg-emerald-100 dark:bg-emerald-600/40 border border-emerald-400 dark:border-emerald-500/60 inline-block" />
             {ui.legendAvail}
           </span>
-          <span className="flex items-center gap-1 text-red-300">
-            <span className="w-2.5 h-2.5 rounded bg-red-900/60 border border-red-500/60 inline-block" />
+          <span className="flex items-center gap-1 text-red-700 dark:text-red-300 font-semibold">
+            <span className="w-2.5 h-2.5 rounded bg-red-100 dark:bg-red-900/60 border border-red-400 dark:border-red-500/60 inline-block" />
             {ui.legendBreak}
           </span>
-          <span className="flex items-center gap-1 text-blue-300">
-            <span className="w-2.5 h-2.5 rounded bg-blue-900/60 border border-blue-500/60 inline-block" />
+          <span className="flex items-center gap-1 text-blue-700 dark:text-blue-300 font-semibold">
+            <span className="w-2.5 h-2.5 rounded bg-blue-100 dark:bg-blue-900/60 border border-blue-400 dark:border-blue-500/60 inline-block" />
             {ui.legendBooked}
           </span>
-          <span className="flex items-center gap-1 text-zinc-400">
-            <span className="w-2.5 h-2.5 rounded bg-zinc-800 border border-zinc-700 inline-block" />
+          <span className="flex items-center gap-1 text-slate-500 dark:text-zinc-400 font-semibold">
+            <span className="w-2.5 h-2.5 rounded bg-stone-200 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 inline-block" />
             {ui.legendOff}
           </span>
         </div>
       </div>
 
       {/* Interactive 7-Day Weekly Calendar Grid */}
-      <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden">
+      <div className="rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] border-collapse text-center">
             <thead>
-              <tr className="bg-zinc-950 border-b border-zinc-800">
-                <th className="p-3 text-start font-black text-zinc-400 w-24 border-e border-zinc-800/80">
+              <tr className="bg-stone-100 dark:bg-zinc-950 border-b border-stone-200 dark:border-zinc-800">
+                <th className="p-3 text-start font-black text-slate-600 dark:text-zinc-400 w-24 border-e border-stone-200 dark:border-zinc-800/80">
                   {ui.timeCol}
                 </th>
                 {weekDays.map((day) => {
@@ -1639,13 +1639,13 @@ export const BarberSchedulePanel: React.FC<{
                   return (
                     <th
                       key={day.dateStr}
-                      className={`p-2.5 border-e border-zinc-800/70 align-top ${
-                        isToday ? 'bg-amber-500/10' : ''
+                      className={`p-2.5 border-e border-stone-200 dark:border-zinc-800/70 align-top ${
+                        isToday ? 'bg-amber-50 dark:bg-amber-500/10' : ''
                       }`}
                     >
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-center gap-1">
-                          <span className={`font-black text-xs ${isToday ? 'text-amber-300' : 'text-white'}`}>
+                          <span className={`font-black text-xs ${isToday ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'}`}>
                             {day.label[lang] || day.label.ar}
                           </span>
                           {isToday && (
@@ -1654,12 +1654,12 @@ export const BarberSchedulePanel: React.FC<{
                             </span>
                           )}
                         </div>
-                        <div className="font-mono text-[10px] text-zinc-400 tabular-nums">
+                        <div className="font-mono text-[10px] text-slate-500 dark:text-zinc-400 tabular-nums">
                           {day.shortDate}
                         </div>
 
                         {isMondayClosed ? (
-                          <div className="py-1 px-2 rounded-lg bg-red-950/40 border border-red-500/30 text-red-400 text-[10px] font-bold">
+                          <div className="py-1 px-2 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-400 text-[10px] font-bold">
                             {ui.salonClosedMon}
                           </div>
                         ) : (
@@ -1669,8 +1669,8 @@ export const BarberSchedulePanel: React.FC<{
                             onClick={() => handleToggleDateAvailability(day.dateStr, day.weekday)}
                             className={`w-full py-1 px-2 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
                               isBarberOff
-                                ? 'bg-amber-500/20 border-amber-500 text-amber-300 hover:bg-amber-500/30'
-                                : 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/50'
+                                ? 'bg-amber-100 dark:bg-amber-500/20 border-amber-400 dark:border-amber-500 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-500/30'
+                                : 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
                             }`}
                           >
                             {isBarberOff ? ui.barberOffBtn : ui.barberOnBtn}
@@ -1685,10 +1685,10 @@ export const BarberSchedulePanel: React.FC<{
 
             <tbody>
               {ALL_SALON_CONFIGURABLE_HOURS.map((slot) => (
-                <tr key={slot} className="border-b border-zinc-800/60 last:border-b-0 hover:bg-zinc-900/40">
+                <tr key={slot} className="border-b border-stone-200 dark:border-zinc-800/60 last:border-b-0 hover:bg-stone-50 dark:hover:bg-zinc-900/40">
                   <td
                     dir="ltr"
-                    className="p-2.5 font-mono font-black text-xs text-zinc-300 bg-zinc-950/70 border-e border-zinc-800/80 tabular-nums"
+                    className="p-2.5 font-mono font-black text-xs text-slate-700 dark:text-zinc-300 bg-stone-50 dark:bg-zinc-950/70 border-e border-stone-200 dark:border-zinc-800/80 tabular-nums"
                   >
                     {slot}
                   </td>
@@ -1705,9 +1705,9 @@ export const BarberSchedulePanel: React.FC<{
                       return (
                         <td
                           key={`${day.dateStr}-${slot}`}
-                          className="p-1.5 border-e border-zinc-800/60 bg-zinc-950/40"
+                          className="p-1.5 border-e border-stone-200 dark:border-zinc-800/60 bg-stone-100/70 dark:bg-zinc-950/40"
                         >
-                          <div className="py-2 rounded-lg text-[10px] text-zinc-600 font-medium">
+                          <div className="py-2 rounded-lg text-[10px] text-slate-400 dark:text-zinc-600 font-medium">
                             {isMonday
                               ? ui.closedCell
                               : !inSalonHours
@@ -1729,10 +1729,10 @@ export const BarberSchedulePanel: React.FC<{
                       return (
                         <td
                           key={`${day.dateStr}-${slot}`}
-                          className="p-1.5 border-e border-zinc-800/60"
+                          className="p-1.5 border-e border-stone-200 dark:border-zinc-800/60"
                         >
                           <div
-                            className="py-2 px-1.5 rounded-lg bg-blue-950/70 border border-blue-500/50 text-blue-200 text-[10px] font-bold truncate"
+                            className="py-2 px-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/70 border border-blue-300 dark:border-blue-500/50 text-blue-800 dark:text-blue-200 text-[10px] font-bold truncate"
                             title={`${bookedItem.ticketNumber} — ${bookedItem.clientName} (${bookedItem.clientPhone})`}
                           >
                             📅 {bookedItem.clientName.split(' ')[0]}
@@ -1746,7 +1746,7 @@ export const BarberSchedulePanel: React.FC<{
                     return (
                       <td
                         key={`${day.dateStr}-${slot}`}
-                        className="p-1.5 border-e border-zinc-800/60"
+                        className="p-1.5 border-e border-stone-200 dark:border-zinc-800/60"
                       >
                         <button
                           type="button"
@@ -1754,8 +1754,8 @@ export const BarberSchedulePanel: React.FC<{
                           onClick={() => handleToggleCalendarCell(day.dateStr, slot)}
                           className={`w-full py-2 px-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
                             isBlocked
-                              ? 'bg-red-950/70 hover:bg-red-900/70 border-red-500/60 text-red-200'
-                              : 'bg-emerald-950/35 hover:bg-amber-500/20 border-emerald-500/35 hover:border-amber-500/60 text-emerald-300 hover:text-amber-200'
+                              ? 'bg-red-50 hover:bg-red-100 border-red-300 text-red-700 dark:bg-red-950/70 dark:hover:bg-red-900/70 dark:border-red-500/60 dark:text-red-200'
+                              : 'bg-emerald-50 hover:bg-amber-50 border-emerald-300 hover:border-amber-400 text-emerald-700 hover:text-amber-800 dark:bg-emerald-950/35 dark:hover:bg-amber-500/20 dark:border-emerald-500/35 dark:hover:border-amber-500/60 dark:text-emerald-300 dark:hover:text-amber-200'
                           }`}
                           title={
                             isRecurringBreak
@@ -1783,12 +1783,12 @@ export const BarberSchedulePanel: React.FC<{
 
       {/* Bottom Rule Helpers */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="p-4 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-3">
-          <div className="font-bold text-amber-300">{ui.dailyBreaksTitle}</div>
+        <div className="p-4 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-3">
+          <div className="font-bold text-amber-700 dark:text-amber-300">{ui.dailyBreaksTitle}</div>
 
           {/* Start -> End Daily Break Range Picker */}
-          <div className="p-2.5 rounded-xl bg-black/40 border border-zinc-800 space-y-2">
-            <div className="text-[11px] font-bold text-zinc-300">
+          <div className="p-2.5 rounded-xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800 space-y-2">
+            <div className="text-[11px] font-bold text-slate-700 dark:text-zinc-300">
               فترة استراحة يومية (من الساعة ← إلى الساعة):
             </div>
             <div className="flex flex-wrap items-center gap-1.5" dir="ltr">
@@ -1796,14 +1796,14 @@ export const BarberSchedulePanel: React.FC<{
                 type="time"
                 value={breakStartInput}
                 onChange={(e) => setBreakStartInput(e.target.value)}
-                className="flex-1 min-w-[92px] bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1 text-xs font-mono text-white"
+                className="flex-1 min-w-[92px] bg-white dark:bg-zinc-950 border border-stone-300 dark:border-zinc-700 rounded-lg px-2 py-1 text-xs font-mono text-slate-900 dark:text-white"
               />
-              <span className="text-zinc-400 font-bold">→</span>
+              <span className="text-slate-500 dark:text-zinc-400 font-bold">→</span>
               <input
                 type="time"
                 value={breakEndInput}
                 onChange={(e) => setBreakEndInput(e.target.value)}
-                className="flex-1 min-w-[92px] bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1 text-xs font-mono text-white"
+                className="flex-1 min-w-[92px] bg-white dark:bg-zinc-950 border border-stone-300 dark:border-zinc-700 rounded-lg px-2 py-1 text-xs font-mono text-slate-900 dark:text-white"
               />
               <button
                 type="button"
@@ -1821,13 +1821,13 @@ export const BarberSchedulePanel: React.FC<{
                   <span
                     key={r.id}
                     dir="ltr"
-                    className="px-2 py-1 rounded-lg bg-red-950/60 border border-red-500/40 text-red-200 font-mono text-[10px] flex items-center gap-1.5"
+                    className="px-2 py-1 rounded-lg bg-red-50 dark:bg-red-950/60 border border-red-300 dark:border-red-500/40 text-red-700 dark:text-red-200 font-mono text-[10px] flex items-center gap-1.5"
                   >
                     <span>⏸ {r.start} → {r.end}</span>
                     <button
                       type="button"
                       onClick={() => handleRemoveBreakRange(r.id)}
-                      className="text-red-400 hover:text-white cursor-pointer"
+                      className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-white cursor-pointer"
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
@@ -1848,8 +1848,8 @@ export const BarberSchedulePanel: React.FC<{
                   onClick={() => handleToggleBreakSlot(slot)}
                   className={`py-1.5 px-2 rounded-lg border font-mono font-bold text-[11px] transition-all cursor-pointer ${
                     isBlocked
-                      ? 'bg-red-950/60 border-red-500/60 text-red-300'
-                      : 'bg-black/40 border-zinc-800 text-zinc-300 hover:border-amber-500/50'
+                      ? 'bg-red-50 dark:bg-red-950/60 border-red-300 dark:border-red-500/60 text-red-700 dark:text-red-300'
+                      : 'bg-stone-50 dark:bg-[#191D28] border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:border-amber-500/50'
                   }`}
                 >
                   {isBlocked ? `⏸ ${slot}` : slot}
@@ -1859,8 +1859,8 @@ export const BarberSchedulePanel: React.FC<{
           </div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-2.5">
-          <div className="font-bold text-amber-300">{ui.weeklyOffTitle}</div>
+        <div className="p-4 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-2.5">
+          <div className="font-bold text-amber-700 dark:text-amber-300">{ui.weeklyOffTitle}</div>
           <div className="grid grid-cols-2 gap-1.5">
             {[0, 1, 2, 3, 4, 5, 6].map((dayIdx) => {
               const isOff = activeConfig.offWeekdays.includes(dayIdx) || dayIdx === 1;
@@ -1872,10 +1872,10 @@ export const BarberSchedulePanel: React.FC<{
                   onClick={() => handleToggleWeekday(dayIdx)}
                   className={`py-1.5 px-2 rounded-lg border text-[11px] font-bold flex items-center justify-between transition-all ${
                     dayIdx === 1
-                      ? 'bg-red-950/40 border-red-500/40 text-red-400 cursor-not-allowed opacity-80'
+                      ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-500/40 text-red-600 dark:text-red-400 cursor-not-allowed opacity-80'
                       : isOff
-                      ? 'bg-amber-500/20 border-amber-500 text-amber-300 cursor-pointer'
-                      : 'bg-black/40 border-zinc-800 text-zinc-300 hover:border-zinc-600 cursor-pointer'
+                      ? 'bg-amber-100 dark:bg-amber-500/20 border-amber-400 dark:border-amber-500 text-amber-800 dark:text-amber-300 cursor-pointer'
+                      : 'bg-stone-50 dark:bg-[#191D28] border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:border-stone-300 dark:hover:border-zinc-600 cursor-pointer'
                   }`}
                 >
                   <span className="truncate">{WEEKDAY_LABELS[dayIdx]?.[lang] || WEEKDAY_LABELS[dayIdx]?.ar}</span>
@@ -1886,9 +1886,9 @@ export const BarberSchedulePanel: React.FC<{
           </div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-2.5">
-          <div className="font-bold text-white flex items-center gap-2">
-            <CalendarOff className="w-4 h-4 text-red-400" />
+        <div className="p-4 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-2.5">
+          <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <CalendarOff className="w-4 h-4 text-red-600 dark:text-red-400" />
             <span>{ui.customOffTitle}</span>
           </div>
           <div className="flex items-center gap-2">
@@ -1897,13 +1897,13 @@ export const BarberSchedulePanel: React.FC<{
               value={newOffDate}
               min={todayStr}
               onChange={(e) => setNewOffDate(e.target.value)}
-              className="flex-1 bg-black/60 border border-zinc-700 rounded-xl px-2.5 py-2 text-xs text-white"
+              className="flex-1 bg-stone-50 dark:bg-zinc-950 border border-stone-300 dark:border-zinc-700 rounded-xl px-2.5 py-2 text-xs text-slate-900 dark:text-white"
             />
             <button
               type="button"
               disabled={!newOffDate || saving}
               onClick={handleAddOffDate}
-              className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
+              className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>{ui.closeDateBtn}</span>
@@ -1911,18 +1911,18 @@ export const BarberSchedulePanel: React.FC<{
           </div>
           <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
             {activeConfig.offDates.length === 0 ? (
-              <span className="text-[11px] text-zinc-500">{ui.noOffDates}</span>
+              <span className="text-[11px] text-slate-500 dark:text-zinc-500">{ui.noOffDates}</span>
             ) : (
               activeConfig.offDates.map((d) => (
                 <span
                   key={d}
-                  className="px-2 py-1 rounded-lg bg-red-950/60 border border-red-500/40 text-red-200 font-mono text-[10px] flex items-center gap-1"
+                  className="px-2 py-1 rounded-lg bg-red-50 dark:bg-red-950/60 border border-red-300 dark:border-red-500/40 text-red-700 dark:text-red-200 font-mono text-[10px] flex items-center gap-1"
                 >
                   <span>{d}</span>
                   <button
                     type="button"
                     onClick={() => handleRemoveOffDate(d)}
-                    className="text-red-400 hover:text-white cursor-pointer"
+                    className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-white cursor-pointer"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
@@ -2603,14 +2603,14 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
   return (
     <div className="space-y-4 text-xs">
       {/* Header */}
-      <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3">
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-black text-white flex items-center gap-2">
-              <Award className="w-4 h-4 text-amber-400" />
+            <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <Award className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <span>{ui.title}</span>
             </h3>
-            <p className="text-[11px] text-zinc-400 mt-0.5">{ui.subtitle}</p>
+            <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-0.5">{ui.subtitle}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -2631,7 +2631,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
               type="button"
               onClick={() => handleExportVcfList(clients, 'filtered')}
               disabled={clients.length === 0}
-              className="min-h-[38px] px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed border border-amber-500/50 text-amber-300 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
+              className="min-h-[38px] px-3.5 py-2 rounded-xl bg-amber-50 dark:bg-amber-500/20 hover:bg-amber-100 dark:hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed border border-amber-300 dark:border-amber-500/50 text-amber-800 dark:text-amber-300 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
             >
               <UserPlus className="w-4 h-4" />
               <span>{ui.exportVcfFiltered(clients.length)}</span>
@@ -2641,7 +2641,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
               <button
                 type="button"
                 onClick={() => handleExportVcfList(selectedFilteredClients, 'selected')}
-                className="min-h-[38px] px-3 py-2 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/50 text-blue-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
+                className="min-h-[38px] px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/20 hover:bg-blue-100 dark:hover:bg-blue-500/30 border border-blue-300 dark:border-blue-400/50 text-blue-800 dark:text-blue-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
               >
                 <Check className="w-3.5 h-3.5" />
                 <span>{ui.exportVcfSelected(selectedFilteredClients.length)}</span>
@@ -2654,8 +2654,8 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
               disabled={clients.length === 0}
               className={`min-h-[38px] px-3 py-2 rounded-xl border font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40 ${
                 allFilteredSelected
-                  ? 'bg-amber-500/20 border-amber-400 text-amber-300'
-                  : 'bg-zinc-800 hover:bg-zinc-700 border-zinc-700 text-zinc-200'
+                  ? 'bg-amber-100 dark:bg-amber-500/20 border-amber-400 text-amber-800 dark:text-amber-300'
+                  : 'bg-stone-100 dark:bg-zinc-800 hover:bg-stone-200 dark:hover:bg-zinc-700 border-stone-300 dark:border-zinc-700 text-slate-700 dark:text-zinc-200'
               }`}
             >
               <Check className="w-3.5 h-3.5" />
@@ -2666,11 +2666,11 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
               type="button"
               onClick={handleExportCsv}
               disabled={clients.length === 0}
-              className="min-h-[38px] px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-500/45 text-emerald-300 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
+              className="min-h-[38px] px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0 shadow-xs"
             >
               <Download className="w-4 h-4" />
               <span>{ui.exportCsv}</span>
-              <span className="font-mono text-[10px] opacity-85 tabular-nums">
+              <span className="font-mono text-[10px] opacity-90 tabular-nums">
                 ({clients.length})
               </span>
             </button>
@@ -2679,13 +2679,13 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
 
         <div className="flex flex-col sm:flex-row gap-2.5 items-center justify-between">
           <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 text-zinc-500 absolute start-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-slate-400 dark:text-zinc-500 absolute start-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={ui.searchPlaceholder}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl ps-9 pe-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+              className="w-full bg-stone-50 dark:bg-zinc-950 border border-stone-300 dark:border-zinc-800 rounded-xl ps-9 pe-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-amber-500"
             />
           </div>
 
@@ -2700,10 +2700,10 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                 key={pill.id}
                 type="button"
                 onClick={() => setFilterMode(pill.id as typeof filterMode)}
-                className={`px-3 py-1.5 rounded-lg font-bold text-xs whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg font-bold text-xs whitespace-nowrap cursor-pointer border ${
                   filterMode === pill.id
-                    ? 'bg-amber-500 text-black'
-                    : 'bg-zinc-800 text-zinc-300 hover:text-white'
+                    ? 'bg-amber-500 text-black border-amber-400'
+                    : 'bg-stone-100 dark:bg-zinc-800 border-stone-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 {pill.label}
@@ -2715,7 +2715,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
 
       {/* Compact Client Cards (Click card for Full Details Modal) */}
       {clients.length === 0 ? (
-        <div className="p-8 text-center rounded-2xl bg-zinc-900/50 border border-zinc-800 text-zinc-400">
+        <div className="p-8 text-center rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 text-slate-500 dark:text-zinc-400">
           {ui.empty}
         </div>
       ) : (
@@ -2734,14 +2734,14 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                     setDetailsClientId(c.id);
                   }
                 }}
-                className={`px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-all cursor-pointer ${
+                className={`px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-all cursor-pointer shadow-2xs ${
                   isSelected
-                    ? 'ring-2 ring-amber-400/70 border-amber-500/60 bg-amber-950/20'
+                    ? 'ring-2 ring-amber-400/70 border-amber-400 dark:border-amber-500/60 bg-amber-50/70 dark:bg-amber-950/20'
                     : c.isBanned
-                    ? 'bg-red-950/20 border-red-500/45 hover:border-red-400'
+                    ? 'bg-red-50/70 dark:bg-red-950/20 border-red-300 dark:border-red-500/45 hover:border-red-400'
                     : c.isVip
-                    ? 'bg-amber-950/15 border-amber-500/35 hover:border-amber-400'
-                    : 'bg-zinc-900/70 border-zinc-800 hover:border-zinc-600'
+                    ? 'bg-amber-50/50 dark:bg-amber-950/15 border-amber-300 dark:border-amber-500/35 hover:border-amber-400'
+                    : 'bg-white dark:bg-[#141720] border-stone-200 dark:border-zinc-800 hover:border-stone-300 dark:hover:border-zinc-600'
                 }`}
               >
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -2754,10 +2754,10 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                     className="w-4 h-4 accent-amber-500 rounded cursor-pointer flex-shrink-0"
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="font-black text-white text-sm truncate">
+                    <div className="font-black text-slate-900 dark:text-white text-sm truncate">
                       {c.clientName}
                     </div>
-                    <span dir="ltr" className="text-[11px] font-mono text-zinc-400 block truncate">
+                    <span dir="ltr" className="text-[11px] font-mono text-slate-500 dark:text-zinc-400 block truncate">
                       {c.phoneDisplay}
                     </span>
                   </div>
@@ -2770,10 +2770,10 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                       e.stopPropagation();
                       handleExportVcfList([c], 'single');
                     }}
-                    className="min-h-[34px] px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    className="min-h-[34px] px-2 py-1.5 rounded-lg bg-stone-100 dark:bg-zinc-800 hover:bg-stone-200 dark:hover:bg-zinc-700 border border-stone-300 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                     title={ui.saveSingleVcf}
                   >
-                    <UserPlus className="w-3.5 h-3.5 text-amber-400" />
+                    <UserPlus className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                     <span>.vcf</span>
                   </button>
 
@@ -2791,7 +2791,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                         isBanned: c.isBanned,
                       });
                     }}
-                    className="min-h-[34px] px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    className="min-h-[34px] px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/15 hover:bg-amber-100 dark:hover:bg-amber-500/25 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                     title={ui.qrBtn}
                   >
                     <QrCode className="w-3.5 h-3.5" />
@@ -2821,278 +2821,280 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
         const loyalty = computeLoyaltyProgress(c.verifiedVisits, lang);
 
         return (
-          <div
-            className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs"
-            onClick={() => {
-              setDetailsClientId(null);
-              setScannedTicketMatch(null);
-            }}
-          >
+          <ModalPortal>
             <div
-              className="w-full max-w-lg max-h-[88vh] flex flex-col rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden text-xs"
-              onClick={(e) => e.stopPropagation()}
+              className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 sb-modal-backdrop"
+              onClick={() => {
+                setDetailsClientId(null);
+                setScannedTicketMatch(null);
+              }}
             >
-              <div className="p-4 border-b border-zinc-800 flex items-start justify-between gap-3">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <h4 className="text-base font-black text-white truncate">{c.clientName}</h4>
-                    {c.isVip && (
-                      <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[10px] font-bold">
-                        👑 VIP
-                      </span>
-                    )}
-                    {c.isBanned && (
-                      <span className="px-2 py-0.5 rounded-full bg-red-600/30 border border-red-500/60 text-red-200 text-[10px] font-bold">
-                        {ui.bannedBadge}
-                      </span>
-                    )}
-                    {c.eligibleFreeWashes > 0 && (
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-600/25 border border-emerald-400/50 text-emerald-300 text-[10px] font-bold">
-                        {ui.freeWashBadge}
-                      </span>
-                    )}
-                    {clientCreditSummary.hasCredit && clientCreditSummary.totalOwedMAD > 0 && (
-                      <span className="px-2 py-0.5 rounded-full bg-orange-600/25 border border-orange-400/50 text-orange-300 text-[10px] font-bold font-mono tabular-nums">
-                        💳 كريدي: {clientCreditSummary.totalOwedMAD} MAD
-                      </span>
-                    )}
-                  </div>
-                  <div dir="ltr" className="text-xs font-mono text-zinc-400">
-                    {c.phoneDisplay}
-                  </div>
-                  {extraAliases.length > 0 && (
-                    <div className="text-[11px] text-zinc-400">
-                      أسماء مسجلة لنفس الرقم: {extraAliases.join(' · ')}
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDetailsClientId(null);
-                    setScannedTicketMatch(null);
-                  }}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer shrink-0"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="p-4 overflow-y-auto space-y-4 flex-1">
-                {scannedTicketMatch && (
-                  <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-400/45 text-amber-200 flex items-center justify-between gap-2 text-[11px]">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <ScanLine className="w-4 h-4 text-amber-400 shrink-0" />
-                      <div className="truncate">
-                        <span className="font-black">{scannedTicketMatch.ticketNumber}</span> ·{' '}
-                        <span>{scannedTicketMatch.barberName}</span> ·{' '}
-                        <span dir="ltr" className="font-mono">
-                          {scannedTicketMatch.date} ({scannedTicketMatch.timeSlot})
+              <div
+                className="w-full max-w-xl max-h-[88vh] flex flex-col rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="p-4 sm:p-5 border-b border-stone-200 dark:border-zinc-800 flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <h4 className="text-base font-black text-slate-900 dark:text-white truncate">{c.clientName}</h4>
+                      {c.isVip && (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 border border-amber-300 dark:border-amber-400/50 text-amber-800 dark:text-amber-300 text-[10px] font-bold">
+                          👑 VIP
                         </span>
-                      </div>
+                      )}
+                      {c.isBanned && (
+                        <span className="px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-600/30 border border-red-300 dark:border-red-500/60 text-red-800 dark:text-red-200 text-[10px] font-bold">
+                          {ui.bannedBadge}
+                        </span>
+                      )}
+                      {c.eligibleFreeWashes > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-600/25 border border-emerald-300 dark:border-emerald-400/50 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold">
+                          {ui.freeWashBadge}
+                        </span>
+                      )}
+                      {clientCreditSummary.hasCredit && clientCreditSummary.totalOwedMAD > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-600/25 border border-orange-300 dark:border-orange-400/50 text-orange-800 dark:text-orange-300 text-[10px] font-bold font-mono tabular-nums">
+                          💳 كريدي: {clientCreditSummary.totalOwedMAD} MAD
+                        </span>
+                      )}
                     </div>
-                    <span className="px-2 py-0.5 rounded bg-black/40 font-mono text-[10px] uppercase shrink-0">
-                      {scannedTicketMatch.status}
-                    </span>
-                  </div>
-                )}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="p-2.5 rounded-xl bg-black/50 border border-zinc-800">
-                    <span className="text-[10px] text-zinc-400 block">{ui.visitsCol}</span>
-                    <span className="font-mono font-black text-amber-300 text-sm tabular-nums">
-                      {c.verifiedVisits}
-                    </span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-black/50 border border-zinc-800">
-                    <span className="text-[10px] text-zinc-400 block">{ui.spendCol}</span>
-                    <span className="font-mono font-black text-emerald-300 text-sm tabular-nums">
-                      {c.lifetimeSpendMAD} MAD
-                    </span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-black/50 border border-zinc-800">
-                    <span className="text-[10px] text-zinc-400 block">{ui.noShowCol}</span>
-                    <span
-                      className={`font-mono font-black text-sm tabular-nums ${
-                        c.noShowCount >= 2
-                          ? 'text-red-400'
-                          : c.noShowCount === 1
-                          ? 'text-orange-400'
-                          : 'text-emerald-400'
-                      }`}
-                    >
-                      {c.noShowCount} / 2
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                  {loyalty.tiers.map((tier) => (
-                    <span
-                      key={tier.targetVisits}
-                      className={`px-2 py-0.5 rounded-full font-mono font-bold border tabular-nums ${
-                        tier.unlocked
-                          ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
-                          : tier.isCurrentTarget
-                          ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
-                          : 'bg-black/40 border-zinc-800 text-zinc-500'
-                      }`}
-                    >
-                      {tier.unlocked
-                        ? `✓ ${tier.targetVisits}/${tier.targetVisits}`
-                        : `${c.verifiedVisits}/${tier.targetVisits}`}
-                    </span>
-                  ))}
-                </div>
-
-                {(c.customDiscountMAD > 0 || c.banReason || c.rewardNote) && (
-                  <div className="p-2.5 rounded-xl bg-black/40 border border-zinc-800 text-[11px] space-y-0.5">
-                    {c.customDiscountMAD > 0 && (
-                      <div className="text-emerald-300 font-bold">
-                        {ui.activeDiscount(c.customDiscountMAD)}
+                    <div dir="ltr" className="text-xs font-mono text-slate-600 dark:text-zinc-400">
+                      {c.phoneDisplay}
+                    </div>
+                    {extraAliases.length > 0 && (
+                      <div className="text-[11px] text-slate-500 dark:text-zinc-400">
+                        أسماء مسجلة لنفس الرقم: {extraAliases.join(' · ')}
                       </div>
                     )}
-                    {c.rewardNote && <div className="text-amber-300">{c.rewardNote}</div>}
-                    {c.isBanned && c.banReason && (
-                      <div className="text-red-300">{c.banReason}</div>
-                    )}
                   </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-800">
-                  <button
-                    type="button"
-                    onClick={() => handleExportVcfList([c], 'single')}
-                    className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                  >
-                    <UserPlus className="w-3.5 h-3.5 text-amber-400" />
-                    <span>{ui.saveSingleVcf}</span>
-                  </button>
 
                   <button
                     type="button"
-                    onClick={() =>
-                      setQrTargetClient({
-                        id: c.id,
-                        clientName: c.clientName,
-                        phoneDisplay: c.phoneDisplay,
-                        normalizedPhone: c.normalizedPhone,
-                        verifiedVisits: c.verifiedVisits,
-                        isVip: c.isVip,
-                        isBanned: c.isBanned,
-                      })
-                    }
-                    className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                  >
-                    <QrCode className="w-3.5 h-3.5" />
-                    <span>{ui.qrBtn}</span>
-                  </button>
-
-                  <a
-                    href={`https://wa.me/${clientWa}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" />
-                    <span>WhatsApp</span>
-                  </a>
-
-                  <button
-                    type="button"
-                    disabled={busyId === c.id}
-                    onClick={() => handleToggleVip(c)}
-                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 border cursor-pointer ${
-                      c.isVip
-                        ? 'bg-amber-500 text-black border-amber-400'
-                        : 'bg-zinc-800 hover:bg-zinc-700 text-amber-300 border-zinc-700'
-                    }`}
-                  >
-                    <Star className="w-3 h-3" />
-                    <span>{c.isVip ? ui.removeVip : ui.upgradeVip}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={busyId === c.id}
-                    onClick={() => handleRedeemFreeWash(c)}
-                    className="px-2.5 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                  >
-                    <Gift className="w-3 h-3" />
-                    <span>{ui.freeWashBtn(c.freeWashesRedeemed)}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={busyId === c.id}
-                    onClick={() => handleCustomDiscount(c)}
-                    className="px-2.5 py-1.5 rounded-lg bg-blue-950/60 hover:bg-blue-900 border border-blue-500/40 text-blue-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    <span>{ui.discountBtn}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={busyId === c.id}
-                    onClick={() => handleBanToggle(c)}
-                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 border cursor-pointer ${
-                      c.isBanned
-                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500'
-                        : 'bg-red-950/60 hover:bg-red-900 border-red-500/40 text-red-300'
-                    }`}
-                  >
-                    {c.isBanned ? (
-                      <>
-                        <UserCheck className="w-3 h-3" />
-                        <span>{ui.unbanBtn}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Ban className="w-3 h-3" />
-                        <span>{ui.banBtn}</span>
-                      </>
-                    )}
-                  </button>
-
-                  {onOpenClientTracking && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDetailsClientId(null);
-                        onOpenClientTracking(c.phoneDisplay || c.normalizedPhone || c.id);
-                      }}
-                      className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                    >
-                      <ExternalLink className="w-3 h-3 text-amber-400" />
-                      <span>{ui.trackBtn}</span>
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    disabled={busyId === c.id}
                     onClick={() => {
                       setDetailsClientId(null);
-                      openSelectiveDeleteModal(c);
+                      setScannedTicketMatch(null);
                     }}
-                    className="px-2.5 py-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 text-rose-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    className="p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-zinc-800 cursor-pointer shrink-0"
                   >
-                    <Trash2 className="w-3 h-3" />
-                    <span>
-                      {pickLang(lang, {
-                        ar: 'حذف انتقائي',
-                        fr: 'Supprimer...',
-                        amz: 'ⴽⴽⵙ...',
-                        en: 'Delete...',
-                        es: 'Eliminar...',
-                      })}
-                    </span>
+                    <X className="w-4 h-4" />
                   </button>
+                </div>
+
+                <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+                  {scannedTicketMatch && (
+                    <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/15 border border-amber-300 dark:border-amber-400/45 text-amber-900 dark:text-amber-200 flex items-center justify-between gap-2 text-[11px]">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <ScanLine className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <div className="truncate">
+                          <span className="font-black">{scannedTicketMatch.ticketNumber}</span> ·{' '}
+                          <span>{scannedTicketMatch.barberName}</span> ·{' '}
+                          <span dir="ltr" className="font-mono">
+                            {scannedTicketMatch.date} ({scannedTicketMatch.timeSlot})
+                          </span>
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 rounded bg-white dark:bg-black/40 border border-amber-200 dark:border-transparent font-mono text-[10px] uppercase shrink-0">
+                        {scannedTicketMatch.status}
+                      </span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="p-2.5 rounded-xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800">
+                      <span className="text-[10px] text-slate-500 dark:text-zinc-400 block">{ui.visitsCol}</span>
+                      <span className="font-mono font-black text-amber-700 dark:text-amber-300 text-sm tabular-nums">
+                        {c.verifiedVisits}
+                      </span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800">
+                      <span className="text-[10px] text-slate-500 dark:text-zinc-400 block">{ui.spendCol}</span>
+                      <span className="font-mono font-black text-emerald-700 dark:text-emerald-300 text-sm tabular-nums">
+                        {c.lifetimeSpendMAD} MAD
+                      </span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800">
+                      <span className="text-[10px] text-slate-500 dark:text-zinc-400 block">{ui.noShowCol}</span>
+                      <span
+                        className={`font-mono font-black text-sm tabular-nums ${
+                          c.noShowCount >= 2
+                            ? 'text-red-600 dark:text-red-400'
+                            : c.noShowCount === 1
+                            ? 'text-orange-600 dark:text-orange-400'
+                            : 'text-emerald-600 dark:text-emerald-400'
+                        }`}
+                      >
+                        {c.noShowCount} / 2
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                    {loyalty.tiers.map((tier) => (
+                      <span
+                        key={tier.targetVisits}
+                        className={`px-2 py-0.5 rounded-full font-mono font-bold border tabular-nums ${
+                          tier.unlocked
+                            ? 'bg-emerald-50 dark:bg-emerald-500/20 border-emerald-300 dark:border-emerald-400/50 text-emerald-700 dark:text-emerald-300'
+                            : tier.isCurrentTarget
+                            ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300'
+                            : 'bg-stone-100 dark:bg-black/40 border-stone-200 dark:border-zinc-800 text-slate-500 dark:text-zinc-500'
+                        }`}
+                      >
+                        {tier.unlocked
+                          ? `✓ ${tier.targetVisits}/${tier.targetVisits}`
+                          : `${c.verifiedVisits}/${tier.targetVisits}`}
+                      </span>
+                    ))}
+                  </div>
+
+                  {(c.customDiscountMAD > 0 || c.banReason || c.rewardNote) && (
+                    <div className="p-2.5 rounded-xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800 text-[11px] space-y-0.5">
+                      {c.customDiscountMAD > 0 && (
+                        <div className="text-emerald-700 dark:text-emerald-300 font-bold">
+                          {ui.activeDiscount(c.customDiscountMAD)}
+                        </div>
+                      )}
+                      {c.rewardNote && <div className="text-amber-700 dark:text-amber-300">{c.rewardNote}</div>}
+                      {c.isBanned && c.banReason && (
+                        <div className="text-red-700 dark:text-red-300">{c.banReason}</div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-stone-200 dark:border-zinc-800">
+                    <button
+                      type="button"
+                      onClick={() => handleExportVcfList([c], 'single')}
+                      className="px-2.5 py-1.5 rounded-lg bg-stone-100 dark:bg-zinc-800 hover:bg-stone-200 dark:hover:bg-zinc-700 border border-stone-300 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <UserPlus className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>{ui.saveSingleVcf}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setQrTargetClient({
+                          id: c.id,
+                          clientName: c.clientName,
+                          phoneDisplay: c.phoneDisplay,
+                          normalizedPhone: c.normalizedPhone,
+                          verifiedVisits: c.verifiedVisits,
+                          isVip: c.isVip,
+                          isBanned: c.isBanned,
+                        })
+                      }
+                      className="px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/15 hover:bg-amber-100 dark:hover:bg-amber-500/25 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>{ui.qrBtn}</span>
+                    </button>
+
+                    <a
+                      href={`https://wa.me/${clientWa}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>WhatsApp</span>
+                    </a>
+
+                    <button
+                      type="button"
+                      disabled={busyId === c.id}
+                      onClick={() => handleToggleVip(c)}
+                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 border cursor-pointer ${
+                        c.isVip
+                          ? 'bg-amber-500 text-black border-amber-400'
+                          : 'bg-stone-100 dark:bg-zinc-800 hover:bg-stone-200 dark:hover:bg-zinc-700 text-amber-700 dark:text-amber-300 border-stone-300 dark:border-zinc-700'
+                      }`}
+                    >
+                      <Star className="w-3 h-3" />
+                      <span>{c.isVip ? ui.removeVip : ui.upgradeVip}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={busyId === c.id}
+                      onClick={() => handleRedeemFreeWash(c)}
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-300 dark:border-emerald-500/40 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Gift className="w-3 h-3" />
+                      <span>{ui.freeWashBtn(c.freeWashesRedeemed)}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={busyId === c.id}
+                      onClick={() => handleCustomDiscount(c)}
+                      className="px-2.5 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900 border border-blue-300 dark:border-blue-500/40 text-blue-700 dark:text-blue-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>{ui.discountBtn}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={busyId === c.id}
+                      onClick={() => handleBanToggle(c)}
+                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 border cursor-pointer ${
+                        c.isBanned
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500'
+                          : 'bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900 border-red-300 dark:border-red-500/40 text-red-700 dark:text-red-300'
+                      }`}
+                    >
+                      {c.isBanned ? (
+                        <>
+                          <UserCheck className="w-3 h-3" />
+                          <span>{ui.unbanBtn}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Ban className="w-3 h-3" />
+                          <span>{ui.banBtn}</span>
+                        </>
+                      )}
+                    </button>
+
+                    {onOpenClientTracking && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDetailsClientId(null);
+                          onOpenClientTracking(c.phoneDisplay || c.normalizedPhone || c.id);
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-stone-100 dark:bg-zinc-800 hover:bg-stone-200 dark:hover:bg-zinc-700 border border-stone-300 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <ExternalLink className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                        <span>{ui.trackBtn}</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      disabled={busyId === c.id}
+                      onClick={() => {
+                        setDetailsClientId(null);
+                        openSelectiveDeleteModal(c);
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/70 hover:bg-rose-100 dark:hover:bg-rose-900 border border-rose-300 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>
+                        {pickLang(lang, {
+                          ar: 'حذف انتقائي',
+                          fr: 'Supprimer...',
+                          amz: 'ⴽⴽⵙ...',
+                          en: 'Delete...',
+                          es: 'Eliminar...',
+                        })}
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          </ModalPortal>
         );
       })()}
 
@@ -3116,232 +3118,234 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
         };
 
         return (
-          <div
-            className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs"
-            onClick={() => !deleteBusy && setDeleteModalClient(null)}
-          >
+          <ModalPortal>
             <div
-              className="w-full max-w-lg max-h-[88vh] flex flex-col rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden text-xs"
-              onClick={(e) => e.stopPropagation()}
+              className="fixed inset-0 z-[115] flex items-center justify-center p-4 sm:p-6 sb-modal-backdrop"
+              onClick={() => !deleteBusy && setDeleteModalClient(null)}
             >
-              <div className="p-4 border-b border-zinc-800 flex items-start justify-between gap-3">
-                <div>
-                  <h4 className="text-sm font-black text-white flex items-center gap-2">
-                    <Trash2 className="w-4 h-4 text-rose-400" />
-                    <span>حذف انتقائي لسجلات الزبون</span>
-                  </h4>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    {deleteModalClient.clientName} ·{' '}
-                    <span dir="ltr" className="font-mono">
-                      {deleteModalClient.phoneDisplay}
-                    </span>
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={deleteBusy}
-                  onClick={() => setDeleteModalClient(null)}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="p-4 overflow-y-auto space-y-4 flex-1">
-                {/* Credit Protection Warning Banner */}
-                {modalCredit.hasCredit && modalCredit.totalOwedMAD > 0 ? (
-                  <div className="p-3.5 rounded-xl bg-rose-950/50 border border-rose-500/60 space-y-2.5 text-rose-100">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
-                      <div className="space-y-1">
-                        <div className="font-black text-orange-300">
-                          ⚠️ تحذير حماية الكريدي: هذا الرقم عليه كريدي غير مدفوع (
-                          <span dir="ltr" className="font-mono">
-                            {modalCredit.totalOwedMAD} MAD
-                          </span>
-                          )
-                        </div>
-                        <ul className="space-y-0.5 text-[11px] text-rose-200 list-disc ps-4">
-                          {modalCredit.creditorBreakdowns.map((cred) => (
-                            <li key={cred.creditorKey}>
-                              {cred.creditorLabel}:{' '}
-                              <strong dir="ltr" className="font-mono">
-                                {cred.amountMAD} MAD
-                              </strong>
-                            </li>
-                          ))}
-                        </ul>
-                        <p className="text-[11px] text-rose-200/90 leading-relaxed pt-1">
-                          مبالغ الكريدي المسجلة في لاكيس وسجل الناس لي كانتسالهم محمية ولن تُحذف،
-                          وستبقى مرتبطة برقم الهاتف حتى الأداء.
-                        </p>
-                      </div>
-                    </div>
-
-                    <label className="flex items-start gap-2 p-2.5 rounded-lg bg-black/40 border border-rose-500/40 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={creditOverrideAck}
-                        onChange={(e) => setCreditOverrideAck(e.target.checked)}
-                        className="mt-0.5 w-4 h-4 accent-orange-500 shrink-0 cursor-pointer"
-                      />
-                      <span className="text-[11px] font-bold text-amber-200">
-                        أؤكد أنني اطلعت على وجود الكريدي المفتوح ({modalCredit.totalOwedMAD} MAD)
-                        وأريد تنفيذ الحذف المحدد أسفله فقط.
+              <div
+                className="w-full max-w-xl max-h-[88vh] flex flex-col rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="p-4 sm:p-5 border-b border-stone-200 dark:border-zinc-800 flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                      <Trash2 className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                      <span>حذف انتقائي لسجلات الزبون</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
+                      {deleteModalClient.clientName} ·{' '}
+                      <span dir="ltr" className="font-mono">
+                        {deleteModalClient.phoneDisplay}
                       </span>
-                    </label>
+                    </p>
                   </div>
-                ) : (
-                  <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-emerald-300 text-[11px] flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    <span>لا يوجد أي كريدي مفتوح مسجل على رقم هذا الزبون.</span>
-                  </div>
-                )}
+                  <button
+                    type="button"
+                    disabled={deleteBusy}
+                    onClick={() => setDeleteModalClient(null)}
+                    className="p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-zinc-800 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
 
-                {/* Individual Bookings Checklist */}
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-black text-white">
-                      1. اختر الحجوزات / التذاكر المراد حذفها ({deleteModalClient.bookings.length}):
-                    </span>
-                    {deleteModalClient.bookings.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDeleteBookingIds(deleteModalClient.bookings.map((b) => b.id))
-                          }
-                          className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 cursor-pointer"
-                        >
-                          تحديد الكل
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDeleteBookingIds(
-                              deleteModalClient.bookings
-                                .filter((b) =>
-                                  ['pending', 'pending_quote', 'cancelled', 'rejected', 'no_show'].includes(
-                                    b.status
-                                  )
-                                )
-                                .map((b) => b.id)
+                <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+                  {/* Credit Protection Warning Banner */}
+                  {modalCredit.hasCredit && modalCredit.totalOwedMAD > 0 ? (
+                    <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-300 dark:border-rose-500/60 space-y-2.5 text-rose-900 dark:text-rose-100">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                          <div className="font-black text-orange-700 dark:text-orange-300">
+                            ⚠️ تحذير حماية الكريدي: هذا الرقم عليه كريدي غير مدفوع (
+                            <span dir="ltr" className="font-mono">
+                              {modalCredit.totalOwedMAD} MAD
+                            </span>
                             )
-                          }
-                          className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-300 cursor-pointer"
-                        >
-                          المعلقة / الملغاة فقط
-                        </button>
-                        {deleteBookingIds.length > 0 && (
+                          </div>
+                          <ul className="space-y-0.5 text-[11px] text-rose-800 dark:text-rose-200 list-disc ps-4">
+                            {modalCredit.creditorBreakdowns.map((cred) => (
+                              <li key={cred.creditorKey}>
+                                {cred.creditorLabel}:{' '}
+                                <strong dir="ltr" className="font-mono">
+                                  {cred.amountMAD} MAD
+                                </strong>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="text-[11px] text-rose-700 dark:text-rose-200/90 leading-relaxed pt-1">
+                            مبالغ الكريدي المسجلة في لاكيس وسجل الناس لي كانتسالهم محمية ولن تُحذف،
+                            وستبقى مرتبطة برقم الهاتف حتى الأداء.
+                          </p>
+                        </div>
+                      </div>
+
+                      <label className="flex items-start gap-2 p-2.5 rounded-lg bg-white dark:bg-black/40 border border-rose-300 dark:border-rose-500/40 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={creditOverrideAck}
+                          onChange={(e) => setCreditOverrideAck(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 accent-orange-500 shrink-0 cursor-pointer"
+                        />
+                        <span className="text-[11px] font-bold text-amber-800 dark:text-amber-200">
+                          أؤكد أنني اطلعت على وجود الكريدي المفتوح ({modalCredit.totalOwedMAD} MAD)
+                          وأريد تنفيذ الحذف المحدد أسفله فقط.
+                        </span>
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-[11px] flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>لا يوجد أي كريدي مفتوح مسجل على رقم هذا الزبون.</span>
+                    </div>
+                  )}
+
+                  {/* Individual Bookings Checklist */}
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-black text-slate-900 dark:text-white">
+                        1. اختر الحجوزات / التذاكر المراد حذفها ({deleteModalClient.bookings.length}):
+                      </span>
+                      {deleteModalClient.bookings.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold">
                           <button
                             type="button"
-                            onClick={() => setDeleteBookingIds([])}
-                            className="px-2 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-400 cursor-pointer"
+                            onClick={() =>
+                              setDeleteBookingIds(deleteModalClient.bookings.map((b) => b.id))
+                            }
+                            className="px-2 py-1 rounded-lg bg-stone-100 dark:bg-zinc-800 hover:bg-stone-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 cursor-pointer border border-stone-200 dark:border-zinc-700"
                           >
-                            إلغاء التحديد
+                            تحديد الكل
                           </button>
-                        )}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDeleteBookingIds(
+                                deleteModalClient.bookings
+                                  .filter((b) =>
+                                    ['pending', 'pending_quote', 'cancelled', 'rejected', 'no_show'].includes(
+                                      b.status
+                                    )
+                                  )
+                                  .map((b) => b.id)
+                              )
+                            }
+                            className="px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-500/15 hover:bg-amber-100 dark:hover:bg-amber-500/25 border border-amber-300 dark:border-amber-500/35 text-amber-800 dark:text-amber-300 cursor-pointer"
+                          >
+                            المعلقة / الملغاة فقط
+                          </button>
+                          {deleteBookingIds.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteBookingIds([])}
+                              className="px-2 py-1 rounded-lg bg-stone-100 dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-slate-500 dark:text-zinc-400 cursor-pointer"
+                            >
+                              إلغاء التحديد
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {deleteModalClient.bookings.length === 0 ? (
+                      <div className="p-3 rounded-xl bg-stone-50 dark:bg-zinc-900/60 border border-stone-200 dark:border-zinc-800 text-slate-500 dark:text-zinc-400 text-[11px]">
+                        لا توجد حجوزات مسجلة تحت هذا الرقم.
+                      </div>
+                    ) : (
+                      <div className="max-h-48 overflow-y-auto space-y-1.5 pe-1">
+                        {deleteModalClient.bookings.map((b) => {
+                          const checked = deleteBookingIds.includes(b.id);
+                          return (
+                            <label
+                              key={b.id}
+                              className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                                checked
+                                  ? 'bg-rose-50 dark:bg-rose-950/35 border-rose-300 dark:border-rose-500/50 text-slate-900 dark:text-white'
+                                  : 'bg-stone-50 dark:bg-[#191D28] border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:border-stone-300 dark:hover:border-zinc-700'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleDeleteBooking(b.id)}
+                                  className="w-4 h-4 accent-rose-500 shrink-0 cursor-pointer"
+                                />
+                                <div className="min-w-0">
+                                  <div className="font-bold truncate">
+                                    <span className="font-mono text-amber-700 dark:text-amber-300">{b.ticketNumber}</span> ·{' '}
+                                    <span>{b.barberName}</span>
+                                  </div>
+                                  <div className="text-[10px] font-mono text-slate-500 dark:text-zinc-400">
+                                    {b.date} · {b.timeSlot} · {b.status}
+                                  </div>
+                                </div>
+                              </div>
+                              <span dir="ltr" className="font-mono font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
+                                {b.finalTotalMAD} MAD
+                              </span>
+                            </label>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
 
-                  {deleteModalClient.bookings.length === 0 ? (
-                    <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[11px]">
-                      لا توجد حجوزات مسجلة تحت هذا الرقم.
-                    </div>
-                  ) : (
-                    <div className="max-h-48 overflow-y-auto space-y-1.5 pe-1">
-                      {deleteModalClient.bookings.map((b) => {
-                        const checked = deleteBookingIds.includes(b.id);
-                        return (
-                          <label
-                            key={b.id}
-                            className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-colors ${
-                              checked
-                                ? 'bg-rose-950/35 border-rose-500/50 text-white'
-                                : 'bg-zinc-900/60 border-zinc-800 text-zinc-300 hover:border-zinc-700'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleDeleteBooking(b.id)}
-                                className="w-4 h-4 accent-rose-500 shrink-0 cursor-pointer"
-                              />
-                              <div className="min-w-0">
-                                <div className="font-bold truncate">
-                                  <span className="font-mono text-amber-300">{b.ticketNumber}</span> ·{' '}
-                                  <span>{b.barberName}</span>
-                                </div>
-                                <div className="text-[10px] font-mono text-zinc-400">
-                                  {b.date} · {b.timeSlot} · {b.status}
-                                </div>
-                              </div>
-                            </div>
-                            <span dir="ltr" className="font-mono font-bold text-emerald-300 shrink-0">
-                              {b.finalTotalMAD} MAD
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* CRM Loyalty / Card Deletion Option */}
-                <div className="space-y-1.5 pt-2 border-t border-zinc-800">
-                  <span className="font-black text-white block">
-                    2. ملف الولاء وبطاقة الزبون (CRM):
-                  </span>
-                  <label className="p-3 rounded-xl bg-zinc-900/70 border border-zinc-800 hover:border-rose-500/40 flex items-start gap-2.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={deleteCrmProfileFlag}
-                      onChange={(e) => setDeleteCrmProfileFlag(e.target.checked)}
-                      className="mt-0.5 w-4 h-4 accent-rose-500 shrink-0 cursor-pointer"
-                    />
-                    <div className="space-y-0.5">
-                      <div className="font-bold text-rose-200">
-                        حذف بطاقة الزبون (نقاط الولاء، VIP، وسم التغيب والحظر) من CRM
+                  {/* CRM Loyalty / Card Deletion Option */}
+                  <div className="space-y-1.5 pt-2 border-t border-stone-200 dark:border-zinc-800">
+                    <span className="font-black text-slate-900 dark:text-white block">
+                      2. ملف الولاء وبطاقة الزبون (CRM):
+                    </span>
+                    <label className="p-3 rounded-xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800 hover:border-rose-300 dark:hover:border-rose-500/40 flex items-start gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={deleteCrmProfileFlag}
+                        onChange={(e) => setDeleteCrmProfileFlag(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 accent-rose-500 shrink-0 cursor-pointer"
+                      />
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-rose-700 dark:text-rose-200">
+                          حذف بطاقة الزبون (نقاط الولاء، VIP، وسم التغيب والحظر) من CRM
+                        </div>
+                        <p className="text-[10px] text-slate-500 dark:text-zinc-400">
+                          {deleteModalClient.bookings.length > deleteBookingIds.length
+                            ? 'ملاحظة: الحجوزات غير المحددة أعلاه ستُظهر بطاقة أساسية جديدة ما لم تحذفها أيضاً.'
+                            : 'سيتم إزالة البطاقة والبيانات المحددة نهائياً.'}
+                        </p>
                       </div>
-                      <p className="text-[10px] text-zinc-400">
-                        {deleteModalClient.bookings.length > deleteBookingIds.length
-                          ? 'ملاحظة: الحجوزات غير المحددة أعلاه ستُظهر بطاقة أساسية جديدة ما لم تحذفها أيضاً.'
-                          : 'سيتم إزالة البطاقة والبيانات المحددة نهائياً.'}
-                      </p>
-                    </div>
-                  </label>
+                    </label>
+                  </div>
                 </div>
-              </div>
 
-              <div className="p-4 border-t border-zinc-800 flex items-center justify-end gap-2 bg-zinc-900/50">
-                <button
-                  type="button"
-                  disabled={deleteBusy}
-                  onClick={() => setDeleteModalClient(null)}
-                  className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold cursor-pointer"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="button"
-                  disabled={!canProceed}
-                  onClick={handleConfirmSelectiveDelete}
-                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>
-                    {deleteBusy
-                      ? 'جاري الحذف...'
-                      : `تنفيذ الحذف المحدد (${deleteBookingIds.length}${
-                          deleteCrmProfileFlag ? ' + ملف CRM' : ''
-                        })`}
-                  </span>
-                </button>
+                <div className="p-4 border-t border-stone-200 dark:border-zinc-800 flex items-center justify-end gap-2 bg-stone-50 dark:bg-[#191D28]">
+                  <button
+                    type="button"
+                    disabled={deleteBusy}
+                    onClick={() => setDeleteModalClient(null)}
+                    className="px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-800 hover:bg-stone-100 dark:hover:bg-zinc-700 border border-stone-300 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 font-bold cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canProceed}
+                    onClick={handleConfirmSelectiveDelete}
+                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>
+                      {deleteBusy
+                        ? 'جاري الحذف...'
+                        : `تنفيذ الحذف المحدد (${deleteBookingIds.length}${
+                            deleteCrmProfileFlag ? ' + ملف CRM' : ''
+                          })`}
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          </ModalPortal>
         );
       })()}
 
@@ -3353,145 +3357,147 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
 
       {/* Dedicated CRM QR Scanner Modal (Camera + File Upload + Manual Lookup Fallback) */}
       {isCrmQrOpen && (
-        <div
-          className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs"
-          onClick={() => setIsCrmQrOpen(false)}
-        >
+        <ModalPortal>
           <div
-            className="w-full max-w-md max-h-[90vh] flex flex-col rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden text-xs"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 sb-modal-backdrop"
+            onClick={() => setIsCrmQrOpen(false)}
           >
-            <div className="p-4 border-b border-zinc-800 flex items-center justify-between gap-3">
-              <div>
-                <h4 className="text-sm font-black text-white flex items-center gap-2">
-                  <ScanLine className="w-4 h-4 text-amber-400" />
-                  <span>
+            <div
+              className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4 sm:p-5 border-b border-stone-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <ScanLine className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'سكانير QR للبحث الفوري في سجل الزبناء',
+                        fr: 'Scanner QR — Recherche instantanée CRM',
+                        amz: 'ⵙⴽⴰⵏⵉⵔ QR — ⴰⵔⵣⵣⵓ ⴳ CRM',
+                        en: 'CRM QR Scanner — Instant Client Lookup',
+                        es: 'Escáner QR — Búsqueda en CRM',
+                      })}
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-0.5">
                     {pickLang(lang, {
-                      ar: 'سكانير QR للبحث الفوري في سجل الزبناء',
-                      fr: 'Scanner QR — Recherche instantanée CRM',
-                      amz: 'ⵙⴽⴰⵏⵉⵔ QR — ⴰⵔⵣⵣⵓ ⴳ CRM',
-                      en: 'CRM QR Scanner — Instant Client Lookup',
-                      es: 'Escáner QR — Búsqueda en CRM',
+                      ar: 'امسح بطاقة الزبون أو تذكرة الحجز لفتح ملفه فوراً.',
+                      fr: 'Scannez le QR client ou ticket pour ouvrir sa fiche.',
+                      amz: 'ⵙⴽⴰⵏⵉ QR ⵏ ⵓⵎⵙⴰⵖ ⵏⵖ ⵜⵉⴽⵉ ⵉ ⵓⵔⵥⴰⵎ ⵏ ⵓⴼⵉⵍⴰⵡ.',
+                      en: 'Scan client QR pass or booking ticket to open profile.',
+                      es: 'Escanea el QR del cliente o ticket para abrir su perfil.',
                     })}
-                  </span>
-                </h4>
-                <p className="text-[11px] text-zinc-400 mt-0.5">
-                  {pickLang(lang, {
-                    ar: 'امسح بطاقة الزبون أو تذكرة الحجز لفتح ملفه فوراً.',
-                    fr: 'Scannez le QR client ou ticket pour ouvrir sa fiche.',
-                    amz: 'ⵙⴽⴰⵏⵉ QR ⵏ ⵓⵎⵙⴰⵖ ⵏⵖ ⵜⵉⴽⵉ ⵉ ⵓⵔⵥⴰⵎ ⵏ ⵓⴼⵉⵍⴰⵡ.',
-                    en: 'Scan client QR pass or booking ticket to open profile.',
-                    es: 'Escanea el QR del cliente o ticket para abrir su perfil.',
-                  })}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCrmQrOpen(false)}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-4 overflow-y-auto space-y-3">
-              {/* Camera Viewport */}
-              <div className="rounded-xl bg-black border border-zinc-800 overflow-hidden relative min-h-[220px] flex items-center justify-center">
-                <div id="crm-qr-reader-container" className="w-full" />
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
+                  </p>
+                </div>
                 <button
                   type="button"
-                  onClick={() =>
-                    setCrmCameraFacing((prev) =>
-                      prev === 'environment' ? 'user' : 'environment'
-                    )
-                  }
-                  className="flex-1 min-h-[38px] px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  onClick={() => setIsCrmQrOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-zinc-800 cursor-pointer shrink-0"
                 >
-                  <Camera className="w-3.5 h-3.5 text-amber-400" />
-                  <span>
-                    {pickLang(lang, {
-                      ar: 'تبديل الكاميرا',
-                      fr: 'Changer caméra',
-                      amz: 'ⵙⵏⴼⵍ ⵜⴰⴽⴰⵎⵉⵕⴰ',
-                      en: 'Switch Camera',
-                      es: 'Cambiar cámara',
-                    })}
-                  </span>
+                  <X className="w-4 h-4" />
                 </button>
-
-                <label className="flex-1 min-h-[38px] px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer">
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>
-                    {pickLang(lang, {
-                      ar: 'رفع صورة QR',
-                      fr: 'Importer image QR',
-                      amz: 'ⴰⵙⴽⵛⵎ ⵏ QR',
-                      en: 'Upload QR Image',
-                      es: 'Subir imagen QR',
-                    })}
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleCrmQrImageUpload}
-                    className="hidden"
-                  />
-                </label>
-                <div id="crm-qr-file-temp" className="hidden" />
               </div>
 
-              {crmQrError && (
-                <div
-                  role="alert"
-                  className="p-2.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-200 text-[11px] font-semibold"
-                >
-                  {crmQrError}
+              <div className="p-4 sm:p-5 overflow-y-auto space-y-3">
+                {/* Camera Viewport */}
+                <div className="rounded-xl bg-black border border-stone-300 dark:border-zinc-800 overflow-hidden relative min-h-[220px] flex items-center justify-center">
+                  <div id="crm-qr-reader-container" className="w-full" />
                 </div>
-              )}
 
-              {/* Safe Fallback: Manual QR text / Phone / Ticket Lookup */}
-              <form
-                onSubmit={handleCrmManualLookupSubmit}
-                className="pt-2 border-t border-zinc-800 space-y-2"
-              >
-                <label className="block text-[11px] font-bold text-zinc-400">
-                  {pickLang(lang, {
-                    ar: 'بديل آمن: الصق رابط QR أو رقم الهاتف أو التذكرة (#SB-...):',
-                    fr: 'Alternative : collez le code QR, téléphone ou ticket (#SB-...) :',
-                    amz: 'ⴰⵙⴽⵛⵎ ⵙ ⵓⴼⵓⵙ: ⵓⵟⵟⵓⵏ ⵏⵖ #SB-... :',
-                    en: 'Fallback: paste QR link, phone number, or ticket (#SB-...):',
-                    es: 'Alternativa: pega el QR, teléfono o ticket (#SB-...):',
-                  })}
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={crmQrManualInput}
-                    onChange={(e) => setCrmQrManualInput(e.target.value)}
-                    placeholder="06... / #SB-..."
-                    className="flex-1 min-h-[38px] bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
-                  />
+                <div className="flex flex-wrap items-center gap-2">
                   <button
-                    type="submit"
-                    disabled={!crmQrManualInput.trim()}
-                    className="min-h-[38px] px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black font-black text-xs cursor-pointer"
+                    type="button"
+                    onClick={() =>
+                      setCrmCameraFacing((prev) =>
+                        prev === 'environment' ? 'user' : 'environment'
+                      )
+                    }
+                    className="flex-1 min-h-[38px] px-3 py-2 rounded-xl bg-stone-100 dark:bg-zinc-800 hover:bg-stone-200 dark:hover:bg-zinc-700 border border-stone-300 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    {pickLang(lang, {
-                      ar: 'فتح',
-                      fr: 'Ouvrir',
-                      amz: 'ⵕⵥⵎ',
-                      en: 'Open',
-                      es: 'Abrir',
-                    })}
+                    <Camera className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'تبديل الكاميرا',
+                        fr: 'Changer caméra',
+                        amz: 'ⵙⵏⴼⵍ ⵜⴰⴽⴰⵎⵉⵕⴰ',
+                        en: 'Switch Camera',
+                        es: 'Cambiar cámara',
+                      })}
+                    </span>
                   </button>
+
+                  <label className="flex-1 min-h-[38px] px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-500/15 hover:bg-amber-100 dark:hover:bg-amber-500/25 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'رفع صورة QR',
+                        fr: 'Importer image QR',
+                        amz: 'ⴰⵙⴽⵛⵎ ⵏ QR',
+                        en: 'Upload QR Image',
+                        es: 'Subir imagen QR',
+                      })}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleCrmQrImageUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  <div id="crm-qr-file-temp" className="hidden" />
                 </div>
-              </form>
+
+                {crmQrError && (
+                  <div
+                    role="alert"
+                    className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-300 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-[11px] font-semibold"
+                  >
+                    {crmQrError}
+                  </div>
+                )}
+
+                {/* Safe Fallback: Manual QR text / Phone / Ticket Lookup */}
+                <form
+                  onSubmit={handleCrmManualLookupSubmit}
+                  className="pt-2 border-t border-stone-200 dark:border-zinc-800 space-y-2"
+                >
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-zinc-400">
+                    {pickLang(lang, {
+                      ar: 'بديل آمن: الصق رابط QR أو رقم الهاتف أو التذكرة (#SB-...):',
+                      fr: 'Alternative : collez le code QR, téléphone ou ticket (#SB-...) :',
+                      amz: 'ⴰⵙⴽⵛⵎ ⵙ ⵓⴼⵓⵙ: ⵓⵟⵟⵓⵏ ⵏⵖ #SB-... :',
+                      en: 'Fallback: paste QR link, phone number, or ticket (#SB-...):',
+                      es: 'Alternativa: pega el QR, teléfono o ticket (#SB-...):',
+                    })}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={crmQrManualInput}
+                      onChange={(e) => setCrmQrManualInput(e.target.value)}
+                      placeholder="06... / #SB-..."
+                      className="flex-1 min-h-[38px] bg-stone-50 dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!crmQrManualInput.trim()}
+                      className="min-h-[38px] px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black font-black text-xs cursor-pointer"
+                    >
+                      {pickLang(lang, {
+                        ar: 'فتح',
+                        fr: 'Ouvrir',
+                        amz: 'ⵕⵥⵎ',
+                        en: 'Open',
+                        es: 'Abrir',
+                      })}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </div>
   );
@@ -3551,21 +3557,21 @@ export const WaitlistManagementPanel: React.FC<{
 
   return (
     <div className="space-y-4 text-xs">
-      <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 flex flex-wrap items-center justify-between gap-2">
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-black text-white flex items-center gap-2">
-            <ListPlus className="w-4 h-4 text-blue-400" />
+          <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+            <ListPlus className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             <span>{ui.title}</span>
           </h3>
-          <p className="text-[11px] text-zinc-400 mt-0.5">{ui.subtitle}</p>
+          <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-0.5">{ui.subtitle}</p>
         </div>
-        <span className="px-3 py-1 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 font-bold">
+        <span className="px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-500/20 border border-blue-300 dark:border-blue-500/40 text-blue-700 dark:text-blue-300 font-bold">
           {ui.waitingBadge(visible.filter((e) => e.status === 'waiting').length)}
         </span>
       </div>
 
       {visible.length === 0 ? (
-        <div className="p-8 text-center rounded-2xl bg-zinc-900/50 border border-zinc-800 text-zinc-400">
+        <div className="p-8 text-center rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 text-slate-500 dark:text-zinc-400">
           {ui.empty}
         </div>
       ) : (
@@ -3582,23 +3588,23 @@ export const WaitlistManagementPanel: React.FC<{
             return (
               <div
                 key={entry.id}
-                className="p-4 rounded-2xl bg-zinc-900/70 border border-zinc-800 flex flex-wrap items-center justify-between gap-3"
+                className="p-4 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs flex flex-wrap items-center justify-between gap-3"
               >
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-black text-white text-sm">{entry.clientName}</span>
-                    <span dir="ltr" className="font-mono text-zinc-400">
+                    <span className="font-black text-slate-900 dark:text-white text-sm">{entry.clientName}</span>
+                    <span dir="ltr" className="font-mono text-slate-500 dark:text-zinc-400">
                       {entry.clientPhone}
                     </span>
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                         entry.status === 'waiting'
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          ? 'bg-amber-50 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40'
                           : entry.status === 'notified'
-                          ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                          ? 'bg-blue-50 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-500/40'
                           : entry.status === 'converted'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : 'bg-zinc-800 text-zinc-400'
+                          ? 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40'
+                          : 'bg-stone-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-stone-200 dark:border-zinc-700'
                       }`}
                     >
                       {entry.status === 'waiting'
@@ -3610,13 +3616,13 @@ export const WaitlistManagementPanel: React.FC<{
                         : ui.statusCancelled}
                     </span>
                   </div>
-                  <div className="text-[11px] text-zinc-300 flex flex-wrap items-center gap-3">
+                  <div className="text-[11px] text-slate-600 dark:text-zinc-300 flex flex-wrap items-center gap-3">
                     <span>✂️ {entry.barberName}</span>
-                    <span className="font-mono text-amber-300">
+                    <span className="font-mono text-amber-700 dark:text-amber-300">
                       📅 {entry.date} • ⏰ {entry.preferredTime}
                     </span>
                     {entry.servicesSummary && (
-                      <span className="text-zinc-400">({entry.servicesSummary})</span>
+                      <span className="text-slate-500 dark:text-zinc-400">({entry.servicesSummary})</span>
                     )}
                   </div>
                 </div>
@@ -3627,7 +3633,7 @@ export const WaitlistManagementPanel: React.FC<{
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() => updateWaitlistStatus(entry.id, 'notified')}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1"
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-xs"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
                     <span>{ui.waBtn}</span>
@@ -3637,7 +3643,7 @@ export const WaitlistManagementPanel: React.FC<{
                     <button
                       type="button"
                       onClick={() => updateWaitlistStatus(entry.id, 'converted')}
-                      className="px-2.5 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-600/20 hover:bg-blue-100 dark:hover:bg-blue-600/30 border border-blue-300 dark:border-blue-500/40 text-blue-700 dark:text-blue-300 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       <span>{ui.convertedBtn}</span>
@@ -3647,7 +3653,7 @@ export const WaitlistManagementPanel: React.FC<{
                   <button
                     type="button"
                     onClick={() => deleteWaitlistEntry(entry.id)}
-                    className="p-1.5 rounded-xl bg-zinc-800 hover:bg-red-950 text-zinc-400 hover:text-red-400 border border-zinc-700 cursor-pointer"
+                    className="p-1.5 rounded-xl bg-stone-100 dark:bg-zinc-800 hover:bg-red-50 dark:hover:bg-red-950 text-slate-500 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 border border-stone-200 dark:border-zinc-700 cursor-pointer"
                     title={ui.deleteTitle}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -3954,40 +3960,40 @@ export const LiveQueuePanel: React.FC<{
   return (
     <div className="space-y-4 text-xs">
       {/* Compact Header */}
-      <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3">
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-black text-white flex items-center gap-2">
-              <Users className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               <span>{ui.title}</span>
             </h3>
-            <p className="text-[11px] text-zinc-400 mt-0.5">{ui.subtitle}</p>
+            <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-0.5">{ui.subtitle}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 font-mono tabular-nums text-[11px]">
-            <span className="text-zinc-400">
-              {ui.currTime} <strong className="text-white">{nowTimeLabel}</strong>
+            <span className="text-slate-600 dark:text-zinc-400">
+              {ui.currTime} <strong className="text-slate-900 dark:text-white">{nowTimeLabel}</strong>
             </span>
-            <span className="text-zinc-600" aria-hidden="true">·</span>
-            <span className="text-emerald-400 font-bold">
+            <span className="text-stone-300 dark:text-zinc-600" aria-hidden="true">·</span>
+            <span className="text-emerald-700 dark:text-emerald-400 font-bold">
               {ui.waitingLbl} {queueItems.length}
             </span>
-            <span className="text-zinc-600" aria-hidden="true">·</span>
-            <span className="text-zinc-300">
+            <span className="text-stone-300 dark:text-zinc-600" aria-hidden="true">·</span>
+            <span className="text-slate-700 dark:text-zinc-300">
               {ui.doneTodayLbl} {completedTodayCount}
             </span>
           </div>
         </div>
 
         {role === 'master' && (
-          <div className="pt-2.5 border-t border-zinc-800 flex items-center gap-1.5 overflow-x-auto">
+          <div className="pt-2.5 border-t border-stone-200 dark:border-zinc-800 flex items-center gap-1.5 overflow-x-auto">
             <button
               type="button"
               onClick={() => setBarberFilter('all')}
               className={`px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors cursor-pointer ${
                 barberFilter === 'all'
-                  ? 'bg-zinc-200 text-black'
-                  : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
+                  ? 'bg-slate-900 dark:bg-zinc-200 text-white dark:text-black'
+                  : 'bg-stone-100 dark:bg-zinc-950 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white border border-stone-200 dark:border-zinc-800'
               }`}
             >
               {ui.allBarbers} ({getLiveQueueBookings(bookings, todayStr, 'master', 'all', 'all').length})
@@ -4010,7 +4016,7 @@ export const LiveQueuePanel: React.FC<{
                   className={`px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap flex items-center gap-1.5 border transition-colors cursor-pointer ${
                     active
                       ? 'text-white'
-                      : 'bg-zinc-950 text-zinc-400 hover:text-white border-zinc-800'
+                      : 'bg-stone-100 dark:bg-zinc-950 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white border-stone-200 dark:border-zinc-800'
                   }`}
                   style={{
                     backgroundColor: active ? color : undefined,
@@ -4042,34 +4048,34 @@ export const LiveQueuePanel: React.FC<{
         );
 
         return (
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/50 via-zinc-900 to-zinc-900 border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50/70 dark:bg-[#141720] border border-emerald-300 dark:border-emerald-500/40 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="space-y-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-emerald-300">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
                 <span>{ui.nextInLineBadge}</span>
-                <span className="text-zinc-600" aria-hidden="true">·</span>
-                <span className="font-mono tabular-nums text-white">{effTime}</span>
-                <span className="text-zinc-600" aria-hidden="true">·</span>
-                <span className="font-mono tabular-nums text-amber-300">{delta.label}</span>
+                <span className="text-stone-400 dark:text-zinc-600" aria-hidden="true">·</span>
+                <span className="font-mono tabular-nums text-slate-900 dark:text-white">{effTime}</span>
+                <span className="text-stone-400 dark:text-zinc-600" aria-hidden="true">·</span>
+                <span className="font-mono tabular-nums text-amber-700 dark:text-amber-300">{delta.label}</span>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-base font-black text-white truncate">
+                <span className="text-base font-black text-slate-900 dark:text-white truncate">
                   {nextInLine.clientName}
                 </span>
                 {crm?.isVip && (
-                  <span className="text-xs font-bold text-amber-300">· VIP</span>
+                  <span className="text-xs font-bold text-amber-700 dark:text-amber-300">· VIP</span>
                 )}
                 {isPriority && (
-                  <span className="text-[11px] font-bold text-cyan-300">
+                  <span className="text-[11px] font-bold text-cyan-700 dark:text-cyan-300">
                     {ui.priorityFull}
                   </span>
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
-                <span className="font-mono text-zinc-200">{nextInLine.ticketNumber}</span>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 dark:text-zinc-400">
+                <span className="font-mono text-slate-800 dark:text-zinc-200">{nextInLine.ticketNumber}</span>
                 <span aria-hidden="true">·</span>
-                <span className="inline-flex items-center gap-1 text-zinc-200 font-semibold">
+                <span className="inline-flex items-center gap-1 text-slate-800 dark:text-zinc-200 font-semibold">
                   <span
                     className="w-2 h-2 rounded-full flex-shrink-0"
                     style={{ backgroundColor: bColor }}
@@ -4083,7 +4089,7 @@ export const LiveQueuePanel: React.FC<{
                 </span>
               </div>
               {nextInLine.clientNotes && (
-                <div className="text-[11px] text-amber-300 font-medium truncate max-w-xl">
+                <div className="text-[11px] text-amber-700 dark:text-amber-300 font-medium truncate max-w-xl">
                   📝 {nextInLine.clientNotes}
                 </div>
               )}
@@ -4094,7 +4100,7 @@ export const LiveQueuePanel: React.FC<{
                 <button
                   type="button"
                   onClick={() => onConfirm(nextInLine.id)}
-                  className="min-h-[40px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
+                  className="min-h-[40px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>{ui.confirmBtn}</span>
@@ -4105,7 +4111,7 @@ export const LiveQueuePanel: React.FC<{
                 type="button"
                 disabled={busyId === nextInLine.id}
                 onClick={() => onMarkCompleted(nextInLine)}
-                className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 {busyId === nextInLine.id ? (
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -4119,9 +4125,9 @@ export const LiveQueuePanel: React.FC<{
                 <button
                   type="button"
                   onClick={() => onOpenClientTracking(nextInLine.clientPhone)}
-                  className="min-h-[40px] px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-100 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                  className="min-h-[40px] px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-800 hover:bg-stone-100 dark:hover:bg-zinc-700 border border-stone-300 dark:border-zinc-700 text-slate-800 dark:text-zinc-100 font-bold text-xs flex items-center gap-1 cursor-pointer"
                 >
-                  <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                  <ExternalLink className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                   <span>{ui.trackBtn}</span>
                 </button>
               )}
@@ -4132,13 +4138,13 @@ export const LiveQueuePanel: React.FC<{
 
       {/* Compact Queue List */}
       {queueItems.length === 0 ? (
-        <div className="p-10 text-center rounded-2xl bg-zinc-900/50 border border-zinc-800 space-y-2">
-          <Clock className="w-8 h-8 text-zinc-600 mx-auto" />
-          <p className="text-sm font-bold text-zinc-300">{ui.emptyTitle}</p>
-          <p className="text-[11px] text-zinc-500">{ui.emptySub}</p>
+        <div className="p-10 text-center rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 space-y-2">
+          <Clock className="w-8 h-8 text-slate-400 dark:text-zinc-600 mx-auto" />
+          <p className="text-sm font-bold text-slate-700 dark:text-zinc-300">{ui.emptyTitle}</p>
+          <p className="text-[11px] text-slate-500 dark:text-zinc-500">{ui.emptySub}</p>
         </div>
       ) : (
-        <div className="rounded-2xl bg-zinc-900/75 border border-zinc-800 overflow-hidden divide-y divide-zinc-800/80">
+        <div className="rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-xs overflow-hidden divide-y divide-stone-200 dark:divide-zinc-800/80">
           {queueItems.map((booking, index) => {
             const effTime = getEffectiveBookingTime(booking);
             const slotMins = parseSlotToMinutes(effTime);
@@ -4157,7 +4163,9 @@ export const LiveQueuePanel: React.FC<{
               <div
                 key={booking.id}
                 className={`p-3 sm:px-4 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 transition-colors ${
-                  isNext ? 'bg-emerald-950/20' : 'hover:bg-zinc-800/40'
+                  isNext
+                    ? 'bg-emerald-50/60 dark:bg-emerald-950/20'
+                    : 'hover:bg-stone-50 dark:hover:bg-zinc-800/40'
                 }`}
               >
                 <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
@@ -4165,23 +4173,23 @@ export const LiveQueuePanel: React.FC<{
                     <span
                       className={`w-7 h-7 rounded-lg font-mono font-black text-xs tabular-nums flex items-center justify-center border ${
                         isNext
-                          ? 'bg-emerald-500 text-black border-emerald-400'
-                          : 'bg-zinc-950 text-zinc-300 border-zinc-800'
+                          ? 'bg-emerald-600 text-white border-emerald-500'
+                          : 'bg-stone-100 dark:bg-zinc-950 text-slate-700 dark:text-zinc-300 border-stone-300 dark:border-zinc-800'
                       }`}
                     >
                       #{index + 1}
                     </span>
                     <div className="text-start min-w-[60px]">
-                      <div className="font-mono font-black text-sm text-white tabular-nums">
+                      <div className="font-mono font-black text-sm text-slate-900 dark:text-white tabular-nums">
                         {effTime}
                       </div>
                       <div
                         className={`text-[10px] font-mono tabular-nums ${
                           delta.tone === 'now'
-                            ? 'text-emerald-400 font-bold'
+                            ? 'text-emerald-700 dark:text-emerald-400 font-bold'
                             : delta.tone === 'overdue'
-                            ? 'text-orange-400'
-                            : 'text-zinc-400'
+                            ? 'text-orange-600 dark:text-orange-400'
+                            : 'text-slate-500 dark:text-zinc-400'
                         }`}
                       >
                         {delta.label}
@@ -4191,29 +4199,29 @@ export const LiveQueuePanel: React.FC<{
 
                   <div className="min-w-0 flex-1 space-y-0.5">
                     <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                      <span className="font-black text-white truncate">
+                      <span className="font-black text-slate-900 dark:text-white truncate">
                         {booking.clientName}
                       </span>
                       {crm?.isVip && (
-                        <span className="text-[11px] font-bold text-amber-300">· VIP</span>
+                        <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300">· VIP</span>
                       )}
                       {isPriority && (
-                        <span className="text-[10px] font-bold text-cyan-300">
+                        <span className="text-[10px] font-bold text-cyan-700 dark:text-cyan-300">
                           {ui.priorityShort}
                         </span>
                       )}
-                      <span className="text-zinc-600" aria-hidden="true">·</span>
-                      <span className="font-mono text-[11px] text-zinc-400">
+                      <span className="text-stone-400 dark:text-zinc-600" aria-hidden="true">·</span>
+                      <span className="font-mono text-[11px] text-slate-500 dark:text-zinc-400">
                         {booking.ticketNumber}
                       </span>
-                      <span className="text-zinc-600" aria-hidden="true">·</span>
+                      <span className="text-stone-400 dark:text-zinc-600" aria-hidden="true">·</span>
                       <span
                         className={`text-[11px] font-bold ${
                           booking.status === 'confirmed'
-                            ? 'text-emerald-400'
+                            ? 'text-emerald-700 dark:text-emerald-400'
                             : booking.status === 'rescheduled'
-                            ? 'text-blue-400'
-                            : 'text-amber-400'
+                            ? 'text-blue-700 dark:text-blue-400'
+                            : 'text-amber-700 dark:text-amber-400'
                         }`}
                       >
                         {booking.status === 'confirmed'
@@ -4224,8 +4232,8 @@ export const LiveQueuePanel: React.FC<{
                       </span>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
-                      <span className="inline-flex items-center gap-1 text-zinc-300 font-semibold flex-shrink-0">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 dark:text-zinc-400">
+                      <span className="inline-flex items-center gap-1 text-slate-700 dark:text-zinc-300 font-semibold flex-shrink-0">
                         <span
                           className="w-2 h-2 rounded-full flex-shrink-0"
                           style={{ backgroundColor: barberColor }}
@@ -4235,12 +4243,12 @@ export const LiveQueuePanel: React.FC<{
                       <span aria-hidden="true">·</span>
                       <span className="truncate max-w-md">{servicesLabel}</span>
                       <span aria-hidden="true">·</span>
-                      <span className="font-mono font-bold text-amber-300 tabular-nums">
+                      <span className="font-mono font-bold text-amber-700 dark:text-amber-300 tabular-nums">
                         {booking.finalTotalMAD} MAD
                       </span>
                     </div>
                     {booking.clientNotes && (
-                      <div className="text-[11px] text-amber-300/95 truncate max-w-xl">
+                      <div className="text-[11px] text-amber-700 dark:text-amber-300/95 truncate max-w-xl">
                         📝 {booking.clientNotes}
                       </div>
                     )}
@@ -4253,7 +4261,7 @@ export const LiveQueuePanel: React.FC<{
                       type="button"
                       disabled={busyId === booking.id}
                       onClick={() => onConfirm(booking.id)}
-                      className="min-h-[36px] px-2.5 py-1 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      className="min-h-[36px] px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       <span>{ui.confirmBtn}</span>
@@ -4264,7 +4272,7 @@ export const LiveQueuePanel: React.FC<{
                     type="button"
                     disabled={busyId === booking.id}
                     onClick={() => onMarkCompleted(booking)}
-                    className="min-h-[36px] px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    className="min-h-[36px] px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
                   >
                     {busyId === booking.id ? (
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -4278,7 +4286,7 @@ export const LiveQueuePanel: React.FC<{
                     type="button"
                     disabled={busyId === booking.id}
                     onClick={() => onQuickCancel(booking)}
-                    className="min-h-[36px] px-2.5 py-1 rounded-lg bg-red-950/70 hover:bg-red-600 border border-red-500/40 text-red-200 hover:text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    className="min-h-[36px] px-2.5 py-1 rounded-lg bg-red-50 hover:bg-red-600 border border-red-300 dark:bg-red-950/70 dark:hover:bg-red-600 dark:border-red-500/40 text-red-700 dark:text-red-200 hover:text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
                   >
                     <XCircle className="w-3.5 h-3.5" />
                     <span>{ui.cancelBtn}</span>
@@ -4289,7 +4297,7 @@ export const LiveQueuePanel: React.FC<{
                       type="button"
                       disabled={lateBusyId === booking.id}
                       onClick={() => onPostponeLateToNearest(booking)}
-                      className="min-h-[36px] px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      className="min-h-[36px] px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-500/15 hover:bg-amber-100 dark:hover:bg-amber-500/25 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
                     >
                       <Clock3 className="w-3.5 h-3.5" />
                       <span>{ui.nearestSlotBtn}</span>
@@ -4301,7 +4309,7 @@ export const LiveQueuePanel: React.FC<{
                       type="button"
                       disabled={lateBusyId === booking.id}
                       onClick={() => onMoveLateToWaitlist(booking)}
-                      className="min-h-[36px] px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-sky-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      className="min-h-[36px] px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-500/15 hover:bg-sky-100 dark:hover:bg-sky-500/25 border border-sky-300 dark:border-sky-500/40 text-sky-800 dark:text-sky-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
                     >
                       <ListPlus className="w-3.5 h-3.5" />
                       <span>{ui.moveToWaitlistBtn}</span>
@@ -4321,7 +4329,7 @@ export const LiveQueuePanel: React.FC<{
                         isBanned: crm?.isBanned,
                       })
                     }
-                    className="min-h-[36px] px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    className="min-h-[36px] px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-500/15 hover:bg-amber-100 dark:hover:bg-amber-500/25 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                   >
                     <QrCode className="w-3.5 h-3.5" />
                   </button>
@@ -4330,9 +4338,9 @@ export const LiveQueuePanel: React.FC<{
                     <button
                       type="button"
                       onClick={() => onOpenClientTracking(booking.clientPhone)}
-                      className="min-h-[36px] px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      className="min-h-[36px] px-2 py-1 rounded-lg bg-stone-100 dark:bg-zinc-800 hover:bg-stone-200 dark:hover:bg-zinc-700 border border-stone-300 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                     >
-                      <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                      <ExternalLink className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                     </button>
                   )}
                 </div>

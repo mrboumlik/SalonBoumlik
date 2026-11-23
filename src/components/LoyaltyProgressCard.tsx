@@ -74,13 +74,13 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
   const visitsEquivalent = Math.max(0, Math.ceil(pointsRemaining / POINTS_PER_VISIT));
 
   return (
-    <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-zinc-900 via-zinc-950 to-black border border-amber-500/35 space-y-4">
+    <div className="p-4 sm:p-5 rounded-2xl bg-stone-50 dark:bg-gradient-to-br dark:from-zinc-900 dark:via-zinc-950 dark:to-black border border-amber-300 dark:border-amber-500/35 space-y-4">
       {/* Header + Mode Switcher */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-zinc-800/90 pb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-stone-200 dark:border-zinc-800/90 pb-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <Award className="w-4 h-4 text-amber-400 flex-shrink-0" />
-            <h4 className="text-xs sm:text-sm font-black text-white truncate">
+            <Award className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+            <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
               {pickLang(lang, {
                 ar: 'تقدم الولاء • Loyalty Progress',
                 fr: 'Progression Fidélité',
@@ -90,7 +90,7 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
               })}
             </h4>
           </div>
-          <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+          <p className="text-[11px] text-stone-600 dark:text-zinc-400 mt-0.5 truncate">
             {clientName ? `${clientName} · ` : ''}
             {crmProfile?.isVip ? 'VIP · ' : ''}
             {pickLang(lang, {
@@ -104,14 +104,14 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
         </div>
 
         {/* Interactive Toggle: Free Service vs Discount Reward */}
-        <div className="inline-flex rounded-xl bg-zinc-900 border border-zinc-800 p-0.5 text-[11px] font-bold self-start sm:self-auto">
+        <div className="inline-flex rounded-xl bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 p-0.5 text-[11px] font-bold self-start sm:self-auto">
           <button
             type="button"
             onClick={() => setRingMode('free_service')}
             className={`px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1 ${
               isFreeServiceMode
                 ? 'bg-amber-500 text-black shadow-xs'
-                : 'text-zinc-400 hover:text-white'
+                : 'text-stone-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <Gift className="w-3.5 h-3.5" />
@@ -131,8 +131,8 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
             onClick={() => setRingMode('discount_reward')}
             className={`px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1 ${
               !isFreeServiceMode
-                ? 'bg-emerald-500 text-black shadow-xs'
-                : 'text-zinc-400 hover:text-white'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-stone-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <Coins className="w-3.5 h-3.5" />
@@ -176,7 +176,7 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
               cy="62"
               r={radius}
               fill="none"
-              stroke="#27272a"
+              className="stroke-stone-200 dark:stroke-zinc-800"
               strokeWidth="10"
             />
 
@@ -201,13 +201,13 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
 
           {/* Center Numeric Metric inside Ring */}
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-            <span className="font-mono font-black text-xl text-white tabular-nums leading-none">
+            <span className="font-mono font-black text-xl text-slate-900 dark:text-white tabular-nums leading-none">
               {ringPct}%
             </span>
-            <span className="font-mono text-[11px] font-bold text-amber-300 tabular-nums mt-1" dir="ltr">
+            <span className="font-mono text-[11px] font-bold text-amber-700 dark:text-amber-300 tabular-nums mt-1" dir="ltr">
               {ringCurrent} / {ringTarget}
             </span>
-            <span className="text-[9px] text-zinc-400 font-semibold uppercase tracking-wider">
+            <span className="text-[9px] text-stone-500 dark:text-zinc-400 font-semibold uppercase tracking-wider">
               {pickLang(lang, {
                 ar: 'نقطة',
                 fr: 'pts',
@@ -222,7 +222,7 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
         {/* Remaining Points & Next Free Service / Reward Explanation */}
         <div className="flex-1 min-w-0 text-center sm:text-start space-y-2.5">
           <div>
-            <span className="text-[11px] font-bold text-zinc-400 block">
+            <span className="text-[11px] font-bold text-stone-500 dark:text-zinc-400 block">
               {isFreeServiceMode
                 ? pickLang(lang, {
                     ar: `الخدمة المجانية التالية (المستوى ${loyaltyProgress.currentTierNumber}):`,
@@ -240,14 +240,14 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
                   })}
             </span>
 
-            <div className="text-sm sm:text-base font-black text-amber-300 mt-0.5 break-words">
+            <div className="text-sm sm:text-base font-black text-amber-700 dark:text-amber-300 mt-0.5 break-words">
               {targetRewardTitle}
             </div>
           </div>
 
           {isGoalReached ? (
-            <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-center sm:justify-start gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center justify-center sm:justify-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
               <span>
                 {isFreeServiceMode
                   ? pickLang(lang, {
@@ -275,41 +275,41 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
               </span>
             </div>
           ) : (
-            <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-1">
-              <div className="text-xs font-black text-white font-mono tabular-nums">
+            <div className="p-3 rounded-xl bg-white dark:bg-zinc-900/90 border border-stone-200 dark:border-zinc-800 space-y-1">
+              <div className="text-xs font-black text-slate-900 dark:text-white font-mono tabular-nums">
                 {lang === 'ar' ? (
                   <>
                     متبقي{' '}
-                    <span className="text-amber-400 text-sm">{pointsRemaining} نقطة</span>{' '}
+                    <span className="text-amber-700 dark:text-amber-400 text-sm">{pointsRemaining} نقطة</span>{' '}
                     للحصول على المكافأة
                   </>
                 ) : lang === 'amz' ? (
                   <>
                     ⵉⵖⴰⵎⴰ{' '}
-                    <span className="text-amber-400 text-sm">{pointsRemaining} pts</span>{' '}
+                    <span className="text-amber-700 dark:text-amber-400 text-sm">{pointsRemaining} pts</span>{' '}
                     ⵉ ⵜⵙⵎⵖⵓⵔⵜ
                   </>
                 ) : lang === 'en' ? (
                   <>
-                    <span className="text-amber-400 text-sm">{pointsRemaining} points</span>{' '}
+                    <span className="text-amber-700 dark:text-amber-400 text-sm">{pointsRemaining} points</span>{' '}
                     until your next reward
                   </>
                 ) : lang === 'es' ? (
                   <>
                     Faltan{' '}
-                    <span className="text-amber-400 text-sm">{pointsRemaining} puntos</span>{' '}
+                    <span className="text-amber-700 dark:text-amber-400 text-sm">{pointsRemaining} puntos</span>{' '}
                     para tu próxima recompensa
                   </>
                 ) : (
                   <>
                     Plus que{' '}
-                    <span className="text-amber-400 text-sm">{pointsRemaining} points</span>{' '}
+                    <span className="text-amber-700 dark:text-amber-400 text-sm">{pointsRemaining} points</span>{' '}
                     avant votre récompense
                   </>
                 )}
               </div>
 
-              <div className="text-[11px] text-zinc-400">
+              <div className="text-[11px] text-stone-600 dark:text-zinc-400">
                 {pickLang(lang, {
                   ar: `يعادل ${visitsEquivalent} ${visitsEquivalent === 1 ? 'زيارة مؤكدة واحدة' : 'زيارات مؤكدة'} (+${POINTS_PER_VISIT} نقاط لكل زيارة)`,
                   fr: `Équivalent à ${visitsEquivalent} ${visitsEquivalent === 1 ? 'visite confirmée' : 'visites confirmées'} (+${POINTS_PER_VISIT} pts/visite)`,
@@ -322,7 +322,7 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
           )}
 
           {/* Clean unboxed Firebase telemetry metadata */}
-          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-[10px] text-zinc-500 font-mono tabular-nums">
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-[10px] text-stone-500 dark:text-zinc-500 font-mono tabular-nums">
             <span>
               {pickLang(lang, {
                 ar: `إجمالي المكتسب: ${pointsSummary.pointsEarnedTotal} نقطة`,
@@ -345,7 +345,7 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
             {pointsSummary.activeDiscountMAD > 0 && (
               <>
                 <span aria-hidden="true">·</span>
-                <span className="text-emerald-400 font-bold">
+                <span className="text-emerald-700 dark:text-emerald-400 font-bold">
                   -{pointsSummary.activeDiscountMAD} MAD{' '}
                   {pickLang(lang, {
                     ar: 'نشط',
