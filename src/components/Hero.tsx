@@ -439,7 +439,7 @@ export const Hero: React.FC<HeroProps> = ({
                         )
                       }
                       onBlur={() => setHoveredSocialHint(null)}
-                      className="min-h-[38px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 dark:border-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                      className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 hover:border-stone-400 dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:hover:border-zinc-600 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 hover:text-slate-950 dark:hover:text-white font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95"
                     >
                       <MessageCircle className="w-4 h-4 flex-shrink-0" />
                       <span>{labels.whatsapp}</span>
