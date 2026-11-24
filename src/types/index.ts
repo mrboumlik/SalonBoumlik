@@ -243,6 +243,7 @@ export type CaisseEntryType =
   | 'income'
   | 'expense'
   | 'float_adjustment'
+  | 'float_return'
   | 'credit_repayment';
 
 export type CaisseCreditStatus = 'none' | 'open' | 'partial' | 'paid';
@@ -558,6 +559,8 @@ export interface ClientCreditRecord {
   clientName: string;
   clientPhone: string;
   normalizedPhone: string;
+  additionalPhones?: string[];
+  normalizedAdditionalPhones?: string[];
   amountOwedMAD: number;
   originalAmountMAD: number;
   status: ManualCreditStatus;

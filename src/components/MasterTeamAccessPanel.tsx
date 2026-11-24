@@ -2,29 +2,36 @@ import React, { useState } from 'react';
 import {
   Archive,
   Check,
+  Edit3,
   Eye,
   EyeOff,
   KeyRound,
   RefreshCw,
+  RotateCcw,
   ShieldCheck,
+  Trash2,
   UserPlus,
   Users,
   Wallet,
+  X,
 } from 'lucide-react';
 import { BarberColorKey, RosterMemberAccount } from '../types';
 import { COLOR_KEY_OPTIONS, getBarberIdentityTokens } from '../utils/barberIdentity';
 import {
   addRosterBarber,
   adminSetMemberPin,
+  deleteRosterMember,
   getActiveRosterBarbers,
   getArchivedRosterBarbers,
   getCaisseRosterAccount,
   replaceRosterBarber,
+  updateRosterMember,
   useBarberRoster,
 } from '../utils/barberRosterStore';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
 import { showToast } from '../utils/notifications';
+import { ModalPortal } from './ModalPortal';
 
 interface MasterTeamAccessPanelProps {
   staffName: string;
@@ -82,6 +89,86 @@ export const MasterTeamAccessPanel: React.FC<MasterTeamAccessPanelProps> = ({
   const [replacingBusy, setReplacingBusy] = useState(false);
 
   const [showArchived, setShowArchived] = useState(false);
+
+  // Full Edit & Delete Member Modal State
+  const [editingMember, setEditingMember] = useState<RosterMemberAccount | null>(null);
+  const [editMemberNameAr, setEditMemberNameAr] = useState('');
+  const [editMemberNameFr, setEditMemberNameFr] = useState('');
+  const [editMemberNameEn, setEditMemberNameEn] = useState('');
+  const [editMemberPin, setEditMemberPin] = useState('');
+  const [editMemberPhone, setEditMemberPhone] = useState('');
+  const [editMemberColor, setEditMemberColor] = useState<BarberColorKey>('amber');
+  const [editMemberStatus, setEditMemberStatus] = useState<'active' | 'archived'>('active');
+  const [editMemberBusy, setEditMemberBusy] = useState(false);
+
+  const [confirmDeleteMember, setConfirmDeleteMember] = useState<RosterMemberAccount | null>(null);
+  const [deleteMemberBusy, setDeleteMemberBusy] = useState(false);
+
+  const openEditMemberModal = (member: RosterMemberAccount) => {
+    setEditingMember(member);
+    setEditMemberNameAr(member.nameAr || '');
+    setEditMemberNameFr(member.nameFr || '');
+    setEditMemberNameEn(member.nameEn || member.nameFr || '');
+    setEditMemberPin(member.pin || '');
+    setEditMemberPhone(member.defaultPhone || '');
+    setEditMemberColor(member.colorKey);
+    setEditMemberStatus(member.status);
+  };
+
+  const handleSaveEditedMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMember) return;
+    setEditMemberBusy(true);
+    try {
+      const updated = await updateRosterMember({
+        memberId: editingMember.id,
+        nameAr: editMemberNameAr,
+        nameFr: editMemberNameFr,
+        nameEn: editMemberNameEn,
+        pin: editMemberPin,
+        colorKey: editMemberColor,
+        phone: editMemberPhone,
+        status: editMemberStatus,
+        updatedBy: staffName,
+        roster,
+      });
+      setEditingMember(null);
+      showToast(`تم تحديث بيانات حساب "${updated.nameAr}" ✓`, '', 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'تعذر تعديل الحساب', '', 'warning');
+    } finally {
+      setEditMemberBusy(false);
+    }
+  };
+
+  const handleConfirmDeleteMember = async () => {
+    if (!confirmDeleteMember) return;
+    const target = confirmDeleteMember;
+    setDeleteMemberBusy(true);
+    try {
+      await deleteRosterMember(target.id, roster);
+      setConfirmDeleteMember(null);
+      showToast(`تم حذف حساب "${target.nameAr}" ✓`, '', 'info');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'تعذر حذف الحساب', '', 'warning');
+    } finally {
+      setDeleteMemberBusy(false);
+    }
+  };
+
+  const handleRestoreArchivedMember = async (member: RosterMemberAccount) => {
+    try {
+      await updateRosterMember({
+        memberId: member.id,
+        status: 'active',
+        updatedBy: staffName,
+        roster,
+      });
+      showToast(`تمت استعادة حساب "${member.nameAr}" ✓`, '', 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'تعذر استعادة الحساب', '', 'warning');
+    }
+  };
 
   const handleSavePin = async (member: RosterMemberAccount) => {
     setPinSavingId(member.id);
@@ -334,7 +421,15 @@ export const MasterTeamAccessPanel: React.FC<MasterTeamAccessPanelProps> = ({
                     </button>
                   </div>
                 ) : (
-                  <div className="flex justify-end">
+                  <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => openEditMemberModal(member)}
+                      className="px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/35 text-amber-800 dark:text-amber-300 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>تعديل الحساب</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -346,6 +441,16 @@ export const MasterTeamAccessPanel: React.FC<MasterTeamAccessPanelProps> = ({
                       <KeyRound className="w-3 h-3 text-amber-400" />
                       <span>تغيير كلمة المرور</span>
                     </button>
+                    {member.role === 'barber' && member.id !== 'hassan' && member.id !== 'caisse_register' && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteMember(member)}
+                        className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 cursor-pointer"
+                        title="حذف الحساب"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -662,13 +767,41 @@ export const MasterTeamAccessPanel: React.FC<MasterTeamAccessPanelProps> = ({
                 return (
                   <div
                     key={arch.id}
-                    className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1"
+                    className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-2"
                   >
-                    <div className="font-bold text-zinc-900 dark:text-white">
-                      {arch.nameAr} ({arch.nameFr})
+                    <div>
+                      <div className="font-bold text-zinc-900 dark:text-white">
+                        {arch.nameAr} ({arch.nameFr})
+                      </div>
+                      <div className="text-[11px] text-zinc-500">
+                        تم استبداله بـ: <strong>{rep?.nameAr || arch.replacedById || '—'}</strong>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-zinc-500">
-                      تم استبداله بـ: <strong>{rep?.nameAr || arch.replacedById || '—'}</strong>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleRestoreArchivedMember(arch)}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>إعادة تفعيل</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditMemberModal(arch)}
+                        className="px-2.5 py-1 rounded-lg bg-zinc-200/80 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        <span>تعديل</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteMember(arch)}
+                        className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer"
+                        title="حذف الحساب نهائياً"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 );
@@ -676,6 +809,200 @@ export const MasterTeamAccessPanel: React.FC<MasterTeamAccessPanelProps> = ({
             </div>
           )}
         </div>
+      )}
+
+      {/* Full Edit Account Modal */}
+      {editingMember && (
+        <ModalPortal>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop">
+            <form
+              onSubmit={handleSaveEditedMember}
+              className="bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 rounded-2xl p-5 sm:p-6 max-w-lg w-full space-y-3.5 text-xs shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-2.5">
+                <div className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-2">
+                  <Edit3 className="w-4 h-4 text-amber-500" />
+                  <span>تعديل حساب: {editingMember.nameAr}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingMember(null)}
+                  className="p-1 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    الاسم بالعربية *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editMemberNameAr}
+                    onChange={(e) => setEditMemberNameAr(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-zinc-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    الاسم بالفرنسية *
+                  </label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    required
+                    value={editMemberNameFr}
+                    onChange={(e) => setEditMemberNameFr(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-zinc-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    الاسم بالإنجليزية
+                  </label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    value={editMemberNameEn}
+                    onChange={(e) => setEditMemberNameEn(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-zinc-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    رمز الدخول (PIN) *
+                  </label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    required
+                    minLength={3}
+                    maxLength={24}
+                    value={editMemberPin}
+                    onChange={(e) => setEditMemberPin(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-900 border border-amber-300 dark:border-amber-500/40 rounded-xl px-3 py-2 font-mono font-bold text-zinc-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    رقم الهاتف (اختياري)
+                  </label>
+                  <input
+                    type="tel"
+                    dir="ltr"
+                    value={editMemberPhone}
+                    onChange={(e) => setEditMemberPhone(e.target.value)}
+                    placeholder="+212..."
+                    className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 font-mono text-zinc-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                  لون التمييز الهادئ:
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {COLOR_KEY_OPTIONS.map((preset) => {
+                    const selected = editMemberColor === preset.key;
+                    return (
+                      <button
+                        key={preset.key}
+                        type="button"
+                        onClick={() => setEditMemberColor(preset.key)}
+                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold flex items-center gap-1.5 cursor-pointer ${
+                          selected
+                            ? preset.activeTabClass
+                            : 'bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300'
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${selected ? 'bg-current' : preset.dotClass}`} />
+                        <span>{preset.labelAr}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {editingMember.role === 'barber' && (
+                <div className="flex items-center gap-2 pt-1">
+                  <label className="font-bold text-zinc-700 dark:text-zinc-300">حالة الحساب:</label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditMemberStatus((p) => (p === 'active' ? 'archived' : 'active'))
+                    }
+                    className={`px-3 py-1 rounded-lg border font-bold cursor-pointer ${
+                      editMemberStatus === 'active'
+                        ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-zinc-100 dark:bg-zinc-800 border-zinc-300 text-zinc-600 dark:text-zinc-300'
+                    }`}
+                  >
+                    {editMemberStatus === 'active' ? 'نشط ✓' : 'مؤرشف (غير نشط)'}
+                  </button>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingMember(null)}
+                  className="px-4 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={editMemberBusy}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black cursor-pointer"
+                >
+                  حفظ التعديلات ✓
+                </button>
+              </div>
+            </form>
+          </div>
+        </ModalPortal>
+      )}
+
+      {/* Delete Barber Account Confirmation Modal */}
+      {confirmDeleteMember && (
+        <ModalPortal>
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 sb-modal-backdrop">
+            <div className="bg-white dark:bg-[#141720] border border-rose-300 dark:border-rose-500/40 rounded-2xl p-5 max-w-sm w-full space-y-3.5 text-xs shadow-2xl">
+              <div className="font-black text-sm text-rose-700 dark:text-rose-300 flex items-center gap-2">
+                <Trash2 className="w-4 h-4" />
+                <span>تأكيد حذف حساب الحلاق</span>
+              </div>
+              <p className="text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                هل أنت متأكد من حذف حساب <strong>{confirmDeleteMember.nameAr}</strong> (
+                {confirmDeleteMember.nameFr}) من قائمة الفريق؟ لن يتم مسح قيود لاكيس أو المواعيد السابقة المرتبطة بالاسم.
+              </p>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteMember(null)}
+                  className="px-4 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteMemberBusy}
+                  onClick={handleConfirmDeleteMember}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black cursor-pointer"
+                >
+                  {deleteMemberBusy ? 'جاري الحذف...' : 'تأكيد الحذف'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
       )}
     </div>
   );

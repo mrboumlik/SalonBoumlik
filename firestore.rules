@@ -280,7 +280,7 @@ service cloud.firestore {
       && isValidId(data.id)
       && isValidBarberSlug(data.barberId)
       && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
-      && data.type in ['income', 'expense', 'float_adjustment', 'credit_repayment']
+      && data.type in ['income', 'expense', 'float_adjustment', 'float_return', 'credit_repayment']
       && data.date is string && data.date.size() >= 8 && data.date.size() <= 20
       && (!('serviceIds' in data) || (data.serviceIds is list && data.serviceIds.size() <= 20))
       && (!('serviceNames' in data) || (data.serviceNames is list && data.serviceNames.size() <= 20))
@@ -502,13 +502,24 @@ service cloud.firestore {
       ])
       && data.keys().hasOnly([
         'id', 'clientName', 'clientPhone', 'normalizedPhone',
+        'additionalPhones', 'normalizedAdditionalPhones',
         'amountOwedMAD', 'originalAmountMAD', 'status',
         'creditDate', 'note', 'createdBy', 'createdAt', 'updatedAt'
       ])
       && isValidId(data.id)
       && data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 120
-      && data.clientPhone is string && data.clientPhone.size() >= 6 && data.clientPhone.size() <= 40
-      && data.normalizedPhone is string && data.normalizedPhone.size() >= 4 && data.normalizedPhone.size() <= 32
+      && data.clientPhone is string && data.clientPhone.size() <= 40
+      && data.normalizedPhone is string && data.normalizedPhone.size() <= 32
+      && (!('additionalPhones' in data) || (
+        data.additionalPhones is list
+        && data.additionalPhones.size() <= 5
+        && (data.additionalPhones.size() == 0 || (data.additionalPhones[0] is string && data.additionalPhones[0].size() <= 40))
+      ))
+      && (!('normalizedAdditionalPhones' in data) || (
+        data.normalizedAdditionalPhones is list
+        && data.normalizedAdditionalPhones.size() <= 5
+        && (data.normalizedAdditionalPhones.size() == 0 || (data.normalizedAdditionalPhones[0] is string && data.normalizedAdditionalPhones[0].size() <= 32))
+      ))
       && data.amountOwedMAD is number && data.amountOwedMAD >= 0 && data.amountOwedMAD <= 100000
       && data.originalAmountMAD is number && data.originalAmountMAD >= 0 && data.originalAmountMAD <= 100000
       && data.status in ['open', 'partial', 'paid']
@@ -760,7 +771,11 @@ service cloud.firestore {
       allow create, update: if isValidId(memberId)
         && isValidRosterMember(incoming())
         && incoming().id == memberId;
-      allow delete: if false;
+      allow delete: if isValidId(memberId)
+        && isValidBarberSlug(memberId)
+        && memberId != 'hassan'
+        && memberId != 'caisse_register'
+        && request.time != null;
     }
 
     // Master Admin debtor registry ("الناس لي كانتسالهم")
@@ -776,6 +791,7 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'clientName', 'clientPhone', 'normalizedPhone',
+          'additionalPhones', 'normalizedAdditionalPhones',
           'amountOwedMAD', 'originalAmountMAD', 'status',
           'creditDate', 'note', 'updatedAt'
         ]);

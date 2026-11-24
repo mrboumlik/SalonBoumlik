@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore';
 import {
   BarberColorKey,
   RosterMemberAccount,
@@ -544,3 +544,83 @@ export async function replaceRosterBarber(params: {
     handleFirestoreError(error, OperationType.WRITE, `${BARBER_ROSTER_COLLECTION}/${newId}`);
   }
 }
+
+export async function updateRosterMember(params: {
+  memberId: string;
+  nameAr?: string;
+  nameFr?: string;
+  nameEn?: string;
+  pin?: string;
+  colorKey?: BarberColorKey;
+  phone?: string;
+  status?: 'active' | 'archived';
+  updatedBy: string;
+  roster: RosterMemberAccount[];
+}): Promise<RosterMemberAccount> {
+  const { memberId, nameAr, nameFr, nameEn, pin, colorKey, phone, status, updatedBy, roster } = params;
+  const target =
+    roster.find((m) => m.id === memberId) ||
+    DEFAULT_ROSTER_ACCOUNTS.find((m) => m.id === memberId);
+  if (!target) throw new Error('الحساب غير موجود.');
+
+  if (pin !== undefined && pin.trim() !== target.pin) {
+    const err = validatePinFormat(pin, memberId, roster);
+    if (err) throw new Error(err);
+  }
+
+  const nextStatus: 'active' | 'archived' =
+    target.role === 'master' || target.role === 'caisse' || target.id === 'hassan' || target.id === 'caisse_register'
+      ? 'active'
+      : status ?? target.status;
+
+  const nextAr = nameAr !== undefined ? nameAr.trim() || target.nameAr : target.nameAr;
+  const nextFr = nameFr !== undefined ? nameFr.trim() || target.nameFr : target.nameFr;
+  const nextEn = nameEn !== undefined ? nameEn.trim() || nextFr : target.nameEn;
+  const nextPhone = phone !== undefined ? phone.trim() || undefined : target.defaultPhone;
+
+  const updatedMember: RosterMemberAccount = {
+    ...target,
+    nameAr: nextAr,
+    nameFr: nextFr,
+    nameEn: nextEn,
+    pin: pin !== undefined ? pin.trim() : target.pin,
+    colorKey: colorKey !== undefined ? sanitizeColorKey(colorKey) : target.colorKey,
+    status: nextStatus,
+    defaultPhone: nextPhone,
+    defaultWhatsapp: nextPhone ? nextPhone.replace(/\D/g, '') : target.defaultWhatsapp,
+    updatedBy: updatedBy || 'Hassan ait boumlik',
+    updatedAt: new Date().toISOString().slice(0, 64),
+  };
+
+  try {
+    await setDoc(
+      doc(db, BARBER_ROSTER_COLLECTION, target.id),
+      buildWritableRosterPayload(updatedMember)
+    );
+    return updatedMember;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `${BARBER_ROSTER_COLLECTION}/${target.id}`);
+  }
+}
+
+export async function deleteRosterMember(
+  memberId: string,
+  roster: RosterMemberAccount[]
+): Promise<void> {
+  const target = roster.find((m) => m.id === memberId);
+  if (
+    memberId === 'hassan' ||
+    memberId === 'caisse_register' ||
+    target?.role === 'master' ||
+    target?.role === 'caisse' ||
+    target?.isOwner
+  ) {
+    throw new Error('لا يمكن حذف حساب المشرف العام أو حساب لاكيس.');
+  }
+  try {
+    await deleteDoc(doc(db, BARBER_ROSTER_COLLECTION, memberId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `${BARBER_ROSTER_COLLECTION}/${memberId}`);
+  }
+}
+

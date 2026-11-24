@@ -60,7 +60,7 @@ export const CAISSE_BARBERS: CaisseBarberInfo[] = [
   {
     id: 'hassan',
     name: 'Hassan ait boumlik',
-    arName: 'حسن ايت بومليك (الإدارة)',
+    arName: 'حسن ايت بومليك',
     color: '#D97706',
     isOwner: true,
   },
@@ -127,7 +127,7 @@ export function getCaisseBarberMeta(
     return {
       id: fromRoster.id,
       name: fromRoster.nameFr,
-      arName: fromRoster.isOwner ? `${fromRoster.nameAr} (الإدارة)` : fromRoster.nameAr,
+      arName: fromRoster.nameAr,
       color: tokens.accentHex,
       isOwner: Boolean(fromRoster.isOwner),
     };
@@ -1065,6 +1065,8 @@ export interface BarberDayStats {
   repaymentIncomeMAD: number;
   creditsIssuedMAD: number;
   expensesMAD: number;
+  floatInMAD: number;
+  floatOutMAD: number;
   floatMAD: number;
   commissionPercent: number;
   extraPercentAbove50: number;
@@ -1087,7 +1089,8 @@ export function computeBarberDayStats(
   let repaymentIncomeMAD = 0;
   let creditsIssuedMAD = 0;
   let expensesMAD = 0;
-  let floatMAD = 0;
+  let floatInMAD = 0;
+  let floatOutMAD = 0;
 
   for (const e of dayEntries) {
     if (e.type === 'income') {
@@ -1098,10 +1101,13 @@ export function computeBarberDayStats(
     } else if (e.type === 'expense') {
       expensesMAD += Number(e.amountPaidMAD) || 0;
     } else if (e.type === 'float_adjustment') {
-      floatMAD += Number(e.amountPaidMAD) || 0;
+      floatInMAD += Number(e.amountPaidMAD) || 0;
+    } else if (e.type === 'float_return') {
+      floatOutMAD += Number(e.amountPaidMAD) || 0;
     }
   }
 
+  const floatMAD = Math.round(floatInMAD - floatOutMAD);
   const incomeMAD = clampAmount(directIncomeMAD + repaymentIncomeMAD);
   const pct = Math.max(0, Math.min(100, commissionPercent));
   const barberGrossShareMAD = Math.round(incomeMAD * (pct / 100));
@@ -1110,7 +1116,7 @@ export function computeBarberDayStats(
     barberId === 'hassan'
       ? Math.round(barberGrossShareMAD + floatMAD - expensesMAD)
       : Math.round(barberGrossShareMAD - expensesMAD);
-  const drawerCashMAD = Math.max(0, Math.round(incomeMAD + floatMAD - expensesMAD));
+  const drawerCashMAD = Math.round(incomeMAD + floatMAD - expensesMAD);
 
   return {
     barberId,
@@ -1120,7 +1126,9 @@ export function computeBarberDayStats(
     repaymentIncomeMAD: clampAmount(repaymentIncomeMAD),
     creditsIssuedMAD: clampAmount(creditsIssuedMAD),
     expensesMAD: clampAmount(expensesMAD),
-    floatMAD: clampAmount(floatMAD),
+    floatInMAD: clampAmount(floatInMAD),
+    floatOutMAD: clampAmount(floatOutMAD),
+    floatMAD,
     commissionPercent: pct,
     extraPercentAbove50: Math.max(0, pct - 50),
     barberGrossShareMAD,
@@ -1418,7 +1426,10 @@ export interface BarberCycleBalance {
   openCycleEntries: CaisseEntry[];
   incomeMAD: number;
   expensesMAD: number;
+  floatInMAD: number;
+  floatOutMAD: number;
   floatMAD: number;
+  drawerCashMAD: number;
   creditsIssuedMAD: number;
   barberGrossShareMAD: number;
   barberNetOwedMAD: number;
@@ -1434,7 +1445,10 @@ export function summarizeBarberEntriesWithSettings(
 ): {
   incomeMAD: number;
   expensesMAD: number;
+  floatInMAD: number;
+  floatOutMAD: number;
   floatMAD: number;
+  drawerCashMAD: number;
   creditsIssuedMAD: number;
   barberGrossShareMAD: number;
   barberNetOwedMAD: number;
@@ -1444,7 +1458,10 @@ export function summarizeBarberEntriesWithSettings(
   const uniqueDates = Array.from(new Set(targetEntries.map((e) => e.date))).sort();
   let incomeMAD = 0;
   let expensesMAD = 0;
+  let floatInMAD = 0;
+  let floatOutMAD = 0;
   let floatMAD = 0;
+  let drawerCashMAD = 0;
   let creditsIssuedMAD = 0;
   let barberGrossShareMAD = 0;
   let barberNetOwedMAD = 0;
@@ -1455,7 +1472,10 @@ export function summarizeBarberEntriesWithSettings(
     const ds = computeBarberDayStats(barberId, d, targetEntries, dayPct);
     incomeMAD += ds.incomeMAD;
     expensesMAD += ds.expensesMAD;
+    floatInMAD += ds.floatInMAD;
+    floatOutMAD += ds.floatOutMAD;
     floatMAD += ds.floatMAD;
+    drawerCashMAD += ds.drawerCashMAD;
     creditsIssuedMAD += ds.creditsIssuedMAD;
     barberGrossShareMAD += ds.barberGrossShareMAD;
     barberNetOwedMAD += ds.barberNetShareMAD;
@@ -1465,7 +1485,10 @@ export function summarizeBarberEntriesWithSettings(
   return {
     incomeMAD: Math.round(incomeMAD),
     expensesMAD: Math.round(expensesMAD),
+    floatInMAD: Math.round(floatInMAD),
+    floatOutMAD: Math.round(floatOutMAD),
     floatMAD: Math.round(floatMAD),
+    drawerCashMAD: Math.round(drawerCashMAD),
     creditsIssuedMAD: Math.round(creditsIssuedMAD),
     barberGrossShareMAD: Math.round(barberGrossShareMAD),
     barberNetOwedMAD: Math.round(barberNetOwedMAD),
@@ -1516,7 +1539,10 @@ export function computeBarberCycleBalance(
     openCycleEntries,
     incomeMAD: summary.incomeMAD,
     expensesMAD: summary.expensesMAD,
+    floatInMAD: summary.floatInMAD,
+    floatOutMAD: summary.floatOutMAD,
     floatMAD: summary.floatMAD,
+    drawerCashMAD: summary.drawerCashMAD,
     creditsIssuedMAD: summary.creditsIssuedMAD,
     barberGrossShareMAD: summary.barberGrossShareMAD,
     barberNetOwedMAD: summary.barberNetOwedMAD,
@@ -1596,7 +1622,10 @@ export function computeBarberPeriodSettlementPreview(params: {
       openCycleEntries: scopedEntries,
       incomeMAD: summary.incomeMAD,
       expensesMAD: summary.expensesMAD,
+      floatInMAD: summary.floatInMAD,
+      floatOutMAD: summary.floatOutMAD,
       floatMAD: summary.floatMAD,
+      drawerCashMAD: summary.drawerCashMAD,
       creditsIssuedMAD: summary.creditsIssuedMAD,
       barberGrossShareMAD: summary.barberGrossShareMAD,
       barberNetOwedMAD: summary.barberNetOwedMAD,
@@ -1665,6 +1694,15 @@ export async function confirmBarberCyclePayout(params: {
     return payload;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function deleteCaisseCycleSettlement(cycleId: string): Promise<void> {
+  const path = `${CAISSE_CYCLES_COLLECTION}/${cycleId}`;
+  try {
+    await deleteDoc(doc(db, CAISSE_CYCLES_COLLECTION, cycleId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
@@ -1775,6 +1813,8 @@ export async function ensureDailyArchivesForPriorDays(
           expensesMAD += Number(e.amountPaidMAD) || 0;
         } else if (e.type === 'float_adjustment') {
           floatMAD += Number(e.amountPaidMAD) || 0;
+        } else if (e.type === 'float_return') {
+          floatMAD -= Number(e.amountPaidMAD) || 0;
         }
       }
 

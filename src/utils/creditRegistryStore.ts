@@ -146,9 +146,34 @@ export function useCreditDisputes(): CreditDisputeRecord[] {
   return records;
 }
 
+function cleanAdditionalPhonesList(phones?: string[]): {
+  displays: string[];
+  normalized: string[];
+} {
+  const seen = new Set<string>();
+  const displays: string[] = [];
+  const normalized: string[] = [];
+
+  (Array.isArray(phones) ? phones : []).forEach((raw) => {
+    const clean = String(raw || '').trim().slice(0, 40);
+    if (!clean) return;
+    const norm = (normalizeMoroccanPhoneDigits(clean) || clean.replace(/\D/g, '')).slice(0, 32);
+    const dedupKey = norm || clean.toLowerCase();
+    if (seen.has(dedupKey)) return;
+    seen.add(dedupKey);
+    if (displays.length < 5) {
+      displays.push(clean);
+      if (norm) normalized.push(norm);
+    }
+  });
+
+  return { displays, normalized };
+}
+
 export async function addManualClientCredit(input: {
   clientName: string;
-  clientPhone: string;
+  clientPhone?: string;
+  additionalPhones?: string[];
   amountOwedMAD: number;
   creditDate?: string;
   note?: string;
@@ -160,19 +185,20 @@ export async function addManualClientCredit(input: {
   const nowIso = new Date().toISOString().slice(0, 64);
   const cleanName = String(input.clientName || '').trim().slice(0, 120) || 'زبون';
   const cleanPhone = String(input.clientPhone || '').trim().slice(0, 40);
-  const normalizedPhone = (
-    normalizeMoroccanPhoneDigits(cleanPhone) ||
-    cleanPhone.replace(/\D/g, '') ||
-    '0000'
-  ).slice(0, 32);
+  const normalizedPhone = cleanPhone
+    ? (normalizeMoroccanPhoneDigits(cleanPhone) || cleanPhone.replace(/\D/g, '')).slice(0, 32)
+    : '';
+  const extra = cleanAdditionalPhonesList(input.additionalPhones);
   const amount = clampCreditAmount(input.amountOwedMAD);
   const cleanDate = String(input.creditDate || '').trim().slice(0, 20);
 
   const record: ClientCreditRecord = {
     id,
     clientName: cleanName,
-    clientPhone: cleanPhone.length >= 6 ? cleanPhone : normalizedPhone.padEnd(6, '0'),
-    normalizedPhone: normalizedPhone.length >= 4 ? normalizedPhone : '0000',
+    clientPhone: cleanPhone,
+    normalizedPhone,
+    ...(extra.displays.length > 0 ? { additionalPhones: extra.displays } : {}),
+    ...(extra.normalized.length > 0 ? { normalizedAdditionalPhones: extra.normalized } : {}),
     amountOwedMAD: amount,
     originalAmountMAD: amount,
     status: amount <= 0 ? 'paid' : 'open',
@@ -197,6 +223,7 @@ export async function updateManualClientCredit(
   patch: {
     clientName?: string;
     clientPhone?: string;
+    additionalPhones?: string[];
     amountOwedMAD?: number;
     creditDate?: string;
     note?: string;
@@ -209,13 +236,11 @@ export async function updateManualClientCredit(
       : current.clientName;
   const nextPhoneRaw =
     patch.clientPhone !== undefined
-      ? String(patch.clientPhone).trim().slice(0, 40) || current.clientPhone
+      ? String(patch.clientPhone).trim().slice(0, 40)
       : current.clientPhone;
-  const nextNormalized = (
-    normalizeMoroccanPhoneDigits(nextPhoneRaw) ||
-    nextPhoneRaw.replace(/\D/g, '') ||
-    current.normalizedPhone
-  ).slice(0, 32);
+  const nextNormalized = nextPhoneRaw
+    ? (normalizeMoroccanPhoneDigits(nextPhoneRaw) || nextPhoneRaw.replace(/\D/g, '')).slice(0, 32)
+    : '';
 
   const nextOwed =
     patch.amountOwedMAD !== undefined
@@ -227,13 +252,19 @@ export async function updateManualClientCredit(
 
   const payload: Record<string, unknown> = {
     clientName: nextName,
-    clientPhone: nextPhoneRaw.length >= 6 ? nextPhoneRaw : nextPhoneRaw.padEnd(6, '0'),
-    normalizedPhone: nextNormalized.length >= 4 ? nextNormalized : '0000',
+    clientPhone: nextPhoneRaw,
+    normalizedPhone: nextNormalized,
     amountOwedMAD: nextOwed,
     originalAmountMAD: nextOriginal,
     status: nextStatus,
     updatedAt: nowIso,
   };
+
+  if (patch.additionalPhones !== undefined) {
+    const extra = cleanAdditionalPhonesList(patch.additionalPhones);
+    payload.additionalPhones = extra.displays.length > 0 ? extra.displays : deleteField();
+    payload.normalizedAdditionalPhones = extra.normalized.length > 0 ? extra.normalized : deleteField();
+  }
 
   if (patch.creditDate !== undefined) {
     const trimmedDate = patch.creditDate.trim().slice(0, 20);
@@ -432,13 +463,24 @@ export function computeOutstandingCreditsForPhone(
       normalizeMoroccanPhoneDigits(entry.clientPhone || '') === norm
   );
 
-  const manualItems = manualCredits.filter(
-    (rec) =>
-      rec.amountOwedMAD > 0 &&
-      rec.status !== 'paid' &&
-      (rec.normalizedPhone === norm ||
-        normalizeMoroccanPhoneDigits(rec.clientPhone || '') === norm)
-  );
+  const manualItems = manualCredits.filter((rec) => {
+    if (rec.amountOwedMAD <= 0 || rec.status === 'paid') return false;
+    if (rec.normalizedPhone && rec.normalizedPhone === norm) return true;
+    if (rec.clientPhone && normalizeMoroccanPhoneDigits(rec.clientPhone) === norm) return true;
+    if (
+      Array.isArray(rec.normalizedAdditionalPhones) &&
+      rec.normalizedAdditionalPhones.some((np) => np && np === norm)
+    ) {
+      return true;
+    }
+    if (
+      Array.isArray(rec.additionalPhones) &&
+      rec.additionalPhones.some((p) => p && normalizeMoroccanPhoneDigits(p) === norm)
+    ) {
+      return true;
+    }
+    return false;
+  });
 
   const caisseCreditMAD =
     Math.round(

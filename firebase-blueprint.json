@@ -731,7 +731,7 @@
         },
         "type": {
           "type": "string",
-          "enum": ["income", "expense", "float_adjustment", "credit_repayment"]
+          "enum": ["income", "expense", "float_adjustment", "float_return", "credit_repayment"]
         },
         "date": {
           "type": "string",
@@ -1311,13 +1311,17 @@
         },
         "clientPhone": {
           "type": "string",
-          "minLength": 6,
           "maxLength": 40
         },
         "normalizedPhone": {
           "type": "string",
-          "minLength": 4,
           "maxLength": 32
+        },
+        "additionalPhones": {
+          "type": "array"
+        },
+        "normalizedAdditionalPhones": {
+          "type": "array"
         },
         "amountOwedMAD": {
           "type": "number"
