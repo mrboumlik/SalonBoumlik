@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   MapPin,
   Star,
@@ -40,9 +40,14 @@ import { BrandMark } from './BrandMark';
 interface HeroProps {
   onOpenBooking: () => void;
   onOpenTrackBooking?: () => void;
+  onOpenAdmin?: () => void;
 }
 
-export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking }) => {
+export const Hero: React.FC<HeroProps> = ({
+  onOpenBooking,
+  onOpenTrackBooking,
+  onOpenAdmin,
+}) => {
   const { lang, t } = useLanguage();
   const salonSettings = useSalonProfileSettings();
   const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
@@ -51,6 +56,19 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
   const [copiedSsid, setCopiedSsid] = useState(false);
   const [quickConnectHint, setQuickConnectHint] = useState(false);
   const [hoveredSocialHint, setHoveredSocialHint] = useState<string | null>(null);
+  const logoTapTimestampsRef = useRef<number[]>([]);
+
+  const handleBrandLogoClick = () => {
+    if (!onOpenAdmin) return;
+    const now = Date.now();
+    const recent = logoTapTimestampsRef.current.filter((ts) => now - ts <= 700);
+    recent.push(now);
+    logoTapTimestampsRef.current = recent;
+    if (recent.length >= 3) {
+      logoTapTimestampsRef.current = [];
+      onOpenAdmin();
+    }
+  };
 
   const isOpenNow = useMemo(() => {
     const now = new Date();
@@ -264,7 +282,9 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
             {/* Start Column: Salon Identity, Status & Quick Social/Utility Links */}
             <div className="lg:col-span-7 flex flex-col items-center lg:items-start text-center lg:text-start gap-4 sm:gap-5">
               <div className="flex flex-col items-center lg:items-start gap-2.5">
-                <BrandMark className="h-14 sm:h-16 lg:h-20 w-auto object-contain flex-shrink-0" />
+                <div onClick={handleBrandLogoClick} className="inline-flex select-none">
+                  <BrandMark className="h-14 sm:h-16 lg:h-20 w-auto object-contain flex-shrink-0" />
+                </div>
                 <h1 className="sr-only">SALON BOUMLIK</h1>
                 <p className="text-xs sm:text-sm lg:text-base font-semibold text-amber-800 dark:text-amber-300/95 leading-relaxed text-balance max-w-xl">
                   {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
@@ -399,6 +419,30 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
                     >
                       <Facebook className="w-4 h-4 flex-shrink-0" />
                       <span>{labels.facebookLabel}</span>
+                    </a>
+
+                    <a
+                      href={heroWhatsappHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="WhatsApp Salon Boumlik"
+                      title={`WhatsApp ${formatSalonDisplayPhone(salonSettings.salonWhatsapp)}`}
+                      onMouseEnter={() =>
+                        setHoveredSocialHint(
+                          `WhatsApp · ${formatSalonDisplayPhone(salonSettings.salonWhatsapp)}`
+                        )
+                      }
+                      onMouseLeave={() => setHoveredSocialHint(null)}
+                      onFocus={() =>
+                        setHoveredSocialHint(
+                          `WhatsApp · ${formatSalonDisplayPhone(salonSettings.salonWhatsapp)}`
+                        )
+                      }
+                      onBlur={() => setHoveredSocialHint(null)}
+                      className="min-h-[38px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 dark:border-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                    >
+                      <MessageCircle className="w-4 h-4 flex-shrink-0" />
+                      <span>{labels.whatsapp}</span>
                     </a>
 
                     <a

@@ -485,12 +485,12 @@ function SalonBoumlikApp() {
         <img
           src={SALON_INFO.media.logoClean}
           alt=""
-          className="dark:hidden w-[460px] sm:w-[680px] lg:w-[860px] max-w-none opacity-[0.04] pointer-events-none"
+          className="dark:hidden w-[460px] sm:w-[680px] lg:w-[860px] max-w-none opacity-[0.03] lg:opacity-[0.018] pointer-events-none"
         />
         <img
           src={SALON_INFO.media.logoDarkClean}
           alt=""
-          className="hidden dark:block w-[460px] sm:w-[680px] lg:w-[860px] max-w-none opacity-[0.03] pointer-events-none"
+          className="hidden dark:block w-[460px] sm:w-[680px] lg:w-[860px] max-w-none opacity-[0.025] lg:opacity-[0.015] pointer-events-none"
         />
       </div>
 
@@ -506,7 +506,6 @@ function SalonBoumlikApp() {
           setIsTrackBookingOpen(true);
         }}
         onOpenDrawerMenu={() => setIsDrawerOpen(true)}
-        onOpenAdmin={() => setIsAdminOpen(true)}
         onNavigateHome={handleNavigateHome}
       />
 
@@ -518,6 +517,7 @@ function SalonBoumlikApp() {
             setTrackSearchInitial('');
             setIsTrackBookingOpen(true);
           }}
+          onOpenAdmin={() => setIsAdminOpen(true)}
         />
 
         {/* Collapsible Homepage Sections (Hidden Until Clicked) */}

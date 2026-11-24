@@ -32,6 +32,16 @@ html.dark .sb-modal-backdrop {
   background-color: rgba(5, 6, 8, 0.95);
 }
 
+/* Translucent scrolled top navigation bar (legacy-safe RGBA, zero color-mix/backdrop-filter dependency) */
+.sb-navbar-scrolled {
+  background-color: #FFFFFF;
+  background-color: rgba(255, 255, 255, 0.84);
+}
+html.dark .sb-navbar-scrolled {
+  background-color: #0B0C10;
+  background-color: rgba(11, 12, 16, 0.84);
+}
+
 /* Gold gradient text & accents (WCAG AA contrast + solid fallback for older Chrome/Cast TVs) */
 .text-gold-gradient {
   color: #B45309;

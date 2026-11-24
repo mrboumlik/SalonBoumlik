@@ -46,7 +46,20 @@ export const Footer: React.FC<FooterProps> = ({
   const salonSettings = useSalonProfileSettings();
   const lastTapTimeRef = useRef<number>(0);
   const lastTriggerTimeRef = useRef<number>(0);
+  const logoTapTimestampsRef = useRef<number[]>([]);
   const [hoveredSocial, setHoveredSocial] = useState<string | null>(null);
+
+  const handleBrandLogoClick = () => {
+    if (!onOpenAdmin) return;
+    const now = Date.now();
+    const recent = logoTapTimestampsRef.current.filter((ts) => now - ts <= 700);
+    recent.push(now);
+    logoTapTimestampsRef.current = recent;
+    if (recent.length >= 3) {
+      logoTapTimestampsRef.current = [];
+      triggerDiscreetAdmin();
+    }
+  };
 
   const triggerDiscreetAdmin = () => {
     if (!onOpenAdmin) return;
@@ -257,7 +270,9 @@ export const Footer: React.FC<FooterProps> = ({
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-12 gap-7 lg:gap-8 items-start">
           {/* 1. Brand Identity Column */}
           <div className="col-span-2 md:col-span-3 lg:col-span-4 flex flex-col items-center text-center lg:items-start lg:text-start pb-6 lg:pb-0 border-b lg:border-b-0 border-stone-200/80 dark:border-zinc-800/80 space-y-3">
-            <BrandMark className="h-12 sm:h-14 w-auto object-contain flex-shrink-0" />
+            <div onClick={handleBrandLogoClick} className="inline-flex select-none">
+              <BrandMark className="h-12 sm:h-14 w-auto object-contain flex-shrink-0" />
+            </div>
 
             <div className="space-y-1 max-w-md">
               <p className="text-xs font-semibold text-amber-800 dark:text-amber-300/90">

@@ -17,7 +17,6 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   onOpenDrawerMenu,
-  onOpenAdmin,
   onNavigateHome,
 }) => {
   const { lang } = useLanguage();
@@ -28,7 +27,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isHeaderHovering, setIsHeaderHovering] = useState(false);
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
   const lastScrollYRef = useRef<number>(0);
-  const logoClickTimestampsRef = useRef<number[]>([]);
 
   useEffect(() => {
     const getScrollY = () =>
@@ -108,17 +106,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const handleLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
-    const now = Date.now();
-    const recent = logoClickTimestampsRef.current.filter((ts) => now - ts <= 700);
-    recent.push(now);
-    logoClickTimestampsRef.current = recent;
-
-    if (recent.length >= 3 && onOpenAdmin) {
-      logoClickTimestampsRef.current = [];
-      onOpenAdmin();
-      return;
-    }
-
     setIsHiddenOnScroll(false);
     if (onNavigateHome) {
       onNavigateHome();
@@ -151,12 +138,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             : 'translate-y-0'
         } ${
           isScrolled
-            ? 'bg-white dark:bg-[#0B0C10] border-stone-200 dark:border-zinc-800 shadow-xs py-2'
+            ? 'sb-navbar-scrolled border-stone-200 dark:border-zinc-800 shadow-xs py-2'
             : 'bg-[#FAF9F6] dark:bg-[#0B0C10] border-stone-200 dark:border-zinc-800 py-2.5'
         }`}
       >
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between gap-2 sm:gap-4">
-          {/* Zone 1: Clean Transparent Logo + Compact Slogan (Triple-click triggers Staff Login) */}
+          {/* Zone 1: Clean Transparent Logo + Compact Slogan (Navigates Home on Click) */}
           <a
             href="#top"
             onClick={handleLogoClick}
