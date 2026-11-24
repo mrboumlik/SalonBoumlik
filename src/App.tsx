@@ -21,6 +21,7 @@ import { ModalPortal } from './components/ModalPortal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { FloatingWhatsAppButton } from './components/FloatingWhatsAppButton';
 import { QuickScrollControl } from './components/QuickScrollControl';
+import { SalonQuickSummaryStrip } from './components/SalonQuickSummaryStrip';
 import {
   getRememberedPhones,
   useClientAppointmentReminders,
@@ -510,7 +511,7 @@ function SalonBoumlikApp() {
       />
 
       {/* 2. Main Homepage: Balanced Desktop Hero + Multi-Column Section Grid */}
-      <main className="flex-1 relative z-10 pb-24 sm:pb-12">
+      <main className="flex-1 relative z-10 pb-20 sm:pb-6">
         <Hero
           onOpenBooking={handleOpenBookingModal}
           onOpenTrackBooking={() => {
@@ -522,7 +523,7 @@ function SalonBoumlikApp() {
 
         {/* Collapsible Homepage Sections (Hidden Until Clicked) */}
         <MotionConfig reducedMotion="user">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 items-start">
               {sectionItems.map((section) => {
                 const Icon = section.icon;
@@ -605,6 +606,16 @@ function SalonBoumlikApp() {
               );
             })}
             </div>
+
+            <SalonQuickSummaryStrip
+              googleMapsUrl={salonSettings.googleMapsUrl}
+              onOpenBooking={handleOpenBookingModal}
+              onOpenTrackBooking={() => {
+                setTrackSearchInitial('');
+                setIsTrackBookingOpen(true);
+              }}
+              onNavigateToSection={handleNavigateToSection}
+            />
           </div>
         </MotionConfig>
       </main>
