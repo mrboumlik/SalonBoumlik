@@ -277,7 +277,7 @@ export async function downloadClientQrPassPng(
 ): Promise<void> {
   const qrDataUrl = existingQrDataUrl || (await generateClientProfileQrDataUrl(client));
   const [logoImg, qrImg] = await Promise.all([
-    loadCanvasImage(SALON_INFO.media.logoClean),
+    loadCanvasImage(SALON_INFO.media.logoPole),
     loadCanvasImage(qrDataUrl),
   ]);
 

@@ -28,9 +28,10 @@ import {
   getCrmDocId,
 } from '../utils/crmStore';
 import {
+  computeBookingLoyaltyPoints,
   computeClientPointsSummary,
+  DEFAULT_FALLBACK_POINTS_PER_VISIT,
   getVerifiedVisitsCount,
-  POINTS_PER_VISIT,
 } from '../utils/loyaltyEngine';
 import { normalizeMoroccanPhoneDigits } from '../utils/bookingStore';
 import { formatMoroccanWhatsAppNumber } from '../utils/whatsappAutomation';
@@ -148,7 +149,7 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
         (b) => digits.length >= 6 && normalizeMoroccanPhoneDigits(b.clientPhone) === digits
       );
       const verifiedVisits = getVerifiedVisitsCount(history, crm);
-      const points = computeClientPointsSummary(verifiedVisits, crm);
+      const points = computeClientPointsSummary(verifiedVisits, crm, history);
       const phoneId = normalizePhoneForQrId(selectedBooking.clientPhone);
       const token =
         phoneId ||
@@ -191,7 +192,7 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
         ? bookings.filter((b) => normalizeMoroccanPhoneDigits(b.clientPhone) === digits)
         : [];
     const verifiedVisits = getVerifiedVisitsCount(history, crm);
-    const points = computeClientPointsSummary(verifiedVisits, crm);
+    const points = computeClientPointsSummary(verifiedVisits, crm, history);
     const barberObj =
       mergedBarbers.find((b) => b.id === walkinBarberId) || mergedBarbers[0];
     const origin =
@@ -251,6 +252,13 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
       cancelled = true;
     };
   }, [isOpen, activeClientContext.qrPayload]);
+
+  const expectedBookingPoints = useMemo(() => {
+    if (mode === 'booking' && selectedBooking) {
+      return computeBookingLoyaltyPoints(selectedBooking).points;
+    }
+    return DEFAULT_FALLBACK_POINTS_PER_VISIT;
+  }, [mode, selectedBooking]);
 
   if (!isOpen) return null;
 
@@ -375,18 +383,18 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
       es: 'Registrando puntos...',
     }),
     confirmAndAward: pickLang(lang, {
-      ar: `تأكيد الوصول ومنح +${POINTS_PER_VISIT} نقاط ولاء`,
-      fr: `Valider l’arrivée & créditer +${POINTS_PER_VISIT} pts`,
-      amz: `ⵙⵙⴷⵓ ⴰⵡⵡⴰⴹ ⴷ ⵜⵉⴽⴽⵉ +${POINTS_PER_VISIT} pts`,
-      en: `Check-In & Award +${POINTS_PER_VISIT} Points`,
-      es: `Confirmar llegada y dar +${POINTS_PER_VISIT} pts`,
+      ar: `تأكيد الوصول ومنح +${expectedBookingPoints} نقاط ولاء`,
+      fr: `Valider l’arrivée & créditer +${expectedBookingPoints} pts`,
+      amz: `ⵙⵙⴷⵓ ⴰⵡⵡⴰⴹ ⴷ ⵜⵉⴽⴽⵉ +${expectedBookingPoints} pts`,
+      en: `Check-In & Award +${expectedBookingPoints} Points`,
+      es: `Confirmar llegada y dar +${expectedBookingPoints} pts`,
     }),
     awardArrivalOnly: pickLang(lang, {
-      ar: `منح +${POINTS_PER_VISIT} نقاط ولاء وصول`,
-      fr: `Créditer +${POINTS_PER_VISIT} pts de fidélité`,
-      amz: `ⴰⴽⴽⴰ +${POINTS_PER_VISIT} ⵜⵏⵇⵇⵉⴹⵉⵏ`,
-      en: `Award +${POINTS_PER_VISIT} Loyalty Points`,
-      es: `Otorgar +${POINTS_PER_VISIT} puntos`,
+      ar: `منح +${expectedBookingPoints} نقاط ولاء وصول`,
+      fr: `Créditer +${expectedBookingPoints} pts de fidélité`,
+      amz: `ⴰⴽⴽⴰ +${expectedBookingPoints} ⵜⵏⵇⵇⵉⴹⵉⵏ`,
+      en: `Award +${expectedBookingPoints} Loyalty Points`,
+      es: `Otorgar +${expectedBookingPoints} puntos`,
     }),
     copied: pickLang(lang, {
       ar: 'نُسخ',
@@ -434,21 +442,21 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
     document.body.removeChild(link);
   };
 
-  const handleQuickAwardPoints = async (pointsToAdd = POINTS_PER_VISIT) => {
+  const handleQuickAwardPoints = async (pointsToAdd = expectedBookingPoints) => {
     if (isAwardingPoints) return;
 
     if (mode === 'booking' && selectedBooking) {
-      if (selectedBooking.status !== 'completed' && pointsToAdd === POINTS_PER_VISIT) {
+      if (selectedBooking.status !== 'completed' && pointsToAdd === expectedBookingPoints) {
         setIsAwardingPoints(true);
         try {
           await onMarkBookingCompleted(selectedBooking);
           setLastAttributedMsg(
             pickLang(lang, {
-              ar: `✓ تم تسجيل حضور ${selectedBooking.clientName} ومنح +${POINTS_PER_VISIT} نقطة ولاء بنجاح!`,
-              fr: `✓ Arrivée de ${selectedBooking.clientName} validée (+${POINTS_PER_VISIT} pts crédités) !`,
-              amz: `✓ ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⵡⵡⴰⴹ ⵏ ${selectedBooking.clientName} (+${POINTS_PER_VISIT} pts) !`,
-              en: `✓ Checked in ${selectedBooking.clientName} and awarded +${POINTS_PER_VISIT} points!`,
-              es: `✓ Asistencia de ${selectedBooking.clientName} confirmada (+${POINTS_PER_VISIT} pts)!`,
+              ar: `✓ تم تسجيل حضور ${selectedBooking.clientName} ومنح +${expectedBookingPoints} نقطة ولاء بنجاح!`,
+              fr: `✓ Arrivée de ${selectedBooking.clientName} validée (+${expectedBookingPoints} pts crédités) !`,
+              amz: `✓ ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⵡⵡⴰⴹ ⵏ ${selectedBooking.clientName} (+${expectedBookingPoints} pts) !`,
+              en: `✓ Checked in ${selectedBooking.clientName} and awarded +${expectedBookingPoints} points!`,
+              es: `✓ Asistencia de ${selectedBooking.clientName} confirmada (+${expectedBookingPoints} pts)!`,
             })
           );
         } finally {
@@ -754,7 +762,7 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
                 <button
                   type="button"
                   disabled={isAwardingPoints}
-                  onClick={() => void handleQuickAwardPoints(POINTS_PER_VISIT)}
+                  onClick={() => void handleQuickAwardPoints(expectedBookingPoints)}
                   className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-teal-600/20 cursor-pointer disabled:opacity-60 transition-colors"
                 >
                   <Award className="w-4 h-4 flex-shrink-0" />

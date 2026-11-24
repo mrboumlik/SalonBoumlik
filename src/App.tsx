@@ -318,11 +318,11 @@ function SalonBoumlikApp() {
         es: 'Programa de fidelidad',
       }),
       subtitle: pickLang(lang, {
-        ar: 'تتبع نقاطك واقترب من الحلاقة المجانية',
-        fr: 'Suivez vos points et votre coupe offerte',
-        amz: 'ⴹⴼⵕ ⵜⵉⵏⵇⵇⵉⴹⵉⵏ ⵏⵏⴽ ⵉ ⵓⵣⵣⴰⵔ ⴼⴰⴱⵓⵔ',
-        en: 'Track your points toward a free haircut',
-        es: 'Sigue tus puntos y cortes gratis',
+        ar: 'تتبع نقاطك وافتح هدايا وتخفيضات بعد 5 زيارات',
+        fr: 'Cumulez des points et débloquez vos cadeaux dès 5 visites',
+        amz: 'ⴹⴼⵕ ⵜⵉⵏⵇⵇⵉⴹⵉⵏ ⵏⵏⴽ ⵉ ⵜⵙⵎⵖⵓⵔⵉⵏ ⵙⴳ 5 ⵏ ⵜⵉⵔⵣⴰ',
+        en: 'Track your points & unlock rewards starting after 5 visits',
+        es: 'Sigue tus puntos y desbloquea premios desde 5 visitas',
       }),
       renderContent: () => (
         <LoyaltyProgramSection
@@ -485,7 +485,12 @@ function SalonBoumlikApp() {
         <img
           src={SALON_INFO.media.logoClean}
           alt=""
-          className="w-[460px] sm:w-[680px] lg:w-[860px] max-w-none opacity-[0.035] dark:opacity-[0.025] filter grayscale contrast-125 dark:invert pointer-events-none"
+          className="dark:hidden w-[460px] sm:w-[680px] lg:w-[860px] max-w-none opacity-[0.04] pointer-events-none"
+        />
+        <img
+          src={SALON_INFO.media.logoDarkClean}
+          alt=""
+          className="hidden dark:block w-[460px] sm:w-[680px] lg:w-[860px] max-w-none opacity-[0.03] pointer-events-none"
         />
       </div>
 

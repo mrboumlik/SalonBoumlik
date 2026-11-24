@@ -59,6 +59,7 @@ import {
   saveBarberSchedule,
 } from '../utils/barberScheduleStore';
 import {
+  adjustClientLoyaltyPoints,
   AggregatedCrmClient,
   buildCrmClientSummaries,
   deleteSelectedClientRecords,
@@ -73,7 +74,10 @@ import {
 } from '../utils/waitlistStore';
 import { formatMoroccanWhatsAppNumber } from '../utils/whatsappAutomation';
 import { sendDualAlert } from '../utils/notifications';
-import { computeLoyaltyProgress } from '../utils/loyaltyEngine';
+import {
+  computeBookingLoyaltyPoints,
+  computeLoyaltyProgress,
+} from '../utils/loyaltyEngine';
 import {
   ClientQrTarget,
   downloadClientsVcf,
@@ -1962,6 +1966,10 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
   const [creditOverrideAck, setCreditOverrideAck] = useState<boolean>(false);
   const [deleteBusy, setDeleteBusy] = useState<boolean>(false);
   const [detailsClientId, setDetailsClientId] = useState<string | null>(null);
+  const [customPointsDelta, setCustomPointsDelta] = useState<string>('5');
+  const [pointsAdjustNote, setPointsAdjustNote] = useState<string>('');
+  const [isDiscountEditorOpen, setIsDiscountEditorOpen] = useState<boolean>(false);
+  const [customDiscountInput, setCustomDiscountInput] = useState<string>('5');
 
   // CRM QR Scanner Modal State
   const [isCrmQrOpen, setIsCrmQrOpen] = useState(false);
@@ -2271,17 +2279,14 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
     }
   };
 
-  const handleCustomDiscount = async (c: typeof clients[number]) => {
-    const promptTxt = pickLang(lang, {
-      ar: `أدخل قيمة تخفيض الولاء بالدرهم (MAD) للزبون ${c.clientName} (أدخل 0 لإلغاء التخفيض):`,
-      fr: `Entrez la réduction fidélité (MAD) pour ${c.clientName} (0 pour annuler) :`,
-      amz: `ⵙⵙⴽⵛⵎ ⴰⵙⵉⴷⵔ (MAD) ⵉ ${c.clientName} (0 ⵉ ⵓⵙⵔⵓⵙ) :`,
-      en: `Enter loyalty discount in MAD for ${c.clientName} (0 to clear):`,
-      es: `Introduce el descuento de fidelidad en MAD para ${c.clientName} (0 para anular):`,
-    });
-    const val = window.prompt(promptTxt, String(c.customDiscountMAD || 10));
-    if (val === null) return;
-    const amount = Number(val);
+  const handleOpenCustomDiscountEditor = (c: typeof clients[number]) => {
+    setCustomDiscountInput(String(c.customDiscountMAD > 0 ? c.customDiscountMAD : 5));
+    setIsDiscountEditorOpen(true);
+    setDetailsClientId(c.id);
+  };
+
+  const handleSaveCustomDiscount = async (c: typeof clients[number], amountOverride?: number) => {
+    const amount = amountOverride !== undefined ? amountOverride : Number(customDiscountInput);
     if (!Number.isFinite(amount) || amount < 0) return;
 
     setBusyId(c.id);
@@ -2290,9 +2295,10 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
         c.phoneDisplay,
         c.clientName,
         amount,
-        amount > 0 ? `🎁 -${amount} MAD` : '',
+        amount > 0 ? `🎁 -${Math.round(amount)} MAD` : '',
         crmMap
       );
+      setIsDiscountEditorOpen(false);
       sendDualAlert(
         pickLang(lang, {
           ar: 'تم تحديث تخفيض الولاء ✅',
@@ -2304,7 +2310,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
         {
           body:
             amount > 0
-              ? `-${amount} MAD (${c.clientName})`
+              ? `-${Math.round(amount)} MAD (${c.clientName})`
               : pickLang(lang, {
                   ar: 'تم إلغاء التخفيض الخاص.',
                   fr: 'Réduction annulée.',
@@ -2312,6 +2318,42 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                   en: 'Custom discount cleared.',
                   es: 'Descuento eliminado.',
                 }),
+          type: 'success',
+          skipSound: true,
+        }
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleAdjustLoyaltyPoints = async (
+    c: typeof clients[number],
+    delta: number,
+    note?: string
+  ) => {
+    if (!Number.isFinite(delta) || delta === 0) return;
+    setBusyId(c.id);
+    try {
+      const updated = await adjustClientLoyaltyPoints({
+        phone: c.phoneDisplay || c.normalizedPhone,
+        clientName: c.clientName,
+        pointsDelta: delta,
+        verifiedVisits: c.verifiedVisits,
+        note: note?.trim() || undefined,
+        crmMap,
+      });
+      setPointsAdjustNote('');
+      sendDualAlert(
+        pickLang(lang, {
+          ar: `تم تعديل نقاط الولاء (${delta > 0 ? `+${delta}` : delta}) ✓`,
+          fr: `Points fidélité mis à jour (${delta > 0 ? `+${delta}` : delta}) ✓`,
+          amz: `ⵜⵉⵏⵇⵇⵉⴹⵉⵏ ⵜⵜⵓⵙⵏⴼⵍⵏ (${delta > 0 ? `+${delta}` : delta}) ✓`,
+          en: `Loyalty points updated (${delta > 0 ? `+${delta}` : delta}) ✓`,
+          es: `Puntos actualizados (${delta > 0 ? `+${delta}` : delta}) ✓`,
+        }),
+        {
+          body: `${c.clientName} · ${updated.loyaltyPoints ?? 0} pts`,
           type: 'success',
           skipSound: true,
         }
@@ -2754,11 +2796,16 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                     className="w-4 h-4 accent-amber-500 rounded cursor-pointer flex-shrink-0"
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="font-black text-slate-900 dark:text-white text-sm truncate">
-                      {c.clientName}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-black text-slate-900 dark:text-white text-sm truncate">
+                        {c.clientName}
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded shrink-0 tabular-nums">
+                        {c.loyaltyPoints} pts
+                      </span>
                     </div>
                     <span dir="ltr" className="text-[11px] font-mono text-slate-500 dark:text-zinc-400 block truncate">
-                      {c.phoneDisplay}
+                      {c.phoneDisplay} · {c.verifiedVisits} {pickLang(lang, { ar: 'زيارة', fr: 'v.', amz: 'ⵜ.', en: 'visits', es: 'v.' })}
                     </span>
                   </div>
                 </div>
@@ -2827,6 +2874,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
               onClick={() => {
                 setDetailsClientId(null);
                 setScannedTicketMatch(null);
+                setIsDiscountEditorOpen(false);
               }}
             >
               <div
@@ -2873,6 +2921,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                     onClick={() => {
                       setDetailsClientId(null);
                       setScannedTicketMatch(null);
+                      setIsDiscountEditorOpen(false);
                     }}
                     className="p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-zinc-800 cursor-pointer shrink-0"
                   >
@@ -2931,6 +2980,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                     {loyalty.tiers.map((tier) => (
                       <span
                         key={tier.targetVisits}
+                        title={tier.rewardTitle}
                         className={`px-2 py-0.5 rounded-full font-mono font-bold border tabular-nums ${
                           tier.unlocked
                             ? 'bg-emerald-50 dark:bg-emerald-500/20 border-emerald-300 dark:border-emerald-400/50 text-emerald-700 dark:text-emerald-300'
@@ -2940,11 +2990,182 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                         }`}
                       >
                         {tier.unlocked
-                          ? `✓ ${tier.targetVisits}/${tier.targetVisits}`
-                          : `${c.verifiedVisits}/${tier.targetVisits}`}
+                          ? `✓ ${tier.targetVisits} (${tier.rewardTitle})`
+                          : `${c.verifiedVisits}/${tier.targetVisits} (${tier.rewardTitle})`}
                       </span>
                     ))}
                   </div>
+
+                  {/* Supervisor Loyalty Points Totals, Manual Adjustment & Recent Visit Points */}
+                  <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-500/30 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-black text-slate-900 dark:text-white text-[11px] flex items-center gap-1.5">
+                        <Award className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        <span>
+                          {pickLang(lang, {
+                            ar: 'إدارة رصيد نقاط الولاء',
+                            fr: 'Gestion des Points de Fidélité',
+                            amz: 'ⴰⵙⵡⵓⴷⴷⵓ ⵏ ⵜⵏⵇⵇⵉⴹⵉⵏ',
+                            en: 'Loyalty Points Management',
+                            es: 'Gestión de Puntos de Fidelidad',
+                          })}
+                        </span>
+                      </span>
+                      <span className="font-mono font-black text-amber-700 dark:text-amber-300 text-xs tabular-nums">
+                        {c.loyaltyPoints} pts
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-mono tabular-nums">
+                      <div className="p-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800">
+                        <span className="text-stone-500 dark:text-zinc-400 block font-sans">
+                          {pickLang(lang, { ar: 'الرصيد', fr: 'Solde', amz: 'ⴰⵎⵉⴹⴰⵏ', en: 'Balance', es: 'Saldo' })}
+                        </span>
+                        <span className="font-black text-amber-700 dark:text-amber-300">{c.loyaltyPoints} pts</span>
+                      </div>
+                      <div className="p-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800">
+                        <span className="text-stone-500 dark:text-zinc-400 block font-sans">
+                          {pickLang(lang, { ar: 'المكتسب', fr: 'Gagnés', amz: 'ⵉⵜⵜⵓⵙⵎⵓⵏⵏ', en: 'Earned', es: 'Ganados' })}
+                        </span>
+                        <span className="font-black text-emerald-700 dark:text-emerald-300">{c.pointsEarnedTotal} pts</span>
+                      </div>
+                      <div className="p-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800">
+                        <span className="text-stone-500 dark:text-zinc-400 block font-sans">
+                          {pickLang(lang, { ar: 'المستبدل', fr: 'Utilisés', amz: 'ⵉⵜⵜⵓⵙⵏⴼⵍⵏ', en: 'Redeemed', es: 'Canjeados' })}
+                        </span>
+                        <span className="font-black text-slate-700 dark:text-zinc-300">{c.pointsRedeemedTotal} pts</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={busyId === c.id}
+                        onClick={() => handleAdjustLoyaltyPoints(c, 5, pointsAdjustNote)}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-bold text-[11px] cursor-pointer disabled:opacity-50"
+                      >
+                        +5 pts
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyId === c.id || c.loyaltyPoints <= 0}
+                        onClick={() => handleAdjustLoyaltyPoints(c, -5, pointsAdjustNote)}
+                        className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-mono font-bold text-[11px] cursor-pointer disabled:opacity-50"
+                      >
+                        -5 pts
+                      </button>
+                      <input
+                        type="number"
+                        value={customPointsDelta}
+                        onChange={(e) => setCustomPointsDelta(e.target.value)}
+                        aria-label="Points adjustment delta"
+                        className="w-16 px-2 py-1 rounded-lg bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 text-slate-900 dark:text-white font-mono text-[11px]"
+                        dir="ltr"
+                      />
+                      <input
+                        type="text"
+                        value={pointsAdjustNote}
+                        onChange={(e) => setPointsAdjustNote(e.target.value)}
+                        placeholder={pickLang(lang, {
+                          ar: 'ملاحظة التعديل (اختياري)...',
+                          fr: 'Note (optionnel)...',
+                          amz: 'ⵜⴰⵎⵍⴰⵢⵜ...',
+                          en: 'Note (optional)...',
+                          es: 'Nota (opcional)...',
+                        })}
+                        className="flex-1 min-w-[120px] px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 text-slate-900 dark:text-white text-[11px]"
+                      />
+                      <button
+                        type="button"
+                        disabled={busyId === c.id || !Number(customPointsDelta)}
+                        onClick={() => handleAdjustLoyaltyPoints(c, Number(customPointsDelta), pointsAdjustNote)}
+                        className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] cursor-pointer disabled:opacity-50"
+                      >
+                        {pickLang(lang, { ar: 'تطبيق', fr: 'Appliquer', amz: 'ⵙⵎⵔⵙ', en: 'Apply', es: 'Aplicar' })}
+                      </button>
+                    </div>
+
+                    {(() => {
+                      const completedVisits = c.bookings.filter((b) => b.status === 'completed').slice(0, 4);
+                      if (completedVisits.length === 0) return null;
+                      return (
+                        <div className="pt-1.5 border-t border-amber-200/70 dark:border-zinc-800 space-y-1">
+                          <div className="text-[10px] font-bold text-stone-600 dark:text-zinc-400">
+                            {pickLang(lang, {
+                              ar: 'آخر الزيارات المؤكدة ونقاطها:',
+                              fr: 'Dernières visites confirmées & points :',
+                              amz: 'ⵜⵉⵔⵣⵉⵡⵉⵏ ⵜⵉⵎⴳⴳⵓⵔⴰ:',
+                              en: 'Recent verified visits & service points:',
+                              es: 'Últimas visitas verificadas y puntos:',
+                            })}
+                          </div>
+                          {completedVisits.map((b) => (
+                            <div
+                              key={b.id}
+                              className="flex items-center justify-between gap-2 text-[10px] px-2 py-1 rounded-lg bg-white dark:bg-zinc-900/80 border border-stone-200/80 dark:border-zinc-800"
+                            >
+                              <span className="truncate text-slate-700 dark:text-zinc-300">
+                                <span dir="ltr" className="font-mono font-bold">{b.date}</span> · {b.barberName}
+                              </span>
+                              <span className="font-mono font-black text-emerald-700 dark:text-emerald-400 shrink-0 tabular-nums">
+                                +{computeBookingLoyaltyPoints(b).points} pts · {b.finalTotalMAD ?? 0} MAD
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {isDiscountEditorOpen && (
+                    <div className="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/25 border border-blue-200 dark:border-blue-500/40 space-y-2">
+                      <div className="text-[11px] font-black text-blue-900 dark:text-blue-200">
+                        {pickLang(lang, {
+                          ar: 'تحديد تخفيض خاص بالدرهم (MAD)',
+                          fr: 'Définir une remise personnalisée (MAD)',
+                          amz: 'ⴰⵙⵙⵏⵇⵙ ⵓⵙⵍⵉⴳ (MAD)',
+                          en: 'Set Custom Loyalty Discount (MAD)',
+                          es: 'Definir descuento personalizado (MAD)',
+                        })}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          max={500}
+                          value={customDiscountInput}
+                          onChange={(e) => setCustomDiscountInput(e.target.value)}
+                          className="w-24 px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-blue-300 dark:border-zinc-700 text-slate-900 dark:text-white font-mono text-xs"
+                          dir="ltr"
+                        />
+                        <button
+                          type="button"
+                          disabled={busyId === c.id}
+                          onClick={() => handleSaveCustomDiscount(c)}
+                          className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] cursor-pointer"
+                        >
+                          {pickLang(lang, { ar: 'حفظ التخفيض', fr: 'Enregistrer', amz: 'ⵃⴹⵓ', en: 'Save', es: 'Guardar' })}
+                        </button>
+                        {c.customDiscountMAD > 0 && (
+                          <button
+                            type="button"
+                            disabled={busyId === c.id}
+                            onClick={() => handleSaveCustomDiscount(c, 0)}
+                            className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 font-bold text-[11px] cursor-pointer"
+                          >
+                            {pickLang(lang, { ar: 'إلغاء التخفيض', fr: 'Effacer', amz: 'ⴽⴽⵙ', en: 'Clear', es: 'Quitar' })}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setIsDiscountEditorOpen(false)}
+                          className="px-2 py-1.5 rounded-lg text-stone-500 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white text-[11px] cursor-pointer"
+                        >
+                          {pickLang(lang, { ar: 'إغلاق', fr: 'Fermer', amz: 'ⵇⵇⵏ', en: 'Close', es: 'Cerrar' })}
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {(c.customDiscountMAD > 0 || c.banReason || c.rewardNote) && (
                     <div className="p-2.5 rounded-xl bg-stone-50 dark:bg-[#191D28] border border-stone-200 dark:border-zinc-800 text-[11px] space-y-0.5">
@@ -3026,7 +3247,7 @@ export const CrmLoyaltyBlacklistPanel: React.FC<{
                     <button
                       type="button"
                       disabled={busyId === c.id}
-                      onClick={() => handleCustomDiscount(c)}
+                      onClick={() => handleOpenCustomDiscountEditor(c)}
                       className="px-2.5 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900 border border-blue-300 dark:border-blue-500/40 text-blue-700 dark:text-blue-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                     >
                       <Sparkles className="w-3 h-3" />

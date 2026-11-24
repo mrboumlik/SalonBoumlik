@@ -283,6 +283,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [deleteTargetBooking, setDeleteTargetBooking] = useState<AppointmentBooking | null>(null);
   const [deleteBookingCreditAck, setDeleteBookingCreditAck] = useState(false);
   const [deleteBookingBusy, setDeleteBookingBusy] = useState(false);
+  const [rejectTargetBookingId, setRejectTargetBookingId] = useState<string | null>(null);
+  const [rejectReasonInput, setRejectReasonInput] = useState<string>('');
+  const [rejectBookingBusy, setRejectBookingBusy] = useState(false);
 
   // Version 2.0 Live Enterprise Hooks
   const barberRoster = useBarberRoster();
@@ -1078,15 +1081,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleReject = async (id: string) => {
-    const reason = window.prompt(
-      pickLang(lang, {
-        ar: 'سبب الرفض أو امتلاء الموعد (اختياري):',
-        fr: 'Motif du refus ou créneau complet (optionnel) :',
-        amz: 'ⵜⴰⵎⵏⵜⵉⵍⵜ ⵏ ⵡⴰⴳⵉ (ⵉⴼⵔⴰⵏ) :',
-        en: 'Rejection reason or full slot note (optional):',
-        es: 'Motivo del rechazo o nota (opcional):',
-      }),
+  const handleReject = (id: string) => {
+    setRejectReasonInput(
       pickLang(lang, {
         ar: 'الموعد غير متاح، يرجى اختيار توقيت آخر.',
         fr: 'Créneau indisponible, veuillez choisir un autre horaire.',
@@ -1095,42 +1091,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         es: 'Horario no disponible, elige otro horario.',
       })
     );
-    if (reason !== null) {
-      try {
-        await updateBookingStatus(
-          id,
-          'rejected',
-          reason ||
-            pickLang(lang, {
-              ar: 'غير متاح',
-              fr: 'Non disponible',
-              amz: 'ⵓⵔ ⵉⵍⵍⵉ',
-              en: 'Unavailable',
-              es: 'No disponible',
-            })
-        );
-      } catch (err) {
-        console.error('Failed to reject booking:', err);
-        sendDualAlert(
+    setRejectTargetBookingId(id);
+  };
+
+  const handleConfirmRejectModal = async () => {
+    if (!rejectTargetBookingId || rejectBookingBusy) return;
+    setRejectBookingBusy(true);
+    try {
+      await updateBookingStatus(
+        rejectTargetBookingId,
+        'rejected',
+        rejectReasonInput.trim() ||
           pickLang(lang, {
-            ar: 'خطأ في التحديث',
-            fr: 'Erreur de mise à jour',
-            amz: 'ⵜⴰⵣⴳⴰⵍⵜ ⴳ ⵓⵙⴷⵖⵉ',
-            en: 'Update error',
-            es: 'Error al actualizar',
+            ar: 'غير متاح',
+            fr: 'Non disponible',
+            amz: 'ⵓⵔ ⵉⵍⵍⵉ',
+            en: 'Unavailable',
+            es: 'No disponible',
+          })
+      );
+      setRejectTargetBookingId(null);
+    } catch (err) {
+      console.error('Failed to reject booking:', err);
+      sendDualAlert(
+        pickLang(lang, {
+          ar: 'تعذر رفض الموعد',
+          fr: 'Impossible de refuser le RDV',
+          amz: 'ⵓⵔ ⵉⵜⵜⵓⴳⵉ ⵓⵙⵉⵀⵍ',
+          en: 'Could not reject booking',
+          es: 'No se pudo rechazar la cita',
+        }),
+        {
+          body: pickLang(lang, {
+            ar: 'حدث خطأ أثناء تحديث الحالة.',
+            fr: 'Une erreur est survenue lors de la mise à jour.',
+            amz: 'ⵜⵍⵍⴰ ⵜⴰⵣⴳⴰⵍⵜ.',
+            en: 'An error occurred updating the status.',
+            es: 'Ocurrió un error al actualizar el estado.',
           }),
-          {
-            body: pickLang(lang, {
-              ar: 'تعذر تحديث حالة الموعد في قاعدة البيانات.',
-              fr: 'Impossible de mettre à jour le rendez-vous.',
-              amz: 'ⵓⵔ ⵉⵣⵎⵉⵔ ⴰⴷ ⵉⵙⴷⵖⵉ ⴰⵙⵉⵀⴰⵔ.',
-              en: 'Failed to update booking status.',
-              es: 'No se pudo actualizar la cita.',
-            }),
-            type: 'warning',
-          }
-        );
-      }
+          type: 'warning',
+        }
+      );
+    } finally {
+      setRejectBookingBusy(false);
     }
   };
 
@@ -1387,11 +1390,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const progress = computeLoyaltyProgress(result.newVerifiedVisits, lang);
         sendDualAlert(
           pickLang(lang, {
-            ar: 'تم تأكيد الحضور واحتساب نقطة الولاء ✓',
-            fr: 'Présence confirmée & point fidélité ajouté ✓',
-            amz: 'ⵜⵉⵍⵉⵏⵜ ⵜⵜⵓⵙⵏⵜⵎ + ⵜⴰⵏⵇⵇⵉⴹⵜ ⵏ ⵜⵉⵖⵓⴷⴰ ✓',
-            en: 'Attendance Confirmed & Loyalty Point Added ✓',
-            es: 'Asistencia confirmada y punto añadido ✓',
+            ar: `تم تأكيد الحضور وإضافة +${result.pointsEarned} نقطة ولاء ✓`,
+            fr: `Présence confirmée (+${result.pointsEarned} pts ajoutés) ✓`,
+            amz: `ⵜⵉⵍⵉⵏⵜ ⵜⵜⵓⵙⵏⵜⵎ (+${result.pointsEarned} pts) ✓`,
+            en: `Attendance Confirmed (+${result.pointsEarned} pts added) ✓`,
+            es: `Asistencia confirmada (+${result.pointsEarned} pts) ✓`,
           }),
           {
             body: pickLang(lang, {
@@ -2936,11 +2939,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     })}
                   {workspaceSection === 'loyalty' &&
                     pickLang(lang, {
-                      ar: '🪙 إدارة نقاط الولاء واستبدالها بتخفيضات على الخدمات القادمة (+10 نقاط لكل زيارة مؤكدة)',
-                      fr: '🪙 Gestion des points de fidélité et échanges en remises (+10 pts / visite confirmée)',
-                      amz: '🪙 ⴰⵙⵡⵓⴷⴷⵓ ⵏ ⵜⵏⵇⵇⴰⴹ ⵏ ⵜⵉⵖⵓⴷⴰ (+10 ⵉ ⴽⵓ ⴰⵔⵣⴰⴼ)',
-                      en: '🪙 Manage loyalty points & redeem discounts (+10 pts per confirmed visit)',
-                      es: '🪙 Gestiona puntos de fidelidad y canjes (+10 pts por visita)',
+                      ar: '🪙 إدارة نقاط الولاء حسب الخدمة (+3 إلى +22 نقطة/زيارة) والمكافآت التدريجية',
+                      fr: '🪙 Points fidélité par prestation (+3 à +22 pts/visite) et récompenses progressives',
+                      amz: '🪙 ⴰⵙⵡⵓⴷⴷⵓ ⵏ ⵜⵏⵇⵇⵉⴹⵉⵏ ⵙ ⵜⵡⵓⵔⵉ (+3–22 pts)',
+                      en: '🪙 Service-based loyalty points (+3 to +22 pts/visit) & progressive rewards',
+                      es: '🪙 Puntos de fidelidad por servicio (+3 a +22 pts/visita) y premios progresivos',
                     })}
                   {workspaceSection === 'schedules' &&
                     pickLang(lang, {
@@ -6246,6 +6249,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </ModalPortal>
         );
       })()}
+
+      {/* Booking Rejection Reason Modal */}
+      {rejectTargetBookingId && (
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-[105] flex items-center justify-center p-4 sb-modal-backdrop"
+            onClick={() => !rejectBookingBusy && setRejectTargetBookingId(null)}
+          >
+            <div
+              className="w-full max-w-md rounded-2xl bg-white dark:bg-[#141720] border border-rose-300 dark:border-rose-500/40 shadow-2xl p-5 space-y-3 text-xs"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                  {pickLang(lang, {
+                    ar: 'سبب رفض الموعد أو ملاحظة للزبون',
+                    fr: 'Motif du refus ou note au client',
+                    amz: 'ⵜⴰⵎⵏⵜⵉⵍⵜ ⵏ ⵡⴰⴳⵉ',
+                    en: 'Booking Rejection Reason',
+                    es: 'Motivo del rechazo',
+                  })}
+                </h3>
+                <button
+                  type="button"
+                  disabled={rejectBookingBusy}
+                  onClick={() => setRejectTargetBookingId(null)}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <textarea
+                rows={3}
+                value={rejectReasonInput}
+                onChange={(e) => setRejectReasonInput(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-stone-50 dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 text-slate-900 dark:text-white text-xs focus:outline-none focus:border-rose-500"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={rejectBookingBusy}
+                  onClick={() => setRejectTargetBookingId(null)}
+                  className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-bold cursor-pointer"
+                >
+                  {pickLang(lang, { ar: 'إلغاء', fr: 'Annuler', amz: 'ⵙⵔⵓⵙ', en: 'Cancel', es: 'Cancelar' })}
+                </button>
+                <button
+                  type="button"
+                  disabled={rejectBookingBusy}
+                  onClick={() => void handleConfirmRejectModal()}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black cursor-pointer disabled:opacity-50"
+                >
+                  {pickLang(lang, { ar: 'تأكيد الرفض', fr: 'Confirmer le refus', amz: 'ⵙⵙⴷⵓ ⴰⴳⵉ', en: 'Confirm Rejection', es: 'Confirmar rechazo' })}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
 
       {/* Single Booking Selective Delete Modal with Credit Protection (Master Admin only) */}
       {deleteTargetBooking && session?.role === 'master' && (() => {

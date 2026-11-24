@@ -48,6 +48,7 @@ import {
 } from '../utils/bookingStore';
 import { useCrmClients, getCrmDocId, redeemLoyaltyPointsForDiscount } from '../utils/crmStore';
 import {
+  computeBookingLoyaltyPoints,
   computeLoyaltyProgress,
   computeClientPointsSummary,
   getVerifiedVisitsCount,
@@ -925,7 +926,11 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     ? getVerifiedVisitsCount(fullClientCrmHistory, activeCrmProfile)
     : activeCrmProfile?.verifiedVisits ?? 0;
   const loyaltyProgress = computeLoyaltyProgress(verifiedVisitsTotal, lang);
-  const pointsSummary = computeClientPointsSummary(verifiedVisitsTotal, activeCrmProfile);
+  const pointsSummary = computeClientPointsSummary(
+    verifiedVisitsTotal,
+    activeCrmProfile,
+    fullClientCrmHistory
+  );
 
   const profilePhone =
     primaryMatchedBooking?.clientPhone ||
@@ -944,24 +949,38 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     try {
       const langKey: 'ar' | 'fr' | 'en' | 'es' =
         lang === 'ar' || lang === 'en' || lang === 'es' ? lang : 'fr';
+      const rewardTitle = tier.label[langKey];
       await redeemLoyaltyPointsForDiscount({
         phone: profilePhone,
         clientName: profileName,
         pointsCost: tier.pointsCost,
         discountMAD: tier.discountMAD,
-        label: `🎟️ ${tier.label[langKey]} (-${tier.discountMAD} MAD) · ${tier.pointsCost} pts`,
+        rewardKind: tier.rewardKind,
+        label:
+          tier.discountMAD > 0
+            ? `🎟️ ${rewardTitle} (-${tier.discountMAD} MAD) · ${tier.pointsCost} pts`
+            : `🎁 ${rewardTitle} · ${tier.pointsCost} pts`,
         verifiedVisits: verifiedVisitsTotal,
         crmMap: crmClientsMap,
       });
       setRedeemFeedback({
         type: 'success',
-        message: pickLang(lang, {
-          ar: `تم استبدال ${tier.pointsCost} نقطة بنجاح! خصم -${tier.discountMAD} MAD جاهز وسيُطبق تلقائياً في حجزك القادم.`,
-          fr: `${tier.pointsCost} pts échangés ! Une remise de -${tier.discountMAD} MAD s'appliquera à votre prochaine réservation.`,
-          amz: `ⵙⵏⴼⵍⵏ ${tier.pointsCost} ⵏ ⵜⵏⵇⵇⵉⴹⵉⵏ! ⴰⵙⵙⵏⵇⵙ -${tier.discountMAD} MAD ⵉⵀⵢⵢⴰ ⵉ ⵓⵙⵉⵀⵍ ⵉⴷⴷⴰⵏ.`,
-          en: `Redeemed ${tier.pointsCost} pts! -${tier.discountMAD} MAD discount is now active for your next booking.`,
-          es: `¡Canjeados ${tier.pointsCost} pts! Descuento de -${tier.discountMAD} MAD activo para tu próxima reserva.`,
-        }),
+        message:
+          tier.discountMAD > 0
+            ? pickLang(lang, {
+                ar: `تم استبدال ${tier.pointsCost} نقطة بنجاح! خصم -${tier.discountMAD} MAD جاهز وسيُطبق تلقائياً في حجزك القادم.`,
+                fr: `${tier.pointsCost} pts échangés ! Une remise de -${tier.discountMAD} MAD s'appliquera à votre prochaine réservation.`,
+                amz: `ⵙⵏⴼⵍⵏ ${tier.pointsCost} ⵏ ⵜⵏⵇⵇⵉⴹⵉⵏ! ⴰⵙⵙⵏⵇⵙ -${tier.discountMAD} MAD ⵉⵀⵢⵢⴰ ⵉ ⵓⵙⵉⵀⵍ ⵉⴷⴷⴰⵏ.`,
+                en: `Redeemed ${tier.pointsCost} pts! -${tier.discountMAD} MAD discount is now active for your next booking.`,
+                es: `¡Canjeados ${tier.pointsCost} pts! Descuento de -${tier.discountMAD} MAD activo para tu próxima reserva.`,
+              })
+            : pickLang(lang, {
+                ar: `تم استبدال ${tier.pointsCost} نقطة بنجاح! مكافأتك (${rewardTitle}) جاهزة في زيارتك القادمة.`,
+                fr: `${tier.pointsCost} pts échangés ! Votre soin offert (${rewardTitle}) est prêt pour votre visite.`,
+                amz: `ⵙⵏⴼⵍⵏ ${tier.pointsCost} ⵏ ⵜⵏⵇⵇⵉⴹⵉⵏ! ${rewardTitle} ⵉⵀⵢⵢⴰ.`,
+                en: `Redeemed ${tier.pointsCost} pts! Your reward (${rewardTitle}) is active for your next visit.`,
+                es: `¡Canjeados ${tier.pointsCost} pts! Tu premio (${rewardTitle}) está activo para tu próxima visita.`,
+              }),
       });
     } catch (err: any) {
       setRedeemFeedback({
@@ -1284,15 +1303,13 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   <div className="font-mono font-black text-amber-700 dark:text-amber-400 text-sm tabular-nums">
                     {pointsSummary.pointsBalance} pts
                     <span className="text-[10px] text-stone-500 dark:text-zinc-400 font-normal ms-1.5">
-                      (+{pointsSummary.pointsPerVisit}/
-                      {pickLang(lang, {
-                        ar: 'زيارة',
-                        fr: 'visite',
-                        amz: 'ⵜⵉⵔⵣⴰ',
-                        en: 'visit',
-                        es: 'visita',
-                      })}
-                      )
+                      ({pickLang(lang, {
+                        ar: '+3–22 حسب الخدمة',
+                        fr: '+3–22 / service',
+                        amz: '+3–22 / ⵜⴰⵡⵓⵔⵉ',
+                        en: '+3–22 per service',
+                        es: '+3–22 / servicio',
+                      })})
                     </span>
                   </div>
                 </div>
@@ -1324,7 +1341,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {LOYALTY_POINT_TIERS.map((tier) => {
                     const canRedeem = pointsSummary.pointsBalance >= tier.pointsCost;
                     const isBusy = redeemingTierId === tier.id;
@@ -1346,8 +1363,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                           <span className="font-mono font-black text-amber-800 dark:text-amber-300 text-[11px] tabular-nums">
                             {tier.pointsCost} pts
                           </span>
-                          <span className="font-mono font-black text-emerald-700 dark:text-emerald-400 text-[11px] tabular-nums">
-                            -{tier.discountMAD} MAD
+                          <span className="font-mono font-black text-emerald-700 dark:text-emerald-400 text-[11px] tabular-nums truncate">
+                            {tier.discountMAD > 0 ? `-${tier.discountMAD} MAD` : tier.label[langKey]}
                           </span>
                         </div>
                         <div className="text-[10px] font-bold">
@@ -1605,11 +1622,11 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                           </div>
                           <div className="text-[10px] text-stone-500 dark:text-zinc-400">
                             {pickLang(lang, {
-                              ar: `تكسب +${pointsSummary.pointsPerVisit} نقاط عن كل زيارة مكتملة · المكتسب: ${pointsSummary.pointsEarnedTotal} | المستبدل: ${pointsSummary.pointsRedeemedTotal}`,
-                              fr: `+${pointsSummary.pointsPerVisit} pts / visite confirmée · Gagnés : ${pointsSummary.pointsEarnedTotal} | Utilisés : ${pointsSummary.pointsRedeemedTotal}`,
-                              amz: `+${pointsSummary.pointsPerVisit} pts / ⵜⵉⵔⵣⴰ · ⵉⵜⵜⵓⵙⵎⵓⵏⵏ: ${pointsSummary.pointsEarnedTotal} | ⵉⵜⵜⵓⵙⵏⴼⵍⵏ: ${pointsSummary.pointsRedeemedTotal}`,
-                              en: `Earn +${pointsSummary.pointsPerVisit} pts per verified visit · Earned: ${pointsSummary.pointsEarnedTotal} | Redeemed: ${pointsSummary.pointsRedeemedTotal}`,
-                              es: `+${pointsSummary.pointsPerVisit} pts / visita · Ganados: ${pointsSummary.pointsEarnedTotal} | Canjeados: ${pointsSummary.pointsRedeemedTotal}`,
+                              ar: `تكسب +3–22 نقطة حسب الخدمة عند تأكيد الحضور · المكتسب: ${pointsSummary.pointsEarnedTotal} | المستبدل: ${pointsSummary.pointsRedeemedTotal}`,
+                              fr: `+3–22 pts selon le service · Gagnés : ${pointsSummary.pointsEarnedTotal} | Utilisés : ${pointsSummary.pointsRedeemedTotal}`,
+                              amz: `+3–22 pts / ⵜⴰⵡⵓⵔⵉ · ⵉⵜⵜⵓⵙⵎⵓⵏⵏ: ${pointsSummary.pointsEarnedTotal} | ⵉⵜⵜⵓⵙⵏⴼⵍⵏ: ${pointsSummary.pointsRedeemedTotal}`,
+                              en: `Earn +3–22 pts per service · Earned: ${pointsSummary.pointsEarnedTotal} | Redeemed: ${pointsSummary.pointsRedeemedTotal}`,
+                              es: `+3–22 pts según servicio · Ganados: ${pointsSummary.pointsEarnedTotal} | Canjeados: ${pointsSummary.pointsRedeemedTotal}`,
                             })}
                           </div>
                         </div>
@@ -1627,13 +1644,21 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                       <div className="space-y-1">
                         <div className="flex items-center justify-between text-[10px] text-stone-500 dark:text-zinc-400 font-mono tabular-nums">
                           <span>
-                            {pickLang(lang, {
-                              ar: `الهدف القادم للاستبدال: ${pointsSummary.nextTier.pointsCost} نقطة ← خصم -${pointsSummary.nextTier.discountMAD} MAD`,
-                              fr: `Prochain palier : ${pointsSummary.nextTier.pointsCost} pts → -${pointsSummary.nextTier.discountMAD} MAD`,
-                              amz: `ⴰⵙⵡⵉⵔ ⵉⴷⴷⴰⵏ: ${pointsSummary.nextTier.pointsCost} pts → -${pointsSummary.nextTier.discountMAD} MAD`,
-                              en: `Next reward tier: ${pointsSummary.nextTier.pointsCost} pts → -${pointsSummary.nextTier.discountMAD} MAD off`,
-                              es: `Próximo nivel: ${pointsSummary.nextTier.pointsCost} pts → -${pointsSummary.nextTier.discountMAD} MAD`,
-                            })}
+                            {(() => {
+                              const lk: 'ar' | 'fr' | 'en' | 'es' =
+                                lang === 'ar' || lang === 'en' || lang === 'es' ? lang : 'fr';
+                              const rewardDesc =
+                                pointsSummary.nextTier.discountMAD > 0
+                                  ? `-${pointsSummary.nextTier.discountMAD} MAD`
+                                  : pointsSummary.nextTier.label[lk];
+                              return pickLang(lang, {
+                                ar: `الهدف القادم: ${pointsSummary.nextTier.pointsCost} نقطة ← ${rewardDesc}`,
+                                fr: `Prochain palier : ${pointsSummary.nextTier.pointsCost} pts → ${rewardDesc}`,
+                                amz: `ⴰⵙⵡⵉⵔ ⵉⴷⴷⴰⵏ: ${pointsSummary.nextTier.pointsCost} pts → ${rewardDesc}`,
+                                en: `Next reward tier: ${pointsSummary.nextTier.pointsCost} pts → ${rewardDesc}`,
+                                es: `Próximo nivel: ${pointsSummary.nextTier.pointsCost} pts → ${rewardDesc}`,
+                              });
+                            })()}
                           </span>
                           <span className="text-amber-700 dark:text-amber-300 font-bold">
                             {pointsSummary.pointsBalance} / {pointsSummary.nextTier.pointsCost}
@@ -1679,7 +1704,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                     )}
 
                     {/* Redeemable Point Tiers */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {LOYALTY_POINT_TIERS.map((tier) => {
                         const canRedeem = pointsSummary.pointsBalance >= tier.pointsCost;
                         const isBusy = redeemingTierId === tier.id;
@@ -1701,8 +1726,8 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                               <span className="font-mono font-black text-amber-800 dark:text-amber-300 text-[11px] tabular-nums">
                                 {tier.pointsCost} pts
                               </span>
-                              <span className="font-mono font-black text-emerald-700 dark:text-emerald-400 text-xs tabular-nums">
-                                -{tier.discountMAD} MAD
+                              <span className="font-mono font-black text-emerald-700 dark:text-emerald-400 text-[11px] tabular-nums truncate">
+                                {tier.discountMAD > 0 ? `-${tier.discountMAD} MAD` : '🎁 Free'}
                               </span>
                             </div>
                             <div className="text-[11px] font-bold truncate">{tier.label[langKey]}</div>
@@ -1834,7 +1859,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
                                 </div>
 
                                 <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 text-[11px] tabular-nums flex-shrink-0">
-                                  +1 pt · {visit.finalTotalMAD ?? 0} MAD
+                                  +{computeBookingLoyaltyPoints(visit).points} pts · {visit.finalTotalMAD ?? 0} MAD
                                 </span>
                               </div>
                             );

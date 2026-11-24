@@ -858,7 +858,9 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
   const pastVisitsCount =
     cleanDigits.length >= 6 ? getVerifiedVisitsCount(clientBookingsForPhone, crmProfile) : 0;
   const pointsSummary =
-    cleanDigits.length >= 6 ? computeClientPointsSummary(pastVisitsCount, crmProfile) : null;
+    cleanDigits.length >= 6
+      ? computeClientPointsSummary(pastVisitsCount, crmProfile, clientBookingsForPhone)
+      : null;
   const isClientBanned = Boolean(crmProfile?.isBanned);
   const nextVisitNumber = pastVisitsCount + 1;
   const isFreeWashEligible =
@@ -2116,7 +2118,12 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
         })())
   );
 
-  const handleRedeemPointsTier = async (tier: { id: string; pointsCost: number; discountMAD: number }) => {
+  const handleRedeemPointsTier = async (tier: {
+    id: string;
+    pointsCost: number;
+    discountMAD: number;
+    rewardKind?: 'free_wash' | 'free_mask' | 'discount';
+  }) => {
     const phoneToUse = clientPhone.trim() || recognizedClient?.clientPhone || '';
     const nameToUse = clientName.trim() || recognizedClient?.clientName || crmProfile?.clientName || 'Client';
     if (!phoneToUse) return;
@@ -2127,6 +2134,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
         clientName: nameToUse,
         pointsCost: tier.pointsCost,
         discountMAD: tier.discountMAD,
+        rewardKind: tier.rewardKind,
         verifiedVisits: Math.max(pastVisitsCount, recognizedClient?.verifiedVisits ?? 0),
         crmMap: crmClientsMap,
       });
@@ -2142,21 +2150,38 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
         );
       }
       sendDualAlert(
-        pickLang(lang, {
-          ar: `تم تفعيل خصم -${tier.discountMAD} MAD بنجاح!`,
-          fr: `Remise -${tier.discountMAD} MAD activée !`,
-          amz: `ⴰⵙⵙⵏⵇⵙ -${tier.discountMAD} MAD ⵉⵕⵥⵎ!`,
-          en: `-${tier.discountMAD} MAD discount activated!`,
-          es: `¡Descuento de -${tier.discountMAD} MAD activado!`,
-        }),
+        tier.discountMAD > 0
+          ? pickLang(lang, {
+              ar: `تم تفعيل خصم -${tier.discountMAD} MAD بنجاح!`,
+              fr: `Remise -${tier.discountMAD} MAD activée !`,
+              amz: `ⴰⵙⵙⵏⵇⵙ -${tier.discountMAD} MAD ⵉⵕⵥⵎ!`,
+              en: `-${tier.discountMAD} MAD discount activated!`,
+              es: `¡Descuento de -${tier.discountMAD} MAD activado!`,
+            })
+          : pickLang(lang, {
+              ar: 'تم تفعيل مكافأتك المجانية بنجاح!',
+              fr: 'Votre soin offert a été activé !',
+              amz: 'ⵜⴰⵙⵎⵖⵓⵔⵜ ⵏ ⴼⴰⴱⵓⵔ ⵜⵕⵥⵎ!',
+              en: 'Free care reward activated!',
+              es: '¡Tu premio gratuito ha sido activado!',
+            }),
         {
-          body: pickLang(lang, {
-            ar: 'تم خصم المبلغ تلقائياً من مجموع هذا الطلب.',
-            fr: 'La remise a été déduite automatiquement de votre total.',
-            amz: 'ⵉⵜⵜⵓⵙⵏⵇⵙ ⵓⵎⵉⴹⴰⵏ ⵙⴳ ⵓⵖⵔⵓⴷ.',
-            en: 'Discount automatically deducted from this booking total.',
-            es: 'Descuento aplicado automáticamente a tu total.',
-          }),
+          body:
+            tier.discountMAD > 0
+              ? pickLang(lang, {
+                  ar: 'تم خصم المبلغ تلقائياً من مجموع هذا الطلب.',
+                  fr: 'La remise a été déduite automatiquement de votre total.',
+                  amz: 'ⵉⵜⵜⵓⵙⵏⵇⵙ ⵓⵎⵉⴹⴰⵏ ⵙⴳ ⵓⵖⵔⵓⴷ.',
+                  en: 'Discount automatically deducted from this booking total.',
+                  es: 'Descuento aplicado automáticamente a tu total.',
+                })
+              : pickLang(lang, {
+                  ar: 'تم تسجيل مكافأة العناية المجانية لحجزك القادم.',
+                  fr: 'Votre soin offert est enregistré pour votre visite.',
+                  amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⵙⵉⵔⴷ / ⵓⵎⴰⵙⴽ ⴼⴰⴱⵓⵔ.',
+                  en: 'Complimentary care reward saved on your profile.',
+                  es: 'Premio gratuito registrado en tu perfil.',
+                }),
           type: 'success',
           skipSound: true,
         }
@@ -2499,7 +2524,11 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                       verifiedVisits={recognizedClient.verifiedVisits}
                       crmProfile={crmProfile}
                       loyaltyProgress={computeLoyaltyProgress(recognizedClient.verifiedVisits, lang)}
-                      pointsSummary={computeClientPointsSummary(recognizedClient.verifiedVisits, crmProfile)}
+                      pointsSummary={computeClientPointsSummary(
+                        recognizedClient.verifiedVisits,
+                        crmProfile,
+                        recognizedClient.pastBookings
+                      )}
                       isVip={recognizedClient.isVip}
                       customDiscountMAD={recognizedClient.customDiscountMAD}
                       lang={lang}

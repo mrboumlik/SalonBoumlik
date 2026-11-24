@@ -30,12 +30,13 @@ import {
   useCrmClients,
 } from '../utils/crmStore';
 import {
+  computeBookingLoyaltyPoints,
   computeClientPointsSummary,
   computeLoyaltyProgress,
   getMilestoneRewardLabel,
   getVerifiedVisitsCount,
   LOYALTY_POINT_TIERS,
-  POINTS_PER_VISIT,
+  LoyaltyPointRewardKind,
 } from '../utils/loyaltyEngine';
 import {
   getRememberedPhones,
@@ -170,7 +171,7 @@ export const LoyaltyProgramSection: React.FC<LoyaltyProgramSectionProps> = ({
     ? getVerifiedVisitsCount(clientBookings, crmProfile)
     : 0;
   const loyaltyProgress = computeLoyaltyProgress(verifiedVisits, lang);
-  const pointsSummary = computeClientPointsSummary(verifiedVisits, crmProfile);
+  const pointsSummary = computeClientPointsSummary(verifiedVisits, crmProfile, clientBookings);
 
   // Upcoming bookings that have NOT yet completed attendance
   const upcomingActiveBookings = useMemo(() => {
@@ -179,18 +180,23 @@ export const LoyaltyProgramSection: React.FC<LoyaltyProgramSectionProps> = ({
     );
   }, [clientBookings]);
 
+  const expectedUpcomingPoints = useMemo(
+    () =>
+      upcomingActiveBookings.reduce(
+        (sum, b) => sum + computeBookingLoyaltyPoints(b).points,
+        0
+      ),
+    [upcomingActiveBookings]
+  );
+
   const completedBookingsCount = useMemo(() => {
     return clientBookings.filter((b) => b.status === 'completed').length;
   }, [clientBookings]);
 
-  // Free VIP Haircut & Beard milestone (every 15 verified visits)
-  const nextFreeHaircutTarget = (Math.floor(verifiedVisits / 15) + 1) * 15;
-  const visitsToFreeHaircut = nextFreeHaircutTarget - verifiedVisits;
-  const haircutCycleSteps = verifiedVisits % 15;
-  const justUnlockedFreeHaircut = verifiedVisits > 0 && verifiedVisits % 15 === 0;
-  const haircutPct = justUnlockedFreeHaircut
-    ? 100
-    : Math.min(100, Math.round((haircutCycleSteps / 15) * 100));
+  const milestoneLadderProgressPct = Math.min(
+    100,
+    Math.round((Math.min(verifiedVisits, 20) / 20) * 100)
+  );
 
   const clientDisplayName =
     crmProfile?.clientName ||
@@ -281,6 +287,8 @@ export const LoyaltyProgramSection: React.FC<LoyaltyProgramSectionProps> = ({
     id: string;
     pointsCost: number;
     discountMAD: number;
+    rewardKind?: LoyaltyPointRewardKind;
+    rewardTitle?: string;
   }) => {
     if (!resolvedClientIdentity || !isIdentified || redeemingTierId) return;
     setRedeemingTierId(tier.id);
@@ -290,25 +298,47 @@ export const LoyaltyProgramSection: React.FC<LoyaltyProgramSectionProps> = ({
         clientName: clientDisplayName || 'Client',
         pointsCost: tier.pointsCost,
         discountMAD: tier.discountMAD,
+        rewardKind: tier.rewardKind,
+        label:
+          tier.discountMAD > 0
+            ? `🎟️ ${tier.rewardTitle || `-${tier.discountMAD} MAD`} · ${tier.pointsCost} pts`
+            : `🎁 ${tier.rewardTitle || 'Reward'} · ${tier.pointsCost} pts`,
         verifiedVisits,
         crmMap: crmClientsMap,
       });
       sendDualAlert(
-        pickLang(lang, {
-          ar: `تم استبدال ${tier.pointsCost} نقطة بخصم -${tier.discountMAD} MAD!`,
-          fr: `${tier.pointsCost} pts échangés contre -${tier.discountMAD} MAD !`,
-          amz: `ⵉⵜⵜⵓⵙⵏⴼⵍ ${tier.pointsCost} ⵏ ⵜⵏⵇⵇⵉⴹⵉⵏ ⵙ -${tier.discountMAD} MAD!`,
-          en: `Redeemed ${tier.pointsCost} pts for -${tier.discountMAD} MAD!`,
-          es: `¡${tier.pointsCost} pts canjeados por -${tier.discountMAD} MAD!`,
-        }),
+        tier.discountMAD > 0
+          ? pickLang(lang, {
+              ar: `تم استبدال ${tier.pointsCost} نقطة بخصم -${tier.discountMAD} MAD!`,
+              fr: `${tier.pointsCost} pts échangés contre -${tier.discountMAD} MAD !`,
+              amz: `ⵉⵜⵜⵓⵙⵏⴼⵍ ${tier.pointsCost} ⵏ ⵜⵏⵇⵇⵉⴹⵉⵏ ⵙ -${tier.discountMAD} MAD!`,
+              en: `Redeemed ${tier.pointsCost} pts for -${tier.discountMAD} MAD!`,
+              es: `¡${tier.pointsCost} pts canjeados por -${tier.discountMAD} MAD!`,
+            })
+          : pickLang(lang, {
+              ar: `تم استبدال ${tier.pointsCost} نقطة بمكافأة ${tier.rewardTitle || 'عناية مجانية'}!`,
+              fr: `${tier.pointsCost} pts échangés contre ${tier.rewardTitle || 'un soin offert'} !`,
+              amz: `ⵉⵜⵜⵓⵙⵏⴼⵍ ${tier.pointsCost} pts: ${tier.rewardTitle || 'ⴼⴰⴱⵓⵔ'}!`,
+              en: `Redeemed ${tier.pointsCost} pts for ${tier.rewardTitle || 'free service'}!`,
+              es: `¡${tier.pointsCost} pts canjeados por ${tier.rewardTitle || 'premio'}!`,
+            }),
         {
-          body: pickLang(lang, {
-            ar: 'سيُطبق الخصم تلقائياً عند حجزك القادم.',
-            fr: 'La remise sera appliquée automatiquement lors de votre prochaine réservation.',
-            amz: 'ⴰⵙⵉⴷⵔ ⴰⴷ ⵉⵜⵜⵓⵙⵏⴼⵍ ⵙ ⵜⵓⵎⴰⵏⵜ ⴳ ⵓⵙⵉⵀⵍ ⵏⵏⴽ ⵉⴷⴷⴰⵏ.',
-            en: 'The discount will be automatically applied to your next booking.',
-            es: 'El descuento se aplicará automáticamente en tu próxima reserva.',
-          }),
+          body:
+            tier.discountMAD > 0
+              ? pickLang(lang, {
+                  ar: 'سيُطبق الخصم تلقائياً عند حجزك القادم.',
+                  fr: 'La remise sera appliquée automatiquement lors de votre prochaine réservation.',
+                  amz: 'ⴰⵙⵉⴷⵔ ⴰⴷ ⵉⵜⵜⵓⵙⵏⴼⵍ ⵙ ⵜⵓⵎⴰⵏⵜ ⴳ ⵓⵙⵉⵀⵍ ⵉⴷⴷⴰⵏ.',
+                  en: 'The discount will be automatically applied to your next booking.',
+                  es: 'El descuento se aplicará automáticamente en tu próxima reserva.',
+                })
+              : pickLang(lang, {
+                  ar: 'تم تفعيل مكافأتك المجانية لحجزك القادم بالصالون.',
+                  fr: 'Votre soin offert est activé pour votre prochaine visite au salon.',
+                  amz: 'ⵜⴰⵙⵎⵖⵓⵔⵜ ⵏⵏⴽ ⵜⵡⵊⴷ ⵉ ⵜⵉⵔⵣⵉ ⵉⴷⴷⴰⵏ.',
+                  en: 'Your complimentary care reward is active for your next salon visit.',
+                  es: 'Tu premio gratuito está listo para tu próxima visita.',
+                }),
           type: 'success',
         }
       );
@@ -442,11 +472,11 @@ export const LoyaltyProgramSection: React.FC<LoyaltyProgramSectionProps> = ({
       visits: 5,
       title: getMilestoneRewardLabel(5, lang),
       subtitle: pickLang(lang, {
-        ar: '5 زيارات مؤكدة = 50 نقطة',
-        fr: '5 visites confirmées = 50 pts',
-        amz: '5 ⵜⵉⵔⵣⵉⵡⵉⵏ = 50 ⵜⵉⵏⵇⵇⵉⴹⵉⵏ',
-        en: '5 verified visits = 50 pts',
-        es: '5 visitas verificadas = 50 pts',
+        ar: 'ابتداءً من الزيارة 5 المؤكدة',
+        fr: 'Dès la 5e visite confirmée',
+        amz: 'ⵙⴳ 5 ⵜⵉⵔⵣⵉⵡⵉⵏ',
+        en: 'Unlocked at 5 verified visits',
+        es: 'A partir de 5 visitas',
       }),
       icon: Gift,
     },
@@ -454,11 +484,11 @@ export const LoyaltyProgramSection: React.FC<LoyaltyProgramSectionProps> = ({
       visits: 10,
       title: getMilestoneRewardLabel(10, lang),
       subtitle: pickLang(lang, {
-        ar: '10 زيارات مؤكدة = 100 نقطة',
-        fr: '10 visites confirmées = 100 pts',
-        amz: '10 ⵜⵉⵔⵣⵉⵡⵉⵏ = 100 ⵜⵉⵏⵇⵇⵉⴹⵉⵏ',
-        en: '10 verified visits = 100 pts',
-        es: '10 visitas verificadas = 100 pts',
+        ar: 'عناية منعشة عند الزيارة 10',
+        fr: 'Soin offert à la 10e visite',
+        amz: 'ⴰⵙⵓⵊⵊⵉ ⴳ 10 ⵜⵉⵔⵣⵉⵡⵉⵏ',
+        en: 'Unlocked at 10 verified visits',
+        es: 'A partir de 10 visitas',
       }),
       icon: Sparkles,
     },
@@ -466,13 +496,25 @@ export const LoyaltyProgramSection: React.FC<LoyaltyProgramSectionProps> = ({
       visits: 15,
       title: getMilestoneRewardLabel(15, lang),
       subtitle: pickLang(lang, {
-        ar: '15 زيارة مؤكدة = حلاقة مجانية VIP',
-        fr: '15 visites = Coupe VIP Offerte',
-        amz: '15 ⵜⵉⵔⵣⵉⵡⵉⵏ = ⴰⵣⵣⴰⵔ VIP ⴼⴰⴱⵓⵔ',
-        en: '15 verified visits = Free VIP Haircut',
-        es: '15 visitas = Corte VIP Gratis',
+        ar: 'خصم متوازن بعد 15 زيارة مؤكدة',
+        fr: 'Remise après 15 visites confirmées',
+        amz: 'ⴰⵙⵙⵏⵇⵙ ⴷⴼⴼⵉⵔ 15',
+        en: 'Unlocked at 15 verified visits',
+        es: 'A partir de 15 visitas',
       }),
-      icon: Scissors,
+      icon: Coins,
+    },
+    {
+      visits: 20,
+      title: getMilestoneRewardLabel(20, lang),
+      subtitle: pickLang(lang, {
+        ar: 'مكافأة VIP عند 20+ زيارة',
+        fr: 'Avantage VIP dès 20+ visites',
+        amz: 'VIP ⵙⴳ 20+ ⵜⵉⵔⵣⵉⵡⵉⵏ',
+        en: 'VIP reward at 20+ visits',
+        es: 'Premio VIP a las 20+ visitas',
+      }),
+      icon: Crown,
     },
   ];
 
@@ -500,37 +542,37 @@ export const LoyaltyProgramSection: React.FC<LoyaltyProgramSectionProps> = ({
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-slate-900 dark:text-white font-display tracking-tight text-balance">
             {lang === 'ar' ? (
               <>
-                اقترب من <span className="text-gold-gradient">حلاقتك المجانية وخصوماتك</span>
+                اجمع نقاطك واحصل على <span className="text-gold-gradient">مكافآت وخصومات حصرية</span>
               </>
             ) : lang === 'amz' ? (
               <>
-                ⴰⵣⵣⴰⵔ ⵏ <span className="text-gold-gradient">ⴼⴰⴱⵓⵔ ⴷ ⵜⵏⵇⵇⵉⴹⵉⵏ</span>
+                ⵙⵎⵓⵏ ⵜⵉⵏⵇⵇⵉⴹⵉⵏ <span className="text-gold-gradient">ⵉ ⵜⵙⵎⵖⵓⵔⵉⵏ ⵏ ⴼⴰⴱⵓⵔ</span>
               </>
             ) : lang === 'en' ? (
               <>
-                Track Your Progress Toward a{' '}
-                <span className="text-gold-gradient">Free Haircut &amp; Rewards</span>
+                Earn Service Points Toward{' '}
+                <span className="text-gold-gradient">Care Rewards &amp; Discounts</span>
               </>
             ) : lang === 'es' ? (
               <>
-                Sigue Tu Progreso Hacia Tu{' '}
-                <span className="text-gold-gradient">Corte Gratis y Descuentos</span>
+                Acumula Puntos Por Servicio Para{' '}
+                <span className="text-gold-gradient">Premios y Descuentos</span>
               </>
             ) : (
               <>
-                Votre Progression vers la{' '}
-                <span className="text-gold-gradient">Coupe Offerte &amp; Remises</span>
+                Cumulez Vos Points par Service pour{' '}
+                <span className="text-gold-gradient">Soins Offerts &amp; Remises</span>
               </>
             )}
           </h2>
 
           <p className="text-sm sm:text-base text-slate-600 dark:text-zinc-300 font-body max-w-2xl mx-auto">
             {pickLang(lang, {
-              ar: `كل زيارة يتم تأكيد حضورها في الصالون تمنحك +${POINTS_PER_VISIT} نقاط ولاء وتقربك مباشرة من غسل الشعر المجاني، خصومات تصل إلى -70 MAD، والحلاقة المجانية الكاملة.`,
-              fr: `Chaque visite confirmée au salon vous rapporte +${POINTS_PER_VISIT} points de fidélité et débloque des shampoings offerts, jusqu'à -70 MAD de remise et votre Coupe VIP gratuite.`,
-              amz: `ⴽⵓ ⵜⵉⵔⵣⵉ ⵜⴰⵎⴰⴷⴷⵓⴷⵜ ⵜⵜⴰⴽⴰ +${POINTS_PER_VISIT} ⵜⵏⵇⵇⵉⴹⵉⵏ ⵉ ⵜⵙⵎⵖⵓⵔⵉⵏ ⴷ ⵓⵣⵣⴰⵔ ⵏ ⴼⴰⴱⵓⵔ.`,
-              en: `Every verified salon visit earns +${POINTS_PER_VISIT} loyalty points and unlocks free washes, up to -70 MAD discounts, and a free VIP Haircut.`,
-              es: `Cada visita verificada en el salón suma +${POINTS_PER_VISIT} puntos de fidelidad y desbloquea lavados gratis, hasta -70 MAD de descuento y un corte VIP gratis.`,
+              ar: 'كل زيارة يتم تأكيد حضورها في الصالون تمنحك +3 إلى +22 نقطة ولاء حسب الخدمات المختارة، وتفتح لك بعد 5 زيارات مؤكدة مكافآت متدرجة: غسل شعر مجاني، ماسك للوجه، وتخفيضات حتى -10 MAD.',
+              fr: 'Chaque visite confirmée au salon rapporte +3 à +22 points selon vos prestations et débloque dès la 5e visite : shampoing offert, masque visage gratuit et remises jusqu’à -10 MAD.',
+              amz: 'ⴽⵓ ⵜⵉⵔⵣⵉ ⵜⴰⵎⴰⴷⴷⵓⴷⵜ ⵜⵜⴰⴽⴰ +3 ⴰⵔ +22 pts ⵙ ⵜⵡⵓⵔⵉ, ⵜⵕⵥⵎ ⵜⵉⵙⵎⵖⵓⵔⵉⵏ ⵙⴳ 5 ⵜⵉⵔⵣⵉⵡⵉⵏ.',
+              en: 'Every verified salon visit earns +3 to +22 points calibrated to your chosen services, unlocking progressive rewards starting after 5 confirmed visits: free hair wash, facial mask, and -5 to -10 MAD VIP discounts.',
+              es: 'Cada visita verificada suma +3 a +22 puntos según el servicio y desbloquea premios desde la 5.ª visita: lavado gratis, mascarilla y descuentos de hasta -10 MAD.',
             })}
           </p>
         </div>
@@ -688,57 +730,57 @@ export const LoyaltyProgramSection: React.FC<LoyaltyProgramSectionProps> = ({
               lang={lang}
             />
 
-            {/* Free Haircut 15-Visit Progress Bar + Live Upcoming Booking Sync */}
+            {/* Progressive Milestone Ladder (5, 10, 15, 20 Confirmed Visits) + Live Upcoming Booking Sync */}
             <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900/90 border border-slate-200 dark:border-zinc-800 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
-                    <Scissors className="w-4 h-4" />
+                    <Gift className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-sm font-black text-slate-900 dark:text-white truncate">
                       {pickLang(lang, {
-                        ar: 'مسار الحلاقة ولحية VIP المجانية',
-                        fr: 'Progression vers la Coupe VIP Offerte',
-                        amz: 'ⴰⵣⵣⴰⵔ ⴷ ⵜⴰⵎⴰⵔⵜ VIP ⴼⴰⴱⵓⵔ',
-                        en: 'Progress Toward Free VIP Haircut',
-                        es: 'Progreso hacia el Corte VIP Gratis',
+                        ar: 'مراحل مكافآت الزيارات المؤكدة (بدءاً من 5 زيارات)',
+                        fr: 'Paliers de Récompenses (dès 5 visites confirmées)',
+                        amz: 'ⵜⵉⵙⵎⵖⵓⵔⵉⵏ ⵏ ⵜⵉⵔⵣⵉⵡⵉⵏ (ⵙⴳ 5 ⵜⵉⵔⵣⵉⵡⵉⵏ)',
+                        en: 'Progressive Visit Milestones (Starting at 5 Visits)',
+                        es: 'Premios Progresivos (desde 5 visitas verificadas)',
                       })}
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-zinc-400">
-                      {justUnlockedFreeHaircut
+                      {loyaltyProgress.justUnlockedRewardTitle
                         ? pickLang(lang, {
-                            ar: 'مبروك! حلاقة ولحية مجانية مفتوحة وجاهزة الآن',
-                            fr: 'Félicitations ! Votre Coupe VIP gratuite est débloquée',
-                            amz: 'ⴰⵣⵣⴰⵔ ⵏ VIP ⴼⴰⴱⵓⵔ ⵉⵕⵥⵎ ⵖⵉⵍⴰⴷ',
-                            en: 'Congrats! Your Free VIP Haircut is unlocked now',
-                            es: '¡Felicidades! Tu Corte VIP gratis está desbloqueado',
+                            ar: `مبروك! مكافأة مفتوحة الآن: ${loyaltyProgress.justUnlockedRewardTitle}`,
+                            fr: `Félicitations ! Récompense débloquée : ${loyaltyProgress.justUnlockedRewardTitle}`,
+                            amz: `ⵜⴰⵙⵎⵖⵓⵔⵜ ⵉⵕⵥⵎⵏ : ${loyaltyProgress.justUnlockedRewardTitle}`,
+                            en: `Unlocked now: ${loyaltyProgress.justUnlockedRewardTitle}`,
+                            es: `Desbloqueado ahora: ${loyaltyProgress.justUnlockedRewardTitle}`,
                           })
                         : pickLang(lang, {
-                            ar: `متبقي ${visitsToFreeHaircut} ${visitsToFreeHaircut === 1 ? 'زيارة مؤكدة' : 'زيارات مؤكدة'} نحو الزيارة رقم ${nextFreeHaircutTarget}`,
-                            fr: `Plus que ${visitsToFreeHaircut} visite${visitsToFreeHaircut > 1 ? 's' : ''} confirmée${visitsToFreeHaircut > 1 ? 's' : ''} avant la ${nextFreeHaircutTarget}e`,
-                            amz: `ⵉⵖⴰⵎⴰ ${visitsToFreeHaircut} ⵏ ⵜⵉⵔⵣⴰ ⴰⵔ ⵜⵉⵔⵣⵉ ${nextFreeHaircutTarget}`,
-                            en: `${visitsToFreeHaircut} verified visit${visitsToFreeHaircut > 1 ? 's' : ''} left until visit #${nextFreeHaircutTarget}`,
-                            es: `Faltan ${visitsToFreeHaircut} visita${visitsToFreeHaircut > 1 ? 's' : ''} para la visita n.º ${nextFreeHaircutTarget}`,
+                            ar: `متبقي ${loyaltyProgress.visitsRemaining} ${loyaltyProgress.visitsRemaining === 1 ? 'زيارة مؤكدة' : 'زيارات مؤكدة'} للوصول إلى ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`,
+                            fr: `Plus que ${loyaltyProgress.visitsRemaining} visite${loyaltyProgress.visitsRemaining > 1 ? 's' : ''} avant le palier ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`,
+                            amz: `ⵉⵖⴰⵎⴰ ${loyaltyProgress.visitsRemaining} ⵉ ${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`,
+                            en: `${loyaltyProgress.visitsRemaining} verified visit${loyaltyProgress.visitsRemaining > 1 ? 's' : ''} left until #${loyaltyProgress.nextMilestone} (${loyaltyProgress.nextRewardTitle})`,
+                            es: `Faltan ${loyaltyProgress.visitsRemaining} visita${loyaltyProgress.visitsRemaining > 1 ? 's' : ''} para el nivel ${loyaltyProgress.nextMilestone}`,
                           })}
                     </p>
                   </div>
                 </div>
 
                 <span className="font-mono font-black text-base text-amber-600 dark:text-amber-400 tabular-nums">
-                  {justUnlockedFreeHaircut ? '15/15' : `${haircutCycleSteps}/15`}
+                  {verifiedVisits}/20
                 </span>
               </div>
 
               <div className="w-full h-2.5 rounded-full bg-slate-200 dark:bg-zinc-800 overflow-hidden">
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all duration-500"
-                  style={{ width: `${haircutPct}%` }}
+                  style={{ width: `${milestoneLadderProgressPct}%` }}
                 />
               </div>
 
-              {/* 3 Milestone Checkpoints (5, 10, 15 Visits) */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+              {/* 4 Progressive Milestone Checkpoints (5, 10, 15, 20 Visits) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
                 {milestoneCards.map((m) => {
                   const Icon = m.icon;
                   const unlocked = verifiedVisits >= m.visits;
@@ -787,18 +829,18 @@ export const LoyaltyProgramSection: React.FC<LoyaltyProgramSectionProps> = ({
                     <span>
                       {upcomingActiveBookings.length > 0
                         ? pickLang(lang, {
-                            ar: `لديك ${upcomingActiveBookings.length} موعد قادم (${upcomingActiveBookings[0].date} · ${upcomingActiveBookings[0].timeSlot === 'FLEXIBLE' ? 'مرن' : upcomingActiveBookings[0].timeSlot}) سيضيف +${upcomingActiveBookings.length * POINTS_PER_VISIT} نقطة عند تأكيد الحضور.`,
-                            fr: `${upcomingActiveBookings.length} RDV à venir (${upcomingActiveBookings[0].date}) créditera +${upcomingActiveBookings.length * POINTS_PER_VISIT} pts après votre visite.`,
-                            amz: `ⵖⵓⵔⴽ ${upcomingActiveBookings.length} ⵏ ⵓⵙⵉⵀⵍ (${upcomingActiveBookings[0].date}) ⴰⴷ ⵢⴰⵡⵉ +${upcomingActiveBookings.length * POINTS_PER_VISIT} ⵜⵏⵇⵇⵉⴹⵉⵏ.`,
-                            en: `${upcomingActiveBookings.length} upcoming appointment(s) (${upcomingActiveBookings[0].date}) will add +${upcomingActiveBookings.length * POINTS_PER_VISIT} pts upon attendance.`,
-                            es: `${upcomingActiveBookings.length} cita(s) próxima(s) (${upcomingActiveBookings[0].date}) sumarán +${upcomingActiveBookings.length * POINTS_PER_VISIT} pts al asistir.`,
+                            ar: `لديك ${upcomingActiveBookings.length} موعد قادم (${upcomingActiveBookings[0].date} · ${upcomingActiveBookings[0].timeSlot === 'FLEXIBLE' ? 'طابور ذكي' : upcomingActiveBookings[0].timeSlot}) سيضيف +${expectedUpcomingPoints} نقطة عند تأكيد الحضور.`,
+                            fr: `${upcomingActiveBookings.length} RDV à venir (${upcomingActiveBookings[0].date}) créditera +${expectedUpcomingPoints} pts après votre visite.`,
+                            amz: `ⵖⵓⵔⴽ ${upcomingActiveBookings.length} ⵏ ⵓⵙⵉⵀⵍ (${upcomingActiveBookings[0].date}) ⴰⴷ ⵢⴰⵡⵉ +${expectedUpcomingPoints} ⵜⵏⵇⵇⵉⴹⵉⵏ.`,
+                            en: `${upcomingActiveBookings.length} upcoming appointment(s) (${upcomingActiveBookings[0].date}) will add +${expectedUpcomingPoints} pts upon attendance.`,
+                            es: `${upcomingActiveBookings.length} cita(s) próxima(s) (${upcomingActiveBookings[0].date}) sumarán +${expectedUpcomingPoints} pts al asistir.`,
                           })
                         : pickLang(lang, {
-                            ar: `الزيارات المكتملة في السجل: ${completedBookingsCount} · يتم احتساب النقاط فور تأكيد الحضور بالصالون.`,
-                            fr: `${completedBookingsCount} visite(s) complétée(s) · Points crédités dès confirmation au salon.`,
+                            ar: `الزيارات المكتملة في السجل: ${completedBookingsCount} · تُحتسب النقاط حسب خدمات كل زيارة فور تأكيد الحضور بالصالون.`,
+                            fr: `${completedBookingsCount} visite(s) complétée(s) · Points crédités selon vos services dès confirmation au salon.`,
                             amz: `${completedBookingsCount} ⵏ ⵜⵉⵔⵣⴰ ⵉⵎⴷⴰⵏ · ⵜⵉⵏⵇⵇⵉⴹⵉⵏ ⵜⵜⵓⵃⵙⴰⴱⵏⵜ ⴳ ⵓⵙⴰⵍⵓⵏ.`,
-                            en: `${completedBookingsCount} completed visit(s) · Points credited upon salon check-in.`,
-                            es: `${completedBookingsCount} visita(s) completada(s) · Puntos acreditados al confirmar asistencia.`,
+                            en: `${completedBookingsCount} completed visit(s) · Service points credited upon salon check-in.`,
+                            es: `${completedBookingsCount} visita(s) completada(s) · Puntos por servicio al confirmar asistencia.`,
                           })}
                     </span>
                   </div>
@@ -865,6 +907,8 @@ export const LoyaltyProgramSection: React.FC<LoyaltyProgramSectionProps> = ({
                                 id: tier.id,
                                 pointsCost: tier.pointsCost,
                                 discountMAD: tier.discountMAD,
+                                rewardKind: tier.rewardKind,
+                                rewardTitle: tier.label[langKey],
                               })
                             }
                             className="min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50 transition-colors"
@@ -929,11 +973,11 @@ export const LoyaltyProgramSection: React.FC<LoyaltyProgramSectionProps> = ({
               <Scissors className="w-4 h-4" />
               <span>
                 {pickLang(lang, {
-                  ar: 'احجز موعدك الآن واجمع +10 نقاط',
-                  fr: 'Réserver maintenant & gagner +10 pts',
-                  amz: 'ⵃⵊⵣ ⴰⵙⵉⵀⵍ ⵏⵏⴽ +10 ⵜⵏⵇⵇⵉⴹⵉⵏ',
-                  en: 'Book Now & Earn +10 Points',
-                  es: 'Reserva ahora y gana +10 pts',
+                  ar: 'احجز موعدك الآن واجمع نقاط الولاء',
+                  fr: 'Réserver maintenant & cumuler des points',
+                  amz: 'ⵃⵊⵣ ⴰⵙⵉⵀⵍ ⵏⵏⴽ ⵙ ⵜⵏⵇⵇⵉⴹⵉⵏ',
+                  en: 'Book Now & Earn Loyalty Points',
+                  es: 'Reserva ahora y gana puntos',
                 })}
               </span>
             </button>

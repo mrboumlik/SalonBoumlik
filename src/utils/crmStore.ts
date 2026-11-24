@@ -15,9 +15,10 @@ import {
   updateBookingStatus,
 } from './bookingStore';
 import {
+  computeBookingLoyaltyPoints,
   computeClientPointsSummary,
   getMilestoneRewardLabel,
-  POINTS_PER_VISIT,
+  LoyaltyPointRewardKind,
 } from './loyaltyEngine';
 import { dispatchClientBackgroundPush } from './webPushClient';
 
@@ -273,24 +274,28 @@ export function buildCrmClientSummaries(
     const storedProfile =
       crmMap[client.id] ||
       client.allDocIds.map((id) => crmMap[id]).find(Boolean);
-    const pointsSummary = computeClientPointsSummary(canonicalVerified, {
-      ...(storedProfile || {
-        id: client.id,
-        normalizedPhone: client.normalizedPhone,
-        phoneDisplay: client.phoneDisplay,
-        clientName: client.clientName,
-        isVip: client.isVip,
-        noShowCount: client.noShowCount,
-        isBanned: client.isBanned,
-        freeWashesRedeemed: client.freeWashesRedeemed,
-        customDiscountMAD: client.customDiscountMAD,
-        verifiedVisits: client.verifiedVisits,
-        updatedAt: new Date().toISOString(),
-      }),
-      loyaltyPoints: client.loyaltyPoints,
-      pointsEarnedTotal: client.pointsEarnedTotal,
-      pointsRedeemedTotal: client.pointsRedeemedTotal,
-    });
+    const pointsSummary = computeClientPointsSummary(
+      canonicalVerified,
+      {
+        ...(storedProfile || {
+          id: client.id,
+          normalizedPhone: client.normalizedPhone,
+          phoneDisplay: client.phoneDisplay,
+          clientName: client.clientName,
+          isVip: client.isVip,
+          noShowCount: client.noShowCount,
+          isBanned: client.isBanned,
+          freeWashesRedeemed: client.freeWashesRedeemed,
+          customDiscountMAD: client.customDiscountMAD,
+          verifiedVisits: client.verifiedVisits,
+          updatedAt: new Date().toISOString(),
+        }),
+        loyaltyPoints: client.loyaltyPoints,
+        pointsEarnedTotal: client.pointsEarnedTotal,
+        pointsRedeemedTotal: client.pointsRedeemedTotal,
+      },
+      sortedBookings
+    );
     const earnedWashes = Math.floor(canonicalVerified / 5);
     const eligibleFreeWashes = Math.max(0, earnedWashes - client.freeWashesRedeemed);
     return {
@@ -479,6 +484,7 @@ export interface ConfirmAttendanceResult {
   profile: CrmClientProfile;
   previousVerifiedVisits: number;
   newVerifiedVisits: number;
+  pointsEarned: number;
   unlockedMilestone: number | null;
   alreadyCompleted: boolean;
 }
@@ -522,15 +528,24 @@ export async function confirmClientAttendance(
       profile: savedProfile,
       previousVerifiedVisits: stableVerified,
       newVerifiedVisits: stableVerified,
+      pointsEarned: 0,
       unlockedMilestone: null,
       alreadyCompleted: true,
     };
   }
 
   const nextVerifiedVisits = priorVerified + 1;
-  const currentPointsSummary = computeClientPointsSummary(priorVerified, existing);
-  const nextLoyaltyPoints = currentPointsSummary.pointsBalance + POINTS_PER_VISIT;
-  const nextEarnedTotal = currentPointsSummary.pointsEarnedTotal + POINTS_PER_VISIT;
+  const priorBookingsForClient = digits
+    ? allBookings.filter((b) => normalizeMoroccanPhoneDigits(b.clientPhone) === digits)
+    : [];
+  const currentPointsSummary = computeClientPointsSummary(
+    priorVerified,
+    existing,
+    priorBookingsForClient
+  );
+  const bookingPoints = computeBookingLoyaltyPoints(booking).points;
+  const nextLoyaltyPoints = currentPointsSummary.pointsBalance + bookingPoints;
+  const nextEarnedTotal = currentPointsSummary.pointsEarnedTotal + bookingPoints;
 
   const unlockedMilestone =
     nextVerifiedVisits > 0 && nextVerifiedVisits % 5 === 0 ? nextVerifiedVisits : null;
@@ -542,8 +557,8 @@ export async function confirmClientAttendance(
   const noteToClient =
     booking.adminNotes ||
     (unlockedMilestone
-      ? `تم تأكيد حضورك مع ${booking.barberName}! تهانينا على بلوغ الزيارة المؤكدة رقم ${nextVerifiedVisits}: ${getMilestoneRewardLabel(unlockedMilestone, booking.clientLanguage || 'ar')} (+${POINTS_PER_VISIT} نقطة ولاء).`
-      : `تم تأكيد حضورك بنجاح مع ${booking.barberName} وإضافة +${POINTS_PER_VISIT} نقطة ولاء (الرصيد: ${nextLoyaltyPoints} نقطة).`);
+      ? `تم تأكيد حضورك مع ${booking.barberName}! تهانينا على بلوغ الزيارة المؤكدة رقم ${nextVerifiedVisits}: ${getMilestoneRewardLabel(unlockedMilestone, booking.clientLanguage || 'ar')} (+${bookingPoints} نقطة ولاء).`
+      : `تم تأكيد حضورك بنجاح مع ${booking.barberName} وإضافة +${bookingPoints} نقطة ولاء (الرصيد: ${nextLoyaltyPoints} نقطة).`);
 
   const updatedBooking = await markBookingAttendanceCompleted(
     booking.id,
@@ -574,12 +589,12 @@ export async function confirmClientAttendance(
     tag: `sb-attended-${booking.id}`,
     title:
       cLang === 'ar'
-        ? `Salon Boumlik • تم تأكيد حضورك (+${POINTS_PER_VISIT} نقطة ولاء)`
-        : `Salon Boumlik • Présence confirmée (+${POINTS_PER_VISIT} pts)`,
+        ? `Salon Boumlik • تم تأكيد حضورك (+${bookingPoints} نقطة ولاء)`
+        : `Salon Boumlik • Présence confirmée (+${bookingPoints} pts)`,
     body:
       cLang === 'ar'
-        ? `تم تسجيل حضورك للتذكرة ${booking.ticketNumber} وإضافة +${POINTS_PER_VISIT} نقطة. رصيدك الحالي: ${nextLoyaltyPoints} نقطة.`
-        : `Votre visite (${booking.ticketNumber}) est validée ! +${POINTS_PER_VISIT} pts ajoutés (solde : ${nextLoyaltyPoints} pts).`,
+        ? `تم تسجيل حضورك للتذكرة ${booking.ticketNumber} وإضافة +${bookingPoints} نقطة. رصيدك الحالي: ${nextLoyaltyPoints} نقطة.`
+        : `Votre visite (${booking.ticketNumber}) est validée ! +${bookingPoints} pts ajoutés (solde : ${nextLoyaltyPoints} pts).`,
   });
 
   return {
@@ -587,20 +602,22 @@ export async function confirmClientAttendance(
     profile: savedProfile,
     previousVerifiedVisits: priorVerified,
     newVerifiedVisits: nextVerifiedVisits,
+    pointsEarned: bookingPoints,
     unlockedMilestone,
     alreadyCompleted: false,
   };
 }
 
 /**
- * Redeems Loyalty Points from `crm_clients/{clientId}` into an instant service discount (MAD)
- * that automatically applies to the client's next booking.
+ * Redeems Loyalty Points from `crm_clients/{clientId}` into either a free care reward
+ * (Free Hair Wash / Free Facial Mask) or a modest instant MAD discount.
  */
 export async function redeemLoyaltyPointsForDiscount(params: {
   phone: string;
   clientName: string;
   pointsCost: number;
   discountMAD: number;
+  rewardKind?: LoyaltyPointRewardKind;
   label?: string;
   verifiedVisits?: number;
   crmMap?: Record<string, CrmClientProfile>;
@@ -617,7 +634,15 @@ export async function redeemLoyaltyPointsForDiscount(params: {
 
   const nextBalance = Math.max(0, summary.pointsBalance - params.pointsCost);
   const nextRedeemed = summary.pointsRedeemedTotal + params.pointsCost;
-  const nextDiscount = (existing?.customDiscountMAD ?? 0) + Math.max(0, Math.round(params.discountMAD));
+  const appliedDiscount = Math.max(0, Math.round(params.discountMAD));
+  const nextDiscount = (existing?.customDiscountMAD ?? 0) + appliedDiscount;
+
+  const fallbackNote =
+    appliedDiscount > 0
+      ? `🎟️ استبدال ${params.pointsCost} نقطة ولاء ← خصم -${appliedDiscount} MAD`
+      : params.rewardKind === 'free_mask'
+      ? `🎁 استبدال ${params.pointsCost} نقطة ← ماسك للوجه مجاني`
+      : `🎁 استبدال ${params.pointsCost} نقطة ← غسل شعر مجاني`;
 
   const next = buildSanitizedCrmProfile(
     params.phone,
@@ -628,13 +653,16 @@ export async function redeemLoyaltyPointsForDiscount(params: {
       pointsEarnedTotal: summary.pointsEarnedTotal,
       pointsRedeemedTotal: nextRedeemed,
       customDiscountMAD: nextDiscount,
-      rewardNote:
-        params.label ||
-        `🎟️ استبدال ${params.pointsCost} نقطة ولاء ← خصم -${params.discountMAD} MAD`,
+      rewardNote: params.label || fallbackNote,
     },
     existing
   );
   const saved = await persistCrmProfile(next);
+
+  const pushBody =
+    appliedDiscount > 0
+      ? `تم استبدال ${params.pointsCost} نقطة ولاء بخصم -${appliedDiscount} MAD جاهز لموعدك القادم. الرصيد المتبقي: ${nextBalance} نقطة.`
+      : `تم استبدال ${params.pointsCost} نقطة ولاء بمكافأة ${params.rewardKind === 'free_mask' ? 'ماسك للوجه مجاني' : 'غسل شعر مجاني'} لطلبك القادم. الرصيد المتبقي: ${nextBalance} نقطة.`;
 
   void dispatchClientBackgroundPush({
     clientPhone: params.phone,
@@ -642,7 +670,7 @@ export async function redeemLoyaltyPointsForDiscount(params: {
     url: `/#track=${encodeURIComponent(params.phone)}`,
     tag: `sb-points-redeem-${id}-${nextRedeemed}`,
     title: 'Salon Boumlik • تحديث نقاط الولاء',
-    body: `تم استبدال ${params.pointsCost} نقطة ولاء بخصم -${params.discountMAD} MAD جاهز لموعدك القادم. الرصيد المتبقي: ${nextBalance} نقطة.`,
+    body: pushBody,
   });
 
   return saved;

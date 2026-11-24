@@ -14,6 +14,7 @@ import {
   computeClientPointsSummary,
   computeLoyaltyProgress,
   LOYALTY_POINT_TIERS,
+  LoyaltyPointRewardKind,
   LoyaltyProgressState,
 } from '../utils/loyaltyEngine';
 import { pickLang } from '../utils/i18n';
@@ -30,7 +31,12 @@ interface ReturningLoyaltyStatusCardProps {
   lang: Language;
   compact?: boolean;
   redeemingTierId?: string | null;
-  onRedeemTier?: (tier: { id: string; pointsCost: number; discountMAD: number }) => void;
+  onRedeemTier?: (tier: {
+    id: string;
+    pointsCost: number;
+    discountMAD: number;
+    rewardKind?: LoyaltyPointRewardKind;
+  }) => void;
 }
 
 export const ReturningLoyaltyStatusCard: React.FC<ReturningLoyaltyStatusCardProps> = ({
@@ -59,23 +65,10 @@ export const ReturningLoyaltyStatusCard: React.FC<ReturningLoyaltyStatusCardProp
     verifiedVisits > 0 &&
     Math.floor(verifiedVisits / 5) > (crmProfile?.freeWashesRedeemed ?? 0);
 
-  // Free VIP Haircut & Beard milestone occurs every 15 verified visits (Tier 3, 6, ...)
-  const nextFreeHaircutTarget = (Math.floor(progress.verifiedVisits / 15) + 1) * 15;
-  const visitsToFreeHaircut = nextFreeHaircutTarget - progress.verifiedVisits;
-  const haircutCycleSteps = progress.verifiedVisits % 15;
-  const haircutCyclePct = Math.round((haircutCycleSteps / 15) * 100);
-  const justUnlockedFreeHaircut =
-    progress.verifiedVisits > 0 && progress.verifiedVisits % 15 === 0;
+  const langKey: 'ar' | 'fr' | 'en' | 'es' =
+    lang === 'ar' || lang === 'en' || lang === 'es' ? lang : 'fr';
 
-  const pointsTierLabel = points.nextTier
-    ? lang === 'ar'
-      ? points.nextTier.label.ar
-      : lang === 'en'
-      ? points.nextTier.label.en
-      : lang === 'es'
-      ? points.nextTier.label.es
-      : points.nextTier.label.fr
-    : '';
+  const pointsTierLabel = points.nextTier ? points.nextTier.label[langKey] : '';
 
   const copy = {
     welcome:
@@ -110,29 +103,14 @@ export const ReturningLoyaltyStatusCard: React.FC<ReturningLoyaltyStatusCardProp
         : 'Pts Fidélité',
     nextRewardTitle:
       lang === 'ar'
-        ? 'المكافأة المجانية القادمة'
+        ? 'المكافأة القادمة'
         : lang === 'en'
-        ? 'Next Free Service Milestone'
+        ? 'Next Milestone Reward'
         : lang === 'es'
-        ? 'Próximo servicio gratis'
+        ? 'Próximo premio'
         : lang === 'amz'
-        ? 'ⵜⴰⵙⵎⵖⵓⵔⵜ ⵏ ⴼⴰⴱⵓⵔ'
-        : 'Prochaine Récompense Offerte',
-    freeHaircutStatus: justUnlockedFreeHaircut
-      ? pickLang(lang, {
-          ar: 'حلاقة ولحية VIP مجانية مفتوحة الآن!',
-          en: 'Free VIP Haircut & Beard unlocked now!',
-          amz: 'ⴰⵣⵣⴰⵔ VIP ⴼⴰⴱⵓⵔ ⵉⵍⵍⴰ ⵖⵉⵍⴰⴷ!',
-          es: '¡Corte y Barba VIP Gratis desbloqueado!',
-          fr: 'Coupe + Barbe VIP Offerte débloquée !',
-        })
-      : pickLang(lang, {
-          ar: `متبقي ${visitsToFreeHaircut} ${visitsToFreeHaircut === 1 ? 'زيارة' : 'زيارات'} على الحلاقة المجانية الكاملة (زيارة ${nextFreeHaircutTarget})`,
-          en: `${visitsToFreeHaircut} visit${visitsToFreeHaircut === 1 ? '' : 's'} left until your next Free Haircut (${nextFreeHaircutTarget}th)`,
-          es: `Faltan ${visitsToFreeHaircut} visitas para tu Corte VIP Gratis`,
-          amz: `ⵇⵇⵉⵎⵏ ${visitsToFreeHaircut} ⵉ ⵓⵙⴽⴽⵉⵔ ⵏ ⵓⵣⵣⴰⵔ ⴼⴰⴱⵓⵔ`,
-          fr: `Plus que ${visitsToFreeHaircut} visite${visitsToFreeHaircut > 1 ? 's' : ''} avant la Coupe VIP Offerte`,
-        }),
+        ? 'ⵜⴰⵙⵎⵖⵓⵔⵜ ⵉⴷⴷⴰⵏ'
+        : 'Prochaine Récompense',
     nextVisitsRemaining: pickLang(lang, {
       ar: `باقي ${progress.visitsRemaining} من ${progress.tierSize}`,
       en: `${progress.visitsRemaining} left (${progress.displayBracketCount}/5)`,
@@ -196,12 +174,12 @@ export const ReturningLoyaltyStatusCard: React.FC<ReturningLoyaltyStatusCardProp
       </div>
 
       {/* Active Reward / Discount Callouts */}
-      {(isFreeWashReady || resolvedDiscount > 0 || justUnlockedFreeHaircut) && (
+      {(isFreeWashReady || resolvedDiscount > 0 || Boolean(progress.justUnlockedRewardTitle)) && (
         <div className="flex flex-wrap items-center gap-1.5">
-          {justUnlockedFreeHaircut && (
+          {progress.justUnlockedRewardTitle && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500 text-black text-[11px] font-black shadow-xs">
               <Scissors className="w-3 h-3" />
-              <span>{copy.freeHaircutStatus}</span>
+              <span>{progress.justUnlockedRewardTitle}</span>
             </span>
           )}
           {isFreeWashReady && (
@@ -284,37 +262,43 @@ export const ReturningLoyaltyStatusCard: React.FC<ReturningLoyaltyStatusCardProp
           </div>
         </div>
 
-        {/* 2) Free Haircut Status + Loyalty Points Progress */}
+        {/* 2) Progressive Milestone Ladder & Loyalty Points Progress */}
         {!compact && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {/* Next Free Haircut Tracker */}
+            {/* Progressive 5 / 10 / 15 / 20 Milestones Summary */}
             <div className="p-2.5 rounded-xl bg-white/90 dark:bg-black/40 border border-stone-200/80 dark:border-zinc-800 space-y-1.5">
               <div className="flex items-center justify-between gap-1 text-[11px]">
                 <span className="font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1">
-                  <Scissors className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                  <Gift className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
                   <span>
                     {pickLang(lang, {
-                      ar: 'الحلاقة المجانية',
-                      amz: 'ⴰⵣⵣⴰⵔ ⴼⴰⴱⵓⵔ',
-                      en: 'Free Haircut',
-                      es: 'Corte Gratis',
-                      fr: 'Coupe Offerte',
+                      ar: 'محطات الولاء',
+                      amz: 'ⵜⵉⵙⵎⵖⵓⵔⵉⵏ',
+                      en: 'Milestones',
+                      es: 'Premios',
+                      fr: 'Paliers Fidélité',
                     })}
                   </span>
                 </span>
                 <span className="font-mono font-bold text-amber-700 dark:text-amber-300 tabular-nums">
-                  {haircutCycleSteps}/15
+                  {progress.verifiedVisits} {copy.visitsLabel}
                 </span>
               </div>
-              <div className="w-full h-1.5 rounded-full bg-stone-200 dark:bg-zinc-800 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-amber-500 transition-all duration-300"
-                  style={{ width: `${justUnlockedFreeHaircut ? 100 : haircutCyclePct}%` }}
-                />
+              <div className="grid grid-cols-2 gap-1 text-[10px]">
+                {progress.tiers.slice(0, 4).map((tier) => (
+                  <div
+                    key={tier.targetVisits}
+                    className={`px-1.5 py-1 rounded-md border truncate font-semibold ${
+                      tier.unlocked
+                        ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/35 text-emerald-800 dark:text-emerald-300'
+                        : 'bg-stone-50 dark:bg-zinc-900/70 border-stone-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400'
+                    }`}
+                    title={tier.rewardTitle}
+                  >
+                    {tier.targetVisits}: {tier.rewardTitle}
+                  </div>
+                ))}
               </div>
-              <p className="text-[10px] text-zinc-600 dark:text-zinc-400 leading-snug">
-                {copy.freeHaircutStatus}
-              </p>
             </div>
 
             {/* Loyalty Points Tier Bar */}
@@ -345,11 +329,11 @@ export const ReturningLoyaltyStatusCard: React.FC<ReturningLoyaltyStatusCardProp
                         fr: 'Prêt à échanger dès maintenant !',
                       })
                     : pickLang(lang, {
-                        ar: `متبقي ${points.pointsRemainingForNextTier} نقطة للخصم (+${points.pointsPerVisit}/زيارة)`,
-                        amz: `ⵇⵇⵉⵎⵏ ${points.pointsRemainingForNextTier} pts (+${points.pointsPerVisit})`,
-                        en: `${points.pointsRemainingForNextTier} pts left (+${points.pointsPerVisit}/visit)`,
-                        es: `Faltan ${points.pointsRemainingForNextTier} pts (+${points.pointsPerVisit}/visita)`,
-                        fr: `Encore ${points.pointsRemainingForNextTier} pts (+${points.pointsPerVisit}/visite)`,
+                        ar: `متبقي ${points.pointsRemainingForNextTier} نقطة (+3–22 حسب الخدمة)`,
+                        amz: `ⵇⵇⵉⵎⵏ ${points.pointsRemainingForNextTier} pts (+3–22)`,
+                        en: `${points.pointsRemainingForNextTier} pts left (+3–22 per service)`,
+                        es: `Faltan ${points.pointsRemainingForNextTier} pts (+3–22/servicio)`,
+                        fr: `Encore ${points.pointsRemainingForNextTier} pts (+3–22/service)`,
                       })}
                 </p>
               </div>
@@ -375,13 +359,16 @@ export const ReturningLoyaltyStatusCard: React.FC<ReturningLoyaltyStatusCardProp
                     id: tier.id,
                     pointsCost: tier.pointsCost,
                     discountMAD: tier.discountMAD,
+                    rewardKind: tier.rewardKind,
                   })
                 }
                 className="min-h-[36px] px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-[11px] font-mono tabular-nums cursor-pointer disabled:opacity-50 transition-colors"
               >
                 {redeemingTierId === tier.id
                   ? '...'
-                  : `${tier.pointsCost} pts → -${tier.discountMAD} MAD`}
+                  : tier.discountMAD > 0
+                  ? `${tier.pointsCost} pts → -${tier.discountMAD} MAD`
+                  : `${tier.pointsCost} pts → ${tier.label[langKey]}`}
               </button>
             )
           )}

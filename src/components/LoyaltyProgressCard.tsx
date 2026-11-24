@@ -4,7 +4,6 @@ import { CrmClientProfile, Language } from '../types';
 import {
   ClientLoyaltyPointsSummary,
   LoyaltyProgressState,
-  POINTS_PER_VISIT,
 } from '../utils/loyaltyEngine';
 import { pickLang } from '../utils/i18n';
 
@@ -30,21 +29,21 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
   const langKey: 'ar' | 'fr' | 'en' | 'es' =
     lang === 'ar' || lang === 'en' || lang === 'es' ? lang : 'fr';
 
-  // Free Service Target math: each milestone tier is 5 verified visits = 50 pts (10 pts / visit)
-  const pointsPerServiceTier = loyaltyProgress.tierSize * POINTS_PER_VISIT; // 50 pts
-  const earnedInCurrentServiceCycle = loyaltyProgress.justUnlockedMilestone
-    ? pointsPerServiceTier
-    : loyaltyProgress.stepsInCurrentBracket * POINTS_PER_VISIT;
-  const pointsToNextFreeService = loyaltyProgress.justUnlockedMilestone
+  // Free Service / Visit Milestone Target math (5 confirmed visits per progressive bracket)
+  const visitTierTarget = loyaltyProgress.tierSize; // 5 visits
+  const visitsInCurrentCycle = loyaltyProgress.justUnlockedMilestone
+    ? visitTierTarget
+    : loyaltyProgress.stepsInCurrentBracket;
+  const visitsRemainingToMilestone = loyaltyProgress.justUnlockedMilestone
     ? 0
-    : Math.max(0, loyaltyProgress.visitsRemaining * POINTS_PER_VISIT);
+    : Math.max(0, loyaltyProgress.visitsRemaining);
   const freeServicePct = loyaltyProgress.justUnlockedMilestone
     ? 100
-    : Math.min(100, Math.round((earnedInCurrentServiceCycle / pointsPerServiceTier) * 100));
+    : Math.min(100, Math.round((visitsInCurrentCycle / visitTierTarget) * 100));
 
-  // Discount Reward Target math from live Firebase points balance
+  // Points Reward Target math from live Firebase points balance
   const nextRewardTier = pointsSummary.nextTier;
-  const rewardCost = nextRewardTier?.pointsCost || 100;
+  const rewardCost = nextRewardTier?.pointsCost || 35;
   const rewardBalance = pointsSummary.pointsBalance;
   const pointsToNextDiscount = pointsSummary.pointsRemainingForNextTier;
   const discountRewardPct = pointsSummary.progressToNextTierPct;
@@ -53,10 +52,10 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
   // Active circular ring metrics based on toggle
   const isFreeServiceMode = ringMode === 'free_service';
   const ringPct = isFreeServiceMode ? freeServicePct : discountRewardPct;
-  const ringCurrent = isFreeServiceMode ? earnedInCurrentServiceCycle : rewardBalance;
-  const ringTarget = isFreeServiceMode ? pointsPerServiceTier : rewardCost;
-  const pointsRemaining = isFreeServiceMode ? pointsToNextFreeService : pointsToNextDiscount;
-  const isGoalReached = pointsRemaining === 0;
+  const ringCurrent = isFreeServiceMode ? visitsInCurrentCycle : rewardBalance;
+  const ringTarget = isFreeServiceMode ? visitTierTarget : rewardCost;
+  const remainingCount = isFreeServiceMode ? visitsRemainingToMilestone : pointsToNextDiscount;
+  const isGoalReached = remainingCount === 0;
 
   // SVG Circle geometry (crisp 124x124 viewBox)
   const radius = 50;
@@ -68,10 +67,10 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
       ? loyaltyProgress.justUnlockedRewardTitle || loyaltyProgress.nextRewardTitle
       : loyaltyProgress.nextRewardTitle
     : nextRewardTier
-    ? `${nextRewardTier.label[langKey]} (-${nextRewardTier.discountMAD} MAD)`
+    ? nextRewardTier.discountMAD > 0
+      ? `${nextRewardTier.label[langKey]} (-${nextRewardTier.discountMAD} MAD)`
+      : nextRewardTier.label[langKey]
     : '';
-
-  const visitsEquivalent = Math.max(0, Math.ceil(pointsRemaining / POINTS_PER_VISIT));
 
   return (
     <div className="p-4 sm:p-5 rounded-2xl bg-stone-50 dark:bg-gradient-to-br dark:from-zinc-900 dark:via-zinc-950 dark:to-black border border-amber-300 dark:border-amber-500/35 space-y-4">
@@ -103,7 +102,7 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
           </p>
         </div>
 
-        {/* Interactive Toggle: Free Service vs Discount Reward */}
+        {/* Interactive Toggle: Visit Milestone vs Points Reward */}
         <div className="inline-flex rounded-xl bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 p-0.5 text-[11px] font-bold self-start sm:self-auto">
           <button
             type="button"
@@ -117,11 +116,11 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
             <Gift className="w-3.5 h-3.5" />
             <span>
               {pickLang(lang, {
-                ar: 'خدمة مجانية',
-                fr: 'Service Offert',
-                amz: 'ⵜⴰⵏⴰⴼⵓⵜ ⴼⴰⴱⵓⵔ',
-                en: 'Free Service',
-                es: 'Servicio Gratis',
+                ar: 'مكافأة الزيارات',
+                fr: 'Paliers Visites',
+                amz: 'ⵜⵉⵔⵣⵉⵡⵉⵏ',
+                en: 'Visit Milestones',
+                es: 'Premios Visitas',
               })}
             </span>
           </button>
@@ -138,11 +137,11 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
             <Coins className="w-3.5 h-3.5" />
             <span>
               {pickLang(lang, {
-                ar: 'خصم بالنقاط',
+                ar: 'مكافآت النقاط',
                 fr: 'Remise Points',
                 amz: 'ⴰⵙⵉⴷⵔ ⵙ ⵜⵏⵇⵇⵉⴹⵉⵏ',
-                en: 'Points Reward',
-                es: 'Descuento Puntos',
+                en: 'Points Rewards',
+                es: 'Premios Puntos',
               })}
             </span>
           </button>
@@ -208,28 +207,36 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
               {ringCurrent} / {ringTarget}
             </span>
             <span className="text-[9px] text-stone-500 dark:text-zinc-400 font-semibold uppercase tracking-wider">
-              {pickLang(lang, {
-                ar: 'نقطة',
-                fr: 'pts',
-                amz: 'ⵜⵉⵏⵇⵇⵉⴹⵉⵏ',
-                en: 'pts',
-                es: 'pts',
-              })}
+              {isFreeServiceMode
+                ? pickLang(lang, {
+                    ar: 'زيارات',
+                    fr: 'visites',
+                    amz: 'ⵜⵉⵔⵣⴰ',
+                    en: 'visits',
+                    es: 'visitas',
+                  })
+                : pickLang(lang, {
+                    ar: 'نقطة',
+                    fr: 'pts',
+                    amz: 'ⵜⵉⵏⵇⵇⵉⴹⵉⵏ',
+                    en: 'pts',
+                    es: 'pts',
+                  })}
             </span>
           </div>
         </div>
 
-        {/* Remaining Points & Next Free Service / Reward Explanation */}
+        {/* Remaining Visits / Points & Next Reward Explanation */}
         <div className="flex-1 min-w-0 text-center sm:text-start space-y-2.5">
           <div>
             <span className="text-[11px] font-bold text-stone-500 dark:text-zinc-400 block">
               {isFreeServiceMode
                 ? pickLang(lang, {
-                    ar: `الخدمة المجانية التالية (المستوى ${loyaltyProgress.currentTierNumber}):`,
-                    fr: `Prochain service offert (Palier ${loyaltyProgress.currentTierNumber}) :`,
-                    amz: `ⵜⴰⵏⴰⴼⵓⵜ ⴼⴰⴱⵓⵔ ⵉⴷⴷⴰⵏ (ⴰⵙⵡⵉⵔ ${loyaltyProgress.currentTierNumber}) :`,
-                    en: `Next Free Service (Tier ${loyaltyProgress.currentTierNumber}):`,
-                    es: `Próximo servicio gratis (Nivel ${loyaltyProgress.currentTierNumber}):`,
+                    ar: `المكافأة التالية (الزيارة ${loyaltyProgress.nextMilestone}):`,
+                    fr: `Prochain palier (${loyaltyProgress.nextMilestone} visites) :`,
+                    amz: `ⵜⴰⵙⵎⵖⵓⵔⵜ ⵉⴷⴷⴰⵏ (ⵜⵉⵔⵣⵉ ${loyaltyProgress.nextMilestone}) :`,
+                    en: `Next Visit Milestone (#${loyaltyProgress.nextMilestone}):`,
+                    es: `Próximo premio (Visita #${loyaltyProgress.nextMilestone}):`,
                   })
                 : pickLang(lang, {
                     ar: 'المكافأة القادمة لاستبدال النقاط:',
@@ -251,19 +258,19 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
               <span>
                 {isFreeServiceMode
                   ? pickLang(lang, {
-                      ar: 'مبروك! مكافأتك المجانية جاهزة للمطالبة في الصالون الآن.',
-                      fr: 'Félicitations ! Votre service offert est débloqué !',
-                      amz: 'ⵜⴰⵙⵎⵖⵓⵔⵜ ⵏⵏⴽ ⴼⴰⴱⵓⵔ ⵜⵡⵊⴷ ⵖⵉⵍⴰⴷ!',
-                      en: 'Congrats! Your free service reward is unlocked and ready!',
-                      es: '¡Felicidades! Tu servicio gratis está listo para reclamar.',
+                      ar: 'مبروك! مكافأتك جاهزة للمطالبة في الصالون الآن.',
+                      fr: 'Félicitations ! Votre récompense est débloquée au salon !',
+                      amz: 'ⵜⴰⵙⵎⵖⵓⵔⵜ ⵏⵏⴽ ⵜⵡⵊⴷ ⵖⵉⵍⴰⴷ!',
+                      en: 'Congrats! Your milestone reward is unlocked and ready!',
+                      es: '¡Felicidades! Tu premio está listo para reclamar.',
                     })
                   : allDiscountTiersUnlocked
                   ? pickLang(lang, {
-                      ar: 'لديك نقاط كافية لفتح أعلى خصم (-70 MAD)! يمكنك الاستبدال الآن.',
-                      fr: 'Tous les paliers débloqués ! Échangez votre remise ci-dessous.',
-                      amz: 'ⵜⵉⵙⵎⵖⵓⵔⵉⵏ ⴰⴽⴽⵯ ⵕⵥⵎⵏⵜ (-70 MAD)!',
-                      en: 'All discount tiers unlocked! Redeem your reward below.',
-                      es: '¡Todos los descuentos desbloqueados! Canjea abajo.',
+                      ar: 'لديك نقاط كافية لفتح أعلى خصم (-10 MAD VIP)! يمكنك الاستبدال الآن.',
+                      fr: 'Tous les paliers débloqués ! Échangez votre remise VIP (-10 MAD) ci-dessous.',
+                      amz: 'ⵜⵉⵙⵎⵖⵓⵔⵉⵏ ⴰⴽⴽⵯ ⵕⵥⵎⵏⵜ (-10 MAD VIP)!',
+                      en: 'All reward tiers unlocked! Redeem your -10 MAD VIP discount below.',
+                      es: '¡Todos los premios desbloqueados! Canjea -10 MAD VIP abajo.',
                     })
                   : pickLang(lang, {
                       ar: 'وصلت للهدف! يمكنك استبدال نقاطك الآن.',
@@ -277,45 +284,53 @@ export const LoyaltyProgressCard: React.FC<LoyaltyProgressCardProps> = ({
           ) : (
             <div className="p-3 rounded-xl bg-white dark:bg-zinc-900/90 border border-stone-200 dark:border-zinc-800 space-y-1">
               <div className="text-xs font-black text-slate-900 dark:text-white font-mono tabular-nums">
-                {lang === 'ar' ? (
-                  <>
-                    متبقي{' '}
-                    <span className="text-amber-700 dark:text-amber-400 text-sm">{pointsRemaining} نقطة</span>{' '}
-                    للحصول على المكافأة
-                  </>
-                ) : lang === 'amz' ? (
-                  <>
-                    ⵉⵖⴰⵎⴰ{' '}
-                    <span className="text-amber-700 dark:text-amber-400 text-sm">{pointsRemaining} pts</span>{' '}
-                    ⵉ ⵜⵙⵎⵖⵓⵔⵜ
-                  </>
-                ) : lang === 'en' ? (
-                  <>
-                    <span className="text-amber-700 dark:text-amber-400 text-sm">{pointsRemaining} points</span>{' '}
-                    until your next reward
-                  </>
-                ) : lang === 'es' ? (
-                  <>
-                    Faltan{' '}
-                    <span className="text-amber-700 dark:text-amber-400 text-sm">{pointsRemaining} puntos</span>{' '}
-                    para tu próxima recompensa
-                  </>
-                ) : (
-                  <>
-                    Plus que{' '}
-                    <span className="text-amber-700 dark:text-amber-400 text-sm">{pointsRemaining} points</span>{' '}
-                    avant votre récompense
-                  </>
-                )}
+                {isFreeServiceMode
+                  ? pickLang(lang, {
+                      ar: `متبقي ${remainingCount} ${remainingCount === 1 ? 'زيارة مؤكدة' : 'زيارات مؤكدة'} للحصول على المكافأة`,
+                      fr: `Plus que ${remainingCount} visite${remainingCount > 1 ? 's' : ''} confirmée${remainingCount > 1 ? 's' : ''}`,
+                      amz: `ⵉⵖⴰⵎⴰ ${remainingCount} ⵏ ⵜⵉⵔⵣⴰ ⵉ ⵜⵙⵎⵖⵓⵔⵜ`,
+                      en: `${remainingCount} verified visit${remainingCount === 1 ? '' : 's'} left until reward`,
+                      es: `Faltan ${remainingCount} visita${remainingCount === 1 ? '' : 's'} verificada${remainingCount === 1 ? '' : 's'}`,
+                    })
+                  : lang === 'ar' ? (
+                      <>
+                        متبقي{' '}
+                        <span className="text-amber-700 dark:text-amber-400 text-sm">{remainingCount} نقطة</span>{' '}
+                        للحصول على المكافأة
+                      </>
+                    ) : lang === 'amz' ? (
+                      <>
+                        ⵉⵖⴰⵎⴰ{' '}
+                        <span className="text-amber-700 dark:text-amber-400 text-sm">{remainingCount} pts</span>{' '}
+                        ⵉ ⵜⵙⵎⵖⵓⵔⵜ
+                      </>
+                    ) : lang === 'en' ? (
+                      <>
+                        <span className="text-amber-700 dark:text-amber-400 text-sm">{remainingCount} points</span>{' '}
+                        until your next reward
+                      </>
+                    ) : lang === 'es' ? (
+                      <>
+                        Faltan{' '}
+                        <span className="text-amber-700 dark:text-amber-400 text-sm">{remainingCount} puntos</span>{' '}
+                        para tu próxima recompensa
+                      </>
+                    ) : (
+                      <>
+                        Plus que{' '}
+                        <span className="text-amber-700 dark:text-amber-400 text-sm">{remainingCount} points</span>{' '}
+                        avant votre récompense
+                      </>
+                    )}
               </div>
 
               <div className="text-[11px] text-stone-600 dark:text-zinc-400">
                 {pickLang(lang, {
-                  ar: `يعادل ${visitsEquivalent} ${visitsEquivalent === 1 ? 'زيارة مؤكدة واحدة' : 'زيارات مؤكدة'} (+${POINTS_PER_VISIT} نقاط لكل زيارة)`,
-                  fr: `Équivalent à ${visitsEquivalent} ${visitsEquivalent === 1 ? 'visite confirmée' : 'visites confirmées'} (+${POINTS_PER_VISIT} pts/visite)`,
-                  amz: `ⵉⴳⴰ ⴰⵎ ${visitsEquivalent} ⵏ ⵜⵉⵔⵣⴰ (+${POINTS_PER_VISIT} pts/ⵜⵉⵔⵣⵉ)`,
-                  en: `Equivalent to ${visitsEquivalent} verified ${visitsEquivalent === 1 ? 'visit' : 'visits'} (+${POINTS_PER_VISIT} pts/visit)`,
-                  es: `Equivale a ${visitsEquivalent} ${visitsEquivalent === 1 ? 'visita verificada' : 'visitas verificadas'} (+${POINTS_PER_VISIT} pts/visita)`,
+                  ar: 'تُحتسب النقاط حسب الخدمة المختارة (+3 إلى +22 نقطة/زيارة) فور تأكيد الحضور.',
+                  fr: 'Points calculés selon vos services (+3 à +22 pts/visite) dès validation de présence.',
+                  amz: 'ⵜⵉⵏⵇⵇⵉⴹⵉⵏ ⵙ ⵜⵡⵓⵔⵉ (+3–22 pts/ⵜⵉⵔⵣⵉ) ⴷⴼⴼⵉⵔ ⵓⵙⵏⵜⵎ.',
+                  en: 'Points are earned per chosen service (+3 to +22 pts/visit) upon confirmed check-in.',
+                  es: 'Los puntos se calculan según el servicio (+3 a +22 pts/visita) al confirmar asistencia.',
                 })}
               </div>
             </div>

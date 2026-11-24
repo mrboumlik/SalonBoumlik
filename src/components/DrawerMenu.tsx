@@ -53,6 +53,7 @@ import {
 import { BarberStaff, Language } from '../types';
 import { FlagIcon } from './LanguageFlags';
 import { PWAInstallButton } from './PWAInstallButton';
+import { BrandMark } from './BrandMark';
 
 export type HomepageSectionKey =
   | 'services'
@@ -748,13 +749,10 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
             >
         {/* Drawer Header */}
         <div className="px-5 py-4 border-b border-stone-200 dark:border-zinc-800 flex items-center justify-between bg-white dark:bg-[#111318]">
-          <div className="flex items-center gap-3">
-            <div className="w-1.5 h-7 rounded-full bg-amber-600 dark:bg-amber-400" />
-            <div>
-              <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-wide font-display">
-                SALON <span className="text-amber-700 dark:text-amber-400">BOUMLIK</span>
-              </h2>
-              <p className="text-[11px] text-stone-500 dark:text-zinc-400 font-medium">
+          <div className="flex items-center gap-3 min-w-0">
+            <BrandMark className="h-9 w-auto object-contain flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[11px] text-stone-500 dark:text-zinc-400 font-semibold truncate">
                 {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
               </p>
             </div>
@@ -1125,7 +1123,14 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
 
                         {barber.whatsappNumber && (
                           <a
-                            href={`https://wa.me/${barber.whatsappNumber}`}
+                            href={`https://wa.me/${barber.whatsappNumber}?text=${encodeURIComponent(
+                              buildWhatsAppInquiryMessage({
+                                lang,
+                                requestType: 'booking',
+                                barberName: barber.name[lang] || barber.name.fr,
+                                includeMessagePrompt: true,
+                              })
+                            )}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center gap-1 transition-colors"

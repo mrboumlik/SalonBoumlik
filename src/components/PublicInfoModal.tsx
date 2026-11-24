@@ -15,6 +15,7 @@ import {
   Users,
   CheckCircle2,
   Mail,
+  Facebook,
 } from 'lucide-react';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
@@ -25,6 +26,8 @@ import {
   normalizeSalonWhatsappDigits,
 } from '../utils/salonSettingsStore';
 import { pickLang } from '../utils/i18n';
+import { buildWhatsAppInquiryMessage } from '../utils/whatsappAutomation';
+import { BrandMark } from './BrandMark';
 
 export type PublicInfoSection = 'about' | 'contact' | 'privacy' | 'terms';
 
@@ -118,13 +121,7 @@ export const PublicInfoModal: React.FC<PublicInfoModalProps> = ({
     <div className="space-y-5">
       <div className="rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-500/20 p-4 sm:p-5 space-y-2.5">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 border border-amber-200 dark:border-amber-500/30 p-1 flex items-center justify-center flex-shrink-0">
-            <img
-              src={SALON_INFO.media.logoClean}
-              alt="Salon Boumlik"
-              className="w-full h-full object-contain"
-            />
-          </div>
+          <BrandMark variant="pole" className="w-8 h-9 flex-shrink-0" />
           <div>
             <h3 className="text-base font-black text-slate-900 dark:text-white">
               {pickLang(lang, {
@@ -285,7 +282,13 @@ export const PublicInfoModal: React.FC<PublicInfoModalProps> = ({
         </a>
 
         <a
-          href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}`}
+          href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}?text=${encodeURIComponent(
+            buildWhatsAppInquiryMessage({
+              lang,
+              requestType: 'inquiry',
+              includeMessagePrompt: true,
+            })
+          )}`}
           target="_blank"
           rel="noopener noreferrer"
           className="p-4 rounded-2xl bg-stone-50 hover:bg-emerald-50/50 dark:bg-zinc-900/60 dark:hover:bg-emerald-950/20 border border-stone-200 dark:border-zinc-800 flex items-center gap-3 transition-colors"
@@ -304,27 +307,46 @@ export const PublicInfoModal: React.FC<PublicInfoModalProps> = ({
         </a>
 
         <a
-          href="https://www.instagram.com/h.a.boumlik"
+          href={SALON_INFO.social.instagram}
           target="_blank"
           rel="noopener noreferrer"
-          className="p-4 rounded-2xl bg-stone-50 hover:bg-amber-50/50 dark:bg-zinc-900/60 dark:hover:bg-zinc-900 border border-stone-200 dark:border-zinc-800 flex items-center gap-3 transition-colors"
+          className="p-4 rounded-2xl bg-stone-50 hover:bg-rose-50/50 dark:bg-zinc-900/60 dark:hover:bg-zinc-900 border border-stone-200 dark:border-zinc-800 flex items-center gap-3 transition-colors"
         >
-          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 flex items-center justify-center flex-shrink-0">
             <Instagram className="w-4 h-4" />
           </div>
           <div className="min-w-0">
             <div className="text-[11px] font-bold text-stone-500 dark:text-zinc-400">
-              Instagram
+              {pickLang(lang, { ar: 'إنستغرام', fr: 'Instagram', amz: 'Instagram', en: 'Instagram', es: 'Instagram' })}
             </div>
             <div dir="ltr" className="text-sm font-black font-mono text-slate-900 dark:text-white truncate">
-              @h.a.boumlik
+              @SalonBoumlik
+            </div>
+          </div>
+        </a>
+
+        <a
+          href={SALON_INFO.social.facebook}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-4 rounded-2xl bg-stone-50 hover:bg-blue-50/50 dark:bg-zinc-900/60 dark:hover:bg-zinc-900 border border-stone-200 dark:border-zinc-800 flex items-center gap-3 transition-colors"
+        >
+          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0">
+            <Facebook className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[11px] font-bold text-stone-500 dark:text-zinc-400">
+              {pickLang(lang, { ar: 'فيسبوك', fr: 'Facebook', amz: 'Facebook', en: 'Facebook', es: 'Facebook' })}
+            </div>
+            <div dir="ltr" className="text-sm font-black font-mono text-slate-900 dark:text-white truncate">
+              Salon Boumlik
             </div>
           </div>
         </a>
 
         <a
           href={`mailto:${SALON_INFO.email}`}
-          className="p-4 rounded-2xl bg-stone-50 hover:bg-stone-100/80 dark:bg-zinc-900/60 dark:hover:bg-zinc-900 border border-stone-200 dark:border-zinc-800 flex items-center gap-3 transition-colors"
+          className="sm:col-span-2 p-4 rounded-2xl bg-stone-50 hover:bg-stone-100/80 dark:bg-zinc-900/60 dark:hover:bg-zinc-900 border border-stone-200 dark:border-zinc-800 flex items-center gap-3 transition-colors"
         >
           <div className="w-10 h-10 rounded-xl bg-stone-200/70 dark:bg-zinc-800 border border-stone-300/70 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 flex items-center justify-center flex-shrink-0">
             <Mail className="w-4 h-4" />

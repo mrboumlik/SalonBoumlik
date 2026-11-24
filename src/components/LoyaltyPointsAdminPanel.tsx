@@ -18,7 +18,7 @@ import {
   grantClientCustomDiscount,
   redeemLoyaltyPointsForDiscount,
 } from '../utils/crmStore';
-import { LOYALTY_POINT_TIERS, POINTS_PER_VISIT } from '../utils/loyaltyEngine';
+import { LOYALTY_POINT_TIERS, DEFAULT_FALLBACK_POINTS_PER_VISIT } from '../utils/loyaltyEngine';
 import { sendDualAlert } from '../utils/notifications';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
@@ -38,6 +38,8 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
   const [search, setSearch] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'redeemable' | 'active_discount' | 'vip'>('all');
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [adjustTargetClientId, setAdjustTargetClientId] = useState<string | null>(null);
+  const [adjustPointsInput, setAdjustPointsInput] = useState<string>('5');
 
   const allClients = useMemo(
     () =>
@@ -142,21 +144,20 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
     }
   };
 
-  const handleCustomPointsAdjust = async (c: (typeof allClients)[number]) => {
-    const val = window.prompt(
-      pickLang(lang, {
-        ar: `أدخل عدد النقاط لإضافتها أو خصمها لـ ${c.clientName} (مثال: 20 أو -10):`,
-        fr: `Entrez le nombre de points à ajouter ou déduire pour ${c.clientName} (ex: 20 ou -10) :`,
-        amz: `ⵙⵙⴽⵛⵎ ⴰⵎⴹⴰⵏ ⵏ ⵜⵏⵇⵇⵉⴹⵉⵏ ⵉ ${c.clientName} (ⴰⵎⴷⵢⴰ: 20 ⵏⵖ -10):`,
-        en: `Enter points to add or deduct for ${c.clientName} (e.g., 20 or -10):`,
-        es: `Introduce los puntos a añadir o deducir para ${c.clientName} (ej.: 20 o -10):`,
-      }),
-      '10'
-    );
-    if (val === null) return;
-    const delta = Number(val);
+  const handleOpenCustomPointsAdjust = (c: (typeof allClients)[number]) => {
+    if (adjustTargetClientId === c.id) {
+      setAdjustTargetClientId(null);
+      return;
+    }
+    setAdjustPointsInput('5');
+    setAdjustTargetClientId(c.id);
+  };
+
+  const handleSubmitCustomPointsAdjust = async (c: (typeof allClients)[number]) => {
+    const delta = Number(adjustPointsInput);
     if (!Number.isFinite(delta) || delta === 0) return;
     await handleAwardBonusPoints(c, delta);
+    setAdjustTargetClientId(null);
   };
 
   const handleRedeemTier = async (
@@ -172,6 +173,7 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
         clientName: c.clientName,
         pointsCost: tier.pointsCost,
         discountMAD: tier.discountMAD,
+        rewardKind: tier.rewardKind,
         verifiedVisits: c.verifiedVisits,
         label: pickLang(lang, {
           ar: `🎟️ استبدال ${tier.pointsCost} نقطة ← ${tierLabel}`,
@@ -184,20 +186,41 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
       });
       sendDualAlert(
         pickLang(lang, {
-          ar: 'تم استبدال نقاط الولاء بخصم فوري 🎁',
-          fr: 'Points échangés contre une réduction immédiate 🎁',
-          amz: 'ⵜⵜⵓⵙⵏⴼⵍⵏⵜ ⵜⵏⵇⵇⵉⴹⵉⵏ ⵙ ⵓⵙⵏⵇⵙ 🎁',
-          en: 'Loyalty points redeemed for instant discount 🎁',
-          es: 'Puntos canjeados por descuento inmediato 🎁',
+          ar:
+            tier.discountMAD > 0
+              ? 'تم استبدال نقاط الولاء بخصم فوري 🎁'
+              : 'تم استبدال نقاط الولاء بمكافأة مجانية 🎁',
+          fr:
+            tier.discountMAD > 0
+              ? 'Points échangés contre une réduction immédiate 🎁'
+              : 'Points échangés contre une prestation offerte 🎁',
+          amz: 'ⵜⵜⵓⵙⵏⴼⵍⵏⵜ ⵜⵏⵇⵇⵉⴹⵉⵏ ⵙ ⵜⵙⵎⵖⵓⵔⵜ 🎁',
+          en:
+            tier.discountMAD > 0
+              ? 'Loyalty points redeemed for instant discount 🎁'
+              : 'Loyalty points redeemed for free service reward 🎁',
+          es:
+            tier.discountMAD > 0
+              ? 'Puntos canjeados por descuento inmediato 🎁'
+              : 'Puntos canjeados por recompensa gratuita 🎁',
         }),
         {
-          body: pickLang(lang, {
-            ar: `${c.clientName}: -${tier.pointsCost} نقطة ← خصم ${tier.discountMAD} MAD جاهز للحجز القادم.`,
-            fr: `${c.clientName} : -${tier.pointsCost} pts ← remise de ${tier.discountMAD} MAD prête pour la prochaine visite.`,
-            amz: `${c.clientName}: -${tier.pointsCost} pts ← ⴰⵙⵏⵇⵙ ${tier.discountMAD} MAD.`,
-            en: `${c.clientName}: -${tier.pointsCost} pts ← ${tier.discountMAD} MAD discount ready for next booking.`,
-            es: `${c.clientName}: -${tier.pointsCost} pts ← descuento de ${tier.discountMAD} MAD listo.`,
-          }),
+          body:
+            tier.discountMAD > 0
+              ? pickLang(lang, {
+                  ar: `${c.clientName}: -${tier.pointsCost} نقطة ← خصم ${tier.discountMAD} MAD جاهز للحجز القادم.`,
+                  fr: `${c.clientName} : -${tier.pointsCost} pts ← remise de ${tier.discountMAD} MAD prête pour la prochaine visite.`,
+                  amz: `${c.clientName}: -${tier.pointsCost} pts ← ⴰⵙⵏⵇⵙ ${tier.discountMAD} MAD.`,
+                  en: `${c.clientName}: -${tier.pointsCost} pts ← ${tier.discountMAD} MAD discount ready for next booking.`,
+                  es: `${c.clientName}: -${tier.pointsCost} pts ← descuento de ${tier.discountMAD} MAD listo.`,
+                })
+              : pickLang(lang, {
+                  ar: `${c.clientName}: -${tier.pointsCost} نقطة ← ${tierLabel} مسجلة في ملف الزبون.`,
+                  fr: `${c.clientName} : -${tier.pointsCost} pts ← ${tierLabel} enregistrée sur le profil client.`,
+                  amz: `${c.clientName}: -${tier.pointsCost} pts ← ${tierLabel}.`,
+                  en: `${c.clientName}: -${tier.pointsCost} pts ← ${tierLabel} recorded on client profile.`,
+                  es: `${c.clientName}: -${tier.pointsCost} pts ← ${tierLabel} registrada en el perfil.`,
+                }),
           type: 'success',
           skipSound: true,
         }
@@ -268,11 +291,11 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
             </h3>
             <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-0.5">
               {pickLang(lang, {
-                ar: `يكتسب الزبون +${POINTS_PER_VISIT} نقاط ولاء تلقائياً عند كل زيارة مكتملة، ويمكنه استبدالها بخصومات فورية على خدماته القادمة.`,
-                fr: `Le client gagne automatiquement +${POINTS_PER_VISIT} points à chaque visite terminée et peut les échanger contre des remises immédiates.`,
-                amz: `ⵉⵜⵜⴰⵎⵥ ⵓⵎⵙⴰⵖ +${POINTS_PER_VISIT} ⵜⵏⵇⵇⵉⴹⵉⵏ ⴳ ⴽⵓ ⵜⵉⵔⵣⵉ ⵉⵎⴷⵏ ⵉ ⵓⵙⵏⴼⵍ ⵏⵏⵙⵏⵜ ⵙ ⵉⵙⵏⵇⵙⵏ.`,
-                en: `Clients automatically earn +${POINTS_PER_VISIT} loyalty points per completed visit and can redeem them for instant service discounts.`,
-                es: `El cliente gana +${POINTS_PER_VISIT} puntos por cada visita completada y puede canjearlos por descuentos inmediatos.`,
+                ar: 'يكتسب الزبون نقاط ولاء حسب الخدمة المختارة (+3 إلى +22 نقطة/زيارة) فور تأكيد الحضور، ويمكنه استبدالها بهدايا وخصومات مدروسة.',
+                fr: 'Le client gagne des points selon ses prestations (+3 à +22 pts/visite) à chaque présence confirmée, échangeables contre des cadeaux et remises.',
+                amz: 'ⵉⵜⵜⴰⵎⵥ ⵓⵎⵙⴰⵖ ⵜⵉⵏⵇⵇⵉⴹⵉⵏ ⵙ ⵜⵡⵓⵔⵉ (+3–22 pts/ⵜⵉⵔⵣⵉ) ⴷⴼⴼⵉⵔ ⵓⵙⵏⵜⵎ.',
+                en: 'Clients earn service-based points (+3 to +22 pts/visit) upon confirmed check-in, redeemable for balanced rewards and discounts.',
+                es: 'El cliente gana puntos según el servicio (+3 a +22 pts/visita) al confirmar asistencia.',
               })}
             </p>
           </div>
@@ -283,7 +306,8 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
                 key={tier.id}
                 className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-zinc-900 border border-amber-300 dark:border-amber-500/30 text-amber-800 dark:text-amber-300"
               >
-                {tier.pointsCost} pts → -{tier.discountMAD} MAD
+                {tier.pointsCost} pts →{' '}
+                {tier.discountMAD > 0 ? `-${tier.discountMAD} MAD` : pickLang(lang, tier.label)}
               </span>
             ))}
           </div>
@@ -360,7 +384,7 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
         <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
           {[
             { id: 'all', label: pickLang(lang, { ar: `الكل (${allClients.length})`, fr: `Tous (${allClients.length})`, amz: `ⴰⴽⴽʷ (${allClients.length})`, en: `All (${allClients.length})`, es: `Todos (${allClients.length})` }) },
-            { id: 'redeemable', label: pickLang(lang, { ar: 'قابل للاستبدال (20+ pts)', fr: 'Échangeable (20+ pts)', amz: 'ⵉⵜⵜⵓⵙⵏⴼⴰⵍ (20+ pts)', en: 'Redeemable (20+ pts)', es: 'Canjeable (20+ pts)' }) },
+            { id: 'redeemable', label: pickLang(lang, { ar: `قابل للاستبدال (${LOYALTY_POINT_TIERS[0].pointsCost}+ pts)`, fr: `Échangeable (${LOYALTY_POINT_TIERS[0].pointsCost}+ pts)`, amz: `ⵉⵜⵜⵓⵙⵏⴼⴰⵍ (${LOYALTY_POINT_TIERS[0].pointsCost}+ pts)`, en: `Redeemable (${LOYALTY_POINT_TIERS[0].pointsCost}+ pts)`, es: `Canjeable (${LOYALTY_POINT_TIERS[0].pointsCost}+ pts)` }) },
             { id: 'active_discount', label: pickLang(lang, { ar: 'خصم نشط', fr: 'Remise active', amz: 'ⴰⵙⵏⵇⵙ ⵉⵔⵎⵉⴷⵏ', en: 'Active Discount', es: 'Descuento activo' }) },
             { id: 'vip', label: 'VIP' },
           ].map((tab) => (
@@ -445,11 +469,11 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
                     <span>
                       {c.loyaltyPoints >= maxTier.pointsCost
                         ? pickLang(lang, {
-                            ar: 'مؤهل لأعلى مكافأة VIP (-70 MAD)',
-                            fr: 'Éligible à la récompense maximale VIP (-70 MAD)',
-                            amz: 'ⵉⵣⵎⵔ ⵉ ⵜⵏⵎⵎⵉⵔⵜ ⵜⴰⵎⵇⵔⴰⵏⵜ VIP (-70 MAD)',
-                            en: 'Eligible for max VIP reward (-70 MAD)',
-                            es: 'Elegible para recompensa máxima VIP (-70 MAD)',
+                            ar: 'مؤهل لأعلى مكافأة VIP (-10 MAD)',
+                            fr: 'Éligible à la récompense maximale VIP (-10 MAD)',
+                            amz: 'ⵉⵣⵎⵔ ⵉ ⵜⵏⵎⵎⵉⵔⵜ ⵜⴰⵎⵇⵔⴰⵏⵜ VIP (-10 MAD)',
+                            en: 'Eligible for max VIP reward (-10 MAD)',
+                            es: 'Elegible para recompensa máxima VIP (-10 MAD)',
                           })
                         : pickLang(lang, {
                             ar: `الهدف القادم: ${nextTierLabel} (${nextTier.pointsCost} pts)`,
@@ -511,7 +535,7 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
                       })}
                     </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                     {LOYALTY_POINT_TIERS.map((tier) => {
                       const canRedeem = c.loyaltyPoints >= tier.pointsCost;
                       return (
@@ -527,7 +551,9 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
                           }`}
                         >
                           <div className="font-mono font-black tabular-nums">{tier.pointsCost} pts</div>
-                          <div className="truncate">-{tier.discountMAD} MAD</div>
+                          <div className="truncate">
+                            {tier.discountMAD > 0 ? `-${tier.discountMAD} MAD` : pickLang(lang, tier.label)}
+                          </div>
                         </button>
                       );
                     })}
@@ -535,45 +561,75 @@ export const LoyaltyPointsAdminPanel: React.FC<LoyaltyPointsAdminPanelProps> = (
                 </div>
 
                 {/* Admin Points Controls */}
-                <div className="pt-2 border-t border-stone-200 dark:border-zinc-800/80 flex flex-wrap items-center justify-between gap-1.5">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      type="button"
-                      disabled={Boolean(isBusy)}
-                      onClick={() => handleAwardBonusPoints(c, POINTS_PER_VISIT)}
-                      className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-600/20 dark:hover:bg-emerald-600/35 border border-emerald-300 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>
-                        +{POINTS_PER_VISIT}{' '}
-                        {pickLang(lang, { ar: 'نقطة', fr: 'pts', amz: 'pts', en: 'pts', es: 'pts' })}
-                      </span>
-                    </button>
+                <div className="pt-2 border-t border-stone-200 dark:border-zinc-800/80 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={Boolean(isBusy)}
+                        onClick={() => handleAwardBonusPoints(c, DEFAULT_FALLBACK_POINTS_PER_VISIT)}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-600/20 dark:hover:bg-emerald-600/35 border border-emerald-300 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>
+                          +{DEFAULT_FALLBACK_POINTS_PER_VISIT}{' '}
+                          {pickLang(lang, { ar: 'نقاط', fr: 'pts', amz: 'pts', en: 'pts', es: 'pts' })}
+                        </span>
+                      </button>
 
-                    <button
-                      type="button"
-                      disabled={Boolean(isBusy)}
-                      onClick={() => handleCustomPointsAdjust(c)}
-                      className="px-2.5 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-stone-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                    >
-                      <Sparkles className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                      <span>
-                        {pickLang(lang, { ar: 'تعديل النقاط', fr: 'Ajuster points', amz: 'ⵙⵏⴼⵍ ⵜⵉⵏⵇⵇⵉⴹⵉⵏ', en: 'Adjust Points', es: 'Ajustar puntos' })}
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        disabled={Boolean(isBusy)}
+                        onClick={() => handleOpenCustomPointsAdjust(c)}
+                        className="px-2.5 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-stone-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      >
+                        <Sparkles className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                        <span>
+                          {pickLang(lang, { ar: 'تعديل النقاط', fr: 'Ajuster points', amz: 'ⵙⵏⴼⵍ ⵜⵉⵏⵇⵇⵉⴹⵉⵏ', en: 'Adjust Points', es: 'Ajustar puntos' })}
+                        </span>
+                      </button>
+                    </div>
+
+                    {onOpenClientTracking && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenClientTracking(c.phoneDisplay || c.normalizedPhone || c.id)}
+                        className="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-amber-300 dark:border-zinc-700 text-amber-800 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>
+                          {pickLang(lang, { ar: 'ملف الزبون', fr: 'Profil client', amz: 'ⴰⴼⴰⵢⵍⵓ', en: 'Client Profile', es: 'Perfil cliente' })}
+                        </span>
+                      </button>
+                    )}
                   </div>
 
-                  {onOpenClientTracking && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenClientTracking(c.phoneDisplay || c.normalizedPhone || c.id)}
-                      className="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-amber-300 dark:border-zinc-700 text-amber-800 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      <span>
-                        {pickLang(lang, { ar: 'ملف الزبون', fr: 'Profil client', amz: 'ⴰⴼⴰⵢⵍⵓ', en: 'Client Profile', es: 'Perfil cliente' })}
-                      </span>
-                    </button>
+                  {adjustTargetClientId === c.id && (
+                    <div className="p-2.5 rounded-xl bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 flex flex-wrap items-center gap-1.5">
+                      <input
+                        type="number"
+                        value={adjustPointsInput}
+                        onChange={(e) => setAdjustPointsInput(e.target.value)}
+                        dir="ltr"
+                        aria-label="Points delta"
+                        className="w-20 px-2 py-1 rounded-lg bg-white dark:bg-zinc-950 border border-stone-300 dark:border-zinc-700 text-slate-900 dark:text-white font-mono text-xs"
+                      />
+                      <button
+                        type="button"
+                        disabled={Boolean(isBusy) || !Number(adjustPointsInput)}
+                        onClick={() => void handleSubmitCustomPointsAdjust(c)}
+                        className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-[11px] cursor-pointer disabled:opacity-50"
+                      >
+                        {pickLang(lang, { ar: 'حفظ', fr: 'Valider', amz: 'ⵃⴹⵓ', en: 'Apply', es: 'Aplicar' })}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdjustTargetClientId(null)}
+                        className="px-2 py-1 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white text-[11px] cursor-pointer"
+                      >
+                        {pickLang(lang, { ar: 'إلغاء', fr: 'Annuler', amz: 'ⵙⵔⵓⵙ', en: 'Cancel', es: 'Cancelar' })}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

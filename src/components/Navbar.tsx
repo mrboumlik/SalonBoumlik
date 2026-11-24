@@ -17,6 +17,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   onOpenDrawerMenu,
+  onOpenAdmin,
   onNavigateHome,
 }) => {
   const { lang } = useLanguage();
@@ -27,6 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isHeaderHovering, setIsHeaderHovering] = useState(false);
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
   const lastScrollYRef = useRef<number>(0);
+  const logoClickTimestampsRef = useRef<number[]>([]);
 
   useEffect(() => {
     const getScrollY = () =>
@@ -106,6 +108,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const handleLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
+    const now = Date.now();
+    const recent = logoClickTimestampsRef.current.filter((ts) => now - ts <= 700);
+    recent.push(now);
+    logoClickTimestampsRef.current = recent;
+
+    if (recent.length >= 3 && onOpenAdmin) {
+      logoClickTimestampsRef.current = [];
+      onOpenAdmin();
+      return;
+    }
+
     setIsHiddenOnScroll(false);
     if (onNavigateHome) {
       onNavigateHome();
@@ -143,28 +156,22 @@ export const Navbar: React.FC<NavbarProps> = ({
         }`}
       >
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between gap-2 sm:gap-4">
-          {/* Zone 1: Clean Seamless Logo + Brand Title + Compact Slogan Underneath */}
+          {/* Zone 1: Clean Transparent Logo + Compact Slogan (Triple-click triggers Staff Login) */}
           <a
             href="#top"
             onClick={handleLogoClick}
             aria-label={homeAria}
             title={homeAria}
-            className="flex items-center gap-1.5 sm:gap-2.5 group flex-1 md:flex-initial min-w-0 cursor-pointer"
+            className="flex items-center gap-2 sm:gap-2.5 group flex-1 md:flex-initial min-w-0 cursor-pointer"
           >
-            <BrandMark className="w-6 h-8 sm:w-8 sm:h-10 flex-shrink-0 group-hover:scale-105 transition-transform" />
+            <BrandMark className="h-8 sm:h-10 w-auto object-contain flex-shrink-0 group-hover:scale-[1.03] transition-transform" />
 
-            <div className="min-w-0 flex-1">
-              <span className="font-display text-[13px] sm:text-lg font-black tracking-wide text-slate-900 dark:text-white whitespace-nowrap block leading-none">
-                SALON{' '}
-                <span className="text-amber-700 dark:text-amber-400">BOUMLIK</span>
-              </span>
-              <p
-                key={`nav-slogan-${lang}`}
-                className="text-[10px] sm:text-[11px] text-stone-600 dark:text-zinc-400 font-medium mt-0.5 truncate max-w-full sm:max-w-[240px] leading-tight lang-switch-transition"
-              >
-                {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
-              </p>
-            </div>
+            <p
+              key={`nav-slogan-${lang}`}
+              className="hidden sm:block text-[11px] text-stone-600 dark:text-zinc-400 font-semibold truncate max-w-[180px] lg:max-w-[220px] leading-tight lang-switch-transition"
+            >
+              {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
+            </p>
           </a>
 
           {/* Zone 2: Centered Balanced Desktop Language Switcher */}

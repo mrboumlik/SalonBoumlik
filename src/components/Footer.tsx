@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   MapPin,
   Phone,
@@ -46,6 +46,7 @@ export const Footer: React.FC<FooterProps> = ({
   const salonSettings = useSalonProfileSettings();
   const lastTapTimeRef = useRef<number>(0);
   const lastTriggerTimeRef = useRef<number>(0);
+  const [hoveredSocial, setHoveredSocial] = useState<string | null>(null);
 
   const triggerDiscreetAdmin = () => {
     if (!onOpenAdmin) return;
@@ -256,12 +257,9 @@ export const Footer: React.FC<FooterProps> = ({
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-12 gap-7 lg:gap-8 items-start">
           {/* 1. Brand Identity Column */}
           <div className="col-span-2 md:col-span-3 lg:col-span-4 flex flex-col items-center text-center lg:items-start lg:text-start pb-6 lg:pb-0 border-b lg:border-b-0 border-stone-200/80 dark:border-zinc-800/80 space-y-3">
-            <BrandMark className="w-10 h-12 flex-shrink-0" />
+            <BrandMark className="h-12 sm:h-14 w-auto object-contain flex-shrink-0" />
 
             <div className="space-y-1 max-w-md">
-              <span className="font-display text-lg sm:text-xl font-black tracking-wide text-slate-900 dark:text-white block">
-                SALON <span className="text-amber-700 dark:text-amber-400">BOUMLIK</span>
-              </span>
               <p className="text-xs font-semibold text-amber-800 dark:text-amber-300/90">
                 {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
               </p>
@@ -270,7 +268,7 @@ export const Footer: React.FC<FooterProps> = ({
               </p>
             </div>
 
-            {/* Clear Social Media Direct Buttons ("مواقع التواصل") */}
+            {/* Social Media: Unified Monochrome Icons on Mobile / Restrained Desktop + Direct WhatsApp CTA */}
             <div className="space-y-1.5 pt-1">
               <div className="text-[11px] font-bold text-stone-500 dark:text-zinc-400">
                 {pickLang(lang, {
@@ -281,45 +279,31 @@ export const Footer: React.FC<FooterProps> = ({
                   es: 'Redes sociales',
                 })}
               </div>
-              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
+
+              {/* Mobile (< sm): Single unified monochrome icon-only row */}
+              <div className="flex sm:hidden items-center justify-center gap-2.5">
                 <a
                   href={SALON_INFO.social.instagram}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="min-h-[36px] px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-200 border border-stone-200 dark:border-zinc-800 inline-flex items-center gap-1.5 text-[11px] font-bold transition-all duration-150 shadow-2xs"
+                  className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200 border border-stone-200 dark:border-zinc-800 inline-flex items-center justify-center transition-colors shadow-2xs active:scale-95"
                   title="Instagram @SalonBoumlik"
                   aria-label="Instagram"
                 >
-                  <Instagram className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 flex-shrink-0" />
-                  <span>
-                    {pickLang(lang, {
-                      ar: 'إنستغرام',
-                      fr: 'Instagram',
-                      amz: 'Instagram',
-                      en: 'Instagram',
-                      es: 'Instagram',
-                    })}
-                  </span>
+                  <Instagram className="w-4 h-4" />
+                  <span className="sr-only">Instagram</span>
                 </a>
 
                 <a
                   href={SALON_INFO.social.facebook}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="min-h-[36px] px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-200 border border-stone-200 dark:border-zinc-800 inline-flex items-center gap-1.5 text-[11px] font-bold transition-all duration-150 shadow-2xs"
+                  className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200 border border-stone-200 dark:border-zinc-800 inline-flex items-center justify-center transition-colors shadow-2xs active:scale-95"
                   title="Facebook Salon Boumlik"
                   aria-label="Facebook"
                 >
-                  <Facebook className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-                  <span>
-                    {pickLang(lang, {
-                      ar: 'فيسبوك',
-                      fr: 'Facebook',
-                      amz: 'Facebook',
-                      en: 'Facebook',
-                      es: 'Facebook',
-                    })}
-                  </span>
+                  <Facebook className="w-4 h-4" />
+                  <span className="sr-only">Facebook</span>
                 </a>
 
                 <a
@@ -332,21 +316,95 @@ export const Footer: React.FC<FooterProps> = ({
                   )}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="min-h-[36px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 dark:border-emerald-500 inline-flex items-center gap-1.5 text-[11px] font-bold transition-all duration-150 shadow-2xs"
+                  className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200 border border-stone-200 dark:border-zinc-800 inline-flex items-center justify-center transition-colors shadow-2xs active:scale-95"
                   title={`WhatsApp ${formatSalonDisplayPhone(salonSettings.salonWhatsapp)}`}
                   aria-label="WhatsApp"
                 >
-                  <MessageCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span>
-                    {pickLang(lang, {
-                      ar: 'واتساب',
-                      fr: 'WhatsApp',
-                      amz: 'WhatsApp',
-                      en: 'WhatsApp',
-                      es: 'WhatsApp',
-                    })}
-                  </span>
+                  <MessageCircle className="w-4 h-4" />
+                  <span className="sr-only">WhatsApp</span>
                 </a>
+              </div>
+
+              {/* Desktop (sm+): Restrained monochrome Instagram & Facebook + Direct WhatsApp CTA */}
+              <div className="hidden sm:block space-y-1">
+                <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
+                  <a
+                    href={SALON_INFO.social.instagram}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onMouseEnter={() => setHoveredSocial('Instagram · @SalonBoumlik')}
+                    onMouseLeave={() => setHoveredSocial(null)}
+                    className="min-h-[36px] px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 hover:border-stone-400 dark:hover:bg-zinc-800 dark:hover:border-zinc-600 text-slate-700 dark:text-zinc-200 hover:text-slate-950 dark:hover:text-white border border-stone-200 dark:border-zinc-800 inline-flex items-center gap-1.5 text-[11px] font-bold transition-all duration-150 shadow-2xs"
+                    title="Instagram @SalonBoumlik"
+                    aria-label="Instagram"
+                  >
+                    <Instagram className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'إنستغرام',
+                        fr: 'Instagram',
+                        amz: 'Instagram',
+                        en: 'Instagram',
+                        es: 'Instagram',
+                      })}
+                    </span>
+                  </a>
+
+                  <a
+                    href={SALON_INFO.social.facebook}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onMouseEnter={() => setHoveredSocial('Facebook · Salon Boumlik')}
+                    onMouseLeave={() => setHoveredSocial(null)}
+                    className="min-h-[36px] px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 hover:bg-stone-200 hover:border-stone-400 dark:hover:bg-zinc-800 dark:hover:border-zinc-600 text-slate-700 dark:text-zinc-200 hover:text-slate-950 dark:hover:text-white border border-stone-200 dark:border-zinc-800 inline-flex items-center gap-1.5 text-[11px] font-bold transition-all duration-150 shadow-2xs"
+                    title="Facebook Salon Boumlik"
+                    aria-label="Facebook"
+                  >
+                    <Facebook className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'فيسبوك',
+                        fr: 'Facebook',
+                        amz: 'Facebook',
+                        en: 'Facebook',
+                        es: 'Facebook',
+                      })}
+                    </span>
+                  </a>
+
+                  <a
+                    href={`https://wa.me/${normalizeSalonWhatsappDigits(salonSettings.salonWhatsapp)}?text=${encodeURIComponent(
+                      buildWhatsAppInquiryMessage({
+                        lang,
+                        requestType: 'inquiry',
+                        includeMessagePrompt: true,
+                      })
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onMouseEnter={() =>
+                      setHoveredSocial(`WhatsApp · ${formatSalonDisplayPhone(salonSettings.salonWhatsapp)}`)
+                    }
+                    onMouseLeave={() => setHoveredSocial(null)}
+                    className="min-h-[36px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 dark:border-emerald-500 inline-flex items-center gap-1.5 text-[11px] font-bold transition-all duration-150 shadow-2xs"
+                    title={`WhatsApp ${formatSalonDisplayPhone(salonSettings.salonWhatsapp)}`}
+                    aria-label="WhatsApp"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>
+                      {pickLang(lang, {
+                        ar: 'واتساب',
+                        fr: 'WhatsApp',
+                        amz: 'WhatsApp',
+                        en: 'WhatsApp',
+                        es: 'WhatsApp',
+                      })}
+                    </span>
+                  </a>
+                </div>
+                <p className="min-h-[15px] text-[10px] font-mono text-stone-500 dark:text-zinc-400" dir="ltr">
+                  {hoveredSocial || '\u00A0'}
+                </p>
               </div>
             </div>
           </div>

@@ -50,6 +50,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
   const [copiedWifi, setCopiedWifi] = useState(false);
   const [copiedSsid, setCopiedSsid] = useState(false);
   const [quickConnectHint, setQuickConnectHint] = useState(false);
+  const [hoveredSocialHint, setHoveredSocialHint] = useState<string | null>(null);
 
   const isOpenNow = useMemo(() => {
     const now = new Date();
@@ -262,21 +263,12 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 items-center">
             {/* Start Column: Salon Identity, Status & Quick Social/Utility Links */}
             <div className="lg:col-span-7 flex flex-col items-center lg:items-start text-center lg:text-start gap-4 sm:gap-5">
-              <div className="flex flex-col lg:flex-row items-center lg:items-center gap-3 sm:gap-4">
-                <BrandMark className="w-12 h-14 sm:w-14 sm:h-16 flex-shrink-0" />
-
-                <div className="space-y-1 max-w-xl">
-                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight font-display text-slate-900 dark:text-white leading-tight">
-                    SALON{' '}
-                    <span className="text-amber-700 dark:text-amber-400">
-                      BOUMLIK
-                    </span>
-                  </h1>
-
-                  <p className="text-xs sm:text-sm lg:text-base font-semibold text-amber-800 dark:text-amber-300/95 leading-relaxed text-balance">
-                    {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
-                  </p>
-                </div>
+              <div className="flex flex-col items-center lg:items-start gap-2.5">
+                <BrandMark className="h-14 sm:h-16 lg:h-20 w-auto object-contain flex-shrink-0" />
+                <h1 className="sr-only">SALON BOUMLIK</h1>
+                <p className="text-xs sm:text-sm lg:text-base font-semibold text-amber-800 dark:text-amber-300/95 leading-relaxed text-balance max-w-xl">
+                  {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}
+                </p>
               </div>
 
               <div className="space-y-2.5 max-w-2xl">
@@ -308,22 +300,24 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
                 </div>
               </div>
 
-              {/* Clear Direct Social Media & Utility Buttons ("مواقع التواصل") */}
+              {/* Social Media & Utility Links: Unified Monochrome Icon Row on Mobile / Restrained Desktop Hover Links */}
               <div className="w-full pt-1 space-y-2">
                 <div className="text-[11px] font-bold text-stone-500 dark:text-zinc-400">
                   {labels.socialTitle}
                 </div>
-                <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
+
+                {/* Mobile (< sm): Unified single monochrome icon-only row without text labels */}
+                <div className="flex sm:hidden items-center justify-center gap-2.5">
                   <a
                     href={SALON_INFO.social.instagram}
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label="Instagram @SalonBoumlik"
                     title="Instagram @SalonBoumlik"
-                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-100 font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                    className="w-10 h-10 rounded-full bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 inline-flex items-center justify-center transition-colors active:scale-95"
                   >
-                    <Instagram className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0" />
-                    <span>{labels.instagramLabel}</span>
+                    <Instagram className="w-4 h-4" />
+                    <span className="sr-only">{labels.instagramLabel}</span>
                   </a>
 
                   <a
@@ -332,20 +326,32 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
                     rel="noopener noreferrer"
                     aria-label="Facebook Salon Boumlik"
                     title="Facebook Salon Boumlik"
-                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-100 font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                    className="w-10 h-10 rounded-full bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 inline-flex items-center justify-center transition-colors active:scale-95"
                   >
-                    <Facebook className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-                    <span>{labels.facebookLabel}</span>
+                    <Facebook className="w-4 h-4" />
+                    <span className="sr-only">{labels.facebookLabel}</span>
+                  </a>
+
+                  <a
+                    href={heroWhatsappHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="WhatsApp Salon Boumlik"
+                    title={`WhatsApp ${formatSalonDisplayPhone(salonSettings.salonWhatsapp)}`}
+                    className="w-10 h-10 rounded-full bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 inline-flex items-center justify-center transition-colors active:scale-95"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span className="sr-only">{labels.whatsapp}</span>
                   </a>
 
                   <a
                     href={normalizeSalonTelHref(salonSettings.salonPhone)}
                     aria-label={labels.callAria}
                     title={formatSalonDisplayPhone(salonSettings.salonPhone)}
-                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-100 font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                    className="w-10 h-10 rounded-full bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 inline-flex items-center justify-center transition-colors active:scale-95"
                   >
-                    <Phone className="w-4 h-4 text-amber-700 dark:text-amber-400 flex-shrink-0" />
-                    <span>{labels.callLabel}</span>
+                    <Phone className="w-4 h-4" />
+                    <span className="sr-only">{labels.callLabel}</span>
                   </a>
 
                   <button
@@ -353,11 +359,92 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, onOpenTrackBooking })
                     onClick={() => setIsWifiModalOpen(true)}
                     aria-label={labels.wifiAria}
                     title={labels.wifiAria}
-                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 text-amber-900 dark:text-amber-300 font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95 cursor-pointer"
+                    className="w-10 h-10 rounded-full bg-stone-100 hover:bg-stone-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 inline-flex items-center justify-center transition-colors active:scale-95 cursor-pointer"
                   >
-                    <Wifi className="w-4 h-4 text-amber-700 dark:text-amber-400 flex-shrink-0" />
-                    <span>{labels.wifiBtnLabel}</span>
+                    <Wifi className="w-4 h-4" />
+                    <span className="sr-only">{labels.wifiBtnLabel}</span>
                   </button>
+                </div>
+
+                {/* Desktop (sm+): Restrained monochrome styling with crisp hover feedback */}
+                <div className="hidden sm:block space-y-1.5">
+                  <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
+                    <a
+                      href={SALON_INFO.social.instagram}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Instagram @SalonBoumlik"
+                      title="Instagram @SalonBoumlik"
+                      onMouseEnter={() => setHoveredSocialHint('Instagram · @SalonBoumlik')}
+                      onMouseLeave={() => setHoveredSocialHint(null)}
+                      onFocus={() => setHoveredSocialHint('Instagram · @SalonBoumlik')}
+                      onBlur={() => setHoveredSocialHint(null)}
+                      className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 hover:border-stone-400 dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:hover:border-zinc-600 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 hover:text-slate-950 dark:hover:text-white font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                    >
+                      <Instagram className="w-4 h-4 flex-shrink-0" />
+                      <span>{labels.instagramLabel}</span>
+                    </a>
+
+                    <a
+                      href={SALON_INFO.social.facebook}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Facebook Salon Boumlik"
+                      title="Facebook Salon Boumlik"
+                      onMouseEnter={() => setHoveredSocialHint('Facebook · Salon Boumlik')}
+                      onMouseLeave={() => setHoveredSocialHint(null)}
+                      onFocus={() => setHoveredSocialHint('Facebook · Salon Boumlik')}
+                      onBlur={() => setHoveredSocialHint(null)}
+                      className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 hover:border-stone-400 dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:hover:border-zinc-600 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 hover:text-slate-950 dark:hover:text-white font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                    >
+                      <Facebook className="w-4 h-4 flex-shrink-0" />
+                      <span>{labels.facebookLabel}</span>
+                    </a>
+
+                    <a
+                      href={normalizeSalonTelHref(salonSettings.salonPhone)}
+                      aria-label={labels.callAria}
+                      title={formatSalonDisplayPhone(salonSettings.salonPhone)}
+                      onMouseEnter={() =>
+                        setHoveredSocialHint(formatSalonDisplayPhone(salonSettings.salonPhone))
+                      }
+                      onMouseLeave={() => setHoveredSocialHint(null)}
+                      onFocus={() =>
+                        setHoveredSocialHint(formatSalonDisplayPhone(salonSettings.salonPhone))
+                      }
+                      onBlur={() => setHoveredSocialHint(null)}
+                      className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 hover:border-stone-400 dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:hover:border-zinc-600 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 hover:text-slate-950 dark:hover:text-white font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                    >
+                      <Phone className="w-4 h-4 flex-shrink-0" />
+                      <span>{labels.callLabel}</span>
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsWifiModalOpen(true)}
+                      aria-label={labels.wifiAria}
+                      title={labels.wifiAria}
+                      onMouseEnter={() =>
+                        setHoveredSocialHint(`Wi-Fi · ${SALON_WIFI_CONFIG.ssid}`)
+                      }
+                      onMouseLeave={() => setHoveredSocialHint(null)}
+                      onFocus={() =>
+                        setHoveredSocialHint(`Wi-Fi · ${SALON_WIFI_CONFIG.ssid}`)
+                      }
+                      onBlur={() => setHoveredSocialHint(null)}
+                      className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 hover:border-stone-400 dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:hover:border-zinc-600 border border-stone-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 hover:text-slate-950 dark:hover:text-white font-bold text-xs inline-flex items-center gap-1.5 transition-all duration-150 active:scale-95 cursor-pointer"
+                    >
+                      <Wifi className="w-4 h-4 flex-shrink-0" />
+                      <span>{labels.wifiBtnLabel}</span>
+                    </button>
+                  </div>
+
+                  <p
+                    className="min-h-[16px] text-[11px] font-mono text-stone-500 dark:text-zinc-400 transition-opacity duration-150"
+                    dir="ltr"
+                  >
+                    {hoveredSocialHint || '\u00A0'}
+                  </p>
                 </div>
               </div>
             </div>

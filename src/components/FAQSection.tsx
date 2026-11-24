@@ -129,11 +129,11 @@ const FAQ_ENTRIES: FaqEntry[] = [
       es: '¿Cómo funciona el programa de fidelidad y puntos?',
     },
     answer: {
-      ar: 'تحصل على 10 نقاط ولاء عن كل زيارة مؤكدة بالحضور في الصالون، إضافة إلى مكافآت مجانية كل 5 زيارات (غسل شعر مجاني، خصومات وتقشير، ثم حلاقة ولحية VIP مجانية). يمكنك تتبع تقدمك واستبدال نقاطك بخصومات (-10، -30، أو -70 درهم) أثناء الحجز أو عبر «تتبع التذكرة».',
-      fr: 'Chaque visite honorée et validée au salon vous rapporte +10 points fidélité ainsi qu’un palier cadeau toutes les 5 visites (shampoing offert, remise -20 MAD + soin visage, puis coupe + barbe VIP offerte). Échangez vos points directement à la réservation ou via « Suivi Ticket ».',
-      en: 'Every attended visit verified by the salon earns +10 loyalty points plus free milestone rewards every 5 visits (free wash, 20 MAD off + facial, then free VIP haircut & beard). Track and redeem points during booking or inside Track Ticket.',
-      amz: 'ⴽⵓ ⵜⵉⵔⵣⵉ ⵉⵜⵜⵓⵙⵙⴷⴰⵏ ⵜⴰⴽⴽⴰ +10 ⵏ ⵉⵏⵇⵉⵟⵏ ⴷ ⵜⵙⵎⵖⵓⵔⵜ ⴽⵓ 5 ⵏ ⵜⵉⵔⵣⴰ.',
-      es: 'Cada visita verificada suma +10 puntos y desbloquea premios cada 5 visitas (lavado gratis, descuento facial y corte + barba VIP gratis).',
+      ar: 'تحصل على نقاط ولاء حسب الخدمة المختارة (+3 إلى +22 نقطة/زيارة) فور تأكيد حضورك في الصالون، إضافة إلى مكافآت تدريجية تبدأ بعد 5 زيارات مؤكدة (غسل شعر مجاني عند 5، ماسك للوجه مجاني عند 10، ثم تخفيضات -5 و -10 دراهم VIP). يمكنك تتبع تقدمك واستبدال نقاطك أثناء الحجز أو عبر «تتبع التذكرة».',
+      fr: 'Chaque présence validée au salon rapporte des points selon vos prestations (+3 à +22 pts/visite) ainsi que des paliers cadeaux progressifs dès 5 visites confirmées (shampoing offert à 5, masque visage gratuit à 10, puis remises de -5 MAD à -10 MAD VIP). Échangez vos points à la réservation ou via « Suivi Ticket ».',
+      en: 'Every confirmed salon visit earns service-based loyalty points (+3 to +22 pts/visit) plus progressive rewards starting after 5 confirmed visits (free hair wash at 5, free facial mask at 10, then 5 MAD and 10 MAD VIP discounts). Track and redeem points during booking or inside Track Ticket.',
+      amz: 'ⴽⵓ ⵜⵉⵔⵣⵉ ⵉⵜⵜⵓⵙⵙⴷⴰⵏ ⵜⴰⴽⴽⴰ +3 ⴰⵔ +22 ⵜⵏⵇⵇⵉⴹⵉⵏ ⵙ ⵜⵡⵓⵔⵉ ⴷ ⵜⵙⵎⵖⵓⵔⵉⵏ ⵙⴳ 5 ⵏ ⵜⵉⵔⵣⴰ (ⴰⵙⵉⵔⴷ ⴼⴰⴱⵓⵔ ⴳ 5, ⵎⴰⵙⴽ ⵏ ⵡⵓⴷⵎ ⴼⴰⴱⵓⵔ ⴳ 10, ⴷ ⵉⵙⵉⴷⵔⵏ 5 ⴰⵔ 10 MAD VIP).',
+      es: 'Cada visita verificada suma puntos según el servicio (+3 a +22 pts/visita) y desbloquea premios progresivos desde las 5 visitas confirmadas (lavado gratis en 5, mascarilla facial gratis en 10 y descuentos de 5 a 10 MAD VIP).',
     },
   },
   {

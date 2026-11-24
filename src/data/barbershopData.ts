@@ -62,7 +62,9 @@ export const SALON_INFO = {
   
   media: {
     logo: '/assets/aistudio/IMG-20231231-WA0004_393afdd0.jpg',
-    logoClean: '/assets/aistudio/IMG-20231231-WA0003_222599c1.jpg',
+    logoClean: '/assets/salon-boumlik-logo.png',
+    logoDarkClean: '/assets/salon-boumlik-logo-dark.png',
+    logoPole: '/assets/salon-boumlik-pole.png',
     qrInstagram: '/assets/aistudio/qr-code__2__76e25336.png',
     qrWhatsApp: '/assets/aistudio/qr-code_39463f1a.png',
     qrFacebook: '/assets/aistudio/qr-code__2__3f6acbc4.png',

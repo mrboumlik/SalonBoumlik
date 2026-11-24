@@ -76,7 +76,7 @@ export async function downloadTicketAsPng(
     }));
 
   const [logoImg, qrImg] = await Promise.all([
-    loadImage(SALON_INFO.media.logoClean),
+    loadImage(SALON_INFO.media.logoPole),
     loadImage(qrDataUrl),
   ]);
 

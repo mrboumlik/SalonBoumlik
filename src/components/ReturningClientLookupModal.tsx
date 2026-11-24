@@ -221,7 +221,7 @@ export const ReturningClientLookupModal: React.FC<ReturningClientLookupModalProp
       )?.barberId;
 
       const verifiedVisits = getVerifiedVisitsCount(historyForClient, crmProfile);
-      const pointsSummary = computeClientPointsSummary(verifiedVisits, crmProfile);
+      const pointsSummary = computeClientPointsSummary(verifiedVisits, crmProfile, historyForClient);
 
       onRecognized({
         clientName: resolvedName,
