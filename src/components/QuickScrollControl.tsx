@@ -200,7 +200,7 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
       dir="ltr"
       role="region"
       aria-label={labels.navAria}
-      className="hidden sm:flex fixed right-3 lg:right-5 top-1/2 -translate-y-1/2 z-40 flex-col items-center gap-1 p-1.5 rounded-2xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-700 shadow-lg select-none"
+      className="hidden sm:flex fixed right-2 lg:right-3.5 top-1/2 -translate-y-1/2 z-40 flex-col items-center gap-0.5 p-1 rounded-xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-700 shadow-md select-none"
     >
       <button
         type="button"
@@ -208,13 +208,13 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
         disabled={metrics.atTop}
         aria-label={labels.top}
         title={labels.top}
-        className={`w-9 h-8 rounded-xl flex items-center justify-center transition-colors ${
+        className={`w-7 h-6 rounded-lg flex items-center justify-center transition-colors ${
           metrics.atTop
             ? 'text-stone-300 dark:text-zinc-600 cursor-not-allowed'
             : 'text-stone-600 dark:text-zinc-300 hover:bg-stone-100 dark:hover:bg-zinc-800 hover:text-amber-700 dark:hover:text-amber-400 cursor-pointer active:scale-95'
         }`}
       >
-        <ChevronsUp className="w-4 h-4" />
+        <ChevronsUp className="w-3.5 h-3.5" />
       </button>
 
       <button
@@ -223,13 +223,13 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
         disabled={metrics.atTop}
         aria-label={labels.up}
         title={labels.up}
-        className={`w-10 h-9 rounded-xl flex items-center justify-center transition-colors border ${
+        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors border ${
           metrics.atTop
             ? 'bg-stone-50 dark:bg-zinc-900/60 border-stone-200/60 dark:border-zinc-800/60 text-stone-300 dark:text-zinc-600 cursor-not-allowed'
             : 'bg-stone-50 dark:bg-zinc-900 border-stone-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-100 hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:border-amber-300 dark:hover:border-amber-500/40 hover:text-amber-800 dark:hover:text-amber-300 cursor-pointer active:scale-95'
         }`}
       >
-        <ChevronUp className="w-5 h-5" />
+        <ChevronUp className="w-4 h-4" />
       </button>
 
       {/* Center Draggable Handle Button */}
@@ -241,13 +241,13 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
         style={{
           transform: `translate3d(0, ${dragThumbOffset}px, 0)`,
         }}
-        className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center border touch-none transition-colors ${
+        className={`w-7 h-7 rounded-lg flex flex-col items-center justify-center border touch-none transition-colors ${
           isDragging
             ? 'bg-amber-600 border-amber-600 text-white cursor-grabbing shadow-md'
             : 'bg-stone-100 dark:bg-zinc-800/90 border-stone-300 dark:border-zinc-600 text-stone-600 dark:text-zinc-300 hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-300 cursor-grab'
         }`}
       >
-        <GripHorizontal className="w-4 h-4" />
+        <GripHorizontal className="w-3.5 h-3.5" />
       </button>
 
       <button
@@ -256,13 +256,13 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
         disabled={metrics.atBottom}
         aria-label={labels.down}
         title={labels.down}
-        className={`w-10 h-9 rounded-xl flex items-center justify-center transition-colors border ${
+        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors border ${
           metrics.atBottom
             ? 'bg-stone-50 dark:bg-zinc-900/60 border-stone-200/60 dark:border-zinc-800/60 text-stone-300 dark:text-zinc-600 cursor-not-allowed'
             : 'bg-amber-600 hover:bg-amber-500 border-amber-600 text-white cursor-pointer active:scale-95 shadow-xs'
         }`}
       >
-        <ChevronDown className="w-5 h-5" />
+        <ChevronDown className="w-4 h-4" />
       </button>
 
       <button
@@ -271,13 +271,13 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
         disabled={metrics.atBottom}
         aria-label={labels.bottom}
         title={labels.bottom}
-        className={`w-9 h-8 rounded-xl flex items-center justify-center transition-colors ${
+        className={`w-7 h-6 rounded-lg flex items-center justify-center transition-colors ${
           metrics.atBottom
             ? 'text-stone-300 dark:text-zinc-600 cursor-not-allowed'
             : 'text-stone-600 dark:text-zinc-300 hover:bg-stone-100 dark:hover:bg-zinc-800 hover:text-amber-700 dark:hover:text-amber-400 cursor-pointer active:scale-95'
         }`}
       >
-        <ChevronsDown className="w-4 h-4" />
+        <ChevronsDown className="w-3.5 h-3.5" />
       </button>
     </div>
   );

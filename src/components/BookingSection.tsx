@@ -53,6 +53,7 @@ import {
   PricingEngineResult,
   AppointmentBooking,
   CaisseBarberId,
+  CreditSettlementActionType,
   SelectedCartItem,
   HairColorConfig,
 } from '../types';
@@ -101,6 +102,7 @@ import { useCaisseEntries } from '../utils/caisseStore';
 import {
   computeOutstandingCreditsForPhone,
   submitClientCreditDispute,
+  submitCreditSettlementRequest,
   useManualClientCredits,
 } from '../utils/creditRegistryStore';
 import { getBarberIdentityTokens } from '../utils/barberIdentity';
@@ -247,11 +249,18 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
   const [showManualDateTime, setShowManualDateTime] = useState(false);
   const [wantCihOnlinePayment, setWantCihOnlinePayment] = useState(false);
 
-  // Client Credit Dispute / Inquiry form state (non-blocking inside credit alert)
+  // Client Credit Dispute / Inquiry & Settlement Choice ("يخلص ولا يفك من الكريدي") form state (non-blocking inside credit alert)
   const [creditDisputeOpen, setCreditDisputeOpen] = useState(false);
   const [creditDisputeText, setCreditDisputeText] = useState('');
   const [creditDisputeBusy, setCreditDisputeBusy] = useState(false);
   const [creditDisputeSentForPhone, setCreditDisputeSentForPhone] = useState<string>('');
+  const [settlementOptionOpen, setSettlementOptionOpen] = useState(false);
+  const [settlementAction, setSettlementAction] = useState<CreditSettlementActionType>('pay');
+  const [settlementTargetBarberId, setSettlementTargetBarberId] = useState<string>('all');
+  const [settlementAmountInput, setSettlementAmountInput] = useState('');
+  const [settlementNoteInput, setSettlementNoteInput] = useState('');
+  const [settlementBusy, setSettlementBusy] = useState(false);
+  const [settlementSentForPhone, setSettlementSentForPhone] = useState<string>('');
 
   const bookingCardRef = useRef<HTMLDivElement>(null);
   const ticketCardRef = useRef<HTMLDivElement>(null);
@@ -618,6 +627,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
 
   useEffect(() => {
     setCreditDisputeOpen(false);
+    setSettlementOptionOpen(false);
   }, [cleanDigits]);
 
   const handleSubmitCreditDispute = async () => {
@@ -686,9 +696,86 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
     }
   };
 
+  const handleSubmitClientSettlementChoice = async () => {
+    if (!outstandingPhoneCredit?.hasCredit) return;
+    const selectedBreakdown =
+      settlementTargetBarberId !== 'all'
+        ? outstandingPhoneCredit.creditorBreakdowns.find(
+            (b) => (b.barberId || b.creditorKey) === settlementTargetBarberId
+          )
+        : undefined;
+    const maxTargetAmount = selectedBreakdown
+      ? selectedBreakdown.amountMAD
+      : outstandingPhoneCredit.totalOwedMAD;
+    const amountVal = Math.max(
+      0,
+      Number(settlementAmountInput) || maxTargetAmount
+    );
+    if (amountVal <= 0) return;
+
+    const resolvedName =
+      clientName.trim() ||
+      recognizedClient?.clientName ||
+      outstandingPhoneCredit.matchedClientNames[0] ||
+      'زبون';
+    const resolvedPhone =
+      clientPhone.trim() || recognizedClient?.clientPhone || cleanDigits;
+
+    setSettlementBusy(true);
+    try {
+      await submitCreditSettlementRequest({
+        sourceType: 'aggregate',
+        barberId: selectedBreakdown?.barberId,
+        barberName: selectedBreakdown?.creditorLabel,
+        clientName: resolvedName,
+        clientPhone: resolvedPhone,
+        actionType: settlementAction,
+        originalRemainingMAD: maxTargetAmount,
+        requestedAmountMAD: amountVal,
+        note: settlementNoteInput.trim() || undefined,
+        submittedBy: resolvedName,
+        submittedRole: 'client',
+      });
+      setSettlementSentForPhone(cleanDigits);
+      setSettlementOptionOpen(false);
+      setSettlementAmountInput('');
+      setSettlementNoteInput('');
+      showToast(
+        settlementAction === 'pay'
+          ? pickLang(lang, {
+              ar: 'تم إرسال طلب خلاص الكريدي للمشرف العام ✓',
+              fr: 'Demande de règlement envoyée au superviseur ✓',
+              amz: 'ⵜⵜⵓⵣⵏ ⵜⵓⵜⵜⵔⴰ ⵏ ⵓⴼⵔⵓ ✓',
+              en: 'Credit payment request sent to supervisor ✓',
+              es: 'Solicitud de pago enviada al supervisor ✓',
+            })
+          : pickLang(lang, {
+              ar: 'تم إرسال طلب فك الكريدي للمشرف العام ✓',
+              fr: 'Demande d’apurement envoyée au superviseur ✓',
+              amz: 'ⵜⵜⵓⵣⵏ ⵜⵓⵜⵜⵔⴰ ⵏ ⵓⵙⵎⵙⴰⵙⴰ ✓',
+              en: 'Credit clearance request sent to supervisor ✓',
+              es: 'Solicitud de ajuste enviada al supervisor ✓',
+            }),
+        pickLang(lang, {
+          ar: 'يمكنك إكمال الحجز بشكل عادي الآن.',
+          fr: 'Vous pouvez poursuivre votre réservation normalement.',
+          amz: 'ⵜⵣⵎⵔⴷ ⴰⴷ ⵜⴽⵎⵎⵍⴷ ⴰⵙⵉⵀⴰⵔ ⵏⵏⴽ.',
+          en: 'You may continue completing your booking normally.',
+          es: 'Puedes continuar tu reserva con normalidad.',
+        }),
+        'success'
+      );
+    } catch (err) {
+      console.error('Failed to submit credit settlement choice:', err);
+    } finally {
+      setSettlementBusy(false);
+    }
+  };
+
   const renderClientCreditAlertCard = (compactMode = false) => {
     if (!outstandingPhoneCredit?.hasCredit) return null;
     const isSentForThisPhone = creditDisputeSentForPhone === cleanDigits;
+    const isSettlementSent = settlementSentForPhone === cleanDigits;
     return (
       <div className="p-3 rounded-xl bg-orange-50 dark:bg-orange-950/50 border border-orange-300 dark:border-orange-500/50 text-orange-900 dark:text-orange-200 text-xs space-y-2.5">
         <div className="flex items-start justify-between gap-2.5">
@@ -758,10 +845,15 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
           </span>
         </div>
 
-        {/* Non-blocking Credit Dispute / Inquiry Action */}
+        {/* Non-blocking Credit Settlement Choice ("يخلص ولا يفك من الكريدي") & Dispute Action */}
         <div className="pt-2 border-t border-orange-200/80 dark:border-orange-500/30 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            {isSentForThisPhone ? (
+            {isSettlementSent ? (
+              <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" />
+                <span>تم إرسال طلبك (يخلص/يفك الكريدي) للمشرف العام بنجاح ✓</span>
+              </span>
+            ) : isSentForThisPhone ? (
               <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
                 <Check className="w-3.5 h-3.5" />
                 <span>
@@ -777,37 +869,135 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
             ) : (
               <span className="text-[10px] text-orange-800/85 dark:text-orange-200/80 font-medium">
                 {pickLang(lang, {
-                  ar: 'تظن أن هناك خطأ أو سبق لك الأداء؟',
-                  fr: 'Une erreur ou déjà réglé ?',
-                  amz: 'ⵉⵙ ⵜⵓⵖⴰⵍⴷ ⵉⵍⵍⴰ ⵓⵣⴳⴰⵍ ?',
-                  en: 'Think this is a mistake or already paid?',
-                  es: '¿Crees que hay un error o ya pagaste?',
+                  ar: 'بإمكانك اختيار خلاص أو فك الكريدي أو إرسال استفسار بدون تعطيل الحجز:',
+                  fr: 'Régler/apurer le crédit ou poser une question sans bloquer le RDV :',
+                  amz: 'ⵜⵣⵎⵔⴷ ⴰⴷ ⵜⵙⵜⵉⴷ ⴰⴼⵔⵓ ⵏⵖ ⴰⵙⵇⵙⵉ:',
+                  en: 'Choose to pay/clear credit or send an inquiry without blocking booking:',
+                  es: 'Elige pagar/ajustar o consultar sin bloquear tu cita:',
                 })}
               </span>
             )}
 
-            <button
-              type="button"
-              onClick={() => setCreditDisputeOpen((prev) => !prev)}
-              className="px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-900 border border-orange-300 dark:border-orange-500/50 text-orange-800 dark:text-orange-200 font-bold text-[11px] hover:bg-orange-100 dark:hover:bg-orange-950/60 transition-colors cursor-pointer"
-            >
-              {creditDisputeOpen
-                ? pickLang(lang, {
-                    ar: 'إغلاق',
-                    fr: 'Fermer',
-                    amz: 'ⵇⵇⵏ',
-                    en: 'Close',
-                    es: 'Cerrar',
-                  })
-                : pickLang(lang, {
-                    ar: 'اعتراض أو استفسار على الكريدي',
-                    fr: 'Contester ou poser une question',
-                    amz: 'ⴰⵙⵙⵓⵎⵔ ⵏⵖ ⴰⵙⵇⵙⵉ ⵖⴼ ⵓⴽⵔⵉⴷⵉ',
-                    en: 'Dispute or Inquire About Credit',
-                    es: 'Impugnar o consultar crédito',
-                  })}
-            </button>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setSettlementOptionOpen((prev) => !prev);
+                  setCreditDisputeOpen(false);
+                  if (!settlementAmountInput) {
+                    setSettlementAmountInput(String(outstandingPhoneCredit.totalOwedMAD));
+                  }
+                }}
+                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] transition-colors cursor-pointer"
+              >
+                {settlementOptionOpen
+                  ? pickLang(lang, { ar: 'إغلاق', fr: 'Fermer', amz: 'ⵇⵇⵏ', en: 'Close', es: 'Cerrar' })
+                  : 'يخلص ولا يفك من الكريدي'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCreditDisputeOpen((prev) => !prev);
+                  setSettlementOptionOpen(false);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-900 border border-orange-300 dark:border-orange-500/50 text-orange-800 dark:text-orange-200 font-bold text-[11px] hover:bg-orange-100 dark:hover:bg-orange-950/60 transition-colors cursor-pointer"
+              >
+                {creditDisputeOpen
+                  ? pickLang(lang, {
+                      ar: 'إغلاق',
+                      fr: 'Fermer',
+                      amz: 'ⵇⵇⵏ',
+                      en: 'Close',
+                      es: 'Cerrar',
+                    })
+                  : pickLang(lang, {
+                      ar: 'اعتراض أو استفسار على الكريدي',
+                      fr: 'Contester ou poser une question',
+                      amz: 'ⴰⵙⵙⵓⵎⵔ ⵏⵖ ⴰⵙⵇⵙⵉ ⵖⴼ ⵓⴽⵔⵉⴷⵉ',
+                      en: 'Dispute or Inquire About Credit',
+                      es: 'Impugnar o consultar crédito',
+                    })}
+              </button>
+            </div>
           </div>
+
+          {settlementOptionOpen && (
+            <div className="p-2.5 rounded-lg bg-white/95 dark:bg-zinc-950/90 border border-emerald-200 dark:border-emerald-500/40 space-y-2">
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSettlementAction('pay')}
+                  className={`py-1.5 px-2 rounded-lg font-black text-[11px] border cursor-pointer ${
+                    settlementAction === 'pay'
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-stone-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-stone-200 dark:border-zinc-700'
+                  }`}
+                >
+                  يخلص الكريدي (أداء)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettlementAction('clear')}
+                  className={`py-1.5 px-2 rounded-lg font-black text-[11px] border cursor-pointer ${
+                    settlementAction === 'clear'
+                      ? 'bg-amber-600 text-white border-amber-600'
+                      : 'bg-stone-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-stone-200 dark:border-zinc-700'
+                  }`}
+                >
+                  يفك من الكريدي (تسوية)
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {outstandingPhoneCredit.creditorBreakdowns.length > 1 && (
+                  <select
+                    value={settlementTargetBarberId}
+                    onChange={(e) => setSettlementTargetBarberId(e.target.value)}
+                    className="bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-900 dark:text-white font-bold"
+                  >
+                    <option value="all">
+                      جميع الحلاقين ({outstandingPhoneCredit.totalOwedMAD} MAD)
+                    </option>
+                    {outstandingPhoneCredit.creditorBreakdowns.map((b) => (
+                      <option key={b.creditorKey} value={b.barberId || b.creditorKey}>
+                        {b.creditorLabel} ({b.amountMAD} MAD)
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                <input
+                  type="number"
+                  min={1}
+                  max={outstandingPhoneCredit.totalOwedMAD}
+                  value={settlementAmountInput}
+                  onChange={(e) => setSettlementAmountInput(e.target.value)}
+                  placeholder={`المبلغ (MAD): ${outstandingPhoneCredit.totalOwedMAD}`}
+                  className="bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-zinc-900 dark:text-white"
+                />
+              </div>
+
+              <input
+                type="text"
+                value={settlementNoteInput}
+                onChange={(e) => setSettlementNoteInput(e.target.value)}
+                placeholder="ملاحظة اختيارية للمشرف (مثال: غادي نخلص عند الحضور)..."
+                className="w-full bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-900 dark:text-white"
+              />
+
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  disabled={settlementBusy}
+                  onClick={handleSubmitClientSettlementChoice}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] cursor-pointer disabled:opacity-60"
+                >
+                  {settlementBusy ? '...' : 'إرسال الطلب للمشرف (بدون تعطيل الحجز) ✓'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {creditDisputeOpen && (
             <div className="p-2.5 rounded-lg bg-white/95 dark:bg-zinc-950/90 border border-orange-200 dark:border-zinc-800 space-y-2">

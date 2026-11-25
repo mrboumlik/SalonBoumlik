@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, onSnapshot, setDoc } from 'firebase/firestore';
 import { SALON_INFO } from '../data/barbershopData';
 import { SalonProfileSettings } from '../types';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import {
+  emitRealtimeSyncHint,
+  registerRealtimeRefreshHandler,
+  resetResilientRetry,
+  scheduleResilientRetry,
+} from './realtimeSync';
 
 const SETTINGS_COLLECTION = 'settings';
 const SALON_PROFILE_DOC_ID = 'salon_profile';
@@ -17,6 +23,10 @@ export const DEFAULT_SALON_PROFILE_SETTINGS: SalonProfileSettings = {
 };
 
 let cachedSettings: SalonProfileSettings = DEFAULT_SALON_PROFILE_SETTINGS;
+let hasHydratedSettings = false;
+const settingsListeners = new Set<(settings: SalonProfileSettings) => void>();
+let activeSettingsUnsub: (() => void) | null = null;
+let settingsRefreshUnsub: (() => void) | null = null;
 
 function sanitizeAdditionalPhones(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -60,33 +70,117 @@ export function normalizeSalonTelHref(raw?: string): string {
   return `tel:${clean.replace(/\s+/g, '')}`;
 }
 
+function parseSettingsSnapshotData(
+  exists: boolean,
+  rawData?: Partial<SalonProfileSettings>
+): SalonProfileSettings {
+  if (!exists || !rawData) {
+    return DEFAULT_SALON_PROFILE_SETTINGS;
+  }
+  return {
+    googleMapsUrl: rawData.googleMapsUrl || SALON_INFO.googleMapsDirectionsUrl,
+    googleReviewUrl: rawData.googleReviewUrl || SALON_INFO.social.googleReviewUrl,
+    salonPhone: rawData.salonPhone?.trim() || SALON_INFO.phone,
+    salonWhatsapp: rawData.salonWhatsapp?.trim() || SALON_INFO.whatsappNumber,
+    additionalPhones: sanitizeAdditionalPhones(rawData.additionalPhones),
+    updatedAt: rawData.updatedAt || new Date().toISOString(),
+  };
+}
+
+function commitSettingsCache(next: SalonProfileSettings, broadcastHint = false): void {
+  cachedSettings = next;
+  hasHydratedSettings = true;
+  settingsListeners.forEach((cb) => {
+    try {
+      cb(cachedSettings);
+    } catch (err) {
+      console.warn('Salon settings listener callback error:', err);
+    }
+  });
+  if (broadcastHint) {
+    emitRealtimeSyncHint('settings');
+  }
+}
+
+function ensureSalonSettingsListener() {
+  const ref = doc(db, SETTINGS_COLLECTION, SALON_PROFILE_DOC_ID);
+
+  if (!settingsRefreshUnsub) {
+    settingsRefreshUnsub = registerRealtimeRefreshHandler(
+      'salon_settings',
+      'settings',
+      async () => {
+        if (settingsListeners.size === 0) return;
+        ensureSalonSettingsListener();
+        try {
+          let snap;
+          try {
+            snap = await getDocFromServer(ref);
+          } catch {
+            snap = await getDoc(ref);
+          }
+          commitSettingsCache(
+            parseSettingsSnapshotData(snap.exists(), snap.data() as Partial<SalonProfileSettings>)
+          );
+        } catch (err) {
+          console.warn('Salon profile settings wake refresh warning:', err);
+        }
+      }
+    );
+  }
+
+  if (activeSettingsUnsub) return;
+
+  activeSettingsUnsub = onSnapshot(
+    ref,
+    (snap) => {
+      resetResilientRetry('salon_settings');
+      commitSettingsCache(
+        parseSettingsSnapshotData(snap.exists(), snap.data() as Partial<SalonProfileSettings>)
+      );
+    },
+    (error) => {
+      if (activeSettingsUnsub) {
+        try {
+          activeSettingsUnsub();
+        } catch {
+          // Ignore
+        }
+        activeSettingsUnsub = null;
+      }
+      scheduleResilientRetry(
+        'salon_settings',
+        () => settingsListeners.size > 0,
+        () => ensureSalonSettingsListener(),
+        error
+      );
+    }
+  );
+}
+
 export function subscribeToSalonProfileSettings(
   onData: (settings: SalonProfileSettings) => void
 ): () => void {
-  const ref = doc(db, SETTINGS_COLLECTION, SALON_PROFILE_DOC_ID);
-  return onSnapshot(
-    ref,
-    (snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as Partial<SalonProfileSettings>;
-        cachedSettings = {
-          googleMapsUrl: data.googleMapsUrl || SALON_INFO.googleMapsDirectionsUrl,
-          googleReviewUrl: data.googleReviewUrl || SALON_INFO.social.googleReviewUrl,
-          salonPhone: data.salonPhone?.trim() || SALON_INFO.phone,
-          salonWhatsapp: data.salonWhatsapp?.trim() || SALON_INFO.whatsappNumber,
-          additionalPhones: sanitizeAdditionalPhones(data.additionalPhones),
-          updatedAt: data.updatedAt || new Date().toISOString(),
-        };
-      } else {
-        cachedSettings = DEFAULT_SALON_PROFILE_SETTINGS;
+  settingsListeners.add(onData);
+  ensureSalonSettingsListener();
+  if (hasHydratedSettings) {
+    onData(cachedSettings);
+  }
+  return () => {
+    settingsListeners.delete(onData);
+    if (settingsListeners.size === 0) {
+      resetResilientRetry('salon_settings');
+      if (activeSettingsUnsub) {
+        activeSettingsUnsub();
+        activeSettingsUnsub = null;
       }
-      onData(cachedSettings);
-    },
-    (error) => {
-      console.warn('Salon profile settings listener warning:', error);
-      onData(cachedSettings);
+      if (settingsRefreshUnsub) {
+        settingsRefreshUnsub();
+        settingsRefreshUnsub = null;
+      }
+      hasHydratedSettings = false;
     }
-  );
+  };
 }
 
 export async function saveSalonProfileSettings(
@@ -137,7 +231,7 @@ export async function saveSalonProfileSettings(
   const path = `${SETTINGS_COLLECTION}/${SALON_PROFILE_DOC_ID}`;
   try {
     await setDoc(doc(db, SETTINGS_COLLECTION, SALON_PROFILE_DOC_ID), payload);
-    cachedSettings = payload;
+    commitSettingsCache(payload, true);
     return payload;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);

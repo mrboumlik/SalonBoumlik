@@ -53,6 +53,7 @@ import {
   normalizeSalonTelHref,
   useSalonProfileSettings,
 } from './utils/salonSettingsStore';
+import { bootstrapRealtimeSync } from './utils/bootstrapRealtimeSync';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -174,6 +175,11 @@ function SalonBoumlikApp() {
 
   // Keep live PWA reminder notifications active for tracked client tickets
   useClientAppointmentReminders(lang);
+
+  // Keep core Firestore streams warm & resilient across accounts/devices
+  useEffect(() => {
+    return bootstrapRealtimeSync();
+  }, []);
 
   // Check URL hash for admin route (#admin) or ticket tracking deep-link (#track=SB-XXXX)
   useEffect(() => {

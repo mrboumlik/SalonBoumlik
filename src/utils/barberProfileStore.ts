@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDocs,
+  getDocsFromServer,
+  onSnapshot,
+  setDoc,
+} from 'firebase/firestore';
 import {
   BarberCustomService,
   BarberCustomServiceOverride,
@@ -12,6 +19,12 @@ import {
 import { TEAM_MEMBERS } from '../data/barbershopData';
 import { BASE_SERVICES } from './pricingEngine';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import {
+  emitRealtimeSyncHint,
+  registerRealtimeRefreshHandler,
+  resetResilientRetry,
+  scheduleResilientRetry,
+} from './realtimeSync';
 import { CALM_COLOR_PRESETS } from './barberIdentity';
 import { DEFAULT_ROSTER_ACCOUNTS } from './barberRosterStore';
 import {
@@ -29,6 +42,25 @@ const profileListeners = new Set<
   (map: Partial<Record<CaisseBarberId, BarberProfileOverride>>) => void
 >();
 let activeProfilesUnsubscribe: (() => void) | null = null;
+let profilesRefreshUnsub: (() => void) | null = null;
+
+function commitProfilesCache(
+  next: Partial<Record<CaisseBarberId, BarberProfileOverride>>,
+  broadcastHint = false
+): void {
+  cachedProfiles = next;
+  hasHydratedProfiles = true;
+  profileListeners.forEach((cb) => {
+    try {
+      cb(cachedProfiles);
+    } catch (err) {
+      console.warn('Barber profiles listener callback error:', err);
+    }
+  });
+  if (broadcastHint) {
+    emitRealtimeSyncHint('profiles');
+  }
+}
 
 function sanitizeCustomServices(items: BarberCustomService[]): BarberCustomService[] {
   return (Array.isArray(items) ? items : [])
@@ -92,47 +124,86 @@ export function normalizeInstagramHandle(raw: string | undefined): string {
   return clean ? `@${clean}` : '';
 }
 
+function parseProfileDocs(
+  docs: { id: string; data: () => unknown }[]
+): Partial<Record<CaisseBarberId, BarberProfileOverride>> {
+  const next: Partial<Record<CaisseBarberId, BarberProfileOverride>> = {};
+  docs.forEach((docSnap) => {
+    const raw = docSnap.data() as Partial<BarberProfileOverride>;
+    const barberId = (raw.barberId || raw.id || docSnap.id) as CaisseBarberId;
+    if (!barberId || !/^[a-zA-Z0-9_-]{2,64}$/.test(barberId)) {
+      return;
+    }
+    next[barberId] = {
+      id: barberId,
+      barberId,
+      avatar: raw.avatar,
+      phone: raw.phone,
+      whatsappNumber: raw.whatsappNumber,
+      instagramHandle: raw.instagramHandle,
+      bioAr: raw.bioAr,
+      bioFr: raw.bioFr,
+      bioEn: raw.bioEn,
+      useCustomServices: Boolean(raw.useCustomServices),
+      customServices: sanitizeCustomServices(raw.customServices || []),
+      customServiceOverrides: sanitizeCustomServiceOverrides(
+        raw.customServiceOverrides
+      ),
+      customHiddenServiceIds: sanitizeHiddenServiceIds(raw.customHiddenServiceIds),
+      customBundles: sanitizeServiceBundles(raw.customBundles, false),
+      enableNoWaitOption: Boolean(raw.enableNoWaitOption),
+      updatedBy: raw.updatedBy || 'System',
+      updatedAt: raw.updatedAt || '',
+    };
+  });
+  return next;
+}
+
 function ensureBarberProfilesListener() {
+  if (!profilesRefreshUnsub) {
+    profilesRefreshUnsub = registerRealtimeRefreshHandler(
+      'barber_profiles',
+      'profiles',
+      async () => {
+        if (profileListeners.size === 0) return;
+        ensureBarberProfilesListener();
+        try {
+          let snap;
+          try {
+            snap = await getDocsFromServer(collection(db, BARBER_PROFILES_COLLECTION));
+          } catch {
+            snap = await getDocs(collection(db, BARBER_PROFILES_COLLECTION));
+          }
+          commitProfilesCache(parseProfileDocs(snap.docs));
+        } catch (err) {
+          console.warn('Barber profiles wake refresh warning:', err);
+        }
+      }
+    );
+  }
   if (activeProfilesUnsubscribe) return;
 
   activeProfilesUnsubscribe = onSnapshot(
     collection(db, BARBER_PROFILES_COLLECTION),
     (snapshot) => {
-      const next: Partial<Record<CaisseBarberId, BarberProfileOverride>> = {};
-      snapshot.docs.forEach((docSnap) => {
-        const raw = docSnap.data() as Partial<BarberProfileOverride>;
-        const barberId = (raw.barberId || raw.id || docSnap.id) as CaisseBarberId;
-        if (!barberId || !/^[a-zA-Z0-9_-]{2,64}$/.test(barberId)) {
-          return;
-        }
-        next[barberId] = {
-          id: barberId,
-          barberId,
-          avatar: raw.avatar,
-          phone: raw.phone,
-          whatsappNumber: raw.whatsappNumber,
-          instagramHandle: raw.instagramHandle,
-          bioAr: raw.bioAr,
-          bioFr: raw.bioFr,
-          bioEn: raw.bioEn,
-          useCustomServices: Boolean(raw.useCustomServices),
-          customServices: sanitizeCustomServices(raw.customServices || []),
-          customServiceOverrides: sanitizeCustomServiceOverrides(
-            raw.customServiceOverrides
-          ),
-          customHiddenServiceIds: sanitizeHiddenServiceIds(raw.customHiddenServiceIds),
-          customBundles: sanitizeServiceBundles(raw.customBundles, false),
-          enableNoWaitOption: Boolean(raw.enableNoWaitOption),
-          updatedBy: raw.updatedBy || 'System',
-          updatedAt: raw.updatedAt || '',
-        };
-      });
-      cachedProfiles = next;
-      hasHydratedProfiles = true;
-      profileListeners.forEach((cb) => cb(next));
+      resetResilientRetry('barber_profiles');
+      commitProfilesCache(parseProfileDocs(snapshot.docs));
     },
     (error) => {
-      handleFirestoreError(error, OperationType.LIST, BARBER_PROFILES_COLLECTION);
+      if (activeProfilesUnsubscribe) {
+        try {
+          activeProfilesUnsubscribe();
+        } catch {
+          // Ignore
+        }
+        activeProfilesUnsubscribe = null;
+      }
+      scheduleResilientRetry(
+        'barber_profiles',
+        () => profileListeners.size > 0,
+        () => ensureBarberProfilesListener(),
+        error
+      );
     }
   );
 }
@@ -147,9 +218,16 @@ export function subscribeToBarberProfiles(
   }
   return () => {
     profileListeners.delete(onData);
-    if (profileListeners.size === 0 && activeProfilesUnsubscribe) {
-      activeProfilesUnsubscribe();
-      activeProfilesUnsubscribe = null;
+    if (profileListeners.size === 0) {
+      resetResilientRetry('barber_profiles');
+      if (activeProfilesUnsubscribe) {
+        activeProfilesUnsubscribe();
+        activeProfilesUnsubscribe = null;
+      }
+      if (profilesRefreshUnsub) {
+        profilesRefreshUnsub();
+        profilesRefreshUnsub = null;
+      }
       hasHydratedProfiles = false;
     }
   };
@@ -241,7 +319,7 @@ export async function saveBarberProfile(
   try {
     await setDoc(doc(db, BARBER_PROFILES_COLLECTION, barberId), payload);
     const saved = payload as unknown as BarberProfileOverride;
-    cachedProfiles = { ...cachedProfiles, [barberId]: saved };
+    commitProfilesCache({ ...cachedProfiles, [barberId]: saved }, true);
     return saved;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);

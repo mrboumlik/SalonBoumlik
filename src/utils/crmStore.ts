@@ -3,11 +3,19 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
+  getDocsFromServer,
   onSnapshot,
   setDoc,
 } from 'firebase/firestore';
 import { AppointmentBooking, CrmClientProfile } from '../types';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import {
+  emitRealtimeSyncHint,
+  registerRealtimeRefreshHandler,
+  resetResilientRetry,
+  scheduleResilientRetry,
+} from './realtimeSync';
 import {
   deleteBooking,
   markBookingAttendanceCompleted,
@@ -52,25 +60,76 @@ let cachedCrmMap: Record<string, CrmClientProfile> = {};
 let hasHydratedCrm = false;
 const crmListeners = new Set<(map: Record<string, CrmClientProfile>) => void>();
 let activeCrmUnsubscribe: (() => void) | null = null;
+let crmRefreshUnsub: (() => void) | null = null;
+
+function commitCrmCache(next: Record<string, CrmClientProfile>, broadcastHint = false): void {
+  cachedCrmMap = next;
+  hasHydratedCrm = true;
+  crmListeners.forEach((cb) => {
+    try {
+      cb(cachedCrmMap);
+    } catch (err) {
+      console.warn('CRM listener callback error:', err);
+    }
+  });
+  if (broadcastHint) {
+    emitRealtimeSyncHint('crm');
+  }
+}
 
 function ensureCrmListener() {
+  if (!crmRefreshUnsub) {
+    crmRefreshUnsub = registerRealtimeRefreshHandler('crm_clients', 'crm', async () => {
+      if (crmListeners.size === 0) return;
+      ensureCrmListener();
+      try {
+        let snap;
+        try {
+          snap = await getDocsFromServer(collection(db, CRM_COLLECTION));
+        } catch {
+          snap = await getDocs(collection(db, CRM_COLLECTION));
+        }
+        const next: Record<string, CrmClientProfile> = {};
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data() as CrmClientProfile;
+          const id = data.id || docSnap.id;
+          next[id] = { ...data, id };
+        });
+        commitCrmCache(next);
+      } catch (err) {
+        console.warn('CRM wake refresh warning:', err);
+      }
+    });
+  }
   if (activeCrmUnsubscribe) return;
 
   activeCrmUnsubscribe = onSnapshot(
     collection(db, CRM_COLLECTION),
     (snapshot) => {
+      resetResilientRetry('crm_clients');
       const next: Record<string, CrmClientProfile> = {};
       snapshot.docs.forEach((docSnap) => {
         const data = docSnap.data() as CrmClientProfile;
         const id = data.id || docSnap.id;
         next[id] = { ...data, id };
       });
-      cachedCrmMap = next;
-      hasHydratedCrm = true;
-      crmListeners.forEach((cb) => cb(next));
+      commitCrmCache(next);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.LIST, CRM_COLLECTION);
+      if (activeCrmUnsubscribe) {
+        try {
+          activeCrmUnsubscribe();
+        } catch {
+          // Ignore
+        }
+        activeCrmUnsubscribe = null;
+      }
+      scheduleResilientRetry(
+        'crm_clients',
+        () => crmListeners.size > 0,
+        () => ensureCrmListener(),
+        error
+      );
     }
   );
 }
@@ -85,9 +144,16 @@ export function subscribeToCrmClients(
   }
   return () => {
     crmListeners.delete(onData);
-    if (crmListeners.size === 0 && activeCrmUnsubscribe) {
-      activeCrmUnsubscribe();
-      activeCrmUnsubscribe = null;
+    if (crmListeners.size === 0) {
+      resetResilientRetry('crm_clients');
+      if (activeCrmUnsubscribe) {
+        activeCrmUnsubscribe();
+        activeCrmUnsubscribe = null;
+      }
+      if (crmRefreshUnsub) {
+        crmRefreshUnsub();
+        crmRefreshUnsub = null;
+      }
       hasHydratedCrm = false;
     }
   };
@@ -358,7 +424,7 @@ async function persistCrmProfile(profile: CrmClientProfile): Promise<CrmClientPr
   const path = `${CRM_COLLECTION}/${profile.id}`;
   try {
     await setDoc(doc(db, CRM_COLLECTION, profile.id), profile);
-    cachedCrmMap = { ...cachedCrmMap, [profile.id]: profile };
+    commitCrmCache({ ...cachedCrmMap, [profile.id]: profile }, true);
     return profile;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -794,8 +860,7 @@ export async function deleteSelectedClientRecords(params: {
     uniqueCrmDocIds.forEach((docId) => {
       delete nextCache[docId];
     });
-    cachedCrmMap = nextCache;
-    crmListeners.forEach((cb) => cb(nextCache));
+    commitCrmCache(nextCache, true);
   }
 
   return { deletedBookings, deletedProfiles };

@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
-import { collection, deleteDoc, doc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  getDocsFromServer,
+  onSnapshot,
+  setDoc,
+  writeBatch,
+} from 'firebase/firestore';
 import {
   BarberColorKey,
   RosterMemberAccount,
@@ -8,6 +17,12 @@ import {
 import { TEAM_MEMBERS } from '../data/barbershopData';
 import { CALM_COLOR_PRESETS, syncBarberIdentityRegistry } from './barberIdentity';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import {
+  emitRealtimeSyncHint,
+  registerRealtimeRefreshHandler,
+  resetResilientRetry,
+  scheduleResilientRetry,
+} from './realtimeSync';
 
 const BARBER_ROSTER_COLLECTION = 'barber_roster';
 export const CAISSE_ACCOUNT_ID = 'caisse_register';
@@ -105,6 +120,7 @@ let cachedRoster: RosterMemberAccount[] = [...DEFAULT_ROSTER_ACCOUNTS];
 let hasHydratedRoster = false;
 const rosterListeners = new Set<(members: RosterMemberAccount[]) => void>();
 let rosterUnsubscribe: (() => void) | null = null;
+let rosterRefreshUnsub: (() => void) | null = null;
 
 function sanitizeColorKey(raw?: string): BarberColorKey {
   if (raw && raw in CALM_COLOR_PRESETS) {
@@ -146,41 +162,91 @@ function mergeWithDefaults(remoteDocs: RosterMemberAccount[]): RosterMemberAccou
   return sorted;
 }
 
+function commitRosterCache(members: RosterMemberAccount[], broadcastHint = false): void {
+  cachedRoster = members;
+  hasHydratedRoster = true;
+  rosterListeners.forEach((cb) => {
+    try {
+      cb(cachedRoster);
+    } catch (err) {
+      console.warn('Roster listener callback error:', err);
+    }
+  });
+  if (broadcastHint) {
+    emitRealtimeSyncHint('roster');
+  }
+}
+
+function mapSnapshotDocsToRoster(
+  docs: { id: string; data: () => unknown }[]
+): RosterMemberAccount[] {
+  const remotes: RosterMemberAccount[] = docs.map((docSnap) => {
+    const d = docSnap.data() as Partial<RosterMemberAccount>;
+    return {
+      id: String(d.id || docSnap.id),
+      nameAr: String(d.nameAr || d.nameFr || docSnap.id),
+      nameFr: String(d.nameFr || d.nameAr || docSnap.id),
+      nameEn: d.nameEn ? String(d.nameEn) : undefined,
+      role: (d.role || 'barber') as StaffRole,
+      status: d.status === 'archived' ? 'archived' : 'active',
+      pin: String(d.pin || '1234'),
+      colorKey: sanitizeColorKey(d.colorKey),
+      sortOrder: typeof d.sortOrder === 'number' ? d.sortOrder : 50,
+      isOwner: Boolean(d.isOwner),
+      defaultAvatar: d.defaultAvatar,
+      defaultPhone: d.defaultPhone,
+      defaultWhatsapp: d.defaultWhatsapp,
+      defaultInstagram: d.defaultInstagram,
+      replacesBarberId: d.replacesBarberId,
+      replacedById: d.replacedById,
+      updatedBy: d.updatedBy || 'System',
+      updatedAt: d.updatedAt || '',
+    };
+  });
+  return mergeWithDefaults(remotes);
+}
+
 function ensureRosterListener() {
+  if (!rosterRefreshUnsub) {
+    rosterRefreshUnsub = registerRealtimeRefreshHandler('barber_roster', 'roster', async () => {
+      if (rosterListeners.size === 0) return;
+      ensureRosterListener();
+      try {
+        let snap;
+        try {
+          snap = await getDocsFromServer(collection(db, BARBER_ROSTER_COLLECTION));
+        } catch {
+          snap = await getDocs(collection(db, BARBER_ROSTER_COLLECTION));
+        }
+        commitRosterCache(mapSnapshotDocsToRoster(snap.docs));
+      } catch (err) {
+        console.warn('Barber roster wake refresh warning:', err);
+      }
+    });
+  }
   if (rosterUnsubscribe) return;
 
   rosterUnsubscribe = onSnapshot(
     collection(db, BARBER_ROSTER_COLLECTION),
     (snapshot) => {
-      const remotes: RosterMemberAccount[] = snapshot.docs.map((docSnap) => {
-        const d = docSnap.data() as Partial<RosterMemberAccount>;
-        return {
-          id: String(d.id || docSnap.id),
-          nameAr: String(d.nameAr || d.nameFr || docSnap.id),
-          nameFr: String(d.nameFr || d.nameAr || docSnap.id),
-          nameEn: d.nameEn ? String(d.nameEn) : undefined,
-          role: (d.role || 'barber') as StaffRole,
-          status: d.status === 'archived' ? 'archived' : 'active',
-          pin: String(d.pin || '1234'),
-          colorKey: sanitizeColorKey(d.colorKey),
-          sortOrder: typeof d.sortOrder === 'number' ? d.sortOrder : 50,
-          isOwner: Boolean(d.isOwner),
-          defaultAvatar: d.defaultAvatar,
-          defaultPhone: d.defaultPhone,
-          defaultWhatsapp: d.defaultWhatsapp,
-          defaultInstagram: d.defaultInstagram,
-          replacesBarberId: d.replacesBarberId,
-          replacedById: d.replacedById,
-          updatedBy: d.updatedBy || 'System',
-          updatedAt: d.updatedAt || '',
-        };
-      });
-      cachedRoster = mergeWithDefaults(remotes);
-      hasHydratedRoster = true;
-      rosterListeners.forEach((cb) => cb(cachedRoster));
+      resetResilientRetry('barber_roster');
+      commitRosterCache(mapSnapshotDocsToRoster(snapshot.docs));
     },
     (error) => {
-      handleFirestoreError(error, OperationType.LIST, BARBER_ROSTER_COLLECTION);
+      if (rosterUnsubscribe) {
+        try {
+          rosterUnsubscribe();
+        } catch {
+          // Ignore
+        }
+        rosterUnsubscribe = null;
+      }
+      scheduleResilientRetry(
+        'barber_roster',
+        () => rosterListeners.size > 0,
+        () => ensureRosterListener(),
+        error
+      );
     }
   );
 }
@@ -195,9 +261,16 @@ export function subscribeToBarberRoster(
   }
   return () => {
     rosterListeners.delete(cb);
-    if (rosterListeners.size === 0 && rosterUnsubscribe) {
-      rosterUnsubscribe();
-      rosterUnsubscribe = null;
+    if (rosterListeners.size === 0) {
+      resetResilientRetry('barber_roster');
+      if (rosterUnsubscribe) {
+        rosterUnsubscribe();
+        rosterUnsubscribe = null;
+      }
+      if (rosterRefreshUnsub) {
+        rosterRefreshUnsub();
+        rosterRefreshUnsub = null;
+      }
       hasHydratedRoster = false;
     }
   };
@@ -365,6 +438,12 @@ export async function adminSetMemberPin(params: {
       doc(db, BARBER_ROSTER_COLLECTION, target.id),
       buildWritableRosterPayload(nextMember)
     );
+    commitRosterCache(
+      mergeWithDefaults(
+        cachedRoster.map((m) => (m.id === target.id ? nextMember : m))
+      ),
+      true
+    );
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${BARBER_ROSTER_COLLECTION}/${target.id}`);
   }
@@ -462,6 +541,7 @@ export async function addRosterBarber(params: {
       doc(db, BARBER_ROSTER_COLLECTION, newId),
       buildWritableRosterPayload(newMember)
     );
+    commitRosterCache(mergeWithDefaults([...cachedRoster, newMember]), true);
     return newMember;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${BARBER_ROSTER_COLLECTION}/${newId}`);
@@ -539,6 +619,13 @@ export async function replaceRosterBarber(params: {
       buildWritableRosterPayload(createdMember)
     );
     await batch.commit();
+    commitRosterCache(
+      mergeWithDefaults([
+        ...cachedRoster.map((m) => (m.id === archivedMember.id ? archivedMember : m)),
+        createdMember,
+      ]),
+      true
+    );
     return { archived: archivedMember, created: createdMember };
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${BARBER_ROSTER_COLLECTION}/${newId}`);
@@ -597,6 +684,12 @@ export async function updateRosterMember(params: {
       doc(db, BARBER_ROSTER_COLLECTION, target.id),
       buildWritableRosterPayload(updatedMember)
     );
+    commitRosterCache(
+      mergeWithDefaults(
+        cachedRoster.map((m) => (m.id === target.id ? updatedMember : m))
+      ),
+      true
+    );
     return updatedMember;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${BARBER_ROSTER_COLLECTION}/${target.id}`);
@@ -619,6 +712,10 @@ export async function deleteRosterMember(
   }
   try {
     await deleteDoc(doc(db, BARBER_ROSTER_COLLECTION, memberId));
+    commitRosterCache(
+      mergeWithDefaults(cachedRoster.filter((m) => m.id !== memberId)),
+      true
+    );
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `${BARBER_ROSTER_COLLECTION}/${memberId}`);
   }

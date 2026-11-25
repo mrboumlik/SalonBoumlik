@@ -5,14 +5,19 @@ import {
   doc,
   getDoc,
   getDocs,
+  getDocsFromServer,
   onSnapshot,
-  orderBy,
-  query,
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
 import { AppointmentBooking, BookingStatus } from '../types';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import {
+  emitRealtimeSyncHint,
+  registerRealtimeRefreshHandler,
+  resetResilientRetry,
+  scheduleResilientRetry,
+} from './realtimeSync';
 import {
   dispatchClientBackgroundPush,
   dispatchStaffBackgroundPush,
@@ -32,6 +37,31 @@ type BookingsListener = {
 
 const listeners = new Set<BookingsListener>();
 let activeUnsubscribe: (() => void) | null = null;
+let bookingsRefreshUnsub: (() => void) | null = null;
+
+function sortBookingsDesc(list: AppointmentBooking[]): AppointmentBooking[] {
+  return [...list].sort((a, b) => {
+    const aKey = a.createdAt || a.date || '';
+    const bKey = b.createdAt || b.date || '';
+    if (aKey !== bKey) return bKey.localeCompare(aKey);
+    return (b.id || '').localeCompare(a.id || '');
+  });
+}
+
+function commitBookingsCache(nextList: AppointmentBooking[], broadcastHint = false): void {
+  memoryCache = sortBookingsDesc(nextList);
+  hasHydratedFromFirestore = true;
+  listeners.forEach((listener) => {
+    try {
+      listener.onData(memoryCache);
+    } catch (err) {
+      console.error('Error in booking listener callback:', err);
+    }
+  });
+  if (broadcastHint) {
+    emitRealtimeSyncHint('bookings');
+  }
+}
 
 /**
  * Recursively strips `undefined` values so Firestore rejects zero writes due to undefined properties.
@@ -167,12 +197,41 @@ function buildSanitizedBooking(booking: AppointmentBooking): Record<string, unkn
 }
 
 function ensureFirestoreListener() {
+  if (!bookingsRefreshUnsub) {
+    bookingsRefreshUnsub = registerRealtimeRefreshHandler(
+      'bookings',
+      'bookings',
+      async () => {
+        if (listeners.size === 0) return;
+        ensureFirestoreListener();
+        try {
+          const snap = await (async () => {
+            try {
+              return await getDocsFromServer(collection(db, BOOKINGS_COLLECTION));
+            } catch {
+              return await getDocs(collection(db, BOOKINGS_COLLECTION));
+            }
+          })();
+          const items: AppointmentBooking[] = snap.docs.map((docSnap) => {
+            const data = docSnap.data() as AppointmentBooking;
+            return {
+              ...data,
+              id: data.id || docSnap.id,
+            };
+          });
+          commitBookingsCache(items);
+        } catch (err) {
+          console.warn('Bookings wake refresh warning:', err);
+        }
+      }
+    );
+  }
   if (activeUnsubscribe) return;
 
-  const q = query(collection(db, BOOKINGS_COLLECTION), orderBy('createdAt', 'desc'));
   activeUnsubscribe = onSnapshot(
-    q,
+    collection(db, BOOKINGS_COLLECTION),
     (snapshot) => {
+      resetResilientRetry('bookings');
       const nextBookings: AppointmentBooking[] = snapshot.docs.map((docSnap) => {
         const data = docSnap.data() as AppointmentBooking;
         return {
@@ -181,24 +240,32 @@ function ensureFirestoreListener() {
         };
       });
 
-      memoryCache = nextBookings;
-      hasHydratedFromFirestore = true;
-
-      listeners.forEach((listener) => {
-        try {
-          listener.onData(nextBookings);
-        } catch (err) {
-          console.error('Error in booking listener callback:', err);
-        }
-      });
+      commitBookingsCache(nextBookings);
     },
     (error) => {
+      if (activeUnsubscribe) {
+        try {
+          activeUnsubscribe();
+        } catch {
+          // Ignore
+        }
+        activeUnsubscribe = null;
+      }
       listeners.forEach((listener) => {
         if (listener.onError) {
-          listener.onError(error);
+          try {
+            listener.onError(error);
+          } catch {
+            // Ignore listener error handler issue
+          }
         }
       });
-      handleFirestoreError(error, OperationType.LIST, BOOKINGS_COLLECTION);
+      scheduleResilientRetry(
+        'bookings',
+        () => listeners.size > 0,
+        () => ensureFirestoreListener(),
+        error
+      );
     }
   );
 }
@@ -221,9 +288,16 @@ export function subscribeToBookings(
 
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0 && activeUnsubscribe) {
-      activeUnsubscribe();
-      activeUnsubscribe = null;
+    if (listeners.size === 0) {
+      resetResilientRetry('bookings');
+      if (activeUnsubscribe) {
+        activeUnsubscribe();
+        activeUnsubscribe = null;
+      }
+      if (bookingsRefreshUnsub) {
+        bookingsRefreshUnsub();
+        bookingsRefreshUnsub = null;
+      }
       hasHydratedFromFirestore = false;
     }
   };
@@ -241,14 +315,19 @@ export function getAllBookings(): AppointmentBooking[] {
  */
 export async function fetchAllBookingsOnce(): Promise<AppointmentBooking[]> {
   try {
-    const q = query(collection(db, BOOKINGS_COLLECTION), orderBy('createdAt', 'desc'));
-    const snap = await getDocs(q);
-    const items = snap.docs.map((d) => ({
-      ...(d.data() as AppointmentBooking),
-      id: d.id,
-    }));
-    memoryCache = items;
-    hasHydratedFromFirestore = true;
+    let snap;
+    try {
+      snap = await getDocsFromServer(collection(db, BOOKINGS_COLLECTION));
+    } catch {
+      snap = await getDocs(collection(db, BOOKINGS_COLLECTION));
+    }
+    const items = sortBookingsDesc(
+      snap.docs.map((d) => ({
+        ...(d.data() as AppointmentBooking),
+        id: d.id,
+      }))
+    );
+    commitBookingsCache(items);
     return items;
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, BOOKINGS_COLLECTION);
@@ -425,7 +504,7 @@ export async function createNewBooking(
   try {
     const payload = buildSanitizedBooking(newBooking);
     await setDoc(doc(db, BOOKINGS_COLLECTION, id), payload);
-    memoryCache = [newBooking, ...memoryCache.filter((b) => b.id !== id)];
+    commitBookingsCache([newBooking, ...memoryCache.filter((b) => b.id !== id)], true);
 
     // Dispatch background VAPID Web Push to Master Admin + assigned barber
     const slotText =
@@ -494,7 +573,7 @@ export async function updateBookingStatus(
       adminNotes: adminNotes !== undefined ? adminNotes : targetBooking.adminNotes,
       rescheduledTo: rescheduledTo !== undefined ? rescheduledTo : targetBooking.rescheduledTo,
     };
-    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    commitBookingsCache(memoryCache.map((b) => (b.id === id ? updatedBooking : b)), true);
 
     // Dispatch background Web Push to client devices when status or time updates
     const cLang = updatedBooking.clientLanguage || 'ar';
@@ -596,7 +675,7 @@ export async function assignFlexibleBookingSlot(
       adminNotes: noteText,
       rescheduledTo: undefined,
     };
-    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    commitBookingsCache(memoryCache.map((b) => (b.id === id ? updatedBooking : b)), true);
 
     const cLang = updatedBooking.clientLanguage || 'ar';
     void dispatchClientBackgroundPush({
@@ -665,7 +744,7 @@ export async function rescheduleBookingToNearestSlot(
       adminNotes: noteText,
       rescheduledTo: undefined,
     };
-    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    commitBookingsCache(memoryCache.map((b) => (b.id === id ? updatedBooking : b)), true);
 
     const cLang = updatedBooking.clientLanguage || 'ar';
     void dispatchClientBackgroundPush({
@@ -726,7 +805,7 @@ export async function markBookingAttendanceCompleted(
           ? loyaltyRewardApplied.trim().slice(0, 200)
           : existing.loyaltyRewardApplied,
     };
-    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    commitBookingsCache(memoryCache.map((b) => (b.id === id ? updatedBooking : b)), true);
     return updatedBooking;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
@@ -771,7 +850,7 @@ export async function clientRescheduleResponse(
         rescheduledTo: undefined,
         adminNotes: nextNotes,
       };
-      memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+      commitBookingsCache(memoryCache.map((b) => (b.id === id ? updatedBooking : b)), true);
       return updatedBooking;
     } else {
       const nextNotes = (
@@ -789,7 +868,7 @@ export async function clientRescheduleResponse(
         status: 'cancelled',
         adminNotes: nextNotes,
       };
-      memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+      commitBookingsCache(memoryCache.map((b) => (b.id === id ? updatedBooking : b)), true);
       return updatedBooking;
     }
   } catch (error) {
@@ -828,7 +907,7 @@ export async function cancelClientBooking(
       status: 'cancelled',
       adminNotes: nextNotes,
     };
-    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    commitBookingsCache(memoryCache.map((b) => (b.id === id ? updatedBooking : b)), true);
     return updatedBooking;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
@@ -852,7 +931,7 @@ export async function updateBookingAdminNote(
     const existing = memoryCache.find((b) => b.id === id);
     if (!existing) return null;
     const updatedBooking: AppointmentBooking = { ...existing, adminNotes: cleanNote };
-    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    commitBookingsCache(memoryCache.map((b) => (b.id === id ? updatedBooking : b)), true);
     return updatedBooking;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
@@ -916,7 +995,7 @@ export async function updateBookingCihReceipt(
       cihReceiptPreview: cleanPreview || undefined,
       cihReceiptUploadedAt: cleanUploadedAt,
     };
-    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    commitBookingsCache(memoryCache.map((b) => (b.id === id ? updatedBooking : b)), true);
     return updatedBooking;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
@@ -949,7 +1028,7 @@ export async function checkInBookingByQr(
       ...existing,
       checkedInAt: nowIso,
     };
-    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    commitBookingsCache(memoryCache.map((b) => (b.id === id ? updatedBooking : b)), true);
     return updatedBooking;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
@@ -986,7 +1065,7 @@ export async function markBookingCaisseLogged(
       caisseLoggedAt: nowIso,
       caisseEntryId: cleanEntryId,
     };
-    memoryCache = memoryCache.map((b) => (b.id === id ? updatedBooking : b));
+    commitBookingsCache(memoryCache.map((b) => (b.id === id ? updatedBooking : b)), true);
     return updatedBooking;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
@@ -1000,7 +1079,7 @@ export async function deleteBooking(id: string): Promise<boolean> {
   const path = `${BOOKINGS_COLLECTION}/${id}`;
   try {
     await deleteDoc(doc(db, BOOKINGS_COLLECTION, id));
-    memoryCache = memoryCache.filter((b) => b.id !== id);
+    commitBookingsCache(memoryCache.filter((b) => b.id !== id), true);
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);

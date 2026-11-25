@@ -3,6 +3,8 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
+  getDocsFromServer,
   onSnapshot,
   setDoc,
   updateDoc,
@@ -13,6 +15,12 @@ import {
   ShiftRequestType,
 } from '../types';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import {
+  emitRealtimeSyncHint,
+  registerRealtimeRefreshHandler,
+  resetResilientRetry,
+  scheduleResilientRetry,
+} from './realtimeSync';
 import {
   getDefaultBarberSchedule,
   getSalonSlotsForDate,
@@ -26,6 +34,7 @@ let cachedShiftRequests: ShiftRequest[] = [];
 let hasHydratedShiftRequests = false;
 const shiftListeners = new Set<(items: ShiftRequest[]) => void>();
 let activeShiftUnsubscribe: (() => void) | null = null;
+let shiftRefreshUnsub: (() => void) | null = null;
 
 function sortShiftRequests(list: ShiftRequest[]): ShiftRequest[] {
   return [...list].sort((a, b) => {
@@ -34,16 +43,58 @@ function sortShiftRequests(list: ShiftRequest[]): ShiftRequest[] {
       if (a.status === 'pending') return -1;
       if (b.status === 'pending') return 1;
     }
-    return (b.createdAt || '').localeCompare(a.createdAt || '');
+    const cmp = (b.createdAt || '').localeCompare(a.createdAt || '');
+    if (cmp !== 0) return cmp;
+    return (b.id || '').localeCompare(a.id || '');
   });
 }
 
+function commitShiftRequestsCache(next: ShiftRequest[], broadcastHint = false): void {
+  cachedShiftRequests = sortShiftRequests(next);
+  hasHydratedShiftRequests = true;
+  shiftListeners.forEach((cb) => {
+    try {
+      cb(cachedShiftRequests);
+    } catch (err) {
+      console.warn('Shift requests listener callback error:', err);
+    }
+  });
+  if (broadcastHint) {
+    emitRealtimeSyncHint('shifts');
+  }
+}
+
 function ensureShiftRequestsListener() {
+  if (!shiftRefreshUnsub) {
+    shiftRefreshUnsub = registerRealtimeRefreshHandler('shift_requests', 'shifts', async () => {
+      if (shiftListeners.size === 0) return;
+      ensureShiftRequestsListener();
+      try {
+        let snap;
+        try {
+          snap = await getDocsFromServer(collection(db, SHIFT_REQUESTS_COLLECTION));
+        } catch {
+          snap = await getDocs(collection(db, SHIFT_REQUESTS_COLLECTION));
+        }
+        const next: ShiftRequest[] = snap.docs.map((docSnap) => {
+          const data = docSnap.data() as ShiftRequest;
+          return {
+            ...data,
+            id: data.id || docSnap.id,
+          };
+        });
+        commitShiftRequestsCache(next);
+      } catch (err) {
+        console.warn('Shift requests wake refresh warning:', err);
+      }
+    });
+  }
   if (activeShiftUnsubscribe) return;
 
   activeShiftUnsubscribe = onSnapshot(
     collection(db, SHIFT_REQUESTS_COLLECTION),
     (snapshot) => {
+      resetResilientRetry('shift_requests');
       const next: ShiftRequest[] = snapshot.docs.map((docSnap) => {
         const data = docSnap.data() as ShiftRequest;
         return {
@@ -51,12 +102,23 @@ function ensureShiftRequestsListener() {
           id: data.id || docSnap.id,
         };
       });
-      cachedShiftRequests = sortShiftRequests(next);
-      hasHydratedShiftRequests = true;
-      shiftListeners.forEach((cb) => cb(cachedShiftRequests));
+      commitShiftRequestsCache(next);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.LIST, SHIFT_REQUESTS_COLLECTION);
+      if (activeShiftUnsubscribe) {
+        try {
+          activeShiftUnsubscribe();
+        } catch {
+          // Ignore
+        }
+        activeShiftUnsubscribe = null;
+      }
+      scheduleResilientRetry(
+        'shift_requests',
+        () => shiftListeners.size > 0,
+        () => ensureShiftRequestsListener(),
+        error
+      );
     }
   );
 }
@@ -71,9 +133,16 @@ export function subscribeToShiftRequests(
   }
   return () => {
     shiftListeners.delete(onData);
-    if (shiftListeners.size === 0 && activeShiftUnsubscribe) {
-      activeShiftUnsubscribe();
-      activeShiftUnsubscribe = null;
+    if (shiftListeners.size === 0) {
+      resetResilientRetry('shift_requests');
+      if (activeShiftUnsubscribe) {
+        activeShiftUnsubscribe();
+        activeShiftUnsubscribe = null;
+      }
+      if (shiftRefreshUnsub) {
+        shiftRefreshUnsub();
+        shiftRefreshUnsub = null;
+      }
       hasHydratedShiftRequests = false;
     }
   };
@@ -147,7 +216,7 @@ export async function createShiftRequest(
   const path = `${SHIFT_REQUESTS_COLLECTION}/${id}`;
   try {
     await setDoc(doc(db, SHIFT_REQUESTS_COLLECTION, id), payload);
-    cachedShiftRequests = sortShiftRequests([payload, ...cachedShiftRequests]);
+    commitShiftRequestsCache([payload, ...cachedShiftRequests.filter((r) => r.id !== id)], true);
     return payload;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -326,6 +395,21 @@ export async function approveShiftRequestAndSyncAvailability(
 
   try {
     await updateDoc(doc(db, SHIFT_REQUESTS_COLLECTION, request.id), updatePayload);
+    commitShiftRequestsCache(
+      cachedShiftRequests.map((r) =>
+        r.id === request.id
+          ? {
+              ...r,
+              status: 'approved',
+              reviewedBy: updatePayload.reviewedBy,
+              reviewedAt: updatePayload.reviewedAt,
+              updatedAt: updatePayload.updatedAt,
+              ...(updatePayload.reviewerNote ? { reviewerNote: updatePayload.reviewerNote } : {}),
+            }
+          : r
+      ),
+      true
+    );
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -350,6 +434,21 @@ export async function rejectShiftRequest(
 
   try {
     await updateDoc(doc(db, SHIFT_REQUESTS_COLLECTION, requestId), updatePayload);
+    commitShiftRequestsCache(
+      cachedShiftRequests.map((r) =>
+        r.id === requestId
+          ? {
+              ...r,
+              status: 'rejected',
+              reviewedBy: updatePayload.reviewedBy,
+              reviewedAt: updatePayload.reviewedAt,
+              updatedAt: updatePayload.updatedAt,
+              ...(updatePayload.reviewerNote ? { reviewerNote: updatePayload.reviewerNote } : {}),
+            }
+          : r
+      ),
+      true
+    );
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -359,6 +458,10 @@ export async function deleteShiftRequest(requestId: string): Promise<void> {
   const path = `${SHIFT_REQUESTS_COLLECTION}/${requestId}`;
   try {
     await deleteDoc(doc(db, SHIFT_REQUESTS_COLLECTION, requestId));
+    commitShiftRequestsCache(
+      cachedShiftRequests.filter((r) => r.id !== requestId),
+      true
+    );
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

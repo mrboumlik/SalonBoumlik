@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Archive,
@@ -35,11 +35,13 @@ import {
   CaisseBarberId,
   CaisseEntry,
   CaisseEntryType,
+  ClientCreditRecord,
   CommissionPeriodOverride,
   StaffRole,
 } from '../types';
 import {
   addCaisseEntry,
+  closeAllBarbersDailyIntakeThrough,
   closeBarberDayIntake,
   computeAnnualCaisseRollup,
   computeBarberCycleBalance,
@@ -52,12 +54,16 @@ import {
   deleteCaisseCycleSettlement,
   deleteCaisseEntry,
   ensureDailyArchivesForPriorDays,
+  findBarberDaySettlement,
   getCaisseBarberMeta,
   getCaisseBarbersFromRoster,
+  getEffectiveCaisseCreditRemaining,
   getEffectiveCommissionPercent,
   getEffectiveCommissionPercentForDate,
   getSalonBusinessDate,
+  matchesCaisseBarber,
   recordCaisseCreditRepayment,
+  resolveCaisseBarberId,
   saveBarberDailyNoteReply,
   saveMasterDailyBarberNote,
   updateBarberCommissionPercent,
@@ -79,8 +85,14 @@ import {
 } from '../utils/shopPricingStore';
 import { useBarberRoster } from '../utils/barberRosterStore';
 import {
+  computeOutstandingCreditsForPhone,
+  getEffectiveManualCreditRemaining,
+  recordManualCreditPayment,
+  submitCreditSettlementRequest,
   updateCreditDisputeStatus,
   useCreditDisputes,
+  useCreditSettlementRequests,
+  useManualClientCredits,
 } from '../utils/creditRegistryStore';
 import { getBarberIdentityTokens } from '../utils/barberIdentity';
 import { buildCreditWhatsAppReminderUrl } from '../utils/whatsappAutomation';
@@ -116,6 +128,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   const shopPricingConfig = useShopPricingConfig();
   const roster = useBarberRoster();
   const creditDisputes = useCreditDisputes();
+  const manualCredits = useManualClientCredits();
+  const creditSettlementRequests = useCreditSettlementRequests();
 
   const [businessTodayStr, setBusinessTodayStr] = useState<string>(() =>
     getSalonBusinessDate()
@@ -181,6 +195,20 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   const [selectedYear, setSelectedYear] = useState<string>(() =>
     getSalonBusinessDate().slice(0, 4)
   );
+  const prevBusinessTodayRef = useRef<string>(businessTodayStr);
+
+  // Auto-advance selectedDate when crossing 03:00 AM business-day rollover while viewing today
+  useEffect(() => {
+    const prevToday = prevBusinessTodayRef.current;
+    if (prevToday !== businessTodayStr) {
+      if (selectedDate === prevToday) {
+        setSelectedDate(businessTodayStr);
+        setSelectedMonth(businessTodayStr.slice(0, 7));
+        setSelectedYear(businessTodayStr.slice(0, 4));
+      }
+      prevBusinessTodayRef.current = businessTodayStr;
+    }
+  }, [businessTodayStr, selectedDate]);
 
   // Staff barbers see max 2 months of historical transactions (unpaid credits stay visible until settled)
   const twoMonthsCutoffDate = useMemo(() => {
@@ -211,6 +239,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     | 'credits_all'
     | 'shop_day'
     | 'shop_cycle'
+    | 'float_day'
     | 'float_cycle'
     | 'shop_barber_day';
   const [drillModal, setDrillModal] = useState<{
@@ -229,9 +258,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   const [drawerModalScope, setDrawerModalScope] = useState<'open_cycle' | 'day'>('open_cycle');
 
   // Privacy Masking & Hassan PIN Reveal Gate:
-  // - Other barbers reveal immediately without a PIN prompt.
-  // - Revealing Hassan's account/numbers requires verifying Hassan's live roster PIN.
-  const canToggleCaissePrivacy = sessionRole === 'master' || sessionRole === 'caisse';
+  // - Strictly active ONLY inside the dedicated Caisse account (`sessionRole === 'caisse'`).
+  // - Never hide Hassan's numbers or prompt for Hassan's PIN when logged in as Master or Barber.
+  const canToggleCaissePrivacy = sessionRole === 'caisse';
   const [showCaisseAmounts, setShowCaisseAmounts] = useState<boolean>(false);
   const [revealedCards, setRevealedCards] = useState<Record<string, boolean>>({});
   const [hassanPinVerifiedInCaisse, setHassanPinVerifiedInCaisse] = useState<boolean>(false);
@@ -248,6 +277,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     setHassanPinModalOpen(null);
     setHassanPinInput('');
     setHassanPinError('');
+    if (sessionRole === 'caisse') {
+      setTxScopeFilter('day');
+      setDrawerModalScope('day');
+    }
   }, [sessionRole]);
 
   useEffect(() => {
@@ -257,20 +290,27 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   }, [activeBarberId]);
 
   const isHassanBox = (boxKey?: string): boolean => {
-    if (sessionRole === 'barber') return false;
+    if (sessionRole !== 'caisse') return false;
     if (boxKey) {
       if (
         boxKey === 'shop_barber_day_hassan' ||
         boxKey === 'monthly_barber_hassan' ||
         boxKey === 'annual_barber_hassan' ||
-        boxKey === 'sum_float_cycle'
+        boxKey === 'sum_float_cycle' ||
+        boxKey === 'drawer_barber_hassan'
       ) {
         return true;
       }
       if (
+        boxKey === 'drawer_total_chip' ||
+        boxKey === 'drawer_float' ||
+        boxKey === 'drawer_income' ||
+        boxKey === 'drawer_expenses' ||
+        boxKey === 'drawer_net_total' ||
         boxKey.startsWith('shop_barber_day_') ||
         boxKey.startsWith('monthly_barber_') ||
-        boxKey.startsWith('annual_barber_')
+        boxKey.startsWith('annual_barber_') ||
+        boxKey.startsWith('drawer_barber_')
       ) {
         return false;
       }
@@ -279,7 +319,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   };
 
   const isBoxVisible = (boxKey?: string): boolean => {
-    if (sessionRole === 'barber') return true;
+    if (sessionRole !== 'caisse') return true;
     if (isHassanBox(boxKey) && !hassanPinVerifiedInCaisse) return false;
     if (showCaisseAmounts) return true;
     if (boxKey && revealedCards[boxKey]) return true;
@@ -473,10 +513,24 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   const [expandedEntryIds, setExpandedEntryIds] = useState<Record<string, boolean>>({});
   const [txScopeFilter, setTxScopeFilter] = useState<'day' | 'cycle' | 'all'>('day');
 
-  // Repayment inline state
+  // Repayment inline state + Pay/Clear settlement request state
   const [repayingEntryId, setRepayingEntryId] = useState<string | null>(null);
   const [repayAmountInput, setRepayAmountInput] = useState<string>('');
   const [repayBusy, setRepayBusy] = useState<boolean>(false);
+  const [settleReqEntryId, setSettleReqEntryId] = useState<string | null>(null);
+  const [settleReqAction, setSettleReqAction] = useState<'pay' | 'clear'>('pay');
+  const [settleReqAmountInput, setSettleReqAmountInput] = useState<string>('');
+  const [settleReqNoteInput, setSettleReqNoteInput] = useState<string>('');
+  const [settleReqBusy, setSettleReqBusy] = useState<boolean>(false);
+  // Manual credit record inline repayment & request states
+  const [repayingManualId, setRepayingManualId] = useState<string | null>(null);
+  const [repayManualAmountInput, setRepayManualAmountInput] = useState<string>('');
+  const [repayManualBusy, setRepayManualBusy] = useState<boolean>(false);
+  const [settleReqManualId, setSettleReqManualId] = useState<string | null>(null);
+  const [settleReqManualAction, setSettleReqManualAction] = useState<'pay' | 'clear'>('pay');
+  const [settleReqManualAmountInput, setSettleReqManualAmountInput] = useState<string>('');
+  const [settleReqManualNoteInput, setSettleReqManualNoteInput] = useState<string>('');
+  const [settleReqManualBusy, setSettleReqManualBusy] = useState<boolean>(false);
 
   // Master Admin commission edit, period commission overrides & cycle payout confirmation
   const [commissionInput, setCommissionInput] = useState<string>('50');
@@ -494,6 +548,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   // Master Daily Intake Close & Multi-Scope Cycle/Period Settlement
   const [dailyIntakeCloseBusy, setDailyIntakeCloseBusy] = useState<boolean>(false);
   const [payoutConfirmOpen, setPayoutConfirmOpen] = useState<boolean>(false);
+  const [payoutTargetMode, setPayoutTargetMode] = useState<'single' | 'all_barbers'>('single');
   const [payoutScope, setPayoutScope] = useState<'full_open' | 'month' | 'custom_range'>('full_open');
   const [payoutMonth, setPayoutMonth] = useState<string>(() =>
     getSalonBusinessDate().slice(0, 7)
@@ -591,7 +646,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   const selectedDayStats = useMemo(
     () =>
       activeBarberId
-        ? computeBarberDayStats(activeBarberId, selectedDate, entries, effectivePct)
+        ? computeBarberDayStats(activeBarberId, selectedDate, entries, effectivePct, roster)
         : {
             barberId: 'hassan',
             date: selectedDate,
@@ -611,53 +666,96 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             drawerCashMAD: 0,
             entryCount: 0,
           },
-    [activeBarberId, selectedDate, entries, effectivePct]
+    [activeBarberId, selectedDate, entries, effectivePct, roster]
   );
 
   const selectedDaySettlement = activeBarberId
-    ? settlementsMap[`${activeBarberId}_${selectedDate}`]
+    ? findBarberDaySettlement(activeBarberId, selectedDate, settlementsMap, roster)
     : undefined;
 
-  // Post-daily-close intake calculation (resets today's displayed intake after Hassan closes the day, while keeping cycleBalance intact!)
+  // Post-daily-close daily stats (resets today's displayed intake, expenses, float, shop share & daily drawer cleanly to 0 after daily close, while keeping cycleBalance and monthly/annual history intact!)
   const displayedDayIntakeStats = useMemo(() => {
     if (!selectedDaySettlement?.intakeClosed) {
       return {
         isIntakeClosed: false,
         displayedIncomeMAD: selectedDayStats.incomeMAD,
         displayedExpensesMAD: selectedDayStats.expensesMAD,
+        displayedFloatInMAD: selectedDayStats.floatInMAD,
+        displayedFloatOutMAD: selectedDayStats.floatOutMAD,
+        displayedFloatMAD: selectedDayStats.floatMAD,
+        displayedShopShareMAD: selectedDayStats.shopShareMAD,
+        displayedDrawerCashMAD: selectedDayStats.drawerCashMAD,
         closedAtAmountMAD: 0,
+        closedExpensesMAD: 0,
+        closedShopShareMAD: 0,
         postCloseEntryCount: selectedDayStats.entryCount,
       };
     }
     const closedIso = selectedDaySettlement.confirmedAt || selectedDaySettlement.updatedAt;
     const postCloseEntries = entries.filter(
       (e) =>
-        e.barberId === activeBarberId &&
+        matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
         e.date === selectedDate &&
         (!closedIso || e.createdAt > closedIso)
     );
     let postIncome = 0;
     let postExpenses = 0;
+    let postFloatIn = 0;
+    let postFloatOut = 0;
     postCloseEntries.forEach((e) => {
       if (e.type === 'income' || e.type === 'credit_repayment') {
         postIncome += Number(e.amountPaidMAD) || 0;
       } else if (e.type === 'expense') {
         postExpenses += Number(e.amountPaidMAD) || 0;
+      } else if (e.type === 'float_adjustment') {
+        postFloatIn += Number(e.amountPaidMAD) || 0;
+      } else if (e.type === 'float_return') {
+        postFloatOut += Number(e.amountPaidMAD) || 0;
       }
     });
+    const postFloat = Math.round(postFloatIn - postFloatOut);
+    const pct = Math.max(0, Math.min(100, effectivePct));
+    const postBarberGross = Math.round(postIncome * (pct / 100));
+    const postShopShare = Math.max(0, Math.round(postIncome - postBarberGross));
     return {
       isIntakeClosed: true,
       displayedIncomeMAD: Math.round(postIncome),
       displayedExpensesMAD: Math.round(postExpenses),
-      closedAtAmountMAD: Number(selectedDaySettlement.grossIntakeClosedMAD) || selectedDayStats.incomeMAD,
+      displayedFloatInMAD: Math.round(postFloatIn),
+      displayedFloatOutMAD: Math.round(postFloatOut),
+      displayedFloatMAD: postFloat,
+      displayedShopShareMAD: postShopShare,
+      displayedDrawerCashMAD: Math.round(postIncome + postFloat - postExpenses),
+      closedAtAmountMAD:
+        Number(selectedDaySettlement.grossIntakeClosedMAD) || selectedDayStats.incomeMAD,
+      closedExpensesMAD:
+        selectedDayStats.expensesMAD || Number(selectedDaySettlement.expensesMAD) || 0,
+      closedShopShareMAD:
+        selectedDayStats.shopShareMAD || Number(selectedDaySettlement.shopShareMAD) || 0,
       postCloseEntryCount: postCloseEntries.length,
     };
-  }, [selectedDaySettlement, selectedDayStats, entries, activeBarberId, selectedDate]);
+  }, [
+    selectedDaySettlement,
+    selectedDayStats,
+    entries,
+    activeBarberId,
+    selectedDate,
+    roster,
+    effectivePct,
+  ]);
 
   const cycleBalance = useMemo(
     () =>
       activeBarberId
-        ? computeBarberCycleBalance(activeBarberId, entries, settingsMap, cycles, selectedDate)
+        ? computeBarberCycleBalance(
+            activeBarberId,
+            entries,
+            settingsMap,
+            cycles,
+            selectedDate,
+            manualCredits,
+            roster
+          )
         : {
             barberId: 'hassan',
             lastSettledIso: null,
@@ -677,7 +775,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             openCreditsAllTimeMAD: 0,
             openCycleEntries: [],
           },
-    [activeBarberId, entries, settingsMap, cycles, selectedDate]
+    [activeBarberId, entries, settingsMap, cycles, selectedDate, manualCredits, roster]
   );
 
   const payoutPreview = useMemo(
@@ -709,6 +807,60 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     ]
   );
 
+  const allBarbersPayoutPreview = useMemo(() => {
+    const items = allCaisseBarbers.map((b) => {
+      const preview = computeBarberPeriodSettlementPreview({
+        barberId: b.id,
+        entries,
+        settingsMap,
+        cycles,
+        scope: payoutScope,
+        month: payoutMonth,
+        startDate: payoutStartDate,
+        endDate: payoutEndDate,
+        referenceDate: businessTodayStr,
+      });
+      return { barber: b, preview };
+    });
+    const barbersWithOpenEntries = items.filter(
+      (item) => item.preview.cycleBalance.openCycleEntries.length > 0
+    );
+    const totalIncomeMAD = barbersWithOpenEntries.reduce(
+      (s, x) => s + x.preview.cycleBalance.incomeMAD,
+      0
+    );
+    const totalShopShareMAD = barbersWithOpenEntries.reduce(
+      (s, x) => s + x.preview.cycleBalance.shopShareMAD,
+      0
+    );
+    const totalBarberNetOwedMAD = barbersWithOpenEntries.reduce(
+      (s, x) => s + x.preview.cycleBalance.barberNetOwedMAD,
+      0
+    );
+    const totalEntryCount = barbersWithOpenEntries.reduce(
+      (s, x) => s + x.preview.cycleBalance.openCycleEntries.length,
+      0
+    );
+    return {
+      items,
+      barbersWithOpenEntries,
+      totalIncomeMAD: Math.round(totalIncomeMAD * 100) / 100,
+      totalShopShareMAD: Math.round(totalShopShareMAD * 100) / 100,
+      totalBarberNetOwedMAD: Math.round(totalBarberNetOwedMAD * 100) / 100,
+      totalEntryCount,
+    };
+  }, [
+    allCaisseBarbers,
+    entries,
+    settingsMap,
+    cycles,
+    payoutScope,
+    payoutMonth,
+    payoutStartDate,
+    payoutEndDate,
+    businessTodayStr,
+  ]);
+
   const dailyInOutHistory = useMemo(() => {
     if (!activeBarberId) return [];
     const list = computeBarberDailyInOutHistory(activeBarberId, entries, settlementsMap, 12);
@@ -721,19 +873,35 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   // Master All-Barbers Rollups
   const monthlyRollup = useMemo(
     () =>
-      computeMonthlyCaisseRollup(selectedMonth, entries, settingsMap, settlementsMap, roster),
-    [selectedMonth, entries, settingsMap, settlementsMap, roster]
+      computeMonthlyCaisseRollup(
+        selectedMonth,
+        entries,
+        settingsMap,
+        settlementsMap,
+        roster,
+        manualCredits
+      ),
+    [selectedMonth, entries, settingsMap, settlementsMap, roster, manualCredits]
   );
 
   const allTimeOpenCreditsByBarber = useMemo(() => {
     const map: Record<string, number> = {};
     entries.forEach((e) => {
-      if ((Number(e.creditRemainingMAD) || 0) > 0 && e.creditStatus !== 'paid') {
-        map[e.barberId] = (map[e.barberId] || 0) + (Number(e.creditRemainingMAD) || 0);
+      const rem = getEffectiveCaisseCreditRemaining(e);
+      if (rem > 0) {
+        const resolvedId = resolveCaisseBarberId(e.barberId, e.barberName, roster);
+        map[resolvedId] = (map[resolvedId] || 0) + rem;
+      }
+    });
+    manualCredits.forEach((r) => {
+      const rem = getEffectiveManualCreditRemaining(r);
+      if (rem > 0) {
+        const resolvedId = resolveCaisseBarberId(r.barberId || 'hassan', r.barberName, roster);
+        map[resolvedId] = (map[resolvedId] || 0) + rem;
       }
     });
     return map;
-  }, [entries]);
+  }, [entries, manualCredits, roster]);
 
   const annualRollup = useMemo(
     () => computeAnnualCaisseRollup(selectedYear, entries, settingsMap, roster),
@@ -752,7 +920,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     return { perBarber, totalIncome, totalShopShare, totalExpenses };
   }, [allCaisseBarbers, selectedDate, entries, settingsMap]);
 
-  // Live "المجر ككل" (Total Cash in Drawer = Float + Income - Expenses) + per-person breakdown
+  // Live "الحساب في المجر" (Total Cash currently in Drawer = Float + Income - Expenses; resets cleanly to 0 on daily close)
   const openCycleDrawerSummary = useMemo(
     () =>
       computeShopDrawerTotals({
@@ -762,8 +930,25 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         rosterMembers: roster,
         scope: 'open_cycle',
         date: selectedDate,
+        settlementsMap,
+        respectDailyIntakeClose: true,
       }),
-    [entries, settingsMap, cycles, roster, selectedDate]
+    [entries, settingsMap, cycles, roster, selectedDate, settlementsMap]
+  );
+
+  const todayDailyDrawerSummary = useMemo(
+    () =>
+      computeShopDrawerTotals({
+        entries,
+        settingsMap,
+        cycles,
+        rosterMembers: roster,
+        scope: 'day',
+        date: businessTodayStr,
+        settlementsMap,
+        respectDailyIntakeClose: true,
+      }),
+    [entries, settingsMap, cycles, roster, businessTodayStr, settlementsMap]
   );
 
   const selectedDayDrawerSummary = useMemo(
@@ -775,45 +960,67 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         rosterMembers: roster,
         scope: 'day',
         date: selectedDate,
+        settlementsMap,
+        respectDailyIntakeClose: true,
       }),
-    [entries, settingsMap, cycles, roster, selectedDate]
+    [entries, settingsMap, cycles, roster, selectedDate, settlementsMap]
   );
 
   const activeDrawerSummary =
-    drawerModalScope === 'day' ? selectedDayDrawerSummary : openCycleDrawerSummary;
+    sessionRole === 'caisse' || drawerModalScope === 'day'
+      ? selectedDayDrawerSummary
+      : openCycleDrawerSummary;
 
   // Open Credits across ALL dates (NEVER subject to 2-month cap until paid)
   const openCreditsList = useMemo(() => {
     return entries.filter((e) => {
-      const rem = Number(e.creditRemainingMAD) || 0;
-      if (rem <= 0 || e.creditStatus === 'paid') return false;
-      if (sessionRole === 'barber') return e.barberId === activeBarberId;
-      return e.barberId === activeBarberId;
+      if (getEffectiveCaisseCreditRemaining(e) <= 0) return false;
+      return matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster);
     });
-  }, [entries, sessionRole, activeBarberId]);
+  }, [entries, activeBarberId, roster]);
+
+  const openManualCreditsForBarber = useMemo(() => {
+    return manualCredits.filter((r) => {
+      if (getEffectiveManualCreditRemaining(r) <= 0) return false;
+      return matchesCaisseBarber(r.barberId || 'hassan', r.barberName, activeBarberId, roster);
+    });
+  }, [manualCredits, activeBarberId, roster]);
+
+  const combinedOpenCreditsCount = openCreditsList.length + openManualCreditsForBarber.length;
 
   // Filtered Transaction Log (Barbers capped at last 2 months, except open unpaid credits)
   const visibleEntries = useMemo(() => {
     const passesBarberArchiveCap = (e: CaisseEntry) => {
       if (sessionRole !== 'barber') return true;
-      const isOpenCredit = (Number(e.creditRemainingMAD) || 0) > 0 && e.creditStatus !== 'paid';
+      const isOpenCredit = getEffectiveCaisseCreditRemaining(e) > 0;
       return isOpenCredit || e.date >= twoMonthsCutoffDate;
     };
 
-    if (txScopeFilter === 'day') {
+    const effectiveFilter =
+      sessionRole === 'caisse' && txScopeFilter === 'cycle' ? 'day' : txScopeFilter;
+
+    if (effectiveFilter === 'day') {
       return entries.filter(
-        (e) => e.barberId === activeBarberId && e.date === selectedDate && passesBarberArchiveCap(e)
+        (e) =>
+          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
+          e.date === selectedDate &&
+          passesBarberArchiveCap(e)
       );
     }
-    if (txScopeFilter === 'cycle') {
+    if (effectiveFilter === 'cycle') {
       return cycleBalance.openCycleEntries.filter(passesBarberArchiveCap);
     }
     return entries
-      .filter((e) => e.barberId === activeBarberId && passesBarberArchiveCap(e))
+      .filter(
+        (e) =>
+          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
+          passesBarberArchiveCap(e)
+      )
       .slice(0, 80);
   }, [
     entries,
     activeBarberId,
+    roster,
     selectedDate,
     txScopeFilter,
     cycleBalance.openCycleEntries,
@@ -850,7 +1057,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         ? 'sum_shop_day'
         : drillModal.kind === 'shop_cycle'
         ? 'sum_shop_cycle'
-        : drillModal.kind === 'float_cycle'
+        : drillModal.kind === 'float_day' || drillModal.kind === 'float_cycle'
         ? 'float_cycle_card'
         : `shop_barber_day_${drillModal.barberId || activeBarberId}`;
     const fmt = (val: number | string | undefined | null) =>
@@ -865,9 +1072,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     if (drillModal.kind === 'income_day') {
       const list = entries.filter(
         (e) =>
-          e.barberId === activeBarberId &&
+          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
           e.date === selectedDate &&
-          (e.type === 'income' || e.type === 'credit_repayment')
+          (e.type === 'income' || e.type === 'credit_repayment') &&
+          (!closedIso || e.createdAt > closedIso)
       );
       return {
         title: isViewingOwnAccount
@@ -875,7 +1083,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           : `تفاصيل شحال حط ${activeBarberMeta.arName} (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`,
         totalLabel: fmt(displayedDayIntakeStats.displayedIncomeMAD),
         subtitle: displayedDayIntakeStats.isIntakeClosed
-          ? `تم إغلاق مداخيل سابقة بمبلغ ${fmt(displayedDayIntakeStats.closedAtAmountMAD)} · المعروض الحالي بعد الإغلاق`
+          ? `تم جمع حساب اليوم بمبلغ ${fmt(displayedDayIntakeStats.closedAtAmountMAD)} · العمليات الجديدة بعد الجمع (${list.length})`
           : `${list.length} عملية مسجلة في هذا اليوم`,
         accentCls: 'text-emerald-700 dark:text-emerald-400',
         list,
@@ -885,26 +1093,31 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     }
 
     if (drillModal.kind === 'expenses') {
-      const source =
-        sessionRole === 'caisse'
-          ? entries.filter((e) => e.barberId === activeBarberId && e.date === selectedDate)
-          : cycleBalance.openCycleEntries;
-      const list = source.filter((e) => e.type === 'expense');
-      const totalAmt =
-        sessionRole === 'caisse' ? selectedDayStats.expensesMAD : cycleBalance.expensesMAD;
+      const list = entries.filter(
+        (e) =>
+          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
+          e.date === selectedDate &&
+          e.type === 'expense' &&
+          (!closedIso || e.createdAt > closedIso)
+      );
+      const totalAmt = displayedDayIntakeStats.displayedExpensesMAD;
       return {
         title:
           sessionRole === 'caisse' || !isViewingOwnAccount
-            ? `تفاصيل السحوبات والمصاريف — ${activeBarberMeta.arName}`
-            : 'تفاصيل شحال هزيت (السحوبات والمصاريف)',
+            ? `تفاصيل شحال هز ${activeBarberMeta.arName} (${selectedDate})`
+            : `تفاصيل شحال هزيت (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`,
         totalLabel: fmt(totalAmt),
         subtitle:
           sessionRole === 'caisse'
-            ? `سحوبات يوم ${selectedDate}`
-            : `مجموع السحوبات في الدورة المفتوحة (${list.length} عملية)`,
+            ? closedIso
+              ? `سحوبات يوم ${selectedDate} بعد جمع الحساب`
+              : `سحوبات يوم ${selectedDate}`
+            : closedIso
+            ? `تم جمع سحوبات اليوم (${fmt(displayedDayIntakeStats.closedExpensesMAD)}) · التراكمي بالدورة المفتوحة: ${fmt(cycleBalance.expensesMAD)}`
+            : `سحوبات يوم ${selectedDate} (${list.length} عملية) · التراكمي بالدورة: ${fmt(cycleBalance.expensesMAD)}`,
         accentCls: 'text-rose-700 dark:text-rose-400',
         list,
-        closedIso: null,
+        closedIso,
         canShowAmounts: isBoxVisible(boxKeyForDrill),
       };
     }
@@ -912,24 +1125,29 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     if (drillModal.kind === 'net_balance') {
       const list =
         sessionRole === 'caisse'
-          ? entries.filter((e) => e.barberId === activeBarberId && e.date === selectedDate)
+          ? entries.filter(
+              (e) =>
+                matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
+                e.date === selectedDate &&
+                (!closedIso || e.createdAt > closedIso)
+            )
           : cycleBalance.openCycleEntries;
       const netVal =
         sessionRole === 'caisse'
-          ? selectedDayStats.drawerCashMAD
+          ? displayedDayIntakeStats.displayedDrawerCashMAD
           : cycleBalance.barberNetOwedMAD;
       return {
         title:
           sessionRole === 'caisse'
             ? `تفاصيل الفلوس فـ المجر (${activeBarberMeta.arName})`
             : isViewingOwnAccount
-            ? 'تفاصيل شحال بقى ليا (الصافي التراكمي)'
-            : `تفاصيل شحال كيتسال ${activeBarberMeta.arName}`,
+            ? 'تفاصيل شحال بقى ليا (الحساب الشهري/التراكمي)'
+            : `تفاصيل شحال كيتسال ${activeBarberMeta.arName} (الحساب الشهري/التراكمي)`,
         totalLabel: fmt(netVal),
         subtitle:
           sessionRole === 'caisse'
-            ? `المداخيل (${fmt(selectedDayStats.incomeMAD)}) + الصرف (${fmt(selectedDayStats.floatMAD)}) − السحوبات (${fmt(selectedDayStats.expensesMAD)})`
-            : `المداخيل: ${fmt(cycleBalance.incomeMAD)} · حصة الحلاق (${cycleBalance.commissionPercent}%): ${fmt(cycleBalance.barberGrossShareMAD)}${
+            ? `المداخيل (${fmt(displayedDayIntakeStats.displayedIncomeMAD)}) + الصرف (${fmt(displayedDayIntakeStats.displayedFloatMAD)}) − السحوبات (${fmt(displayedDayIntakeStats.displayedExpensesMAD)})`
+            : `المداخيل بالدورة: ${fmt(cycleBalance.incomeMAD)} · حصة الحلاق (${cycleBalance.commissionPercent}%): ${fmt(cycleBalance.barberGrossShareMAD)}${
                 activeBarberId === 'hassan' && cycleBalance.floatMAD !== 0
                   ? ` + صرف: ${fmt(cycleBalance.floatMAD)}`
                   : ''
@@ -937,22 +1155,22 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         accentCls:
           netVal < 0 ? 'text-rose-700 dark:text-rose-400' : 'text-amber-700 dark:text-amber-300',
         list,
-        closedIso: null,
+        closedIso: sessionRole === 'caisse' ? closedIso : null,
         canShowAmounts: isBoxVisible(boxKeyForDrill),
       };
     }
 
     if (drillModal.kind === 'credits_all') {
-      const totalCred = openCreditsList.reduce(
-        (s, e) => s + (Number(e.creditRemainingMAD) || 0),
-        0
-      );
+      const totalCred =
+        openCreditsList.reduce((s, e) => s + getEffectiveCaisseCreditRemaining(e), 0) +
+        openManualCreditsForBarber.reduce((s, r) => s + getEffectiveManualCreditRemaining(r), 0);
       return {
         title: `تفاصيل الكريدي المفتوح — ${activeBarberMeta.arName}`,
         totalLabel: fmt(totalCred),
-        subtitle: `${openCreditsList.length} كريدي مفتوح عبر كل التواريخ حتى الأداء`,
+        subtitle: `${combinedOpenCreditsCount} كريدي مفتوح عبر كل التواريخ حتى الأداء`,
         accentCls: 'text-orange-700 dark:text-orange-400',
         list: openCreditsList,
+        manualList: openManualCreditsForBarber,
         closedIso: null,
         canShowAmounts: isBoxVisible(boxKeyForDrill),
       };
@@ -961,17 +1179,20 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     if (drillModal.kind === 'shop_day') {
       const list = entries.filter(
         (e) =>
-          e.barberId === activeBarberId &&
+          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
           e.date === selectedDate &&
-          (e.type === 'income' || e.type === 'credit_repayment')
+          (e.type === 'income' || e.type === 'credit_repayment') &&
+          (!closedIso || e.createdAt > closedIso)
       );
       return {
         title: `تفاصيل حصة المحل من ${activeBarberMeta.arName} (${selectedDate})`,
-        totalLabel: fmt(selectedDayStats.shopShareMAD),
-        subtitle: `من إجمالي دخل ${fmt(selectedDayStats.incomeMAD)} (نسبة المحل ${Math.max(0, 100 - selectedDayStats.commissionPercent)}%)`,
+        totalLabel: fmt(displayedDayIntakeStats.displayedShopShareMAD),
+        subtitle: displayedDayIntakeStats.isIntakeClosed
+          ? `تم جمع حساب اليوم (${fmt(displayedDayIntakeStats.closedShopShareMAD)}) · العمليات الجديدة بعد الجمع (${list.length})`
+          : `من إجمالي دخل ${fmt(displayedDayIntakeStats.displayedIncomeMAD)} (نسبة المحل ${Math.max(0, 100 - selectedDayStats.commissionPercent)}%)`,
         accentCls: 'text-emerald-700 dark:text-emerald-400',
         list,
-        closedIso: null,
+        closedIso,
         canShowAmounts: isBoxVisible(boxKeyForDrill),
       };
     }
@@ -991,12 +1212,33 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       };
     }
 
+    if (drillModal.kind === 'float_day') {
+      const list = entries.filter(
+        (e) =>
+          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
+          e.date === selectedDate &&
+          (e.type === 'float_adjustment' || e.type === 'float_return') &&
+          (!closedIso || e.createdAt > closedIso)
+      );
+      return {
+        title: `تفاصيل الصرف اليوم (${selectedDate}) — ${activeBarberMeta.arName}`,
+        totalLabel: fmt(displayedDayIntakeStats.displayedFloatMAD),
+        subtitle: displayedDayIntakeStats.isIntakeClosed
+          ? `تم جمع حساب اليوم · عمليات الصرف بعد الجمع: ${list.length}`
+          : `${list.length} عملية (مضاف: ${fmt(displayedDayIntakeStats.displayedFloatInMAD)} · مرجوع: ${fmt(displayedDayIntakeStats.displayedFloatOutMAD)})`,
+        accentCls: 'text-amber-700 dark:text-amber-300',
+        list,
+        closedIso,
+        canShowAmounts: isBoxVisible(boxKeyForDrill),
+      };
+    }
+
     if (drillModal.kind === 'float_cycle') {
       const list = cycleBalance.openCycleEntries.filter(
         (e) => e.type === 'float_adjustment' || e.type === 'float_return'
       );
       return {
-        title: `تفاصيل فلوس الصرف — ${activeBarberMeta.arName}`,
+        title: `تفاصيل فلوس الصرف (الدورة المفتوحة) — ${activeBarberMeta.arName}`,
         totalLabel: fmt(cycleBalance.floatMAD),
         subtitle: `${list.length} عملية (مضاف: ${fmt(cycleBalance.floatInMAD)} · مرجوع: ${fmt(cycleBalance.floatOutMAD)})`,
         accentCls: 'text-amber-700 dark:text-amber-300',
@@ -1038,6 +1280,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     cycleBalance,
     selectedDayStats,
     openCreditsList,
+    openManualCreditsForBarber,
+    combinedOpenCreditsCount,
     roster,
     settingsMap,
   ]);
@@ -1054,18 +1298,29 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
   // Open Credit Disputes relevant to this barber (or general)
   const openBarberDisputes = useMemo(() => {
-    const openPhones = new Set(
-      openCreditsList
-        .map((ce) => (ce.clientPhone || '').replace(/\D+/g, '').slice(-9))
-        .filter((d) => d.length >= 6)
-    );
+    const openPhones = new Set<string>();
+    openCreditsList.forEach((ce) => {
+      const digits = (ce.clientPhone || '').replace(/\D+/g, '').slice(-9);
+      if (digits.length >= 6) openPhones.add(digits);
+    });
+    openManualCreditsForBarber.forEach((rec) => {
+      [rec.clientPhone, ...(rec.additionalPhones || [])].forEach((ph) => {
+        const digits = String(ph || '').replace(/\D+/g, '').slice(-9);
+        if (digits.length >= 6) openPhones.add(digits);
+      });
+    });
     return creditDisputes.filter((d) => {
       if (d.status === 'resolved') return false;
-      if (d.targetBarberId && d.targetBarberId === activeBarberId) return true;
+      if (
+        d.targetBarberId &&
+        matchesCaisseBarber(d.targetBarberId, undefined, activeBarberId, roster)
+      ) {
+        return true;
+      }
       const dDigits = (d.normalizedPhone || d.clientPhone || '').replace(/\D+/g, '').slice(-9);
       return dDigits.length >= 6 && openPhones.has(dDigits);
     });
-  }, [creditDisputes, openCreditsList, activeBarberId]);
+  }, [creditDisputes, openCreditsList, openManualCreditsForBarber, activeBarberId, roster]);
 
   const openEditModalForEntry = (entry: CaisseEntry) => {
     setEditingEntry(entry);
@@ -1477,6 +1732,17 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     if (sessionRole !== 'master' || !activeBarberId) return;
     setDailyIntakeCloseBusy(true);
     try {
+      let maxEntryCreatedAt = new Date().toISOString().slice(0, 64);
+      for (const e of entries) {
+        if (
+          e.date === selectedDate &&
+          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
+          e.createdAt &&
+          e.createdAt > maxEntryCreatedAt
+        ) {
+          maxEntryCreatedAt = e.createdAt.slice(0, 64);
+        }
+      }
       await closeBarberDayIntake({
         barberId: activeBarberId,
         barberName: activeBarberMeta.name,
@@ -1485,10 +1751,11 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         carryOverOwedMAD: Math.max(0, cycleBalance.barberNetOwedMAD),
         confirmedBy: staffName,
         existingSettlement: selectedDaySettlement,
+        maxEntryCreatedAt,
       });
       showToast(
-        `تم إغلاق مداخيل ${activeBarberMeta.arName} ليوم ${selectedDate} ✓`,
-        `إجمالي اللي دخل: ${selectedDayStats.incomeMAD} MAD · الرصيد التراكمي محفوظ`,
+        `تم جمع حساب اليوم (${activeBarberMeta.arName} · ${selectedDate}) ✓`,
+        'تم تصفير رصيد المجر اليومي إلى 0 MAD · الرصيد الشهري/التراكمي محفوظ',
         'success'
       );
     } catch (err) {
@@ -1498,38 +1765,204 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     }
   };
 
-  // Master: Confirm Cumulative / Monthly / Custom-Period Payout Settlement
-  const handleConfirmPayout = async () => {
+  // Master: Close ALL Barbers' Daily Intake through selectedDate (resets entire drawer to 0 MAD while preserving monthly/cycle balances)
+  const handleCloseAllBarbersDayIntake = async () => {
     if (sessionRole !== 'master') return;
-    const targetCycle = payoutPreview.cycleBalance;
-    setPayoutBusy(true);
+    setDailyIntakeCloseBusy(true);
     try {
-      await confirmBarberCyclePayout({
-        cycleBalance: targetCycle,
+      const closedCount = await closeAllBarbersDailyIntakeThrough({
+        barbers: allCaisseBarbers,
+        throughDate: selectedDate,
+        entries,
+        settingsMap,
+        settlementsMap,
+        cycles,
+        rosterMembers: roster,
+        manualCredits,
         confirmedBy: staffName,
-        businessDate: businessTodayStr,
-        settlementPeriodScope: payoutScope,
-        periodStartDate: payoutPreview.periodStartDate,
-        periodEndDate: payoutPreview.periodEndDate,
-        note: payoutNote.trim() || undefined,
       });
-      setPayoutConfirmOpen(false);
-      setPayoutNote('');
       showToast(
-        pickLang(lang, {
-          ar: `تمت تصفية حساب ${activeBarberMeta.arName} ✓`,
-          fr: `Compte de ${activeBarberMeta.name} soldé ✓`,
-          amz: `ⵉⵜⵜⵓⵙⴼⴹ ⵓⵙⵉⴹⵏ ⵏ ${activeBarberMeta.arName} ✓`,
-          en: `Payout settled for ${activeBarberMeta.name} ✓`,
-          es: `Cuenta liquidada para ${activeBarberMeta.name} ✓`,
-        }),
-        `${targetCycle.barberNetOwedMAD} MAD`,
+        closedCount > 0
+          ? `تم جمع حساب اليوم للجميع (${closedCount}) ✓`
+          : `حساب المجر مصفّر ومغلق بالفعل (${selectedDate}) ✓`,
+        'تم تصفير المجر اليومي إلى 0 MAD مع حفظ الرصيد الشهري والتراكمي',
         'success'
       );
+    } catch (err) {
+      console.error('Failed to close all barbers daily intake:', err);
+    } finally {
+      setDailyIntakeCloseBusy(false);
+    }
+  };
+
+  // Master: Confirm Cumulative / Monthly / Custom-Period Payout Settlement (Single Barber OR All Barbers Together)
+  const handleConfirmPayout = async () => {
+    if (sessionRole !== 'master') return;
+    setPayoutBusy(true);
+    try {
+      if (payoutTargetMode === 'all_barbers') {
+        const targets = allBarbersPayoutPreview.barbersWithOpenEntries;
+        if (targets.length === 0) {
+          showToast('لا توجد عمليات مفتوحة للتصفية حالياً', '', 'info');
+          setPayoutBusy(false);
+          return;
+        }
+        for (const item of targets) {
+          await confirmBarberCyclePayout({
+            cycleBalance: item.preview.cycleBalance,
+            confirmedBy: staffName,
+            businessDate: businessTodayStr,
+            settlementPeriodScope: payoutScope,
+            periodStartDate: item.preview.periodStartDate,
+            periodEndDate: item.preview.periodEndDate,
+            note: payoutNote.trim() || undefined,
+          });
+        }
+        setPayoutConfirmOpen(false);
+        setPayoutNote('');
+        showToast(
+          `تمت تصفية حسابات جميع الحلاقين معاً (${targets.length}) ✓`,
+          `${allBarbersPayoutPreview.totalBarberNetOwedMAD} MAD`,
+          'success'
+        );
+      } else {
+        const targetCycle = payoutPreview.cycleBalance;
+        await confirmBarberCyclePayout({
+          cycleBalance: targetCycle,
+          confirmedBy: staffName,
+          businessDate: businessTodayStr,
+          settlementPeriodScope: payoutScope,
+          periodStartDate: payoutPreview.periodStartDate,
+          periodEndDate: payoutPreview.periodEndDate,
+          note: payoutNote.trim() || undefined,
+        });
+        setPayoutConfirmOpen(false);
+        setPayoutNote('');
+        showToast(
+          pickLang(lang, {
+            ar: `تمت تصفية حساب ${activeBarberMeta.arName} ✓`,
+            fr: `Compte de ${activeBarberMeta.name} soldé ✓`,
+            amz: `ⵉⵜⵜⵓⵙⴼⴹ ⵓⵙⵉⴹⵏ ⵏ ${activeBarberMeta.arName} ✓`,
+            en: `Payout settled for ${activeBarberMeta.name} ✓`,
+            es: `Cuenta liquidada para ${activeBarberMeta.name} ✓`,
+          }),
+          `${targetCycle.barberNetOwedMAD} MAD`,
+          'success'
+        );
+      }
     } catch (err) {
       console.error('Failed to confirm payout settlement:', err);
     } finally {
       setPayoutBusy(false);
+    }
+  };
+
+  const handleSubmitCaisseCreditSettlementRequest = async (entry: CaisseEntry) => {
+    const rawNum = Math.max(0, Number(settleReqAmountInput) || 0);
+    const maxRem = getEffectiveCaisseCreditRemaining(entry);
+    const cleanAmt = Math.min(maxRem, rawNum > 0 ? rawNum : maxRem);
+    if (cleanAmt <= 0) {
+      showToast('أدخل مبلغاً أكبر من 0', '', 'warning');
+      return;
+    }
+    setSettleReqBusy(true);
+    try {
+      await submitCreditSettlementRequest({
+        sourceType: 'caisse',
+        sourceId: entry.id,
+        barberId: entry.barberId,
+        barberName: activeBarberMeta.arName || entry.barberName,
+        clientName: entry.clientName || 'زبون',
+        clientPhone: entry.clientPhone || '',
+        actionType: settleReqAction,
+        originalRemainingMAD: maxRem,
+        requestedAmountMAD: cleanAmt,
+        note: settleReqNoteInput.trim() || undefined,
+        submittedBy: staffName,
+        submittedRole: sessionRole === 'master' ? 'master' : sessionRole === 'caisse' ? 'caisse' : 'barber',
+      });
+      setSettleReqEntryId(null);
+      setSettleReqNoteInput('');
+      showToast(
+        settleReqAction === 'pay'
+          ? 'تم إرسال طلب خلاص الكريدي للمشرف حسن ✓'
+          : 'تم إرسال طلب فك الكريدي للمشرف حسن ✓',
+        `${cleanAmt} MAD`,
+        'success'
+      );
+    } catch (err) {
+      console.error('Failed to submit credit settlement request:', err);
+    } finally {
+      setSettleReqBusy(false);
+    }
+  };
+
+  const handleConfirmManualCreditRepay = async (rec: ClientCreditRecord) => {
+    if (sessionRole !== 'master') return;
+    const maxRem = getEffectiveManualCreditRemaining(rec);
+    const amt = Math.min(maxRem, Math.max(0, Number(repayManualAmountInput) || 0));
+    if (amt <= 0) return;
+    setRepayManualBusy(true);
+    try {
+      await recordManualCreditPayment(rec, amt);
+      setRepayingManualId(null);
+      setRepayManualAmountInput('');
+      showToast(
+        pickLang(lang, {
+          ar: 'تم تسجيل خلاص الكريدي ✓',
+          fr: 'Remboursement enregistré ✓',
+          amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⴼⵔⵓ ⵏ ⵓⴽⵔⵉⴷⵉ ✓',
+          en: 'Credit payment recorded ✓',
+          es: 'Pago de crédito registrado ✓',
+        }),
+        `${amt} MAD`,
+        'success'
+      );
+    } catch (err) {
+      console.error('Manual credit repayment failed:', err);
+    } finally {
+      setRepayManualBusy(false);
+    }
+  };
+
+  const handleSubmitManualCreditSettlementRequest = async (rec: ClientCreditRecord) => {
+    const rawNum = Math.max(0, Number(settleReqManualAmountInput) || 0);
+    const maxRem = getEffectiveManualCreditRemaining(rec);
+    const cleanAmt = Math.min(maxRem, rawNum > 0 ? rawNum : maxRem);
+    if (cleanAmt <= 0) {
+      showToast('أدخل مبلغاً أكبر من 0', '', 'warning');
+      return;
+    }
+    setSettleReqManualBusy(true);
+    try {
+      await submitCreditSettlementRequest({
+        sourceType: 'manual',
+        sourceId: rec.id,
+        barberId: rec.barberId || activeBarberId || 'hassan',
+        barberName: rec.barberName || activeBarberMeta.arName,
+        clientName: rec.clientName || 'زبون',
+        clientPhone: rec.clientPhone || '',
+        actionType: settleReqManualAction,
+        originalRemainingMAD: maxRem,
+        requestedAmountMAD: cleanAmt,
+        note: settleReqManualNoteInput.trim() || undefined,
+        submittedBy: staffName,
+        submittedRole:
+          sessionRole === 'master' ? 'master' : sessionRole === 'caisse' ? 'caisse' : 'barber',
+      });
+      setSettleReqManualId(null);
+      setSettleReqManualNoteInput('');
+      showToast(
+        settleReqManualAction === 'pay'
+          ? 'تم إرسال طلب خلاص الكريدي للمشرف حسن ✓'
+          : 'تم إرسال طلب فك الكريدي للمشرف حسن ✓',
+        `${cleanAmt} MAD`,
+        'success'
+      );
+    } catch (err) {
+      console.error('Failed to submit manual credit settlement request:', err);
+    } finally {
+      setSettleReqManualBusy(false);
     }
   };
 
@@ -1750,11 +2183,18 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
   if ((sessionRole === 'caisse' || sessionRole === 'master') && !activeBarberId) {
     const gridBarbers = sessionRole === 'master' ? allCaisseBarbers : activeCaisseBarbers;
-    const overdrawnMainRows = openCycleDrawerSummary.byBarber.filter(
-      (r) => r.netDrawerContributionMAD < 0 || (sessionRole === 'master' && r.barberNetShareMAD < 0)
+    const selectorDrawerSummary =
+      sessionRole === 'caisse' ? todayDailyDrawerSummary : openCycleDrawerSummary;
+    const overdrawnMainRows = selectorDrawerSummary.byBarber.filter(
+      (r) =>
+        r.netDrawerContributionMAD < 0 ||
+        (sessionRole === 'master' && r.barberNetShareMAD < 0)
     );
     const hasMainCaisseOverdrawn =
-      openCycleDrawerSummary.netTotalMAD < 0 || overdrawnMainRows.length > 0;
+      selectorDrawerSummary.netTotalMAD < 0 || overdrawnMainRows.length > 0;
+    const hasAnyDailySettledToday = gridBarbers.some(
+      (b) => Boolean(settlementsMap[`${b.id}_${businessTodayStr}`]?.intakeClosed)
+    );
     return (
       <div className="space-y-4 pb-28">
         <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1773,52 +2213,108 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             </div>
           </div>
 
-          {canToggleCaissePrivacy && (
+          {(sessionRole === 'master' || sessionRole === 'caisse') && (
             <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {sessionRole === 'master' && (
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    setDrawerModalScope('open_cycle');
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  setDrawerModalScope(sessionRole === 'caisse' ? 'day' : 'open_cycle');
+                  setDrawerModalOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setDrawerModalScope(sessionRole === 'caisse' ? 'day' : 'open_cycle');
                     setDrawerModalOpen(true);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setDrawerModalScope('open_cycle');
-                      setDrawerModalOpen(true);
-                    }
-                  }}
-                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl border border-emerald-300 dark:border-emerald-500/45 bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 text-emerald-900 dark:text-emerald-200 text-xs font-black flex items-center gap-2 cursor-pointer transition-colors shadow-2xs"
-                  title="عرض المجموع والتفريق فـ المجر ككل"
-                >
-                  <Wallet className="w-4 h-4 text-emerald-700 dark:text-emerald-300 shrink-0" />
-                  <span>المجر ككل:</span>
-                  <span dir="ltr" className="font-mono font-black tabular-nums">
-                    {formatMAD(openCycleDrawerSummary.netTotalMAD, 'drawer_total_chip')}
-                  </span>
-                  {renderBoxEyeButton('drawer_total_chip', true)}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleToggleGlobalCaisseAmounts}
-                title={amountsVisible ? 'إخفاء الأرقام' : 'إظهار الأرقام'}
-                aria-label={amountsVisible ? 'إخفاء الأرقام' : 'إظهار الأرقام'}
-                className={`min-h-[38px] px-4 py-2 rounded-xl border text-xs font-black flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors ${
-                  amountsVisible
-                    ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-300'
-                    : 'bg-zinc-900 dark:bg-amber-500 border-zinc-900 dark:border-amber-400 text-white dark:text-zinc-950 shadow-xs'
-                }`}
+                  }
+                }}
+                className="min-h-[38px] px-3.5 py-1.5 rounded-xl border border-emerald-300 dark:border-emerald-500/45 bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 text-emerald-900 dark:text-emerald-200 text-xs font-black flex items-center gap-2 cursor-pointer transition-colors shadow-2xs"
+                title={
+                  sessionRole === 'caisse'
+                    ? 'عرض تفاصيل المجر لليوم فقط'
+                    : 'عرض تفاصيل الحساب في المجر حالياً'
+                }
               >
-                {amountsVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                <span>{amountsVisible ? 'إخفاء' : 'إظهار'}</span>
-              </button>
+                <Wallet className="w-4 h-4 text-emerald-700 dark:text-emerald-300 shrink-0" />
+                <span>
+                  {sessionRole === 'caisse'
+                    ? `إجمالي المجر اليوم (${businessTodayStr}):`
+                    : 'الحساب في المجر:'}
+                </span>
+                <span dir="ltr" className="font-mono font-black tabular-nums">
+                  {formatMAD(selectorDrawerSummary.netTotalMAD, 'drawer_total_chip')}
+                </span>
+                {renderBoxEyeButton('drawer_total_chip', true)}
+              </div>
+
+              {canToggleCaissePrivacy && (
+                <button
+                  type="button"
+                  onClick={handleToggleGlobalCaisseAmounts}
+                  title={amountsVisible ? 'إخفاء الأرقام' : 'إظهار الأرقام'}
+                  aria-label={amountsVisible ? 'إخفاء الأرقام' : 'إظهار الأرقام'}
+                  className={`min-h-[38px] px-4 py-2 rounded-xl border text-xs font-black flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors ${
+                    amountsVisible
+                      ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-300'
+                      : 'bg-zinc-900 dark:bg-amber-500 border-zinc-900 dark:border-amber-400 text-white dark:text-zinc-950 shadow-xs'
+                  }`}
+                >
+                  {amountsVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  <span>{amountsVisible ? 'إخفاء' : 'إظهار'}</span>
+                </button>
+              )}
             </div>
           )}
         </div>
+
+        {/* Dedicated Caisse Daily Drawer Total Card ONLY (No "حساب المجر كامل", No monthly data; resets to 0 on daily settlement) */}
+        {sessionRole === 'caisse' && (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              setDrawerModalScope('day');
+              setDrawerModalOpen(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setDrawerModalScope('day');
+                setDrawerModalOpen(true);
+              }
+            }}
+            className="p-4 sm:p-5 rounded-2xl bg-emerald-50/75 dark:bg-emerald-950/25 border-2 border-emerald-300 dark:border-emerald-500/45 hover:border-emerald-500 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer shadow-xs transition-all"
+          >
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-black text-emerald-950 dark:text-emerald-100">
+                  الفلوس فـ المجر اليوم ({businessTodayStr})
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-900 border border-emerald-200 dark:border-emerald-500/35 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                  {hasAnyDailySettledToday && todayDailyDrawerSummary.netTotalMAD === 0
+                    ? 'تم جمع حساب اليوم ✓'
+                    : 'حساب اليوم فقط · اضغط للتفاصيل'}
+                </span>
+                {renderBoxEyeButton('drawer_total_chip', true)}
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono text-zinc-700 dark:text-zinc-300">
+                <span>الصرف اليوم: {formatMAD(todayDailyDrawerSummary.totalFloatMAD, 'drawer_total_chip')}</span>
+                <span>·</span>
+                <span className="text-emerald-700 dark:text-emerald-300 font-bold">
+                  المداخيل: {formatMAD(todayDailyDrawerSummary.totalIncomeMAD, 'drawer_total_chip')}
+                </span>
+                <span>·</span>
+                <span className="text-rose-700 dark:text-rose-300 font-bold">
+                  السحوبات: {formatMAD(todayDailyDrawerSummary.totalExpensesMAD, 'drawer_total_chip')}
+                </span>
+              </div>
+            </div>
+            <div dir="ltr" className="text-2xl font-black font-mono tabular-nums text-emerald-800 dark:text-emerald-300 shrink-0">
+              {formatMAD(todayDailyDrawerSummary.netTotalMAD, 'drawer_total_chip')}
+            </div>
+          </div>
+        )}
 
         {/* Main Caisse Overdrawn / Exceeded Funds Alert */}
         {hasMainCaisseOverdrawn && (
@@ -1838,9 +2334,11 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                     <strong>{overdrawnMainRows.map((r) => r.arName).join('، ')}</strong> ·{' '}
                   </>
                 )}
-                صافي المجر الكلي في الدورة المفتوحة:{' '}
+                {sessionRole === 'caisse'
+                  ? `صافي المجر اليوم (${businessTodayStr}):`
+                  : 'صافي المجر الكلي في الدورة المفتوحة:'}{' '}
                 <strong dir="ltr" className="font-mono inline-block">
-                  {formatMAD(openCycleDrawerSummary.netTotalMAD, 'drawer_total_chip')}
+                  {formatMAD(selectorDrawerSummary.netTotalMAD, 'drawer_total_chip')}
                 </strong>
               </p>
             </div>
@@ -1853,7 +2351,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             const dayCount = entries.filter(
               (e) => e.barberId === b.id && e.date === businessTodayStr
             ).length;
-            const barberDrawerRow = openCycleDrawerSummary.byBarber.find(
+            const barberDrawerRow = selectorDrawerSummary.byBarber.find(
               (r) => r.barberId === b.id
             );
             const isOverdrawn = Boolean(
@@ -1900,9 +2398,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
   const isAccountOverdrawn =
     sessionRole === 'caisse'
-      ? selectedDayStats.drawerCashMAD < 0 || cycleBalance.drawerCashMAD < 0
+      ? displayedDayIntakeStats.displayedDrawerCashMAD < 0
       : cycleBalance.barberNetOwedMAD < 0 ||
-        selectedDayStats.drawerCashMAD < 0 ||
+        displayedDayIntakeStats.displayedDrawerCashMAD < 0 ||
         cycleBalance.drawerCashMAD < 0;
 
   return (
@@ -1962,56 +2460,67 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {canToggleCaissePrivacy && (
-              <>
-                {sessionRole === 'master' && (
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => {
-                      setDrawerModalScope('open_cycle');
-                      setDrawerModalOpen(true);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setDrawerModalScope('open_cycle');
-                        setDrawerModalOpen(true);
-                      }
-                    }}
-                    className="min-h-[36px] px-3 py-1.5 rounded-xl border border-emerald-300 dark:border-emerald-500/45 bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 text-emerald-900 dark:text-emerald-200 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors"
-                    title="عرض المجموع والتفريق فـ المجر ككل"
-                  >
-                    <Wallet className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-300 shrink-0" />
-                    <span>المجر ككل:</span>
-                    <span dir="ltr" className="font-mono font-black tabular-nums">
-                      {formatMAD(openCycleDrawerSummary.netTotalMAD, 'drawer_total_chip')}
-                    </span>
-                    {renderBoxEyeButton('drawer_total_chip', true)}
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handleToggleGlobalCaisseAmounts}
-                  title={amountsVisible ? 'إخفاء الأرقام' : 'إظهار الأرقام'}
-                  aria-label={amountsVisible ? 'إخفاء الأرقام' : 'إظهار الأرقام'}
-                  className={`min-h-[36px] px-3.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors ${
-                    amountsVisible
-                      ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-300'
-                      : 'bg-zinc-900 dark:bg-amber-500 border-zinc-900 dark:border-amber-400 text-white dark:text-zinc-950 shadow-xs'
-                  }`}
-                >
-                  {amountsVisible ? (
-                    <EyeOff className="w-3.5 h-3.5" />
-                  ) : activeBarberId === 'hassan' && !hassanPinVerifiedInCaisse ? (
-                    <Lock className="w-3.5 h-3.5" />
-                  ) : (
-                    <Eye className="w-3.5 h-3.5" />
+            {(sessionRole === 'master' || sessionRole === 'caisse') && (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  setDrawerModalScope(sessionRole === 'caisse' ? 'day' : 'open_cycle');
+                  setDrawerModalOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setDrawerModalScope(sessionRole === 'caisse' ? 'day' : 'open_cycle');
+                    setDrawerModalOpen(true);
+                  }
+                }}
+                className="min-h-[36px] px-3 py-1.5 rounded-xl border border-emerald-300 dark:border-emerald-500/45 bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 text-emerald-900 dark:text-emerald-200 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors"
+                title={
+                  sessionRole === 'caisse'
+                    ? 'عرض المجموع والتفريق فـ المجر لليوم'
+                    : 'عرض المجموع والتفريق فـ الحساب في المجر حالياً'
+                }
+              >
+                <Wallet className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-300 shrink-0" />
+                <span>
+                  {sessionRole === 'caisse'
+                    ? `المجر اليوم (${selectedDate}):`
+                    : 'الحساب في المجر:'}
+                </span>
+                <span dir="ltr" className="font-mono font-black tabular-nums">
+                  {formatMAD(
+                    sessionRole === 'caisse'
+                      ? selectedDayDrawerSummary.netTotalMAD
+                      : openCycleDrawerSummary.netTotalMAD,
+                    'drawer_total_chip'
                   )}
-                  <span>{amountsVisible ? 'إخفاء' : 'إظهار'}</span>
-                </button>
-              </>
+                </span>
+                {renderBoxEyeButton('drawer_total_chip', true)}
+              </div>
+            )}
+
+            {canToggleCaissePrivacy && (
+              <button
+                type="button"
+                onClick={handleToggleGlobalCaisseAmounts}
+                title={amountsVisible ? 'إخفاء الأرقام' : 'إظهار الأرقام'}
+                aria-label={amountsVisible ? 'إخفاء الأرقام' : 'إظهار الأرقام'}
+                className={`min-h-[36px] px-3.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors ${
+                  amountsVisible
+                    ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-300'
+                    : 'bg-zinc-900 dark:bg-amber-500 border-zinc-900 dark:border-amber-400 text-white dark:text-zinc-950 shadow-xs'
+                }`}
+              >
+                {amountsVisible ? (
+                  <EyeOff className="w-3.5 h-3.5" />
+                ) : activeBarberId === 'hassan' && !hassanPinVerifiedInCaisse ? (
+                  <Lock className="w-3.5 h-3.5" />
+                ) : (
+                  <Eye className="w-3.5 h-3.5" />
+                )}
+                <span>{amountsVisible ? 'إخفاء' : 'إظهار'}</span>
+              </button>
             )}
 
             <div className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-2.5 py-1.5">
@@ -2218,8 +2727,257 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         )}
       </div>
 
+      {/* Req #1 & #2: "جمع حساب اليوم" + "تصفية الحساب الشهري" Side by Side ABOVE "غانحط في المجر" & "غانهز من المجر" */}
+      {sessionRole === 'master' && (
+        <div className="p-3 sm:p-3.5 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5 text-xs">
+            <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+              <Lock className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="font-black text-zinc-900 dark:text-white flex items-center gap-2 flex-wrap">
+                <span>جمع حساب اليوم — {activeBarberMeta.arName}</span>
+                {selectedDaySettlement?.intakeClosed && (
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300 text-[10px] font-black">
+                    تم الإغلاق ✓
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 tabular-nums">
+                في المجر ({selectedDate}): {formatMAD(displayedDayIntakeStats.displayedDrawerCashMAD)} · حط: {formatMAD(displayedDayIntakeStats.displayedIncomeMAD)} · هز: {formatMAD(displayedDayIntakeStats.displayedExpensesMAD)} | الشهري المفتوح: {formatMAD(cycleBalance.barberNetOwedMAD)}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={dailyIntakeCloseBusy}
+              onClick={handleCloseDayIntake}
+              className={`min-h-[42px] px-4 py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer border transition-colors ${
+                selectedDaySettlement?.intakeClosed
+                  ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-600 text-white'
+                  : 'bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-zinc-900 dark:border-zinc-700 text-white'
+              }`}
+            >
+              <Lock className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {dailyIntakeCloseBusy
+                  ? 'جاري الجمع...'
+                  : selectedDaySettlement?.intakeClosed
+                  ? 'إعادة جمع حساب اليوم ✓'
+                  : 'جمع حساب اليوم'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              disabled={dailyIntakeCloseBusy}
+              onClick={handleCloseAllBarbersDayIntake}
+              title="جمع وتصفير حساب اليوم لجميع الحلاقين معاً"
+              className="min-h-[42px] px-3 py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer border border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/35 dark:hover:bg-emerald-900/50 text-emerald-900 dark:text-emerald-200 transition-colors"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span>جمع يوم الجميع</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPayoutConfirmOpen((p) => !p)}
+              className={`min-h-[42px] px-4 py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer border transition-colors ${
+                payoutConfirmOpen
+                  ? 'bg-amber-600 hover:bg-amber-500 border-amber-600 text-white shadow-sm'
+                  : 'bg-amber-500 hover:bg-amber-400 border-amber-500 text-zinc-950 shadow-xs'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                تصفية الحساب الشهري (
+                <span dir="ltr" className="font-mono inline-block">
+                  {formatMAD(cycleBalance.barberNetOwedMAD)}
+                </span>
+                )
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Master Payout Settlement Confirmation Drawer (Opens Directly Below Top Bar) */}
+      {sessionRole === 'master' && payoutConfirmOpen && (
+        <div className="p-4 rounded-2xl bg-amber-50/80 dark:bg-amber-950/25 border border-amber-300 dark:border-amber-500/40 space-y-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-black text-amber-900 dark:text-amber-200">
+                تصفية الحساب الشهري / الدورة:
+              </span>
+              <div className="flex items-center gap-1 p-0.5 rounded-lg bg-white dark:bg-zinc-900 border border-amber-200 dark:border-zinc-700">
+                <button
+                  type="button"
+                  onClick={() => setPayoutTargetMode('single')}
+                  className={`px-2.5 py-1 rounded-md font-black cursor-pointer ${
+                    payoutTargetMode === 'single'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-zinc-700 dark:text-zinc-300'
+                  }`}
+                >
+                  حلاق واحد ({activeBarberMeta.arName})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPayoutTargetMode('all_barbers')}
+                  className={`px-2.5 py-1 rounded-md font-black cursor-pointer ${
+                    payoutTargetMode === 'all_barbers'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-zinc-700 dark:text-zinc-300'
+                  }`}
+                >
+                  جميع الحلاقين معاً ({allBarbersPayoutPreview.barbersWithOpenEntries.length})
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(
+                [
+                  { id: 'full_open', label: 'كل الحساب المفتوح' },
+                  { id: 'month', label: 'تصفية شهر كامل' },
+                  { id: 'custom_range', label: 'فترة مخصصة (من → إلى)' },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setPayoutScope(opt.id)}
+                  className={`px-2.5 py-1 rounded-lg border font-bold cursor-pointer ${
+                    payoutScope === opt.id
+                      ? 'bg-zinc-900 dark:bg-amber-500 text-white dark:text-zinc-950 border-zinc-900 dark:border-amber-400'
+                      : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-amber-200 dark:border-zinc-700'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {payoutScope === 'month' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-bold text-zinc-700 dark:text-zinc-300">اختر الشهر:</span>
+              <input
+                type="month"
+                value={payoutMonth}
+                onChange={(e) => e.target.value && setPayoutMonth(e.target.value)}
+                className="bg-white dark:bg-zinc-950 border border-amber-200 dark:border-zinc-700 rounded-lg px-2.5 py-1 font-mono font-bold text-zinc-900 dark:text-white"
+              />
+            </div>
+          )}
+
+          {payoutScope === 'custom_range' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-bold text-zinc-700 dark:text-zinc-300">من:</span>
+              <input
+                type="date"
+                value={payoutStartDate}
+                onChange={(e) => setPayoutStartDate(e.target.value)}
+                className="bg-white dark:bg-zinc-950 border border-amber-200 dark:border-zinc-700 rounded-lg px-2.5 py-1 font-mono text-zinc-900 dark:text-white"
+              />
+              <span className="font-bold text-zinc-700 dark:text-zinc-300">إلى:</span>
+              <input
+                type="date"
+                value={payoutEndDate}
+                onChange={(e) => setPayoutEndDate(e.target.value)}
+                className="bg-white dark:bg-zinc-950 border border-amber-200 dark:border-zinc-700 rounded-lg px-2.5 py-1 font-mono text-zinc-900 dark:text-white"
+              />
+            </div>
+          )}
+
+          {payoutTargetMode === 'all_barbers' ? (
+            <div className="space-y-2">
+              <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-amber-200 dark:border-zinc-800 space-y-2">
+                <div className="font-black text-zinc-900 dark:text-white flex flex-wrap items-center justify-between gap-2">
+                  <span>ملخص تصفية جميع الحلاقين معاً ({allBarbersPayoutPreview.barbersWithOpenEntries.length} حساب نشط):</span>
+                  <span className="font-mono text-emerald-700 dark:text-emerald-400">
+                    صافي المستحقات: {formatMAD(allBarbersPayoutPreview.totalBarberNetOwedMAD)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                  {allBarbersPayoutPreview.items.map(({ barber, preview }) => {
+                    const count = preview.cycleBalance.openCycleEntries.length;
+                    return (
+                      <div
+                        key={barber.id}
+                        className={`px-2.5 py-1.5 rounded-lg border text-[11px] flex items-center justify-between gap-2 ${
+                          count > 0
+                            ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-500/35'
+                            : 'bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 opacity-60'
+                        }`}
+                      >
+                        <span className="font-bold text-zinc-900 dark:text-white truncate">
+                          {barber.arName} ({count})
+                        </span>
+                        <span dir="ltr" className="font-mono font-black text-zinc-800 dark:text-zinc-200 shrink-0">
+                          {formatMAD(preview.cycleBalance.barberNetOwedMAD)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                  مجموع المداخيل: <strong className="font-mono">{formatMAD(allBarbersPayoutPreview.totalIncomeMAD)}</strong> ·
+                  حصة المحل: <strong className="font-mono">{formatMAD(allBarbersPayoutPreview.totalShopShareMAD)}</strong> ·
+                  <span className="font-mono"> {allBarbersPayoutPreview.totalEntryCount} عملية</span>. (السجل التاريخي والإحصائيات السنوية لن تُحذف أبداً).
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-zinc-700 dark:text-zinc-300">
+              الصافي المستحق للحلاق:{' '}
+              <strong dir="ltr" className="font-mono inline-block">
+                {formatMAD(payoutPreview.cycleBalance.barberNetOwedMAD)}
+              </strong>{' '}
+              · مجموع المداخيل:{' '}
+              <strong className="font-mono">{formatMAD(payoutPreview.cycleBalance.incomeMAD)}</strong> · حصة المحل:{' '}
+              <strong className="font-mono">{formatMAD(payoutPreview.cycleBalance.shopShareMAD)}</strong> ·{' '}
+              <span className="font-mono">{payoutPreview.cycleBalance.openCycleEntries.length} عملية</span>.
+              (السجل التاريخي والإحصائيات السنوية لن تُحذف أبداً).
+            </p>
+          )}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={payoutNote}
+              onChange={(e) => setPayoutNote(e.target.value)}
+              placeholder="ملاحظة التصفية (اختيارية)..."
+              className="flex-1 bg-white dark:bg-zinc-950 border border-amber-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-white"
+            />
+            <button
+              type="button"
+              disabled={payoutBusy || (payoutTargetMode === 'all_barbers' && allBarbersPayoutPreview.barbersWithOpenEntries.length === 0)}
+              onClick={handleConfirmPayout}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs cursor-pointer disabled:opacity-60"
+            >
+              {payoutBusy
+                ? '...'
+                : payoutTargetMode === 'all_barbers'
+                ? 'تأكيد تصفية جميع الحلاقين معاً ✓'
+                : payoutScope === 'full_open'
+                ? 'تأكيد وتصفير الرصيد إلى 0 ✓'
+                : 'تأكيد تصفية الفترة المختارة ✓'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPayoutConfirmOpen(false)}
+              className="px-3 py-2 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-xs cursor-pointer"
+            >
+              إلغاء
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Quick Darija Action Buttons Directly Above Countdown Banner & Account Cards */}
-      <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+      <div className={`grid gap-2.5 sm:gap-3 ${activeBarberId === 'hassan' ? 'grid-cols-3' : 'grid-cols-2'}`}>
         <button
           type="button"
           onClick={() => openQuickIncomeForm(false)}
@@ -2249,18 +3007,20 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           <span>غانهز من المجر</span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => openFloatModal('add')}
-          className={`min-h-[48px] px-3 sm:px-4 py-3 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 sm:gap-2 border transition-all cursor-pointer shadow-xs ${
-            openForm === 'float'
-              ? 'bg-amber-600 text-white border-amber-600 shadow-md'
-              : 'bg-white dark:bg-zinc-900 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-500/35 hover:bg-amber-50 dark:hover:bg-amber-950/30'
-          }`}
-        >
-          <Coins className="w-4 h-4 shrink-0" />
-          <span>الصرف</span>
-        </button>
+        {activeBarberId === 'hassan' && (
+          <button
+            type="button"
+            onClick={() => openFloatModal('add')}
+            className={`min-h-[48px] px-3 sm:px-4 py-3 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 sm:gap-2 border transition-all cursor-pointer shadow-xs ${
+              openForm === 'float'
+                ? 'bg-amber-600 text-white border-amber-600 shadow-md'
+                : 'bg-white dark:bg-zinc-900 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-500/35 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+            }`}
+          >
+            <Coins className="w-4 h-4 shrink-0" />
+            <span>الصرف</span>
+          </button>
+        )}
       </div>
 
       {/* 1-Minute Post-Entry Auto-Return / Barber Auto-Exit Countdown Banner (Positioned below action buttons, above cards) */}
@@ -2312,26 +3072,21 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             <p className="text-[11px] leading-relaxed">
               {sessionRole === 'caisse' ? (
                 <>
-                  صافي الفلوس فـ المجر:{' '}
+                  صافي الفلوس فـ المجر اليوم:{' '}
                   <strong dir="ltr" className="font-mono inline-block">
-                    {formatMAD(
-                      selectedDayStats.drawerCashMAD < 0
-                        ? selectedDayStats.drawerCashMAD
-                        : cycleBalance.drawerCashMAD,
-                      'kpi_net'
-                    )}
+                    {formatMAD(displayedDayIntakeStats.displayedDrawerCashMAD, 'kpi_net')}
                   </strong>
                 </>
               ) : (
                 <>
                   الرصيد الحالي:{' '}
-                  <strong dir="ltr" className="font-mono inline-block">
+                    <strong dir="ltr" className="font-mono inline-block">
                     {formatMAD(
                       cycleBalance.barberNetOwedMAD < 0
                         ? cycleBalance.barberNetOwedMAD
                         : cycleBalance.drawerCashMAD < 0
                         ? cycleBalance.drawerCashMAD
-                        : selectedDayStats.drawerCashMAD,
+                        : displayedDayIntakeStats.displayedDrawerCashMAD,
                       'kpi_net'
                     )}
                   </strong>
@@ -2343,7 +3098,617 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         </div>
       )}
 
-      {/* Daily Per-Barber Master Note & Barber Reply Card */}
+      {/* Req #3 (Swapped Up): Monthly/Cumulative Balance & Recent Days Summary Block */}
+      {sessionRole !== 'caisse' && activeBarberId && (
+        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 space-y-3 text-xs shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="font-black text-zinc-900 dark:text-white flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span>
+                {isViewingOwnAccount
+                  ? 'الحساب الشهري وملخص الأيام الأخيرة'
+                  : `الحساب الشهري وملخص الأيام الأخيرة (${activeBarberMeta.arName})`}
+              </span>
+            </h4>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`px-2.5 py-1 rounded-lg border font-mono font-black text-[11px] tabular-nums ${
+                  cycleBalance.barberNetOwedMAD === 0 && cycleBalance.openCycleEntries.length === 0
+                    ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300'
+                    : cycleBalance.barberNetOwedMAD < 0
+                    ? 'bg-rose-50 dark:bg-rose-950/35 border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300'
+                    : 'bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-500/35 text-amber-900 dark:text-amber-200'
+                }`}
+              >
+                {cycleBalance.barberNetOwedMAD === 0 && cycleBalance.openCycleEntries.length === 0
+                  ? `الرصيد المفتوح: ${formatMAD(0, 'kpi_net')} (تمت التصفية ✓)`
+                  : isViewingOwnAccount
+                  ? `رصيدي المفتوح المستحق: ${formatMAD(cycleBalance.barberNetOwedMAD, 'kpi_net')}`
+                  : `المستحق المفتوح لـ ${activeBarberMeta.arName}: ${formatMAD(cycleBalance.barberNetOwedMAD, 'kpi_net')}`}
+              </span>
+              {cycleBalance.lastSettledDate && (
+                <span className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400">
+                  آخر تصفية شهرية: {cycleBalance.lastSettledDate}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Open Monthly/Cycle Breakdown Strip (Remains intact across daily closes; resets only on "تصفية الحساب الشهري") */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="px-2.5 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-950/70 border border-zinc-200 dark:border-zinc-800">
+              <span className="text-[10px] text-zinc-500 dark:text-zinc-400 block">مداخيل الدورة المفتوحة</span>
+              <span dir="ltr" className="font-mono font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
+                {formatMAD(cycleBalance.incomeMAD, 'kpi_net')}
+              </span>
+            </div>
+            <div className="px-2.5 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-950/70 border border-zinc-200 dark:border-zinc-800">
+              <span className="text-[10px] text-zinc-500 dark:text-zinc-400 block">سحوبات الدورة المفتوحة</span>
+              <span dir="ltr" className="font-mono font-black text-rose-600 dark:text-rose-400 tabular-nums">
+                {formatMAD(cycleBalance.expensesMAD, 'kpi_net')}
+              </span>
+            </div>
+            <div className="px-2.5 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-950/70 border border-zinc-200 dark:border-zinc-800">
+              <span className="text-[10px] text-zinc-500 dark:text-zinc-400 block">
+                حصة الحلاق ({cycleBalance.commissionPercent}%)
+              </span>
+              <span dir="ltr" className="font-mono font-black text-amber-700 dark:text-amber-300 tabular-nums">
+                {formatMAD(cycleBalance.barberGrossShareMAD, 'kpi_net')}
+              </span>
+            </div>
+            <div className="px-2.5 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-950/70 border border-zinc-200 dark:border-zinc-800">
+              <span className="text-[10px] text-zinc-500 dark:text-zinc-400 block">
+                {sessionRole === 'master' ? 'حصة المحل بالدورة' : 'صافي الرصيد التراكمي'}
+              </span>
+              <span dir="ltr" className="font-mono font-black text-zinc-900 dark:text-white tabular-nums">
+                {formatMAD(
+                  sessionRole === 'master' ? cycleBalance.shopShareMAD : cycleBalance.barberNetOwedMAD,
+                  'kpi_net'
+                )}
+              </span>
+            </div>
+          </div>
+
+          {dailyInOutHistory.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              {dailyInOutHistory.slice(0, 6).map((row) => (
+                <button
+                  key={row.date}
+                  type="button"
+                  onClick={() => setSelectedDate(row.date)}
+                  className={`p-2.5 rounded-xl border text-start transition-colors cursor-pointer space-y-1 ${
+                    row.date === selectedDate
+                      ? 'bg-amber-50/80 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/40'
+                      : 'bg-zinc-50 dark:bg-zinc-950/70 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-mono font-bold text-[11px] text-zinc-900 dark:text-white">
+                      {row.date.slice(5)}
+                    </span>
+                    {row.isIntakeClosed && (
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[9px] font-black">
+                        مغلق
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] font-mono tabular-nums text-emerald-700 dark:text-emerald-400 font-bold">
+                    حط: {formatMAD(row.incomeMAD)}
+                  </div>
+                  <div className="text-[11px] font-mono tabular-nums text-rose-600 dark:text-rose-400 font-bold">
+                    هز: {formatMAD(row.expensesMAD)}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 4 Interactive Darija KPI Cards + Quick '+' Actions Inside Each Card */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* 1. شحال حط اليوم (مع احترام إغلاق اليوم -> 0) */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => openDrillModal('income_day')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              openDrillModal('income_day');
+            }
+          }}
+          className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-400 dark:hover:border-emerald-500/60 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group"
+        >
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 block">
+              {isViewingOwnAccount
+                ? `شحال حطيت اليوم (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`
+                : `شحال حط ${activeBarberMeta.arName} (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`}
+            </span>
+            <span className="flex items-center gap-1 shrink-0">
+              {displayedDayIntakeStats.isIntakeClosed && (
+                <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[9px] font-black">
+                  مغلق ✓
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openQuickIncomeForm(false);
+                }}
+                title="إضافة سريعة (غانحط في المجر)"
+                aria-label="إضافة سريعة في المجر"
+                className="w-6 h-6 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+              {renderBoxEyeButton('kpi_income', true)}
+            </span>
+          </div>
+          <div className="text-xl sm:text-2xl font-black font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
+            {maskNum(displayedDayIntakeStats.displayedIncomeMAD, 'kpi_income')}{' '}
+            <span className="text-xs font-bold">MAD</span>
+          </div>
+          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block font-mono tabular-nums">
+            {displayedDayIntakeStats.isIntakeClosed
+              ? `تم جمع اليوم (${formatMAD(displayedDayIntakeStats.closedAtAmountMAD, 'kpi_income')}) · ${displayedDayIntakeStats.postCloseEntryCount} عملية بعد الجمع`
+              : `${selectedDayStats.entryCount} عملية · اضغط للتفاصيل`}
+          </span>
+        </div>
+
+        {/* 2. شحال هز اليوم (يتصفر إلى 0 بعد التصفية اليومية في جميع الحسابات، مع بقاء التراكمي الشهري محفوظاً) */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => openDrillModal('expenses')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              openDrillModal('expenses');
+            }
+          }}
+          className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 hover:border-rose-400 dark:hover:border-rose-500/60 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group"
+        >
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 block">
+              {sessionRole === 'caisse'
+                ? `شحال هز ${activeBarberMeta.arName} (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`
+                : isViewingOwnAccount
+                ? `شحال هزيت اليوم (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`
+                : `شحال هز ${activeBarberMeta.arName} (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`}
+            </span>
+            <span className="flex items-center gap-1 shrink-0">
+              {displayedDayIntakeStats.isIntakeClosed && (
+                <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[9px] font-black">
+                  مغلق ✓
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDuplicateWarning(null);
+                  setOpenForm('expense');
+                }}
+                title="تسجيل سحب / مصروف سريع"
+                aria-label="تسجيل سحب سريع"
+                className="w-6 h-6 rounded-lg bg-rose-50 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/35 text-rose-700 dark:text-rose-300 hover:bg-rose-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+              {renderBoxEyeButton('kpi_expenses', true)}
+            </span>
+          </div>
+          <div className="text-xl sm:text-2xl font-black font-mono tabular-nums text-rose-700 dark:text-rose-400">
+            {maskNum(displayedDayIntakeStats.displayedExpensesMAD, 'kpi_expenses')}{' '}
+            <span className="text-xs font-bold">MAD</span>
+          </div>
+          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block font-mono tabular-nums">
+            {sessionRole === 'caisse'
+              ? displayedDayIntakeStats.isIntakeClosed
+                ? 'سحوبات اليوم بعد الجمع · اضغط للتفاصيل'
+                : 'مجموع سحوبات اليوم · اضغط للتفاصيل'
+              : displayedDayIntakeStats.isIntakeClosed
+              ? `تم جمع اليوم (${formatMAD(displayedDayIntakeStats.closedExpensesMAD, 'kpi_expenses')}) · الشهري: ${formatMAD(cycleBalance.expensesMAD, 'kpi_expenses')}`
+              : `التراكمي الشهري المفتوح: ${formatMAD(cycleBalance.expensesMAD, 'kpi_expenses')}`}
+          </span>
+        </div>
+
+        {/* 3. الصافي التراكمي/الشهري (Master/Barber) OR صافي المجر اليومي (Caisse Mode — resets cleanly to 0 on daily settlement) */}
+        {sessionRole === 'caisse' ? (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => openDrillModal('net_balance')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openDrillModal('net_balance');
+              }
+            }}
+            className={`p-4 rounded-2xl border shadow-xs hover:shadow-md hover:border-amber-400 active:scale-[0.99] transition-all text-start space-y-1 cursor-pointer group ${
+              displayedDayIntakeStats.displayedDrawerCashMAD < 0
+                ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-300 dark:border-rose-500/50'
+                : activeTone.softSurfaceClass
+            }`}
+          >
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 block">
+                الفلوس فـ المجر — {activeBarberMeta.arName} ({selectedDate === businessTodayStr ? 'اليوم' : selectedDate})
+              </span>
+              <span className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openQuickIncomeForm(false);
+                  }}
+                  title="إضافة سريعة للمجر"
+                  aria-label="إضافة سريعة للمجر"
+                  className="w-6 h-6 rounded-lg bg-white/80 dark:bg-zinc-900 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 hover:bg-amber-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                {renderBoxEyeButton('kpi_net', true)}
+              </span>
+            </div>
+            <div
+              dir="ltr"
+              className={`inline-flex items-baseline gap-1 text-xl sm:text-2xl font-black font-mono tabular-nums ${
+                displayedDayIntakeStats.displayedDrawerCashMAD < 0
+                  ? 'text-rose-700 dark:text-rose-400'
+                  : 'text-zinc-900 dark:text-white'
+              }`}
+            >
+              <span>{maskNum(displayedDayIntakeStats.displayedDrawerCashMAD, 'kpi_net')}</span>
+              <span
+                className={`text-xs font-bold ${
+                  displayedDayIntakeStats.displayedDrawerCashMAD < 0
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : 'text-amber-600 dark:text-amber-400'
+                }`}
+              >
+                MAD
+              </span>
+            </div>
+            <span
+              className={`text-[10px] block ${
+                displayedDayIntakeStats.displayedDrawerCashMAD < 0
+                  ? 'text-rose-700 dark:text-rose-300 font-bold'
+                  : displayedDayIntakeStats.isIntakeClosed &&
+                    displayedDayIntakeStats.displayedDrawerCashMAD === 0
+                  ? 'text-emerald-700 dark:text-emerald-300 font-bold'
+                  : 'text-zinc-500 dark:text-zinc-400'
+              }`}
+            >
+              {displayedDayIntakeStats.displayedDrawerCashMAD < 0
+                ? 'رصيد سالب — السحوبات تجاوزت المجر · اضغط للتفاصيل'
+                : displayedDayIntakeStats.isIntakeClosed &&
+                  displayedDayIntakeStats.displayedDrawerCashMAD === 0
+                ? 'تم جمع حساب اليوم ✓ · اضغط للتفاصيل'
+                : 'المداخيل + الصرف − السحوبات · اضغط للتفاصيل'}
+            </span>
+          </div>
+        ) : (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => openDrillModal('net_balance')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openDrillModal('net_balance');
+              }
+            }}
+            className={`p-4 rounded-2xl border shadow-xs hover:shadow-md hover:border-amber-400 active:scale-[0.99] transition-all text-start space-y-1 cursor-pointer group ${
+              cycleBalance.barberNetOwedMAD < 0
+                ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-300 dark:border-rose-500/50'
+                : activeTone.softSurfaceClass
+            }`}
+          >
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 block">
+                {isViewingOwnAccount
+                  ? 'شحال بقى ليا (الصافي التراكمي)'
+                  : `شحال كيتسال ${activeBarberMeta.arName} (الصافي التراكمي)`}
+              </span>
+              <span className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openQuickIncomeForm(false);
+                  }}
+                  title="إضافة سريعة (غانحط في المجر)"
+                  aria-label="إضافة سريعة"
+                  className="w-6 h-6 rounded-lg bg-white/80 dark:bg-zinc-900 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 hover:bg-amber-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                {renderBoxEyeButton('kpi_net', true)}
+              </span>
+            </div>
+            <div
+              dir="ltr"
+              className={`inline-flex items-baseline gap-1 text-xl sm:text-2xl font-black font-mono tabular-nums ${
+                cycleBalance.barberNetOwedMAD < 0
+                  ? 'text-rose-700 dark:text-rose-400'
+                  : 'text-zinc-900 dark:text-white'
+              }`}
+            >
+              <span>{maskNum(cycleBalance.barberNetOwedMAD, 'kpi_net')}</span>
+              <span
+                className={`text-xs font-bold ${
+                  cycleBalance.barberNetOwedMAD < 0
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : 'text-amber-600 dark:text-amber-400'
+                }`}
+              >
+                MAD
+              </span>
+            </div>
+            <span
+              className={`text-[10px] block font-mono tabular-nums ${
+                cycleBalance.barberNetOwedMAD < 0
+                  ? 'text-rose-700 dark:text-rose-300 font-bold'
+                  : 'text-zinc-500 dark:text-zinc-400'
+              }`}
+            >
+              {cycleBalance.barberNetOwedMAD < 0
+                ? 'رصيد سالب — السحوبات تجاوزت المستحقات · اضغط للتفاصيل'
+                : `في المجر اليوم: ${formatMAD(displayedDayIntakeStats.displayedDrawerCashMAD, 'kpi_net')}${
+                    cycleBalance.lastSettledDate ? ` · من بعد ${cycleBalance.lastSettledDate}` : ''
+                  }`}
+            </span>
+          </div>
+        )}
+
+        {/* 4. مجموع الكريدي */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => openDrillModal('credits_all')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              openDrillModal('credits_all');
+            }
+          }}
+          className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 hover:border-orange-400 dark:hover:border-orange-500/60 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group"
+        >
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 block">
+              مجموع الكريدي (كل التواريخ)
+            </span>
+            <span className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openQuickIncomeForm(true);
+                }}
+                title="تسجيل كريدي جديد سريع"
+                aria-label="تسجيل كريدي جديد"
+                className="w-6 h-6 rounded-lg bg-orange-50 dark:bg-orange-500/15 border border-orange-200 dark:border-orange-500/35 text-orange-700 dark:text-orange-300 hover:bg-orange-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+              {renderBoxEyeButton('kpi_credits', true)}
+            </span>
+          </div>
+          <div className="text-xl sm:text-2xl font-black font-mono tabular-nums text-orange-700 dark:text-orange-400">
+            {maskNum(cycleBalance.openCreditsAllTimeMAD, 'kpi_credits')}{' '}
+            <span className="text-xs font-bold">MAD</span>
+          </div>
+          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block font-mono tabular-nums">
+            {combinedOpenCreditsCount} كريدي مفتوح · اضغط للتفاصيل
+          </span>
+        </div>
+      </div>
+
+      {/* Dedicated "الصرف (فلوس الفكة في المجر)" Tracking Section — Exclusively for Hassan Ait Boumlik (Daily resets cleanly to 0 on daily close) */}
+      {activeBarberId === 'hassan' && (
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-500/35 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => openDrillModal('float_day')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openDrillModal('float_day');
+              }
+            }}
+            className="flex items-center gap-3 cursor-pointer flex-1 min-w-0"
+          >
+            <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-500/20 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 flex items-center justify-center shrink-0">
+              <Coins className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 space-y-0.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-black text-amber-950 dark:text-amber-200">
+                  {`الصرف اليوم (${selectedDate})`}
+                </span>
+                <span dir="ltr" className="font-mono font-black text-sm text-amber-800 dark:text-amber-300 tabular-nums">
+                  {formatMAD(displayedDayIntakeStats.displayedFloatMAD, 'float_cycle_card')}
+                </span>
+                {renderBoxEyeButton('float_cycle_card', true)}
+              </div>
+              <div className="text-[11px] font-mono text-zinc-600 dark:text-zinc-400 flex flex-wrap items-center gap-2">
+                <span>اليوم ({selectedDate}):</span>
+                <span className="text-emerald-700 dark:text-emerald-400 font-bold">
+                  مضاف +{formatMAD(displayedDayIntakeStats.displayedFloatInMAD, 'float_cycle_card')}
+                </span>
+                <span>·</span>
+                <span className="text-rose-700 dark:text-rose-400 font-bold">
+                  مرجوع −{formatMAD(displayedDayIntakeStats.displayedFloatOutMAD, 'float_cycle_card')}
+                </span>
+                {sessionRole !== 'caisse' && (
+                  <>
+                    <span>·</span>
+                    <span className="text-amber-700 dark:text-amber-300 font-bold">
+                      الدورة: {formatMAD(cycleBalance.floatMAD, 'float_cycle_card')}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => openFloatModal('add')}
+              className="min-h-[36px] px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>إضافة صرف</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openFloatModal('return')}
+              className="min-h-[36px] px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/40 font-black text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <MinusCircle className="w-3.5 h-3.5" />
+              <span>إرجاع صرف</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Master-Only Daily (resets to 0 after daily close) + Cumulative Open Cycle Strip */}
+      {sessionRole === 'master' && (
+        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => openDrillModal('income_day')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openDrillModal('income_day');
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 hover:border-amber-400 text-start transition-colors cursor-pointer"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-zinc-500 dark:text-zinc-400 block text-[11px]">
+                  {isViewingOwnAccount
+                    ? `اللي دخلت (${selectedDate})`
+                    : `اللي دخل ${activeBarberMeta.arName} (${selectedDate})`}
+                </span>
+                {renderBoxEyeButton('sum_income_day', true)}
+              </div>
+              <span className="font-mono font-black text-base text-zinc-900 dark:text-white tabular-nums">
+                {formatMAD(displayedDayIntakeStats.displayedIncomeMAD, 'sum_income_day')}
+              </span>
+            </div>
+
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setDrawerModalScope('day');
+                setDrawerModalOpen(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setDrawerModalScope('day');
+                  setDrawerModalOpen(true);
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-500/35 hover:border-emerald-400 text-start transition-colors cursor-pointer"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-emerald-800 dark:text-emerald-300 block text-[11px] font-bold">
+                  الحساب في المجر ({selectedDate})
+                </span>
+                {renderBoxEyeButton('kpi_net', true)}
+              </div>
+              <span className="font-mono font-black text-base text-emerald-700 dark:text-emerald-400 tabular-nums">
+                {formatMAD(displayedDayIntakeStats.displayedDrawerCashMAD, 'kpi_net')}
+              </span>
+            </div>
+
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => openDrillModal('shop_day')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openDrillModal('shop_day');
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-400 text-start transition-colors cursor-pointer"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-zinc-500 dark:text-zinc-400 block text-[11px]">
+                  حصة المحل ({selectedDate})
+                </span>
+                {renderBoxEyeButton('sum_shop_day', true)}
+              </div>
+              <span className="font-mono font-black text-base text-zinc-900 dark:text-white tabular-nums">
+                {formatMAD(displayedDayIntakeStats.displayedShopShareMAD, 'sum_shop_day')}
+              </span>
+            </div>
+
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => openDrillModal('shop_cycle')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openDrillModal('shop_cycle');
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-500/30 hover:border-emerald-400 text-start transition-colors cursor-pointer"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-zinc-500 dark:text-zinc-400 block text-[11px]">
+                  حصة المحل في الدورة المفتوحة
+                </span>
+                {renderBoxEyeButton('sum_shop_cycle', true)}
+              </div>
+              <span className="font-mono font-black text-base text-emerald-700 dark:text-emerald-400 tabular-nums">
+                {formatMAD(cycleBalance.shopShareMAD, 'sum_shop_cycle')}
+              </span>
+            </div>
+
+            {activeBarberId === 'hassan' && (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => openDrillModal('float_cycle')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openDrillModal('float_cycle');
+                  }
+                }}
+                className="px-3 py-1.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-500/30 hover:border-amber-400 text-start transition-colors cursor-pointer"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-zinc-500 dark:text-zinc-400 block text-[11px]">
+                    فلوس الصرف (الدورة)
+                  </span>
+                  {renderBoxEyeButton('sum_float_cycle', true)}
+                </div>
+                <span className="font-mono font-black text-base text-amber-700 dark:text-amber-300 tabular-nums">
+                  {formatMAD(cycleBalance.floatMAD, 'sum_float_cycle')}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Req #3 (Swapped Down): Daily Per-Barber Master Note & Barber Reply Card */}
       {sessionRole !== 'caisse' && activeBarberId && (
         <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-amber-200 dark:border-amber-500/35 shadow-xs space-y-3 text-xs">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2441,659 +3806,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               </form>
             </div>
           )}
-        </div>
-      )}
-
-      {/* 4 Interactive Darija KPI Cards + Quick '+' Actions Inside Each Card */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* 1. شحال حط اليوم (مع احترام إغلاق اليوم من طرف حسن) */}
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => openDrillModal('income_day')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              openDrillModal('income_day');
-            }
-          }}
-          className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-400 dark:hover:border-emerald-500/60 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group"
-        >
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 block">
-              {isViewingOwnAccount
-                ? `شحال حطيت اليوم (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`
-                : `شحال حط ${activeBarberMeta.arName} (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`}
-            </span>
-            <span className="flex items-center gap-1 shrink-0">
-              {displayedDayIntakeStats.isIntakeClosed && (
-                <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[9px] font-black">
-                  مغلق ✓
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openQuickIncomeForm(false);
-                }}
-                title="إضافة سريعة (غانحط في المجر)"
-                aria-label="إضافة سريعة في المجر"
-                className="w-6 h-6 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-              {renderBoxEyeButton('kpi_income', true)}
-            </span>
-          </div>
-          <div className="text-xl sm:text-2xl font-black font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
-            {maskNum(displayedDayIntakeStats.displayedIncomeMAD, 'kpi_income')}{' '}
-            <span className="text-xs font-bold">MAD</span>
-          </div>
-          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block font-mono tabular-nums">
-            {displayedDayIntakeStats.isIntakeClosed
-              ? `المداخيل المغلقة لليوم: ${formatMAD(displayedDayIntakeStats.closedAtAmountMAD, 'kpi_income')} · اضغط للتفاصيل`
-              : `${selectedDayStats.entryCount} عملية · اضغط للتفاصيل`}
-          </span>
-        </div>
-
-        {/* 2. شحال هزيت / شحال هز [الاسم] */}
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => openDrillModal('expenses')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              openDrillModal('expenses');
-            }
-          }}
-          className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 hover:border-rose-400 dark:hover:border-rose-500/60 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group"
-        >
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 block">
-              {sessionRole === 'caisse'
-                ? `شحال هز ${activeBarberMeta.arName} (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`
-                : isViewingOwnAccount
-                ? 'شحال هزيت (السحوبات والمصاريف)'
-                : `شحال هز ${activeBarberMeta.arName} (السحوبات والمصاريف)`}
-            </span>
-            <span className="flex items-center gap-1 shrink-0">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDuplicateWarning(null);
-                  setOpenForm('expense');
-                }}
-                title="تسجيل سحب / مصروف سريع"
-                aria-label="تسجيل سحب سريع"
-                className="w-6 h-6 rounded-lg bg-rose-50 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/35 text-rose-700 dark:text-rose-300 hover:bg-rose-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-              {renderBoxEyeButton('kpi_expenses', true)}
-            </span>
-          </div>
-          <div className="text-xl sm:text-2xl font-black font-mono tabular-nums text-rose-700 dark:text-rose-400">
-            {maskNum(
-              sessionRole === 'caisse'
-                ? selectedDayStats.expensesMAD
-                : cycleBalance.expensesMAD,
-              'kpi_expenses'
-            )}{' '}
-            <span className="text-xs font-bold">MAD</span>
-          </div>
-          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block font-mono tabular-nums">
-            {sessionRole === 'caisse'
-              ? 'مجموع السحوبات والمصاريف · اضغط للتفاصيل'
-              : selectedDate === businessTodayStr
-              ? `اليوم: ${formatMAD(selectedDayStats.expensesMAD, 'kpi_expenses')} · اضغط للتفاصيل`
-              : `${selectedDate}: ${formatMAD(selectedDayStats.expensesMAD, 'kpi_expenses')} · اضغط للتفاصيل`}
-          </span>
-        </div>
-
-        {/* 3. الصافي التراكمي (Master/Barber) OR صافي المجر اليومي (Caisse Mode) */}
-        {sessionRole === 'caisse' ? (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => openDrillModal('net_balance')}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                openDrillModal('net_balance');
-              }
-            }}
-            className={`p-4 rounded-2xl border shadow-xs hover:shadow-md hover:border-amber-400 active:scale-[0.99] transition-all text-start space-y-1 cursor-pointer group ${
-              selectedDayStats.drawerCashMAD < 0
-                ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-300 dark:border-rose-500/50'
-                : activeTone.softSurfaceClass
-            }`}
-          >
-            <div className="flex items-center justify-between gap-1">
-              <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 block">
-                الفلوس فـ المجر — {activeBarberMeta.arName} ({selectedDate === businessTodayStr ? 'اليوم' : selectedDate})
-              </span>
-              <span className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openQuickIncomeForm(false);
-                  }}
-                  title="إضافة سريعة للمجر"
-                  aria-label="إضافة سريعة للمجر"
-                  className="w-6 h-6 rounded-lg bg-white/80 dark:bg-zinc-900 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 hover:bg-amber-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-                {renderBoxEyeButton('kpi_net', true)}
-              </span>
-            </div>
-            <div
-              dir="ltr"
-              className={`inline-flex items-baseline gap-1 text-xl sm:text-2xl font-black font-mono tabular-nums ${
-                selectedDayStats.drawerCashMAD < 0
-                  ? 'text-rose-700 dark:text-rose-400'
-                  : 'text-zinc-900 dark:text-white'
-              }`}
-            >
-              <span>{maskNum(selectedDayStats.drawerCashMAD, 'kpi_net')}</span>
-              <span
-                className={`text-xs font-bold ${
-                  selectedDayStats.drawerCashMAD < 0
-                    ? 'text-rose-600 dark:text-rose-400'
-                    : 'text-amber-600 dark:text-amber-400'
-                }`}
-              >
-                MAD
-              </span>
-            </div>
-            <span
-              className={`text-[10px] block ${
-                selectedDayStats.drawerCashMAD < 0
-                  ? 'text-rose-700 dark:text-rose-300 font-bold'
-                  : 'text-zinc-500 dark:text-zinc-400'
-              }`}
-            >
-              {selectedDayStats.drawerCashMAD < 0
-                ? 'رصيد سالب — السحوبات تجاوزت المجر · اضغط للتفاصيل'
-                : 'المداخيل + الصرف − السحوبات · اضغط للتفاصيل'}
-            </span>
-          </div>
-        ) : (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => openDrillModal('net_balance')}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                openDrillModal('net_balance');
-              }
-            }}
-            className={`p-4 rounded-2xl border shadow-xs hover:shadow-md hover:border-amber-400 active:scale-[0.99] transition-all text-start space-y-1 cursor-pointer group ${
-              cycleBalance.barberNetOwedMAD < 0
-                ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-300 dark:border-rose-500/50'
-                : activeTone.softSurfaceClass
-            }`}
-          >
-            <div className="flex items-center justify-between gap-1">
-              <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 block">
-                {isViewingOwnAccount
-                  ? 'شحال بقى ليا (الصافي التراكمي)'
-                  : `شحال كيتسال ${activeBarberMeta.arName} (الصافي التراكمي)`}
-              </span>
-              <span className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openQuickIncomeForm(false);
-                  }}
-                  title="إضافة سريعة (غانحط في المجر)"
-                  aria-label="إضافة سريعة"
-                  className="w-6 h-6 rounded-lg bg-white/80 dark:bg-zinc-900 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 hover:bg-amber-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-                {renderBoxEyeButton('kpi_net', true)}
-              </span>
-            </div>
-            <div
-              dir="ltr"
-              className={`inline-flex items-baseline gap-1 text-xl sm:text-2xl font-black font-mono tabular-nums ${
-                cycleBalance.barberNetOwedMAD < 0
-                  ? 'text-rose-700 dark:text-rose-400'
-                  : 'text-zinc-900 dark:text-white'
-              }`}
-            >
-              <span>{maskNum(cycleBalance.barberNetOwedMAD, 'kpi_net')}</span>
-              <span
-                className={`text-xs font-bold ${
-                  cycleBalance.barberNetOwedMAD < 0
-                    ? 'text-rose-600 dark:text-rose-400'
-                    : 'text-amber-600 dark:text-amber-400'
-                }`}
-              >
-                MAD
-              </span>
-            </div>
-            <span
-              className={`text-[10px] block ${
-                cycleBalance.barberNetOwedMAD < 0
-                  ? 'text-rose-700 dark:text-rose-300 font-bold'
-                  : 'text-zinc-500 dark:text-zinc-400'
-              }`}
-            >
-              {cycleBalance.barberNetOwedMAD < 0
-                ? 'رصيد سالب — السحوبات تجاوزت المستحقات · اضغط للتفاصيل'
-                : cycleBalance.lastSettledDate
-                ? `من بعد تصفية ${cycleBalance.lastSettledDate} · اضغط للتفاصيل`
-                : 'تراكمي حتى تصفية الحساب · اضغط للتفاصيل'}
-            </span>
-          </div>
-        )}
-
-        {/* 4. مجموع الكريدي */}
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => openDrillModal('credits_all')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              openDrillModal('credits_all');
-            }
-          }}
-          className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 hover:border-orange-400 dark:hover:border-orange-500/60 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group"
-        >
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 block">
-              مجموع الكريدي (كل التواريخ)
-            </span>
-            <span className="flex items-center gap-1 shrink-0">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openQuickIncomeForm(true);
-                }}
-                title="تسجيل كريدي جديد سريع"
-                aria-label="تسجيل كريدي جديد"
-                className="w-6 h-6 rounded-lg bg-orange-50 dark:bg-orange-500/15 border border-orange-200 dark:border-orange-500/35 text-orange-700 dark:text-orange-300 hover:bg-orange-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-              {renderBoxEyeButton('kpi_credits', true)}
-            </span>
-          </div>
-          <div className="text-xl sm:text-2xl font-black font-mono tabular-nums text-orange-700 dark:text-orange-400">
-            {maskNum(cycleBalance.openCreditsAllTimeMAD, 'kpi_credits')}{' '}
-            <span className="text-xs font-bold">MAD</span>
-          </div>
-          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block font-mono tabular-nums">
-            {openCreditsList.length} كريدي مفتوح · اضغط للتفاصيل
-          </span>
-        </div>
-      </div>
-
-      {/* Dedicated "الصرف (فلوس الفكة في المجر)" Tracking Section */}
-      <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-500/35 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => openDrillModal('float_cycle')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              openDrillModal('float_cycle');
-            }
-          }}
-          className="flex items-center gap-3 cursor-pointer flex-1 min-w-0"
-        >
-          <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-500/20 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 flex items-center justify-center shrink-0">
-            <Coins className="w-4 h-4" />
-          </div>
-          <div className="min-w-0 space-y-0.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-black text-amber-950 dark:text-amber-200">
-                الصرف (فلوس الفكة في المجر)
-              </span>
-              <span dir="ltr" className="font-mono font-black text-sm text-amber-800 dark:text-amber-300 tabular-nums">
-                {formatMAD(cycleBalance.floatMAD, 'float_cycle_card')}
-              </span>
-              {renderBoxEyeButton('float_cycle_card', true)}
-            </div>
-            <div className="text-[11px] font-mono text-zinc-600 dark:text-zinc-400 flex flex-wrap items-center gap-2">
-              <span>اليوم ({selectedDate}):</span>
-              <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-                مضاف +{formatMAD(selectedDayStats.floatInMAD, 'float_cycle_card')}
-              </span>
-              <span>·</span>
-              <span className="text-rose-700 dark:text-rose-400 font-bold">
-                مرجوع −{formatMAD(selectedDayStats.floatOutMAD, 'float_cycle_card')}
-              </span>
-              <span className="text-zinc-400">· اضغط للتفاصيل</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => openFloatModal('add')}
-            className="min-h-[36px] px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>إضافة صرف</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => openFloatModal('return')}
-            className="min-h-[36px] px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/40 font-black text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
-          >
-            <MinusCircle className="w-3.5 h-3.5" />
-            <span>إرجاع صرف</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Master-Only Daily Intake Close + Cumulative/Period Payout Settlement Bar */}
-      {sessionRole === 'master' && (
-        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => openDrillModal('income_day')}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  openDrillModal('income_day');
-                }
-              }}
-              className="px-3 py-1.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 hover:border-amber-400 text-start transition-colors cursor-pointer"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-zinc-500 dark:text-zinc-400 block text-[11px]">
-                  {isViewingOwnAccount
-                    ? `اللي دخلت (${selectedDate})`
-                    : `اللي دخل ${activeBarberMeta.arName} (${selectedDate})`}
-                </span>
-                {renderBoxEyeButton('sum_income_day', true)}
-              </div>
-              <span className="font-mono font-black text-base text-zinc-900 dark:text-white tabular-nums">
-                {formatMAD(selectedDayStats.incomeMAD, 'sum_income_day')}
-              </span>
-            </div>
-
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => openDrillModal('shop_day')}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  openDrillModal('shop_day');
-                }
-              }}
-              className="px-3 py-1.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-400 text-start transition-colors cursor-pointer"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-zinc-500 dark:text-zinc-400 block text-[11px]">
-                  حصة المحل ({selectedDate})
-                </span>
-                {renderBoxEyeButton('sum_shop_day', true)}
-              </div>
-              <span className="font-mono font-black text-base text-zinc-900 dark:text-white tabular-nums">
-                {formatMAD(selectedDayStats.shopShareMAD, 'sum_shop_day')}
-              </span>
-            </div>
-
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => openDrillModal('shop_cycle')}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  openDrillModal('shop_cycle');
-                }
-              }}
-              className="px-3 py-1.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-500/30 hover:border-emerald-400 text-start transition-colors cursor-pointer"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-zinc-500 dark:text-zinc-400 block text-[11px]">
-                  حصة المحل في الدورة المفتوحة
-                </span>
-                {renderBoxEyeButton('sum_shop_cycle', true)}
-              </div>
-              <span className="font-mono font-black text-base text-emerald-700 dark:text-emerald-400 tabular-nums">
-                {formatMAD(cycleBalance.shopShareMAD, 'sum_shop_cycle')}
-              </span>
-            </div>
-
-            {activeBarberId === 'hassan' && (
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => openDrillModal('float_cycle')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    openDrillModal('float_cycle');
-                  }
-                }}
-                className="px-3 py-1.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-500/30 hover:border-amber-400 text-start transition-colors cursor-pointer"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-zinc-500 dark:text-zinc-400 block text-[11px]">
-                    فلوس الصرف (الدورة)
-                  </span>
-                  {renderBoxEyeButton('sum_float_cycle', true)}
-                </div>
-                <span className="font-mono font-black text-base text-amber-700 dark:text-amber-300 tabular-nums">
-                  {formatMAD(cycleBalance.floatMAD, 'sum_float_cycle')}
-                </span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              disabled={dailyIntakeCloseBusy}
-              onClick={handleCloseDayIntake}
-              className={`min-h-[40px] px-3.5 py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer border transition-colors ${
-                selectedDaySettlement?.intakeClosed
-                  ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-300 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300'
-                  : 'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white'
-              }`}
-            >
-              <Lock className="w-3.5 h-3.5" />
-              <span>
-                {dailyIntakeCloseBusy
-                  ? 'جاري الإغلاق...'
-                  : selectedDaySettlement?.intakeClosed
-                  ? `إعادة إغلاق مداخيل اليوم (دخل: ${formatMAD(selectedDayStats.incomeMAD)})`
-                  : `إغلاق مداخيل اليوم (حسب اللي دخل: ${formatMAD(selectedDayStats.incomeMAD)})`}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setPayoutConfirmOpen((p) => !p)}
-              className="min-h-[40px] px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-white dark:text-zinc-950 font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>
-                تصفية الحساب الشامل / الشهري (
-                <span dir="ltr" className="font-mono inline-block">
-                  {formatMAD(cycleBalance.barberNetOwedMAD)}
-                </span>
-                )
-              </span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Master Payout Settlement Confirmation Drawer (Full Open / Monthly / Custom Period) */}
-      {sessionRole === 'master' && payoutConfirmOpen && (
-        <div className="p-4 rounded-2xl bg-amber-50/80 dark:bg-amber-950/25 border border-amber-300 dark:border-amber-500/40 space-y-3 text-xs">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="font-black text-amber-900 dark:text-amber-200">
-              تصفية حساب {activeBarberMeta.arName}:
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {(
-                [
-                  { id: 'full_open', label: 'كل الحساب المفتوح' },
-                  { id: 'month', label: 'تصفية شهر كامل' },
-                  { id: 'custom_range', label: 'فترة مخصصة (من → إلى)' },
-                ] as const
-              ).map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => setPayoutScope(opt.id)}
-                  className={`px-2.5 py-1 rounded-lg border font-bold cursor-pointer ${
-                    payoutScope === opt.id
-                      ? 'bg-zinc-900 dark:bg-amber-500 text-white dark:text-zinc-950 border-zinc-900 dark:border-amber-400'
-                      : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-amber-200 dark:border-zinc-700'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {payoutScope === 'month' && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-bold text-zinc-700 dark:text-zinc-300">اختر الشهر:</span>
-              <input
-                type="month"
-                value={payoutMonth}
-                onChange={(e) => e.target.value && setPayoutMonth(e.target.value)}
-                className="bg-white dark:bg-zinc-950 border border-amber-200 dark:border-zinc-700 rounded-lg px-2.5 py-1 font-mono font-bold text-zinc-900 dark:text-white"
-              />
-            </div>
-          )}
-
-          {payoutScope === 'custom_range' && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-bold text-zinc-700 dark:text-zinc-300">من:</span>
-              <input
-                type="date"
-                value={payoutStartDate}
-                onChange={(e) => setPayoutStartDate(e.target.value)}
-                className="bg-white dark:bg-zinc-950 border border-amber-200 dark:border-zinc-700 rounded-lg px-2.5 py-1 font-mono text-zinc-900 dark:text-white"
-              />
-              <span className="font-bold text-zinc-700 dark:text-zinc-300">إلى:</span>
-              <input
-                type="date"
-                value={payoutEndDate}
-                onChange={(e) => setPayoutEndDate(e.target.value)}
-                className="bg-white dark:bg-zinc-950 border border-amber-200 dark:border-zinc-700 rounded-lg px-2.5 py-1 font-mono text-zinc-900 dark:text-white"
-              />
-            </div>
-          )}
-
-          <p className="text-zinc-700 dark:text-zinc-300">
-            الصافي المستحق للحلاق:{' '}
-            <strong dir="ltr" className="font-mono inline-block">
-              {formatMAD(payoutPreview.cycleBalance.barberNetOwedMAD)}
-            </strong>{' '}
-            · مجموع المداخيل:{' '}
-            <strong className="font-mono">{formatMAD(payoutPreview.cycleBalance.incomeMAD)}</strong> · حصة المحل:{' '}
-            <strong className="font-mono">{formatMAD(payoutPreview.cycleBalance.shopShareMAD)}</strong> ·{' '}
-            <span className="font-mono">{payoutPreview.cycleBalance.openCycleEntries.length} عملية</span>.
-            (السجل التاريخي والإحصائيات السنوية لن تُحذف أبداً).
-          </p>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="text"
-              value={payoutNote}
-              onChange={(e) => setPayoutNote(e.target.value)}
-              placeholder="ملاحظة التصفية (اختيارية)..."
-              className="flex-1 bg-white dark:bg-zinc-950 border border-amber-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-white"
-            />
-            <button
-              type="button"
-              disabled={payoutBusy}
-              onClick={handleConfirmPayout}
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs cursor-pointer disabled:opacity-60"
-            >
-              {payoutBusy
-                ? '...'
-                : payoutScope === 'full_open'
-                ? 'تأكيد وتصفير الرصيد إلى 0 ✓'
-                : 'تأكيد تصفية الفترة المختارة ✓'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setPayoutConfirmOpen(false)}
-              className="px-3 py-2 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-xs cursor-pointer"
-            >
-              إلغاء
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Daily In / Out Per-Day Breakdown ("شحال حط كل نهار و شحال هز كل نهار") */}
-      {sessionRole !== 'caisse' && dailyInOutHistory.length > 0 && (
-        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 space-y-2.5 text-xs">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h4 className="font-black text-zinc-900 dark:text-white flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-zinc-500" />
-              <span>
-                {isViewingOwnAccount
-                  ? 'ملخص الأيام الأخيرة: شحال حطيت كل نهار وشحال هزيت'
-                  : `ملخص الأيام الأخيرة (${activeBarberMeta.arName}): شحال حط كل نهار وشحال هز`}
-              </span>
-            </h4>
-            <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400">
-              {isViewingOwnAccount
-                ? `رصيدي المستحق (${formatMAD(cycleBalance.barberNetOwedMAD)}) يبقى محفوظاً حتى تصفية الحساب`
-                : `الرصيد المستحق لـ ${activeBarberMeta.arName} (${formatMAD(cycleBalance.barberNetOwedMAD)}) يبقى محفوظاً حتى تصفية الحساب`}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-            {dailyInOutHistory.slice(0, 6).map((row) => (
-              <button
-                key={row.date}
-                type="button"
-                onClick={() => setSelectedDate(row.date)}
-                className={`p-2.5 rounded-xl border text-start transition-colors cursor-pointer space-y-1 ${
-                  row.date === selectedDate
-                    ? 'bg-amber-50/80 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/40'
-                    : 'bg-zinc-50 dark:bg-zinc-950/70 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <span className="font-mono font-bold text-[11px] text-zinc-900 dark:text-white">
-                    {row.date.slice(5)}
-                  </span>
-                  {row.isIntakeClosed && (
-                    <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[9px] font-black">
-                      مغلق
-                    </span>
-                  )}
-                </div>
-                <div className="text-[11px] font-mono tabular-nums text-emerald-700 dark:text-emerald-400 font-bold">
-                  حط: {formatMAD(row.incomeMAD)}
-                </div>
-                <div className="text-[11px] font-mono tabular-nums text-rose-600 dark:text-rose-400 font-bold">
-                  هز: {formatMAD(row.expensesMAD)}
-                </div>
-              </button>
-            ))}
-          </div>
         </div>
       )}
 
@@ -3318,6 +4030,36 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                       />
                     </div>
                   </div>
+
+                  {(() => {
+                    const crossSummary = computeOutstandingCreditsForPhone(
+                      creditClientPhone,
+                      entries,
+                      manualCredits,
+                      roster
+                    );
+                    if (!crossSummary.hasCredit) return null;
+                    return (
+                      <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/35 border border-amber-300 dark:border-amber-500/40 text-[11px] text-amber-900 dark:text-amber-200 space-y-1">
+                        <div className="font-black flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>
+                            معلومة فقط: هاد الرقم ديجا عليه كريدي مفتوح ({crossSummary.totalOwedMAD} MAD):
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {crossSummary.creditorBreakdowns.map((b) => (
+                            <span
+                              key={b.creditorKey}
+                              className="px-2 py-0.5 rounded bg-white dark:bg-zinc-900 border border-amber-200 dark:border-amber-500/35 font-bold"
+                            >
+                              {b.creditorLabel}: {b.amountMAD} MAD
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -3618,8 +4360,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         </ModalPortal>
       )}
 
-      {/* Open Credits Section (Persists Across ALL Dates Until Repaid; Editable by Barber & Master) */}
-      {(openCreditsList.length > 0 || openBarberDisputes.length > 0) && (
+      {/* Open Credits Section (Persists Across ALL Dates Until Repaid; Combines Caisse + Manual Client Credits) */}
+      {(openCreditsList.length > 0 ||
+        openManualCreditsForBarber.length > 0 ||
+        openBarberDisputes.length > 0) && (
         <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-orange-200 dark:border-orange-500/35 space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="text-xs sm:text-sm font-black text-orange-800 dark:text-orange-300 flex items-center gap-2">
@@ -3627,7 +4371,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               <span>الكريدي المفتوح (مستمر عبر كل الأيام حتى الأداء)</span>
             </h4>
             <span className="text-xs font-mono font-black text-orange-700 dark:text-orange-300 tabular-nums">
-              {formatMAD(openCreditsList.reduce((s, e) => s + (Number(e.creditRemainingMAD) || 0), 0))}
+              {formatMAD(cycleBalance.openCreditsAllTimeMAD, 'kpi_credits')}
             </span>
           </div>
 
@@ -3647,7 +4391,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                       <span>{disp.clientName}</span>
                       <span dir="ltr" className="font-mono text-[11px] text-zinc-500">{disp.clientPhone}</span>
                       <span className="text-[10px] font-mono text-orange-700 dark:text-orange-300">
-                        ({formatMAD(disp.totalOwedSnapshotMAD)})
+                        ({formatMAD(disp.totalOwedSnapshotMAD, 'kpi_credits')})
                       </span>
                     </div>
                     <p className="text-[11px] text-zinc-700 dark:text-zinc-300">{disp.message}</p>
@@ -3671,14 +4415,21 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
           <div className="space-y-2">
             {openCreditsList.map((ce) => {
+              const effRem = getEffectiveCaisseCreditRemaining(ce);
               const isRepaying = repayingEntryId === ce.id;
+              const isReqOpen = settleReqEntryId === ce.id;
+              const entryReqs = creditSettlementRequests.filter(
+                (r) => r.sourceType === 'caisse' && r.sourceId === ce.id
+              );
+              const latestReq = entryReqs[0];
               const canEditCredit =
                 sessionRole === 'master' ||
-                (sessionRole === 'barber' && ce.barberId === activeBarberId);
+                (sessionRole === 'barber' &&
+                  matchesCaisseBarber(ce.barberId, ce.barberName, activeBarberId, roster));
               const waUrl = buildCreditWhatsAppReminderUrl({
                 clientPhone: ce.clientPhone,
                 clientName: ce.clientName,
-                amountOwedMAD: ce.creditRemainingMAD,
+                amountOwedMAD: effRem,
                 creditorName: activeBarberMeta.arName,
                 creditDate: ce.date,
                 note: ce.note,
@@ -3707,11 +4458,28 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                           موعد الأداء: {ce.expectedRepaymentDate}
                         </span>
                       )}
+                      {latestReq && (
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-md font-black border ${
+                            latestReq.status === 'pending'
+                              ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300'
+                              : latestReq.status === 'confirmed'
+                              ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-300 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300'
+                              : 'bg-rose-50 dark:bg-rose-500/15 border-rose-300 dark:border-rose-500/40 text-rose-800 dark:text-rose-300'
+                          }`}
+                        >
+                          {latestReq.status === 'pending'
+                            ? `طلب (${latestReq.actionType === 'pay' ? 'خلاص' : 'فك'}: ${latestReq.requestedAmountMAD} MAD) بانتظار المشرف`
+                            : latestReq.status === 'confirmed'
+                            ? `مؤكد من المشرف: ${latestReq.approvedAmountMAD ?? latestReq.requestedAmountMAD} MAD ✓`
+                            : 'تم النفي من المشرف ✕'}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-mono font-black text-orange-700 dark:text-orange-300 tabular-nums me-1">
-                        الباقي: {formatMAD(ce.creditRemainingMAD)}
+                        الباقي: {formatMAD(effRem, 'kpi_credits')}
                       </span>
                       {waUrl && (
                         <a
@@ -3739,17 +4507,37 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                       <button
                         type="button"
                         onClick={() => {
+                          setSettleReqEntryId(null);
                           if (isRepaying) {
                             setRepayingEntryId(null);
                           } else {
                             setRepayingEntryId(ce.id);
-                            setRepayAmountInput(String(ce.creditRemainingMAD));
+                            setRepayAmountInput(String(effRem));
                           }
                         }}
                         className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
                       >
                         خلص الكريدي
                       </button>
+                      {sessionRole !== 'master' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRepayingEntryId(null);
+                            if (isReqOpen) {
+                              setSettleReqEntryId(null);
+                            } else {
+                              setSettleReqEntryId(ce.id);
+                              setSettleReqAction('clear');
+                              setSettleReqAmountInput(String(effRem));
+                              setSettleReqNoteInput('');
+                            }
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/15 border border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-200 font-bold text-[11px] cursor-pointer hover:bg-amber-100"
+                        >
+                          يخلص ولا يفك من الكريدي
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -3764,7 +4552,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                       <input
                         type="number"
                         min={1}
-                        max={ce.creditRemainingMAD}
+                        max={effRem}
                         value={repayAmountInput}
                         onChange={(e) => setRepayAmountInput(e.target.value)}
                         className="w-28 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 font-mono font-bold text-zinc-900 dark:text-white"
@@ -3784,6 +4572,268 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                       >
                         إلغاء
                       </button>
+                    </div>
+                  )}
+
+                  {isReqOpen && (
+                    <div className="pt-2 border-t border-orange-200/60 dark:border-zinc-800 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSettleReqAction('pay')}
+                          className={`px-2.5 py-1 rounded-lg border text-[11px] font-black cursor-pointer ${
+                            settleReqAction === 'pay'
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                          }`}
+                        >
+                          يخلص الكريدي (طلب تأكيد الأداء)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSettleReqAction('clear')}
+                          className={`px-2.5 py-1 rounded-lg border text-[11px] font-black cursor-pointer ${
+                            settleReqAction === 'clear'
+                              ? 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                          }`}
+                        >
+                          يفك من الكريدي (إسقاط / تسوية للمشرف)
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          max={effRem}
+                          value={settleReqAmountInput}
+                          onChange={(e) => setSettleReqAmountInput(e.target.value)}
+                          className="w-28 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 font-mono font-bold text-zinc-900 dark:text-white"
+                        />
+                        <input
+                          type="text"
+                          value={settleReqNoteInput}
+                          onChange={(e) => setSettleReqNoteInput(e.target.value)}
+                          placeholder="ملاحظة للمشرف حسن (اختيارية)..."
+                          className="flex-1 min-w-[160px] bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-900 dark:text-white"
+                        />
+                        <button
+                          type="button"
+                          disabled={settleReqBusy}
+                          onClick={() => void handleSubmitCaisseCreditSettlementRequest(ce)}
+                          className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-black text-xs cursor-pointer disabled:opacity-60"
+                        >
+                          {settleReqBusy ? '...' : 'إرسال للمشرف حسن ✓'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {openManualCreditsForBarber.map((rec) => {
+              const effRem = getEffectiveManualCreditRemaining(rec);
+              const allPhones = [rec.clientPhone, ...(rec.additionalPhones || [])]
+                .map((p) => String(p || '').trim())
+                .filter(Boolean);
+              const dateLabel = rec.creditDate || rec.createdAt.slice(0, 10);
+              const isManualRepaying = repayingManualId === rec.id;
+              const isManualReqOpen = settleReqManualId === rec.id;
+              const manualReqs = creditSettlementRequests.filter(
+                (r) => r.sourceType === 'manual' && r.sourceId === rec.id
+              );
+              const latestManualReq = manualReqs[0];
+              const waUrl = buildCreditWhatsAppReminderUrl({
+                clientPhone: allPhones[0] || '',
+                clientName: rec.clientName,
+                amountOwedMAD: effRem,
+                creditorName: rec.barberName || activeBarberMeta.arName,
+                creditDate: dateLabel,
+                note: rec.note,
+                lang,
+              });
+              return (
+                <div
+                  key={`manual_${rec.id}`}
+                  className="p-3 rounded-xl bg-amber-50/60 dark:bg-zinc-950/80 border border-amber-200/90 dark:border-zinc-800 space-y-2 text-xs"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-black text-zinc-900 dark:text-white">
+                        {rec.clientName || 'زبون'}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 font-bold">
+                        سجل الكريدي
+                      </span>
+                      {allPhones.map((ph, idx) => (
+                        <span
+                          key={`${ph}-${idx}`}
+                          dir="ltr"
+                          className="font-mono text-zinc-500 dark:text-zinc-400"
+                        >
+                          {ph}
+                        </span>
+                      ))}
+                      <span className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
+                        · {dateLabel}
+                      </span>
+                      {latestManualReq && (
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-md font-black border ${
+                            latestManualReq.status === 'pending'
+                              ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300'
+                              : latestManualReq.status === 'confirmed'
+                              ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-300 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300'
+                              : 'bg-rose-50 dark:bg-rose-500/15 border-rose-300 dark:border-rose-500/40 text-rose-800 dark:text-rose-300'
+                          }`}
+                        >
+                          {latestManualReq.status === 'pending'
+                            ? `طلب (${latestManualReq.actionType === 'pay' ? 'خلاص' : 'فك'}: ${latestManualReq.requestedAmountMAD} MAD) بانتظار المشرف`
+                            : latestManualReq.status === 'confirmed'
+                            ? `مؤكد من المشرف: ${latestManualReq.approvedAmountMAD ?? latestManualReq.requestedAmountMAD} MAD ✓`
+                            : 'تم النفي من المشرف ✕'}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono font-black text-orange-700 dark:text-orange-300 tabular-nums me-1">
+                        الباقي: {formatMAD(effRem, 'kpi_credits')}
+                      </span>
+                      {waUrl && (
+                        <a
+                          href={waUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] inline-flex items-center gap-1 shadow-xs transition-colors"
+                          title="إرسال تذكير مباشر عبر واتساب"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span>واتساب</span>
+                        </a>
+                      )}
+                      {sessionRole === 'master' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isManualRepaying) {
+                              setRepayingManualId(null);
+                            } else {
+                              setRepayingManualId(rec.id);
+                              setRepayManualAmountInput(String(effRem));
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                        >
+                          خلص الكريدي
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isManualReqOpen) {
+                              setSettleReqManualId(null);
+                            } else {
+                              setSettleReqManualId(rec.id);
+                              setSettleReqManualAction('pay');
+                              setSettleReqManualAmountInput(String(effRem));
+                              setSettleReqManualNoteInput('');
+                            }
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/15 border border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-200 font-bold text-[11px] cursor-pointer hover:bg-amber-100"
+                        >
+                          يخلص ولا يفك من الكريدي
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {rec.note && (
+                    <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                      ملاحظة: {rec.note}
+                    </div>
+                  )}
+
+                  {isManualRepaying && sessionRole === 'master' && (
+                    <div className="pt-2 border-t border-amber-200/60 dark:border-zinc-800 flex flex-wrap items-center gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        max={effRem}
+                        value={repayManualAmountInput}
+                        onChange={(e) => setRepayManualAmountInput(e.target.value)}
+                        className="w-28 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 font-mono font-bold text-zinc-900 dark:text-white"
+                      />
+                      <button
+                        type="button"
+                        disabled={repayManualBusy}
+                        onClick={() => void handleConfirmManualCreditRepay(rec)}
+                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs cursor-pointer"
+                      >
+                        {repayManualBusy ? '...' : 'تأكيد الأداء ✓'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRepayingManualId(null)}
+                        className="px-2.5 py-1.5 rounded-lg bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs cursor-pointer"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  )}
+
+                  {isManualReqOpen && sessionRole !== 'master' && (
+                    <div className="pt-2 border-t border-amber-200/60 dark:border-zinc-800 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSettleReqManualAction('pay')}
+                          className={`px-2.5 py-1 rounded-lg border text-[11px] font-black cursor-pointer ${
+                            settleReqManualAction === 'pay'
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                          }`}
+                        >
+                          يخلص الكريدي (طلب تأكيد الأداء)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSettleReqManualAction('clear')}
+                          className={`px-2.5 py-1 rounded-lg border text-[11px] font-black cursor-pointer ${
+                            settleReqManualAction === 'clear'
+                              ? 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                          }`}
+                        >
+                          يفك من الكريدي (إسقاط / تسوية للمشرف)
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          max={effRem}
+                          value={settleReqManualAmountInput}
+                          onChange={(e) => setSettleReqManualAmountInput(e.target.value)}
+                          className="w-28 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 font-mono font-bold text-zinc-900 dark:text-white"
+                        />
+                        <input
+                          type="text"
+                          value={settleReqManualNoteInput}
+                          onChange={(e) => setSettleReqManualNoteInput(e.target.value)}
+                          placeholder="ملاحظة للمشرف حسن (اختيارية)..."
+                          className="flex-1 min-w-[160px] bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-900 dark:text-white"
+                        />
+                        <button
+                          type="button"
+                          disabled={settleReqManualBusy}
+                          onClick={() => void handleSubmitManualCreditSettlementRequest(rec)}
+                          className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-black text-xs cursor-pointer disabled:opacity-60"
+                        >
+                          {settleReqManualBusy ? '...' : 'إرسال للمشرف حسن ✓'}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -3813,18 +4863,24 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
           <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-950 p-1 rounded-xl text-[11px] font-bold">
             {(
-              [
-                { id: 'day', label: selectedDate === businessTodayStr ? 'اليوم' : selectedDate },
-                { id: 'cycle', label: 'الدورة المفتوحة' },
-                { id: 'all', label: 'الأحدث' },
-              ] as const
+              (sessionRole === 'caisse'
+                ? [
+                    { id: 'day', label: selectedDate === businessTodayStr ? 'اليوم' : selectedDate },
+                    { id: 'all', label: 'الأحدث' },
+                  ]
+                : [
+                    { id: 'day', label: selectedDate === businessTodayStr ? 'اليوم' : selectedDate },
+                    { id: 'cycle', label: 'الدورة المفتوحة' },
+                    { id: 'all', label: 'الأحدث' },
+                  ]) as ReadonlyArray<{ id: 'day' | 'cycle' | 'all'; label: string }>
             ).map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setTxScopeFilter(tab.id)}
                 className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                  txScopeFilter === tab.id
+                  (sessionRole === 'caisse' && txScopeFilter === 'cycle' ? 'day' : txScopeFilter) ===
+                  tab.id
                     ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-xs'
                     : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                 }`}
@@ -4837,139 +5893,207 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                     </div>
                   );
                 })()
-              ) : drillViewData.list.length === 0 ? (
+              ) : drillViewData.list.length === 0 &&
+                (!drillViewData.manualList || drillViewData.manualList.length === 0) ? (
                 <div className="py-10 text-center text-zinc-500 dark:text-zinc-400">
                   لا توجد عمليات مسجلة في هذا البند بعد.
                 </div>
               ) : (
-                drillViewData.list.map((item) => {
-                  const badge = formatEntryTypeBadge(item.type);
-                  const itemTime = item.createdAt
-                    ? new Date(item.createdAt).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : '';
-                  const label =
-                    item.serviceNames && item.serviceNames.length > 0
-                      ? item.serviceNames.join(' + ')
-                      : item.clientName || item.note?.trim() || badge.label;
-                  const waUrl =
-                    (Number(item.creditRemainingMAD) || 0) > 0 && item.creditStatus !== 'paid'
-                      ? buildCreditWhatsAppReminderUrl({
-                          clientPhone: item.clientPhone,
-                          clientName: item.clientName,
-                          amountOwedMAD: item.creditRemainingMAD,
-                          creditorName: getCaisseBarberMeta(item.barberId, roster).arName,
-                          creditDate: item.date,
-                          note: item.note,
-                          lang,
+                <>
+                  {drillViewData.list.map((item) => {
+                    const badge = formatEntryTypeBadge(item.type);
+                    const effCredRem = getEffectiveCaisseCreditRemaining(item);
+                    const itemTime = item.createdAt
+                      ? new Date(item.createdAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
                         })
-                      : null;
-                  const isBeforeDayClose =
-                    drillViewData.closedIso && item.createdAt <= drillViewData.closedIso;
-                  const displayVal =
-                    drillModal.kind === 'credits_all'
-                      ? item.creditRemainingMAD
-                      : item.amountPaidMAD;
+                      : '';
+                    const label =
+                      item.serviceNames && item.serviceNames.length > 0
+                        ? item.serviceNames.join(' + ')
+                        : item.clientName || item.note?.trim() || badge.label;
+                    const waUrl =
+                      effCredRem > 0
+                        ? buildCreditWhatsAppReminderUrl({
+                            clientPhone: item.clientPhone,
+                            clientName: item.clientName,
+                            amountOwedMAD: effCredRem,
+                            creditorName: getCaisseBarberMeta(item.barberId, roster).arName,
+                            creditDate: item.date,
+                            note: item.note,
+                            lang,
+                          })
+                        : null;
+                    const isBeforeDayClose =
+                      drillViewData.closedIso && item.createdAt <= drillViewData.closedIso;
+                    const displayVal =
+                      drillModal.kind === 'credits_all'
+                        ? effCredRem
+                        : item.amountPaidMAD;
 
-                  return (
-                    <div
-                      key={item.id}
-                      className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-colors ${
-                        isBeforeDayClose
-                          ? 'bg-zinc-100/70 dark:bg-zinc-900/40 border-zinc-200 dark:border-zinc-800 opacity-70'
-                          : 'bg-zinc-50 dark:bg-zinc-900/80 border-zinc-200 dark:border-zinc-800 hover:border-amber-400'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDrillEntry(item)}
-                        className="flex-1 min-w-0 flex items-center justify-between gap-2 text-start cursor-pointer"
+                    return (
+                      <div
+                        key={item.id}
+                        className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-colors ${
+                          isBeforeDayClose
+                            ? 'bg-zinc-100/70 dark:bg-zinc-900/40 border-zinc-200 dark:border-zinc-800 opacity-70'
+                            : 'bg-zinc-50 dark:bg-zinc-900/80 border-zinc-200 dark:border-zinc-800 hover:border-amber-400'
+                        }`}
                       >
-                        <div className="min-w-0 space-y-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDrillEntry(item)}
+                          className="flex-1 min-w-0 flex items-center justify-between gap-2 text-start cursor-pointer"
+                        >
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${badge.cls}`}>
+                                {badge.label}
+                              </span>
+                              <span className="font-bold text-zinc-900 dark:text-white truncate">
+                                {label}
+                              </span>
+                              {isBeforeDayClose && (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-[9px] font-bold">
+                                  ضمن إغلاق اليوم
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] font-mono text-zinc-500 flex items-center gap-2 flex-wrap">
+                              <span>{item.date} · {itemTime}</span>
+                              {item.clientName && <span>· {item.clientName}</span>}
+                              {effCredRem > 0 && (
+                                <span className="text-orange-700 dark:text-orange-300 font-bold">
+                                  كريدي:{' '}
+                                  {drillViewData.canShowAmounts
+                                    ? `${Math.round(effCredRem).toLocaleString('en-US')} MAD`
+                                    : '••• MAD'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span
+                              dir="ltr"
+                              className={`font-mono font-black text-sm tabular-nums ${
+                                item.type === 'expense' || item.type === 'float_return'
+                                  ? 'text-rose-700 dark:text-rose-400'
+                                  : 'text-emerald-700 dark:text-emerald-400'
+                              }`}
+                            >
+                              {badge.sign}
+                              {drillViewData.canShowAmounts
+                                ? `${Math.round(Number(displayVal) || 0).toLocaleString('en-US')} MAD`
+                                : '••• MAD'}
+                            </span>
+                            <Eye className="w-3.5 h-3.5 text-zinc-400" />
+                          </div>
+                        </button>
+
+                        {waUrl && (
+                          <a
+                            href={waUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 shadow-xs transition-colors"
+                            title="تذكير مباشر عبر واتساب"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                        {sessionRole === 'master' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openEditModalForEntry(item);
+                                setDrillModal(null);
+                              }}
+                              className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:border-amber-400 shrink-0 cursor-pointer"
+                              title="تعديل العملية"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteEntry(item)}
+                              className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/35 text-rose-700 dark:text-rose-300 hover:bg-rose-100 shrink-0 cursor-pointer"
+                              title="حذف العملية"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {(drillViewData.manualList || []).map((rec) => {
+                    const effRem = getEffectiveManualCreditRemaining(rec);
+                    const allPhones = [rec.clientPhone, ...(rec.additionalPhones || [])]
+                      .map((p) => String(p || '').trim())
+                      .filter(Boolean);
+                    const dateLabel = rec.creditDate || rec.createdAt.slice(0, 10);
+                    const waUrl = buildCreditWhatsAppReminderUrl({
+                      clientPhone: allPhones[0] || '',
+                      clientName: rec.clientName,
+                      amountOwedMAD: effRem,
+                      creditorName: rec.barberName || activeBarberMeta.arName,
+                      creditDate: dateLabel,
+                      note: rec.note,
+                      lang,
+                    });
+                    return (
+                      <div
+                        key={`drill_manual_${rec.id}`}
+                        className="p-2.5 rounded-xl border bg-amber-50/60 dark:bg-zinc-900/80 border-amber-200 dark:border-zinc-800 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0 space-y-0.5 flex-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${badge.cls}`}>
-                              {badge.label}
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold border bg-amber-100 dark:bg-amber-500/20 border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300">
+                              سجل الكريدي
                             </span>
                             <span className="font-bold text-zinc-900 dark:text-white truncate">
-                              {label}
+                              {rec.clientName}
                             </span>
-                            {isBeforeDayClose && (
-                              <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-[9px] font-bold">
-                                ضمن إغلاق اليوم
-                              </span>
-                            )}
                           </div>
                           <div className="text-[10px] font-mono text-zinc-500 flex items-center gap-2 flex-wrap">
-                            <span>{item.date} · {itemTime}</span>
-                            {item.clientName && <span>· {item.clientName}</span>}
-                            {(Number(item.creditRemainingMAD) || 0) > 0 && item.creditStatus !== 'paid' && (
-                              <span className="text-orange-700 dark:text-orange-300 font-bold">
-                                كريدي:{' '}
-                                {drillViewData.canShowAmounts
-                                  ? `${Math.round(Number(item.creditRemainingMAD) || 0).toLocaleString('en-US')} MAD`
-                                  : '••• MAD'}
+                            <span>{dateLabel}</span>
+                            {allPhones.map((ph, idx) => (
+                              <span key={`${ph}-${idx}`} dir="ltr">
+                                · {ph}
                               </span>
-                            )}
+                            ))}
+                            {rec.note && <span className="font-sans">· {rec.note}</span>}
                           </div>
                         </div>
-
                         <div className="flex items-center gap-1.5 shrink-0">
                           <span
                             dir="ltr"
-                            className={`font-mono font-black text-sm tabular-nums ${
-                              item.type === 'expense' || item.type === 'float_return'
-                                ? 'text-rose-700 dark:text-rose-400'
-                                : 'text-emerald-700 dark:text-emerald-400'
-                            }`}
+                            className="font-mono font-black text-sm tabular-nums text-orange-700 dark:text-orange-300"
                           >
-                            {badge.sign}
                             {drillViewData.canShowAmounts
-                              ? `${Math.round(Number(displayVal) || 0).toLocaleString('en-US')} MAD`
+                              ? `${Math.round(effRem).toLocaleString('en-US')} MAD`
                               : '••• MAD'}
                           </span>
-                          <Eye className="w-3.5 h-3.5 text-zinc-400" />
+                          {waUrl && (
+                            <a
+                              href={waUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 shadow-xs transition-colors"
+                              title="تذكير مباشر عبر واتساب"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                            </a>
+                          )}
                         </div>
-                      </button>
-
-                      {waUrl && (
-                        <a
-                          href={waUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 shadow-xs transition-colors"
-                          title="تذكير مباشر عبر واتساب"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" />
-                        </a>
-                      )}
-                      {sessionRole === 'master' && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              openEditModalForEntry(item);
-                              setDrillModal(null);
-                            }}
-                            className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:border-amber-400 shrink-0 cursor-pointer"
-                            title="تعديل العملية"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteEntry(item)}
-                            className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/35 text-rose-700 dark:text-rose-300 hover:bg-rose-100 shrink-0 cursor-pointer"
-                            title="حذف العملية"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  );
-                })
+                      </div>
+                    );
+                  })}
+                </>
               )}
             </div>
           </div>
@@ -4977,8 +6101,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         </ModalPortal>
       )}
 
-      {/* Master Admin "المجر ككل — المجموع والتفريق" Modal */}
-      {sessionRole === 'master' && drawerModalOpen && (
+      {/* Master Drawer Breakdown / Caisse Daily Drawer Breakdown Modal */}
+      {(sessionRole === 'master' || sessionRole === 'caisse') && drawerModalOpen && (
         <ModalPortal>
           <div
             className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop"
@@ -4996,27 +6120,33 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 </div>
                 <div>
                   <h4 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">
-                    المجر ككل — المجموع والتفريق
+                    {sessionRole === 'caisse'
+                      ? `الفلوس فـ المجر اليوم (${activeDrawerSummary.date || selectedDate})`
+                      : 'الحساب في المجر — المجموع والتفريق'}
                   </h4>
                   <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                    فلوس الصرف + مجموع المداخيل − المصاريف والسحوبات لكل حلاق
+                    {sessionRole === 'caisse'
+                      ? 'صرف اليوم + مداخيل اليوم − سحوبات اليوم لكل حلاق (حساب اليوم فقط)'
+                      : 'الرصيد الفعلي في المجر (يتصفر تلقائياً بعد جمع حساب اليوم مع حفظ الرصيد الشهري)'}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleToggleGlobalCaisseAmounts}
-                  className={`min-h-[34px] px-3 py-1 rounded-xl border text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors ${
-                    amountsVisible
-                      ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-300'
-                      : 'bg-zinc-900 dark:bg-amber-500 border-zinc-900 dark:border-amber-400 text-white dark:text-zinc-950'
-                  }`}
-                >
-                  {amountsVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  <span>{amountsVisible ? 'إخفاء' : 'إظهار'}</span>
-                </button>
+                {canToggleCaissePrivacy && (
+                  <button
+                    type="button"
+                    onClick={handleToggleGlobalCaisseAmounts}
+                    className={`min-h-[34px] px-3 py-1 rounded-xl border text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors ${
+                      amountsVisible
+                        ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-300'
+                        : 'bg-zinc-900 dark:bg-amber-500 border-zinc-900 dark:border-amber-400 text-white dark:text-zinc-950'
+                    }`}
+                  >
+                    {amountsVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    <span>{amountsVisible ? 'إخفاء' : 'إظهار'}</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setDrawerModalOpen(false)}
@@ -5029,32 +6159,38 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
             {/* Body */}
             <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
-              {/* Scope Switcher */}
+              {/* Scope Switcher (Master Only; Caisse shows daily view strictly) */}
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
-                  <button
-                    type="button"
-                    onClick={() => setDrawerModalScope('open_cycle')}
-                    className={`px-3 py-1.5 rounded-lg font-black text-xs cursor-pointer transition-colors ${
-                      drawerModalScope === 'open_cycle'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white'
-                    }`}
-                  >
-                    فـ المجر حالياً (الدورة المفتوحة)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDrawerModalScope('day')}
-                    className={`px-3 py-1.5 rounded-lg font-black text-xs cursor-pointer transition-colors ${
-                      drawerModalScope === 'day'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white'
-                    }`}
-                  >
-                    اليوم المحدد ({selectedDate})
-                  </button>
-                </div>
+                {sessionRole === 'master' ? (
+                  <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                    <button
+                      type="button"
+                      onClick={() => setDrawerModalScope('open_cycle')}
+                      className={`px-3 py-1.5 rounded-lg font-black text-xs cursor-pointer transition-colors ${
+                        drawerModalScope === 'open_cycle'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white'
+                      }`}
+                    >
+                      فـ المجر حالياً (بعد التصفية اليومية)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDrawerModalScope('day')}
+                      className={`px-3 py-1.5 rounded-lg font-black text-xs cursor-pointer transition-colors ${
+                        drawerModalScope === 'day'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white'
+                      }`}
+                    >
+                      اليوم المحدد ({selectedDate})
+                    </button>
+                  </div>
+                ) : (
+                  <span className="px-3 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-800 dark:text-emerald-200 font-black text-xs">
+                    حساب اليوم فقط ({activeDrawerSummary.date || selectedDate})
+                  </span>
+                )}
 
                 <span className="text-[11px] font-mono text-zinc-500">
                   {activeDrawerSummary.entryCount} عملية مسجلة
@@ -5102,7 +6238,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 <div className="p-3 rounded-xl bg-zinc-900 dark:bg-emerald-600 text-white border border-zinc-900 dark:border-emerald-500">
                   <div className="flex items-center justify-between gap-1">
                     <span className="text-[11px] text-zinc-300 dark:text-emerald-100 font-bold block">
-                      المجموع فـ المجر ككل
+                      {sessionRole === 'caisse' ? 'المجموع فـ المجر اليوم' : 'المجموع فـ المجر ككل'}
                     </span>
                     {renderBoxEyeButton('drawer_net_total', true)}
                   </div>
@@ -5129,13 +6265,16 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                         <th className="py-2.5 px-2 text-start">الصرف</th>
                         <th className="py-2.5 px-2 text-start">المداخيل</th>
                         <th className="py-2.5 px-2 text-start">السحوبات</th>
-                        <th className="py-2.5 px-2 text-start">حصة المحل</th>
+                        {sessionRole === 'master' && (
+                          <th className="py-2.5 px-2 text-start">حصة المحل</th>
+                        )}
                         <th className="py-2.5 px-3 text-start">صافي فـ المجر</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 font-mono tabular-nums">
                       {activeDrawerSummary.byBarber.map((row) => {
                         const bTone = getBarberIdentityTokens(row.barberId, row.arName);
+                        const rowBoxKey = `drawer_barber_${row.barberId}`;
                         return (
                           <tr
                             key={row.barberId}
@@ -5149,8 +6288,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                               <div className="flex items-center gap-2">
                                 <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${bTone.dotClass}`} />
                                 <div>
-                                  <div className="font-black text-zinc-900 dark:text-white">
-                                    {row.arName}
+                                  <div className="font-black text-zinc-900 dark:text-white flex items-center gap-1.5">
+                                    <span>{row.arName}</span>
+                                    {renderBoxEyeButton(rowBoxKey, true)}
                                   </div>
                                   <div className="text-[10px] font-mono text-zinc-400">
                                     {row.entryCount} عمليات
@@ -5159,17 +6299,19 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                               </div>
                             </td>
                             <td className="py-2.5 px-2 text-amber-700 dark:text-amber-300 font-bold">
-                              {formatMAD(row.floatMAD)}
+                              {row.barberId === 'hassan' ? formatMAD(row.floatMAD, rowBoxKey) : '—'}
                             </td>
                             <td className="py-2.5 px-2 text-emerald-700 dark:text-emerald-400 font-bold">
-                              {formatMAD(row.incomeMAD)}
+                              {formatMAD(row.incomeMAD, rowBoxKey)}
                             </td>
                             <td className="py-2.5 px-2 text-rose-600 dark:text-rose-400 font-bold">
-                              {formatMAD(row.expensesMAD)}
+                              {formatMAD(row.expensesMAD, rowBoxKey)}
                             </td>
-                            <td className="py-2.5 px-2 text-zinc-700 dark:text-zinc-300">
-                              {formatMAD(row.shopShareMAD)}
-                            </td>
+                            {sessionRole === 'master' && (
+                              <td className="py-2.5 px-2 text-zinc-700 dark:text-zinc-300">
+                                {formatMAD(row.shopShareMAD, rowBoxKey)}
+                              </td>
+                            )}
                             <td
                               dir="ltr"
                               className={`py-2.5 px-3 font-black ${
@@ -5178,7 +6320,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                                   : 'text-zinc-900 dark:text-white'
                               }`}
                             >
-                              {formatMAD(row.netDrawerContributionMAD)}
+                              {formatMAD(row.netDrawerContributionMAD, rowBoxKey)}
                             </td>
                           </tr>
                         );
@@ -5190,19 +6332,21 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                           المجموع الكلي
                         </td>
                         <td className="py-2.5 px-2 text-amber-700 dark:text-amber-300">
-                          {formatMAD(activeDrawerSummary.totalFloatMAD)}
+                          {formatMAD(activeDrawerSummary.totalFloatMAD, 'drawer_float')}
                         </td>
                         <td className="py-2.5 px-2 text-emerald-700 dark:text-emerald-400">
-                          {formatMAD(activeDrawerSummary.totalIncomeMAD)}
+                          {formatMAD(activeDrawerSummary.totalIncomeMAD, 'drawer_income')}
                         </td>
                         <td className="py-2.5 px-2 text-rose-600 dark:text-rose-400">
-                          {formatMAD(activeDrawerSummary.totalExpensesMAD)}
+                          {formatMAD(activeDrawerSummary.totalExpensesMAD, 'drawer_expenses')}
                         </td>
-                        <td className="py-2.5 px-2 text-emerald-700 dark:text-emerald-400">
-                          {formatMAD(activeDrawerSummary.totalShopShareMAD)}
-                        </td>
+                        {sessionRole === 'master' && (
+                          <td className="py-2.5 px-2 text-emerald-700 dark:text-emerald-400">
+                            {formatMAD(activeDrawerSummary.totalShopShareMAD, 'drawer_net_total')}
+                          </td>
+                        )}
                         <td dir="ltr" className="py-2.5 px-3 text-emerald-700 dark:text-emerald-400 text-sm">
-                          {formatMAD(activeDrawerSummary.netTotalMAD)}
+                          {formatMAD(activeDrawerSummary.netTotalMAD, 'drawer_net_total')}
                         </td>
                       </tr>
                     </tfoot>

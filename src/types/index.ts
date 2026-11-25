@@ -561,12 +561,42 @@ export interface ClientCreditRecord {
   normalizedPhone: string;
   additionalPhones?: string[];
   normalizedAdditionalPhones?: string[];
+  barberId?: CaisseBarberId;
+  barberName?: string;
   amountOwedMAD: number;
   originalAmountMAD: number;
   status: ManualCreditStatus;
   creditDate?: string;
   note?: string;
   createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreditSettlementActionType = 'pay' | 'clear';
+export type CreditSettlementRequestStatus = 'pending' | 'confirmed' | 'rejected';
+export type CreditSettlementSourceType = 'caisse' | 'manual' | 'aggregate';
+
+export interface CreditSettlementRequest {
+  id: string;
+  sourceType: CreditSettlementSourceType;
+  sourceId?: string;
+  barberId?: string;
+  barberName?: string;
+  clientName: string;
+  clientPhone: string;
+  normalizedPhone: string;
+  actionType: CreditSettlementActionType;
+  originalRemainingMAD: number;
+  requestedAmountMAD: number;
+  approvedAmountMAD?: number;
+  status: CreditSettlementRequestStatus;
+  note?: string;
+  submittedBy: string;
+  submittedRole: 'client' | 'barber' | 'caisse' | 'master';
+  reviewerNote?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

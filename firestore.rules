@@ -503,6 +503,7 @@ service cloud.firestore {
       && data.keys().hasOnly([
         'id', 'clientName', 'clientPhone', 'normalizedPhone',
         'additionalPhones', 'normalizedAdditionalPhones',
+        'barberId', 'barberName',
         'amountOwedMAD', 'originalAmountMAD', 'status',
         'creditDate', 'note', 'createdBy', 'createdAt', 'updatedAt'
       ])
@@ -520,12 +521,52 @@ service cloud.firestore {
         && data.normalizedAdditionalPhones.size() <= 5
         && (data.normalizedAdditionalPhones.size() == 0 || (data.normalizedAdditionalPhones[0] is string && data.normalizedAdditionalPhones[0].size() <= 32))
       ))
+      && (!('barberId' in data) || (data.barberId is string && data.barberId.size() <= 64))
+      && (!('barberName' in data) || (data.barberName is string && data.barberName.size() <= 100))
       && data.amountOwedMAD is number && data.amountOwedMAD >= 0 && data.amountOwedMAD <= 100000
       && data.originalAmountMAD is number && data.originalAmountMAD >= 0 && data.originalAmountMAD <= 100000
       && data.status in ['open', 'partial', 'paid']
       && (!('creditDate' in data) || (data.creditDate is string && data.creditDate.size() <= 20))
       && (!('note' in data) || (data.note is string && data.note.size() <= 400))
       && data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 100
+      && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+    }
+
+    function isValidCreditSettlementRequest(data) {
+      return data.keys().hasAll([
+        'id', 'sourceType', 'clientName', 'clientPhone', 'normalizedPhone',
+        'actionType', 'originalRemainingMAD', 'requestedAmountMAD',
+        'status', 'submittedBy', 'submittedRole', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'sourceType', 'sourceId', 'barberId', 'barberName',
+        'clientName', 'clientPhone', 'normalizedPhone',
+        'actionType', 'originalRemainingMAD', 'requestedAmountMAD',
+        'approvedAmountMAD', 'status', 'note',
+        'submittedBy', 'submittedRole',
+        'reviewerNote', 'reviewedBy', 'reviewedAt',
+        'createdAt', 'updatedAt'
+      ])
+      && isValidId(data.id)
+      && data.sourceType in ['caisse', 'manual', 'aggregate']
+      && (!('sourceId' in data) || (data.sourceId is string && data.sourceId.size() <= 128))
+      && (!('barberId' in data) || (data.barberId is string && data.barberId.size() <= 64))
+      && (!('barberName' in data) || (data.barberName is string && data.barberName.size() <= 100))
+      && data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 120
+      && data.clientPhone is string && data.clientPhone.size() <= 40
+      && data.normalizedPhone is string && data.normalizedPhone.size() <= 32
+      && data.actionType in ['pay', 'clear']
+      && data.originalRemainingMAD is number && data.originalRemainingMAD >= 0 && data.originalRemainingMAD <= 100000
+      && data.requestedAmountMAD is number && data.requestedAmountMAD >= 0 && data.requestedAmountMAD <= 100000
+      && (!('approvedAmountMAD' in data) || (data.approvedAmountMAD is number && data.approvedAmountMAD >= 0 && data.approvedAmountMAD <= 100000))
+      && data.status in ['pending', 'confirmed', 'rejected']
+      && (!('note' in data) || (data.note is string && data.note.size() <= 400))
+      && data.submittedBy is string && data.submittedBy.size() >= 1 && data.submittedBy.size() <= 100
+      && data.submittedRole in ['client', 'barber', 'caisse', 'master']
+      && (!('reviewerNote' in data) || (data.reviewerNote is string && data.reviewerNote.size() <= 400))
+      && (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 100))
+      && (!('reviewedAt' in data) || (data.reviewedAt is string && data.reviewedAt.size() <= 64))
       && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64
       && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
     }
@@ -792,6 +833,7 @@ service cloud.firestore {
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'clientName', 'clientPhone', 'normalizedPhone',
           'additionalPhones', 'normalizedAdditionalPhones',
+          'barberId', 'barberName',
           'amountOwedMAD', 'originalAmountMAD', 'status',
           'creditDate', 'note', 'updatedAt'
         ]);
@@ -816,6 +858,28 @@ service cloud.firestore {
           'status', 'staffNote', 'resolvedBy', 'resolvedAt', 'updatedAt'
         ]);
       allow delete: if isValidId(disputeId) && request.time != null;
+    }
+
+    // Pay-or-clear credit settlement requests submitted by clients or barbers for Master Admin review
+    match /credit_settlement_requests/{requestId} {
+      allow get: if isValidId(requestId) && request.time != null;
+      allow list: if request.time != null;
+      allow create: if isValidId(requestId)
+        && isValidCreditSettlementRequest(incoming())
+        && incoming().id == requestId
+        && incoming().status == 'pending';
+      allow update: if isValidId(requestId)
+        && isValidCreditSettlementRequest(incoming())
+        && incoming().id == existing().id
+        && incoming().sourceType == existing().sourceType
+        && incoming().clientName == existing().clientName
+        && incoming().normalizedPhone == existing().normalizedPhone
+        && incoming().actionType == existing().actionType
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'approvedAmountMAD', 'reviewerNote', 'reviewedBy', 'reviewedAt', 'updatedAt'
+        ]);
+      allow delete: if isValidId(requestId) && request.time != null;
     }
 
     function isValidBarberDailyNote(data) {

@@ -3,14 +3,20 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
+  getDocsFromServer,
   onSnapshot,
-  orderBy,
-  query,
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
 import { WaitlistEntry, WaitlistStatus } from '../types';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import {
+  emitRealtimeSyncHint,
+  registerRealtimeRefreshHandler,
+  resetResilientRetry,
+  scheduleResilientRetry,
+} from './realtimeSync';
 import { dispatchStaffBackgroundPush } from './webPushClient';
 
 const WAITLIST_COLLECTION = 'waitlist';
@@ -19,24 +25,84 @@ let cachedWaitlist: WaitlistEntry[] = [];
 let hasHydratedWaitlist = false;
 const waitlistListeners = new Set<(entries: WaitlistEntry[]) => void>();
 let activeWaitlistUnsubscribe: (() => void) | null = null;
+let waitlistRefreshUnsub: (() => void) | null = null;
+
+function sortWaitlistDesc(list: WaitlistEntry[]): WaitlistEntry[] {
+  return [...list].sort((a, b) => {
+    const cmp = (b.createdAt || '').localeCompare(a.createdAt || '');
+    if (cmp !== 0) return cmp;
+    return (b.id || '').localeCompare(a.id || '');
+  });
+}
+
+function commitWaitlistCache(next: WaitlistEntry[], broadcastHint = false): void {
+  cachedWaitlist = sortWaitlistDesc(next);
+  hasHydratedWaitlist = true;
+  waitlistListeners.forEach((cb) => {
+    try {
+      cb(cachedWaitlist);
+    } catch (err) {
+      console.warn('Waitlist listener callback error:', err);
+    }
+  });
+  if (broadcastHint) {
+    emitRealtimeSyncHint('waitlist');
+  }
+}
 
 function ensureWaitlistListener() {
+  if (!waitlistRefreshUnsub) {
+    waitlistRefreshUnsub = registerRealtimeRefreshHandler(
+      'waitlist',
+      'waitlist',
+      async () => {
+        if (waitlistListeners.size === 0) return;
+        ensureWaitlistListener();
+        try {
+          let snap;
+          try {
+            snap = await getDocsFromServer(collection(db, WAITLIST_COLLECTION));
+          } catch {
+            snap = await getDocs(collection(db, WAITLIST_COLLECTION));
+          }
+          const items: WaitlistEntry[] = snap.docs.map((docSnap) => ({
+            ...(docSnap.data() as WaitlistEntry),
+            id: docSnap.id,
+          }));
+          commitWaitlistCache(items);
+        } catch (err) {
+          console.warn('Waitlist wake refresh warning:', err);
+        }
+      }
+    );
+  }
   if (activeWaitlistUnsubscribe) return;
 
-  const q = query(collection(db, WAITLIST_COLLECTION), orderBy('createdAt', 'desc'));
   activeWaitlistUnsubscribe = onSnapshot(
-    q,
+    collection(db, WAITLIST_COLLECTION),
     (snapshot) => {
+      resetResilientRetry('waitlist');
       const items: WaitlistEntry[] = snapshot.docs.map((docSnap) => ({
         ...(docSnap.data() as WaitlistEntry),
         id: docSnap.id,
       }));
-      cachedWaitlist = items;
-      hasHydratedWaitlist = true;
-      waitlistListeners.forEach((cb) => cb(items));
+      commitWaitlistCache(items);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.LIST, WAITLIST_COLLECTION);
+      if (activeWaitlistUnsubscribe) {
+        try {
+          activeWaitlistUnsubscribe();
+        } catch {
+          // Ignore
+        }
+        activeWaitlistUnsubscribe = null;
+      }
+      scheduleResilientRetry(
+        'waitlist',
+        () => waitlistListeners.size > 0,
+        () => ensureWaitlistListener(),
+        error
+      );
     }
   );
 }
@@ -51,9 +117,16 @@ export function subscribeToWaitlist(
   }
   return () => {
     waitlistListeners.delete(onData);
-    if (waitlistListeners.size === 0 && activeWaitlistUnsubscribe) {
-      activeWaitlistUnsubscribe();
-      activeWaitlistUnsubscribe = null;
+    if (waitlistListeners.size === 0) {
+      resetResilientRetry('waitlist');
+      if (activeWaitlistUnsubscribe) {
+        activeWaitlistUnsubscribe();
+        activeWaitlistUnsubscribe = null;
+      }
+      if (waitlistRefreshUnsub) {
+        waitlistRefreshUnsub();
+        waitlistRefreshUnsub = null;
+      }
       hasHydratedWaitlist = false;
     }
   };
@@ -92,7 +165,7 @@ export async function addToWaitlist(
   const path = `${WAITLIST_COLLECTION}/${id}`;
   try {
     await setDoc(doc(db, WAITLIST_COLLECTION, id), entry);
-    cachedWaitlist = [entry, ...cachedWaitlist];
+    commitWaitlistCache([entry, ...cachedWaitlist.filter((w) => w.id !== id)], true);
 
     void dispatchStaffBackgroundPush({
       barberId: entry.barberId,
@@ -116,7 +189,10 @@ export async function updateWaitlistStatus(
   const path = `${WAITLIST_COLLECTION}/${id}`;
   try {
     await updateDoc(doc(db, WAITLIST_COLLECTION, id), { status });
-    cachedWaitlist = cachedWaitlist.map((w) => (w.id === id ? { ...w, status } : w));
+    commitWaitlistCache(
+      cachedWaitlist.map((w) => (w.id === id ? { ...w, status } : w)),
+      true
+    );
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -126,7 +202,10 @@ export async function deleteWaitlistEntry(id: string): Promise<void> {
   const path = `${WAITLIST_COLLECTION}/${id}`;
   try {
     await deleteDoc(doc(db, WAITLIST_COLLECTION, id));
-    cachedWaitlist = cachedWaitlist.filter((w) => w.id !== id);
+    commitWaitlistCache(
+      cachedWaitlist.filter((w) => w.id !== id),
+      true
+    );
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

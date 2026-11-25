@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import {
   collection,
   doc,
+  getDocs,
+  getDocsFromServer,
   onSnapshot,
   setDoc,
 } from 'firebase/firestore';
@@ -11,6 +13,12 @@ import {
   BarberScheduleConfig,
 } from '../types';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import {
+  emitRealtimeSyncHint,
+  registerRealtimeRefreshHandler,
+  resetResilientRetry,
+  scheduleResilientRetry,
+} from './realtimeSync';
 
 const BARBER_SCHEDULES_COLLECTION = 'barber_schedules';
 
@@ -133,34 +141,92 @@ let cachedSchedules: Record<string, BarberScheduleConfig> = {};
 let hasHydratedSchedules = false;
 const scheduleListeners = new Set<(map: Record<string, BarberScheduleConfig>) => void>();
 let activeScheduleUnsubscribe: (() => void) | null = null;
+let schedulesRefreshUnsub: (() => void) | null = null;
+
+function commitSchedulesCache(
+  next: Record<string, BarberScheduleConfig>,
+  broadcastHint = false
+): void {
+  cachedSchedules = next;
+  hasHydratedSchedules = true;
+  scheduleListeners.forEach((cb) => {
+    try {
+      cb(cachedSchedules);
+    } catch (err) {
+      console.warn('Barber schedules listener callback error:', err);
+    }
+  });
+  if (broadcastHint) {
+    emitRealtimeSyncHint('schedules');
+  }
+}
+
+function parseScheduleDocs(
+  docs: { id: string; data: () => unknown }[]
+): Record<string, BarberScheduleConfig> {
+  const next: Record<string, BarberScheduleConfig> = {};
+  docs.forEach((docSnap) => {
+    const raw = docSnap.data() as Partial<BarberScheduleConfig>;
+    const id = raw.barberId || raw.id || docSnap.id;
+    next[id] = {
+      id,
+      barberId: id,
+      offWeekdays: Array.isArray(raw.offWeekdays) ? raw.offWeekdays : [1],
+      offDates: Array.isArray(raw.offDates) ? raw.offDates : [],
+      breakSlots: Array.isArray(raw.breakSlots) ? raw.breakSlots : [],
+      breakRanges: sanitizeBreakRanges(raw.breakRanges),
+      dateSlotBlocks: Array.isArray(raw.dateSlotBlocks) ? raw.dateSlotBlocks : [],
+      updatedAt: raw.updatedAt || '',
+    };
+  });
+  return next;
+}
 
 function ensureSchedulesListener() {
+  if (!schedulesRefreshUnsub) {
+    schedulesRefreshUnsub = registerRealtimeRefreshHandler(
+      'barber_schedules',
+      'schedules',
+      async () => {
+        if (scheduleListeners.size === 0) return;
+        ensureSchedulesListener();
+        try {
+          let snap;
+          try {
+            snap = await getDocsFromServer(collection(db, BARBER_SCHEDULES_COLLECTION));
+          } catch {
+            snap = await getDocs(collection(db, BARBER_SCHEDULES_COLLECTION));
+          }
+          commitSchedulesCache(parseScheduleDocs(snap.docs));
+        } catch (err) {
+          console.warn('Barber schedules wake refresh warning:', err);
+        }
+      }
+    );
+  }
   if (activeScheduleUnsubscribe) return;
 
   activeScheduleUnsubscribe = onSnapshot(
     collection(db, BARBER_SCHEDULES_COLLECTION),
     (snapshot) => {
-      const next: Record<string, BarberScheduleConfig> = {};
-      snapshot.docs.forEach((docSnap) => {
-        const raw = docSnap.data() as Partial<BarberScheduleConfig>;
-        const id = raw.barberId || raw.id || docSnap.id;
-        next[id] = {
-          id,
-          barberId: id,
-          offWeekdays: Array.isArray(raw.offWeekdays) ? raw.offWeekdays : [1],
-          offDates: Array.isArray(raw.offDates) ? raw.offDates : [],
-          breakSlots: Array.isArray(raw.breakSlots) ? raw.breakSlots : [],
-          breakRanges: sanitizeBreakRanges(raw.breakRanges),
-          dateSlotBlocks: Array.isArray(raw.dateSlotBlocks) ? raw.dateSlotBlocks : [],
-          updatedAt: raw.updatedAt || '',
-        };
-      });
-      cachedSchedules = next;
-      hasHydratedSchedules = true;
-      scheduleListeners.forEach((cb) => cb(next));
+      resetResilientRetry('barber_schedules');
+      commitSchedulesCache(parseScheduleDocs(snapshot.docs));
     },
     (error) => {
-      handleFirestoreError(error, OperationType.LIST, BARBER_SCHEDULES_COLLECTION);
+      if (activeScheduleUnsubscribe) {
+        try {
+          activeScheduleUnsubscribe();
+        } catch {
+          // Ignore
+        }
+        activeScheduleUnsubscribe = null;
+      }
+      scheduleResilientRetry(
+        'barber_schedules',
+        () => scheduleListeners.size > 0,
+        () => ensureSchedulesListener(),
+        error
+      );
     }
   );
 }
@@ -175,9 +241,16 @@ export function subscribeToBarberSchedules(
   }
   return () => {
     scheduleListeners.delete(onData);
-    if (scheduleListeners.size === 0 && activeScheduleUnsubscribe) {
-      activeScheduleUnsubscribe();
-      activeScheduleUnsubscribe = null;
+    if (scheduleListeners.size === 0) {
+      resetResilientRetry('barber_schedules');
+      if (activeScheduleUnsubscribe) {
+        activeScheduleUnsubscribe();
+        activeScheduleUnsubscribe = null;
+      }
+      if (schedulesRefreshUnsub) {
+        schedulesRefreshUnsub();
+        schedulesRefreshUnsub = null;
+      }
       hasHydratedSchedules = false;
     }
   };
@@ -214,7 +287,7 @@ export async function saveBarberSchedule(
 
   try {
     await setDoc(doc(db, BARBER_SCHEDULES_COLLECTION, cleanId), payload);
-    cachedSchedules = { ...cachedSchedules, [cleanId]: payload };
+    commitSchedulesCache({ ...cachedSchedules, [cleanId]: payload }, true);
     return payload;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);

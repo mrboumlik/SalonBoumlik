@@ -20,15 +20,20 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import { AppointmentBooking, CaisseEntry, ClientCreditRecord } from '../types';
+import { AppointmentBooking, CaisseEntry, ClientCreditRecord, CreditSettlementRequest } from '../types';
 import {
   addManualClientCredit,
+  confirmCreditSettlementRequest,
   deleteCreditDispute,
+  deleteCreditSettlementRequest,
   deleteManualClientCredit,
+  getEffectiveManualCreditRemaining,
   recordManualCreditPayment,
+  rejectCreditSettlementRequest,
   updateCreditDisputeStatus,
   updateManualClientCredit,
   useCreditDisputes,
+  useCreditSettlementRequests,
   useManualClientCredits,
 } from '../utils/creditRegistryStore';
 import { normalizeMoroccanPhoneDigits, subscribeToBookings } from '../utils/bookingStore';
@@ -36,7 +41,10 @@ import { buildCrmClientSummaries, useCrmClients } from '../utils/crmStore';
 import {
   deleteCaisseEntry,
   getCaisseBarberMeta,
+  getCaisseBarbersFromRoster,
+  getEffectiveCaisseCreditRemaining,
   getSalonBusinessDate,
+  matchesCaisseBarber,
   recordCaisseCreditRepayment,
   updateCaisseEntry,
   useCaisseEntries,
@@ -116,20 +124,29 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
   const { lang } = useLanguage();
   const manualCredits = useManualClientCredits();
   const creditDisputes = useCreditDisputes();
+  const settlementRequests = useCreditSettlementRequests();
   const caisseEntries = useCaisseEntries();
   const roster = useBarberRoster();
   const crmMap = useCrmClients();
   const [bookings, setBookings] = useState<AppointmentBooking[]>([]);
 
+  const barberOptions = useMemo(
+    () => getCaisseBarbersFromRoster(roster, caisseEntries),
+    [roster, caisseEntries]
+  );
+
   useEffect(() => subscribeToBookings(setBookings), []);
 
-  // Dispute staff note drafts
+  // Dispute & settlement request drafts
   const [disputeNoteDrafts, setDisputeNoteDrafts] = useState<Record<string, string>>({});
+  const [reqAmountDrafts, setReqAmountDrafts] = useState<Record<string, string>>({});
+  const [reqNoteDrafts, setReqNoteDrafts] = useState<Record<string, string>>({});
 
   // Add new debtor form
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newAdditionalPhones, setNewAdditionalPhones] = useState<string[]>([]);
+  const [newBarberId, setNewBarberId] = useState<string>('hassan');
   const [newAmount, setNewAmount] = useState('');
   const [newCreditDate, setNewCreditDate] = useState('');
   const [newNote, setNewNote] = useState('');
@@ -144,6 +161,7 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
   // Filters & search
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'open_all' | 'all' | 'paid'>('open_all');
+  const [barberFilter, setBarberFilter] = useState<string>('all');
 
   // Inline payment / edit / delete confirmation state
   const [payingId, setPayingId] = useState<string | null>(null);
@@ -152,6 +170,7 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editAdditionalPhones, setEditAdditionalPhones] = useState<string[]>([]);
+  const [editBarberId, setEditBarberId] = useState<string>('hassan');
   const [editAmount, setEditAmount] = useState('');
   const [editCreditDate, setEditCreditDate] = useState('');
   const [editNote, setEditNote] = useState('');
@@ -296,20 +315,20 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
   const openCaisseCredits = useMemo(
     () =>
       caisseEntries.filter(
-        (e) => e.creditRemainingMAD > 0 && e.creditStatus !== 'paid'
+        (e) => getEffectiveCaisseCreditRemaining(e) > 0
       ),
     [caisseEntries]
   );
 
   const openManualCredits = useMemo(
-    () => manualCredits.filter((r) => r.amountOwedMAD > 0 && r.status !== 'paid'),
+    () => manualCredits.filter((r) => getEffectiveManualCreditRemaining(r) > 0),
     [manualCredits]
   );
 
   const totalManualOwedMAD = useMemo(
     () =>
       Math.round(
-        openManualCredits.reduce((sum, r) => sum + (Number(r.amountOwedMAD) || 0), 0) * 100
+        openManualCredits.reduce((sum, r) => sum + getEffectiveManualCreditRemaining(r), 0) * 100
       ) / 100,
     [openManualCredits]
   );
@@ -317,7 +336,7 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
   const totalCaisseOwedMAD = useMemo(
     () =>
       Math.round(
-        openCaisseCredits.reduce((sum, e) => sum + (Number(e.creditRemainingMAD) || 0), 0) * 100
+        openCaisseCredits.reduce((sum, e) => sum + getEffectiveCaisseCreditRemaining(e), 0) * 100
       ) / 100,
     [openCaisseCredits]
   );
@@ -328,10 +347,17 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
     const q = searchQuery.trim().toLowerCase();
     const qDigits = q.replace(/\D+/g, '');
     return manualCredits.filter((rec) => {
-      if (statusFilter === 'open_all' && (rec.status === 'paid' || rec.amountOwedMAD <= 0)) {
+      if (
+        barberFilter !== 'all' &&
+        !matchesCaisseBarber(rec.barberId || 'hassan', rec.barberName, barberFilter, roster)
+      ) {
         return false;
       }
-      if (statusFilter === 'paid' && rec.status !== 'paid' && rec.amountOwedMAD > 0) {
+      const effRem = getEffectiveManualCreditRemaining(rec);
+      if (statusFilter === 'open_all' && effRem <= 0) {
+        return false;
+      }
+      if (statusFilter === 'paid' && effRem > 0) {
         return false;
       }
       if (!q) return true;
@@ -342,22 +368,30 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
         allPhones.some((p) => p.toLowerCase().includes(q)) ||
         (qDigits.length >= 3 && allNorms.some((np) => np.includes(qDigits)));
       const matchNote = (rec.note || '').toLowerCase().includes(q);
-      return matchName || matchPhone || matchNote;
+      const matchBarber = (rec.barberName || '').toLowerCase().includes(q);
+      return matchName || matchPhone || matchNote || matchBarber;
     });
-  }, [manualCredits, searchQuery, statusFilter]);
+  }, [manualCredits, searchQuery, statusFilter, barberFilter, roster]);
 
   const filteredCaisseCredits = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const qDigits = q.replace(/\D+/g, '');
     return openCaisseCredits.filter((e) => {
+      if (
+        barberFilter !== 'all' &&
+        !matchesCaisseBarber(e.barberId, e.barberName, barberFilter, roster)
+      ) {
+        return false;
+      }
       if (!q) return true;
       const nameMatch = (e.clientName || '').toLowerCase().includes(q);
+      const barberMatch = (e.barberName || '').toLowerCase().includes(q);
       const phoneMatch =
         (e.clientPhone || '').toLowerCase().includes(q) ||
         (qDigits.length >= 3 && (e.clientPhone || '').replace(/\D+/g, '').includes(qDigits));
-      return nameMatch || phoneMatch;
+      return nameMatch || phoneMatch || barberMatch;
     });
-  }, [openCaisseCredits, searchQuery]);
+  }, [openCaisseCredits, searchQuery, barberFilter, roster]);
 
   const handleAddDebtor = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -383,10 +417,14 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
 
     setAdding(true);
     try {
+      const targetBarberId = newBarberId || 'hassan';
+      const targetMeta = getCaisseBarberMeta(targetBarberId, roster);
       await addManualClientCredit({
         clientName: cleanName,
         clientPhone: cleanPhone,
         additionalPhones: extraPhonesClean,
+        barberId: targetBarberId,
+        barberName: targetMeta.arName,
         amountOwedMAD: cleanAmt,
         creditDate: newCreditDate.trim() || undefined,
         note: newNote.trim(),
@@ -400,7 +438,7 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
       setNewNote('');
       showToast(
         pickLang(lang, {
-          ar: `تمت إضافة ${cleanName} (${cleanAmt} MAD) إلى قائمة الناس لي كانتسالهم ✓`,
+          ar: `تمت إضافة ${cleanName} (${cleanAmt} MAD — ${targetMeta.arName}) إلى سجل الكريدي ✓`,
           fr: `${cleanName} (${cleanAmt} MAD) ajouté au registre des crédits ✓`,
           amz: `ⵉⵜⵜⵓⵔⵏⴰ ${cleanName} (${cleanAmt} MAD) ✓`,
           en: `Added ${cleanName} (${cleanAmt} MAD) to Credit Registry ✓`,
@@ -447,6 +485,7 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
     setEditName(rec.clientName);
     setEditPhone(rec.clientPhone);
     setEditAdditionalPhones(rec.additionalPhones || []);
+    setEditBarberId(rec.barberId || 'hassan');
     setEditAmount(String(rec.amountOwedMAD));
     setEditCreditDate(rec.creditDate || rec.createdAt.slice(0, 10));
     setEditNote(rec.note || '');
@@ -457,10 +496,14 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
     if (!editingRecord) return;
     setBusyId(editingRecord.id);
     try {
+      const targetBarberId = editBarberId || 'hassan';
+      const targetMeta = getCaisseBarberMeta(targetBarberId, roster);
       await updateManualClientCredit(editingRecord.id, editingRecord, {
         clientName: editName.trim(),
         clientPhone: editPhone.trim(),
         additionalPhones: editAdditionalPhones.map((p) => p.trim()).filter(Boolean),
+        barberId: targetBarberId,
+        barberName: targetMeta.arName,
         amountOwedMAD: Math.max(0, Number(editAmount) || 0),
         creditDate: editCreditDate.trim(),
         note: editNote,
@@ -617,6 +660,241 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
           </div>
         </div>
       </div>
+
+      {/* Supervisor Incoming Credit Settlement Requests ("يخلص ولا يفك من الكريدي") */}
+      {settlementRequests.length > 0 && (() => {
+        const pendingReqs = settlementRequests.filter((r) => r.status === 'pending');
+        const processedReqs = settlementRequests.filter((r) => r.status !== 'pending');
+        const handleConfirmRequest = async (req: CreditSettlementRequest) => {
+          const draftStr =
+            reqAmountDrafts[req.id] !== undefined
+              ? reqAmountDrafts[req.id]
+              : String(req.requestedAmountMAD);
+          const approvedAmt = Math.max(0, Number(draftStr) || 0);
+          if (approvedAmt <= 0) {
+            showToast('أدخل مبلغاً أكبر من 0 درهم للتأكيد.', '', 'warning');
+            return;
+          }
+          setBusyId(req.id);
+          try {
+            const applied = await confirmCreditSettlementRequest({
+              request: req,
+              approvedAmountMAD: approvedAmt,
+              reviewedBy: staffName,
+              reviewerNote: reqNoteDrafts[req.id],
+              caisseEntries,
+              manualCredits,
+            });
+            showToast(
+              req.actionType === 'pay'
+                ? `تم تأكيد خلاص ${applied} MAD للزبون ${req.clientName} ✓`
+                : `تم تأكيد فك ${applied} MAD من كريدي ${req.clientName} ✓`,
+              '',
+              'success'
+            );
+          } catch (err) {
+            console.error('Failed to confirm settlement request:', err);
+          } finally {
+            setBusyId(null);
+          }
+        };
+
+        const handleRejectRequest = async (req: CreditSettlementRequest) => {
+          setBusyId(req.id);
+          try {
+            await rejectCreditSettlementRequest({
+              requestId: req.id,
+              reviewedBy: staffName,
+              reviewerNote: reqNoteDrafts[req.id],
+            });
+            showToast(`تم نفي طلب ${req.clientName} ✓`, '', 'info');
+          } catch (err) {
+            console.error('Failed to reject settlement request:', err);
+          } finally {
+            setBusyId(null);
+          }
+        };
+
+        return (
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-zinc-900/90 border border-emerald-300 dark:border-emerald-500/40 shadow-sm space-y-3 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-100 dark:border-zinc-800 pb-2.5">
+              <div className="font-black text-sm text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>طلبات خلاص أو فك الكريدي (موافقة المشرف العام)</span>
+              </div>
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 font-bold text-[11px]">
+                {pendingReqs.length} بانتظار القرار
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              {[...pendingReqs, ...processedReqs.slice(0, 10)].map((req) => {
+                const isPending = req.status === 'pending';
+                const isPay = req.actionType === 'pay';
+                const barberLabel =
+                  req.barberName ||
+                  (req.barberId
+                    ? getCaisseBarberMeta(req.barberId, roster).arName
+                    : 'كل الحلاقين / الصالون');
+                const amountVal =
+                  reqAmountDrafts[req.id] !== undefined
+                    ? reqAmountDrafts[req.id]
+                    : String(req.requestedAmountMAD);
+                const noteVal =
+                  reqNoteDrafts[req.id] !== undefined
+                    ? reqNoteDrafts[req.id]
+                    : req.reviewerNote || '';
+                const roleLabel =
+                  req.submittedRole === 'client'
+                    ? 'طلب من الزبون'
+                    : req.submittedRole === 'caisse'
+                    ? 'من لاكيس'
+                    : req.submittedRole === 'barber'
+                    ? 'من الحلاق'
+                    : 'من الإدارة';
+
+                return (
+                  <div
+                    key={req.id}
+                    className={`p-3 rounded-xl border space-y-2 ${
+                      isPending
+                        ? 'bg-emerald-50/50 dark:bg-zinc-950/80 border-emerald-200 dark:border-emerald-500/35'
+                        : req.status === 'confirmed'
+                        ? 'bg-emerald-50/25 dark:bg-emerald-950/15 border-emerald-200 dark:border-emerald-500/25 opacity-85'
+                        : 'bg-rose-50/35 dark:bg-rose-950/15 border-rose-200 dark:border-rose-500/25 opacity-85'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-black text-zinc-900 dark:text-white text-sm">
+                          {req.clientName}
+                        </span>
+                        {req.clientPhone && (
+                          <span dir="ltr" className="font-mono text-zinc-600 dark:text-zinc-300 font-bold">
+                            {req.clientPhone}
+                          </span>
+                        )}
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+                            isPay
+                              ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300'
+                              : 'bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300'
+                          }`}
+                        >
+                          {isPay ? 'يخلص الكريدي (أداء)' : 'يفك من الكريدي (إسقاط/تسوية)'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-zinc-200/80 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 text-[10px] font-bold">
+                          الحلاق: {barberLabel}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 text-[10px] font-bold">
+                          {roleLabel} ({req.submittedBy})
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-black text-orange-700 dark:text-orange-300">
+                          المطلوب: {req.requestedAmountMAD} MAD
+                        </span>
+                        {!isPending && (
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+                              req.status === 'confirmed'
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-rose-600 text-white'
+                            }`}
+                          >
+                            {req.status === 'confirmed'
+                              ? `تم التأكيد ✓ (${req.approvedAmountMAD ?? req.requestedAmountMAD} MAD)`
+                              : 'تم النفي ✕'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {req.note && (
+                      <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300">
+                        {req.note}
+                      </div>
+                    )}
+
+                    {isPending ? (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-zinc-700 dark:text-zinc-300">
+                            تعديل المبلغ (MAD):
+                          </span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={Math.max(req.originalRemainingMAD || 10000, req.requestedAmountMAD || 10000)}
+                            value={amountVal}
+                            onChange={(e) =>
+                              setReqAmountDrafts((prev) => ({
+                                ...prev,
+                                [req.id]: e.target.value,
+                              }))
+                            }
+                            className="w-24 bg-white dark:bg-zinc-950 border border-emerald-300 dark:border-emerald-500/40 rounded-lg px-2 py-1.5 font-mono font-black text-zinc-900 dark:text-white"
+                          />
+                        </div>
+
+                        <input
+                          type="text"
+                          value={noteVal}
+                          onChange={(e) =>
+                            setReqNoteDrafts((prev) => ({
+                              ...prev,
+                              [req.id]: e.target.value,
+                            }))
+                          }
+                          placeholder="ملاحظة المشرف (اختياري)..."
+                          className="flex-1 min-w-[160px] bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-900 dark:text-white"
+                        />
+
+                        <button
+                          type="button"
+                          disabled={busyId === req.id}
+                          onClick={() => handleConfirmRequest(req)}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>تأكيد ({amountVal || 0} MAD)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={busyId === req.id}
+                          onClick={() => handleRejectRequest(req)}
+                          className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-black flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>نفي</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400">
+                        <span>
+                          بواسطة: {req.reviewedBy || staffName} · {(req.reviewedAt || req.updatedAt).slice(0, 10)}
+                          {req.reviewerNote ? ` · ${req.reviewerNote}` : ''}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={busyId === req.id}
+                          onClick={() => void deleteCreditSettlementRequest(req.id)}
+                          className="p-1 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer"
+                          title="حذف"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Incoming Client Credit Disputes / Inquiries */}
       {creditDisputes.length > 0 && (
@@ -803,7 +1081,24 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
 
           <div className="sm:col-span-2">
             <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-              مبلغ الكريدي (MAD) *
+              تابع لـ (الحلاق / الإدارة)
+            </label>
+            <select
+              value={newBarberId}
+              onChange={(e) => setNewBarberId(e.target.value)}
+              className="w-full min-h-[40px] bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-2.5 py-2 font-bold text-zinc-900 dark:text-white"
+            >
+              {barberOptions.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.isOwner ? `${b.arName} (الإدارة)` : b.arName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="sm:col-span-1">
+            <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+              المبلغ (MAD) *
             </label>
             <input
               type="number"
@@ -813,7 +1108,7 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
               onChange={(e) => setNewAmount(e.target.value)}
               placeholder="35"
               required
-              className="w-full min-h-[40px] bg-zinc-50 dark:bg-zinc-950 border border-orange-300 dark:border-orange-500/40 rounded-xl px-3 py-2 font-mono font-black text-zinc-900 dark:text-white"
+              className="w-full min-h-[40px] bg-zinc-50 dark:bg-zinc-950 border border-orange-300 dark:border-orange-500/40 rounded-xl px-2.5 py-2 font-mono font-black text-zinc-900 dark:text-white"
             />
           </div>
 
@@ -830,16 +1125,16 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
             />
           </div>
 
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-1">
             <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-              ملاحظة (إدارية فقط)
+              ملاحظة
             </label>
             <input
               type="text"
               value={newNote}
               onChange={(e) => setNewNote(e.target.value)}
-              placeholder="حسانة + لحية..."
-              className="w-full min-h-[40px] bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-zinc-900 dark:text-white"
+              placeholder="حسانة..."
+              className="w-full min-h-[40px] bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-2.5 py-2 text-zinc-900 dark:text-white"
             />
           </div>
 
@@ -1067,40 +1362,78 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
         </ModalPortal>
       )}
 
-      {/* Search & Filter Toolbar */}
-      <div className="p-3.5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-zinc-400 absolute start-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="بحث بالاسم أو رقم الهاتف..."
-            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl ps-9 pe-3 py-2 text-xs text-zinc-900 dark:text-white"
-          />
+      {/* Search & Filter Toolbar (includes per-barber filter for Supervisor Hassan) */}
+      <div className="p-3.5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 space-y-2.5 text-xs">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5">
+          <div className="relative w-full sm:w-80">
+            <Search className="w-4 h-4 text-zinc-400 absolute start-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="بحث بالاسم أو الهاتف أو الحلاق..."
+              className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl ps-9 pe-3 py-2 text-xs text-zinc-900 dark:text-white"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end">
+            {(
+              [
+                { id: 'open_all', label: `مفتوح (${openManualCredits.length})` },
+                { id: 'paid', label: 'خالص ✓' },
+                { id: 'all', label: `الكل (${manualCredits.length})` },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setStatusFilter(tab.id)}
+                className={`px-3 py-1.5 rounded-lg font-bold border cursor-pointer transition-colors ${
+                  statusFilter === tab.id
+                    ? 'bg-zinc-900 dark:bg-amber-500 text-white dark:text-zinc-950 border-zinc-900 dark:border-amber-500'
+                    : 'bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end">
-          {(
-            [
-              { id: 'open_all', label: `مفتوح (${openManualCredits.length})` },
-              { id: 'paid', label: 'خالص ✓' },
-              { id: 'all', label: `الكل (${manualCredits.length})` },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setStatusFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-lg font-bold border cursor-pointer transition-colors ${
-                statusFilter === tab.id
-                  ? 'bg-zinc-900 dark:bg-amber-500 text-white dark:text-zinc-950 border-zinc-900 dark:border-amber-500'
-                  : 'bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+          <span className="font-bold text-zinc-500 dark:text-zinc-400 text-[11px] me-1">
+            تصفية حسب الحلاق:
+          </span>
+          <button
+            type="button"
+            onClick={() => setBarberFilter('all')}
+            className={`px-2.5 py-1 rounded-lg font-bold border cursor-pointer text-[11px] ${
+              barberFilter === 'all'
+                ? 'bg-orange-600 text-white border-orange-600'
+                : 'bg-zinc-50 dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+            }`}
+          >
+            جميع الحلاقين ({openManualCredits.length + openCaisseCredits.length})
+          </button>
+          {barberOptions.map((b) => {
+            const countForB =
+              openManualCredits.filter((r) => (r.barberId || 'hassan') === b.id).length +
+              openCaisseCredits.filter((e) => e.barberId === b.id).length;
+            return (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => setBarberFilter(b.id)}
+                className={`px-2.5 py-1 rounded-lg font-bold border cursor-pointer text-[11px] ${
+                  barberFilter === b.id
+                    ? 'bg-orange-600 text-white border-orange-600'
+                    : 'bg-zinc-50 dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                }`}
+              >
+                {b.arName} ({countForB})
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -1220,6 +1553,23 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
                   className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 font-mono text-zinc-900 dark:text-white"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                تابع لـ (الحلاق / الإدارة)
+              </label>
+              <select
+                value={editBarberId}
+                onChange={(e) => setEditBarberId(e.target.value)}
+                className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 font-bold text-zinc-900 dark:text-white"
+              >
+                {barberOptions.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.isOwner ? `${b.arName} (الإدارة)` : b.arName}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -1429,6 +1779,8 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
           filteredManualCredits.map((rec) => {
             const isPaid = rec.status === 'paid' || rec.amountOwedMAD <= 0;
             const displayDate = rec.creditDate || rec.createdAt.slice(0, 10);
+            const assignedBarberId = rec.barberId || 'hassan';
+            const assignedBarberMeta = getCaisseBarberMeta(assignedBarberId, roster);
             const allPhones = [rec.clientPhone, ...(rec.additionalPhones || [])]
               .map((p) => String(p || '').trim())
               .filter(Boolean);
@@ -1437,7 +1789,10 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
               clientPhone: primaryWaPhone,
               clientName: rec.clientName,
               amountOwedMAD: rec.amountOwedMAD,
-              creditorName: 'إدارة صالون بومليك (Hassan ait boumlik)',
+              creditorName:
+                assignedBarberId === 'hassan'
+                  ? 'إدارة صالون بومليك (Hassan ait boumlik)'
+                  : assignedBarberMeta.arName,
               creditDate: displayDate,
               note: rec.note,
               lang,
@@ -1468,6 +1823,9 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-black text-sm text-zinc-900 dark:text-white truncate">
                           {rec.clientName}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 text-[10px] font-black">
+                          الحلاق: {rec.barberName || assignedBarberMeta.arName}
                         </span>
                         <span
                           className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${

@@ -83,6 +83,7 @@ import {
 } from '../utils/bookingStore';
 import {
   buildClientTicketWhatsAppMessage,
+  buildCreditWhatsAppReminderUrl,
   formatMoroccanWhatsAppNumber,
 } from '../utils/whatsappAutomation';
 import {
@@ -132,13 +133,18 @@ import { useBarberProfiles, getMergedBarbers } from '../utils/barberProfileStore
 import { safeStorageGet, safeStorageRemove, safeStorageSet } from '../utils/safeBrowser';
 import {
   addCaisseEntry,
-  resolveCaisseBarberId,
   getCaisseBarberMeta,
+  getEffectiveCaisseCreditRemaining,
+  matchesCaisseBarber,
+  resolveCaisseBarberId,
   useCaisseEntries,
 } from '../utils/caisseStore';
 import {
   computeOutstandingCreditsForPhone,
+  getEffectiveManualCreditRemaining,
+  submitCreditSettlementRequest,
   useCreditDisputes,
+  useCreditSettlementRequests,
   useManualClientCredits,
 } from '../utils/creditRegistryStore';
 import {
@@ -148,7 +154,7 @@ import {
 } from '../utils/clientQr';
 import { ClientQrModal } from './ClientQrModal';
 import { AdminQrCheckInGeneratorModal } from './AdminQrCheckInGeneratorModal';
-import { AppointmentBooking, BookingStatus, StaffRole } from '../types';
+import { AppointmentBooking, BookingStatus, CreditSettlementActionType, StaffRole } from '../types';
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
@@ -299,6 +305,92 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const caisseEntries = useCaisseEntries();
   const manualCredits = useManualClientCredits();
   const creditDisputes = useCreditDisputes();
+  const settlementRequests = useCreditSettlementRequests();
+  const adminScrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Real-time session sync against live Firestore roster (keeps role/name synced across devices & revokes archived staff)
+  useEffect(() => {
+    if (!session || barberRoster.length === 0) return;
+    const matched = barberRoster.find(
+      (m) =>
+        (session.memberId && m.id === session.memberId) ||
+        (session.role === 'barber' && m.id === session.barberId) ||
+        (session.role === 'caisse' && m.role === 'caisse' && m.nameFr === session.name)
+    );
+    if (!matched) return;
+    if (session.role !== 'master' && matched.status === 'archived') {
+      safeStorageRemove(ADMIN_SESSION_STORAGE_KEY, 'local');
+      setSession(null);
+      setPinInput('');
+      setPinError(false);
+      return;
+    }
+    const nextBarberId =
+      matched.role === 'master' || matched.role === 'caisse'
+        ? 'all'
+        : matched.id;
+    const nextName = matched.nameAr || matched.nameFr || session.name;
+    const nextRole = matched.role;
+    const nextTitle =
+      nextRole === 'master'
+        ? 'Master Admin / المؤسس وخبير الحلاقة'
+        : nextRole === 'caisse'
+        ? 'لاكيس / Caisse Salon'
+        : 'Barbier / حلاق';
+    if (
+      session.barberId !== nextBarberId ||
+      session.name !== nextName ||
+      session.role !== nextRole ||
+      session.memberId !== matched.id
+    ) {
+      const updatedSession: StaffSession = {
+        ...session,
+        barberId: nextBarberId,
+        name: nextName,
+        role: nextRole,
+        title: nextTitle,
+        memberId: matched.id,
+      };
+      setSession(updatedSession);
+      try {
+        const raw = safeStorageGet(ADMIN_SESSION_STORAGE_KEY, 'local');
+        const parsed: StoredAdminSession | null = raw ? JSON.parse(raw) : null;
+        safeStorageSet(
+          ADMIN_SESSION_STORAGE_KEY,
+          JSON.stringify({
+            session: updatedSession,
+            expiresAt: parsed?.expiresAt || Date.now() + 7 * 24 * 60 * 60 * 1000,
+          }),
+          'local'
+        );
+      } catch {
+        // Ignore storage errors
+      }
+    }
+  }, [barberRoster, session]);
+
+  // Non-blocking booking card & Caisse prompt settlement request state
+  const [bookingSettlementOpenId, setBookingSettlementOpenId] = useState<string | null>(null);
+  const [bookingSettlementAction, setBookingSettlementAction] = useState<CreditSettlementActionType>('pay');
+  const [bookingSettlementTargetBarberId, setBookingSettlementTargetBarberId] = useState<string>('all');
+  const [bookingSettlementAmount, setBookingSettlementAmount] = useState<string>('');
+  const [bookingSettlementNote, setBookingSettlementNote] = useState<string>('');
+  const [bookingSettlementBusy, setBookingSettlementBusy] = useState<boolean>(false);
+
+  // Barber-scoped Credit tab settlement request state
+  const [barberCreditReqKey, setBarberCreditReqKey] = useState<string | null>(null);
+  const [barberCreditReqAction, setBarberCreditReqAction] = useState<CreditSettlementActionType>('pay');
+  const [barberCreditReqAmount, setBarberCreditReqAmount] = useState<string>('');
+  const [barberCreditReqNote, setBarberCreditReqNote] = useState<string>('');
+  const [barberCreditReqBusy, setBarberCreditReqBusy] = useState<boolean>(false);
+
+  // Prompt modal settlement mini-panel
+  const [promptCreditActionOpen, setPromptCreditActionOpen] = useState<boolean>(false);
+  const [promptCreditActionType, setPromptCreditActionType] = useState<CreditSettlementActionType>('pay');
+  const [promptCreditActionTargetBarber, setPromptCreditActionTargetBarber] = useState<string>('all');
+  const [promptCreditActionAmount, setPromptCreditActionAmount] = useState<string>('');
+  const [promptCreditActionNote, setPromptCreditActionNote] = useState<string>('');
+  const [promptCreditActionBusy, setPromptCreditActionBusy] = useState<boolean>(false);
 
   // Date Views: 'today' (Upcoming Queue) or 'archive'
   const [activeTab, setActiveTab] = useState<'today' | 'archive'>('today');
@@ -1166,6 +1258,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setCaissePromptPaid(baseTotal > 0 ? String(baseTotal) : '');
     setCaissePromptExpected(baseTotal > 0 ? String(baseTotal) : '');
     setCaissePromptHasCredit(false);
+    setPromptCreditActionOpen(false);
+    setPromptCreditActionTargetBarber('all');
+    setPromptCreditActionAmount('');
+    setPromptCreditActionNote('');
     setCaissePromptClientName(booking.clientName || '');
     setCaissePromptClientPhone(booking.clientPhone || '');
     setCaissePromptRepayDate('');
@@ -2295,7 +2391,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         ) : (
           /* AUTHENTICATED STAFF DASHBOARD */
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-28 space-y-6">
+          <div
+            ref={adminScrollContainerRef}
+            className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-28 space-y-6"
+          >
 
             {/* DAILY REVENUE SUMMARY CARD (Shown for Master Admin on Bookings tab only — clean Caisse-first for barbers) */}
             {dailyRevenue && session.role === 'master' && workspaceSection === 'bookings' && (
@@ -2426,10 +2525,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               const waitingCount = waitlistEntries.filter((w) => w.status === 'waiting').length;
               const pendingShiftCount = shiftRequests.filter((r) => r.status === 'pending').length;
               const openManualDebtorsCount = manualCredits.filter(
-                (r) => r.amountOwedMAD > 0 && r.status !== 'paid'
+                (r) => getEffectiveManualCreditRemaining(r) > 0
               ).length;
               const openCaisseCreditsCount = caisseEntries.filter(
-                (e) => e.creditRemainingMAD > 0 && e.creditStatus !== 'paid'
+                (e) => getEffectiveCaisseCreditRemaining(e) > 0
               ).length;
               const openDisputesCount = creditDisputes.filter(
                 (d) => d.status !== 'resolved'
@@ -2745,6 +2844,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     ({kpiSourceBookings.length})
                   </span>
                 </button>
+
+                {session.role !== 'caisse' && (() => {
+                  const barberOpenCaisseCount = caisseEntries.filter(
+                    (e) =>
+                      matchesCaisseBarber(e.barberId, e.barberName, session.barberId, barberRoster) &&
+                      getEffectiveCaisseCreditRemaining(e) > 0
+                  ).length;
+                  const barberOpenManualCount = manualCredits.filter(
+                    (r) =>
+                      matchesCaisseBarber(
+                        r.barberId || 'hassan',
+                        r.barberName,
+                        session.barberId,
+                        barberRoster
+                      ) && getEffectiveManualCreditRemaining(r) > 0
+                  ).length;
+                  const barberCreditsTotalCount = barberOpenCaisseCount + barberOpenManualCount;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setWorkspaceSection('credits')}
+                      className={`min-h-[38px] px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer border ${
+                        workspaceSection === 'credits'
+                          ? 'bg-orange-600 text-white border-orange-600 shadow-sm'
+                          : 'bg-white dark:bg-zinc-900 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-500/40 hover:bg-orange-50 dark:hover:bg-orange-950/30'
+                      }`}
+                    >
+                      <CreditCard className="w-4 h-4" />
+                      <span>الكريدي ديالي</span>
+                      {barberCreditsTotalCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-orange-500/20">
+                          {barberCreditsTotalCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })()}
 
                 {session.role !== 'caisse' && (
                   <>
@@ -3404,6 +3540,419 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <MasterClientCreditsPanel staffName={session.name} />
             )}
 
+            {workspaceSection === 'credits' && session.role === 'barber' && (() => {
+              const myCaisseCredits = caisseEntries.filter(
+                (e) =>
+                  matchesCaisseBarber(e.barberId, e.barberName, session.barberId, barberRoster) &&
+                  getEffectiveCaisseCreditRemaining(e) > 0
+              );
+              const myManualCredits = manualCredits.filter(
+                (r) =>
+                  matchesCaisseBarber(
+                    r.barberId || 'hassan',
+                    r.barberName,
+                    session.barberId,
+                    barberRoster
+                  ) && getEffectiveManualCreditRemaining(r) > 0
+              );
+              const myTotalOwedMAD =
+                Math.round(
+                  (myCaisseCredits.reduce((s, e) => s + getEffectiveCaisseCreditRemaining(e), 0) +
+                    myManualCredits.reduce((s, r) => s + getEffectiveManualCreditRemaining(r), 0)) *
+                    100
+                ) / 100;
+              const mySettlementReqs = settlementRequests.filter((req) =>
+                matchesCaisseBarber(req.barberId, req.barberName, session.barberId, barberRoster)
+              );
+
+              const handleSubmitBarberCreditRequest = async (params: {
+                sourceType: 'caisse' | 'manual';
+                sourceId: string;
+                clientName: string;
+                clientPhone?: string;
+                maxAmount: number;
+              }) => {
+                const amt = Math.max(0, Number(barberCreditReqAmount) || params.maxAmount);
+                if (amt <= 0) return;
+                setBarberCreditReqBusy(true);
+                try {
+                  await submitCreditSettlementRequest({
+                    sourceType: params.sourceType,
+                    sourceId: params.sourceId,
+                    barberId: session.barberId,
+                    barberName: session.name,
+                    clientName: params.clientName,
+                    clientPhone: params.clientPhone,
+                    actionType: barberCreditReqAction,
+                    originalRemainingMAD: params.maxAmount,
+                    requestedAmountMAD: amt,
+                    note: barberCreditReqNote.trim() || undefined,
+                    submittedBy: session.name,
+                    submittedRole: 'barber',
+                  });
+                  setBarberCreditReqKey(null);
+                  setBarberCreditReqAmount('');
+                  setBarberCreditReqNote('');
+                  showToast(
+                    'تم إرسال طلبك (يخلص/يفك الكريدي) للمشرف العام بنجاح ✓',
+                    '',
+                    'success'
+                  );
+                } catch (err) {
+                  console.error('Failed to submit barber credit request:', err);
+                } finally {
+                  setBarberCreditReqBusy(false);
+                }
+              };
+
+              return (
+                <div className="space-y-4 pb-20 text-xs">
+                  <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-zinc-900/90 border border-orange-300 dark:border-orange-500/40 shadow-sm space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-base font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                          <CreditCard className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                          <span>الكريدي الخاص بي ({session.name})</span>
+                        </h3>
+                        <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                          هنا تظهر فقط ملفات الكريدي المسجلة باسمك. كل طلب خلاص أو فك يمر عبر موافقة المشرف العام.
+                        </p>
+                      </div>
+                      <div className="px-3 py-1.5 rounded-xl bg-orange-50 dark:bg-orange-500/15 border border-orange-200 dark:border-orange-500/35 font-mono font-black text-base text-orange-800 dark:text-orange-200">
+                        {myTotalOwedMAD} MAD
+                      </div>
+                    </div>
+                  </div>
+
+                  {mySettlementReqs.length > 0 && (
+                    <div className="p-4 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 space-y-2.5">
+                      <div className="font-black text-sm text-zinc-900 dark:text-white">
+                        حالة طلبات خلاص أو فك الكريدي ({mySettlementReqs.length})
+                      </div>
+                      <div className="space-y-2">
+                        {mySettlementReqs.slice(0, 12).map((req) => (
+                          <div
+                            key={req.id}
+                            className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/70 border border-zinc-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2"
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-black text-zinc-900 dark:text-white">
+                                {req.clientName}
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                  req.actionType === 'pay'
+                                    ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300'
+                                    : 'bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300'
+                                }`}
+                              >
+                                {req.actionType === 'pay' ? 'يخلص' : 'يفك من الكريدي'} ({req.requestedAmountMAD} MAD)
+                              </span>
+                              {req.reviewerNote && (
+                                <span className="text-[11px] text-zinc-500">{req.reviewerNote}</span>
+                              )}
+                            </div>
+                            <span
+                              className={`px-2.5 py-0.5 rounded-md text-[10px] font-black ${
+                                req.status === 'confirmed'
+                                  ? 'bg-emerald-600 text-white'
+                                  : req.status === 'rejected'
+                                  ? 'bg-rose-600 text-white'
+                                  : 'bg-amber-500 text-black'
+                              }`}
+                            >
+                              {req.status === 'confirmed'
+                                ? `تم التأكيد ✓ (${req.approvedAmountMAD ?? req.requestedAmountMAD} MAD)`
+                                : req.status === 'rejected'
+                                ? 'تم النفي ✕'
+                                : 'بانتظار المشرف'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {myCaisseCredits.length === 0 && myManualCredits.length === 0 ? (
+                    <div className="p-8 text-center rounded-2xl bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400">
+                      لا يوجد أي كريدي مفتوح مسجل باسمك حالياً ✓
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {myCaisseCredits.map((entry) => {
+                        const rowKey = `caisse_${entry.id}`;
+                        const effRem = getEffectiveCaisseCreditRemaining(entry);
+                        const isOpen = barberCreditReqKey === rowKey;
+                        const hasPending = mySettlementReqs.some(
+                          (r) => r.sourceId === entry.id && r.status === 'pending'
+                        );
+                        const waUrl = buildCreditWhatsAppReminderUrl({
+                          clientPhone: entry.clientPhone,
+                          clientName: entry.clientName,
+                          amountOwedMAD: effRem,
+                          creditorName: session.name,
+                          creditDate: entry.date,
+                          note: entry.note,
+                          lang,
+                        });
+                        return (
+                          <div
+                            key={rowKey}
+                            className="p-3.5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 border-s-4 border-s-orange-500 space-y-2.5"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <div className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-2">
+                                  <span>{entry.clientName || 'زبون'}</span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+                                    من لاكيس
+                                  </span>
+                                  {hasPending && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 font-bold">
+                                      طلب معلق
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] font-mono text-zinc-500 mt-0.5 flex flex-wrap items-center gap-2">
+                                  {entry.clientPhone && <span dir="ltr">{entry.clientPhone}</span>}
+                                  <span>· {entry.date}</span>
+                                  {entry.note && <span className="font-sans">· {entry.note}</span>}
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="px-3 py-1 rounded-xl bg-orange-50 dark:bg-orange-500/15 border border-orange-200 dark:border-orange-500/30 font-mono font-black text-orange-800 dark:text-orange-200">
+                                  {effRem} MAD
+                                </span>
+                                {waUrl && (
+                                  <a
+                                    href={waUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold inline-flex items-center gap-1"
+                                  >
+                                    <MessageCircle className="w-3.5 h-3.5" />
+                                    <span>واتساب</span>
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBarberCreditReqKey(isOpen ? null : rowKey);
+                                    setBarberCreditReqAction('pay');
+                                    setBarberCreditReqAmount(String(effRem));
+                                    setBarberCreditReqNote('');
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-black cursor-pointer"
+                                >
+                                  يخلص ولا يفك من الكريدي
+                                </button>
+                              </div>
+                            </div>
+
+                            {isOpen && (
+                              <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setBarberCreditReqAction('pay')}
+                                    className={`py-1.5 px-2 rounded-lg font-black border cursor-pointer ${
+                                      barberCreditReqAction === 'pay'
+                                        ? 'bg-emerald-600 text-white border-emerald-600'
+                                        : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                                    }`}
+                                  >
+                                    يخلص الكريدي (أداء)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setBarberCreditReqAction('clear')}
+                                    className={`py-1.5 px-2 rounded-lg font-black border cursor-pointer ${
+                                      barberCreditReqAction === 'clear'
+                                        ? 'bg-amber-600 text-white border-amber-600'
+                                        : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                                    }`}
+                                  >
+                                    يفك من الكريدي (تسوية)
+                                  </button>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={effRem}
+                                    value={barberCreditReqAmount}
+                                    onChange={(e) => setBarberCreditReqAmount(e.target.value)}
+                                    className="w-28 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 font-mono font-bold text-zinc-900 dark:text-white"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={barberCreditReqNote}
+                                    onChange={(e) => setBarberCreditReqNote(e.target.value)}
+                                    placeholder="ملاحظة للمشرف العام (اختياري)..."
+                                    className="flex-1 min-w-[160px] bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-900 dark:text-white"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={barberCreditReqBusy}
+                                    onClick={() =>
+                                      void handleSubmitBarberCreditRequest({
+                                        sourceType: 'caisse',
+                                        sourceId: entry.id,
+                                        clientName: entry.clientName || 'زبون',
+                                        clientPhone: entry.clientPhone,
+                                        maxAmount: effRem,
+                                      })
+                                    }
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black cursor-pointer disabled:opacity-50"
+                                  >
+                                    إرسال للمشرف ✓
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {myManualCredits.map((rec) => {
+                        const rowKey = `manual_${rec.id}`;
+                        const effRem = getEffectiveManualCreditRemaining(rec);
+                        const isOpen = barberCreditReqKey === rowKey;
+                        const allPhones = [rec.clientPhone, ...(rec.additionalPhones || [])]
+                          .map((p) => String(p || '').trim())
+                          .filter(Boolean);
+                        const waUrl = buildCreditWhatsAppReminderUrl({
+                          clientPhone: allPhones[0] || '',
+                          clientName: rec.clientName,
+                          amountOwedMAD: effRem,
+                          creditorName: session.name,
+                          creditDate: rec.creditDate || rec.createdAt.slice(0, 10),
+                          note: rec.note,
+                          lang,
+                        });
+                        return (
+                          <div
+                            key={rowKey}
+                            className="p-3.5 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 border-s-4 border-s-amber-500 space-y-2.5"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <div className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-2">
+                                  <span>{rec.clientName}</span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 font-bold">
+                                    سجل الكريدي
+                                  </span>
+                                </div>
+                                <div className="text-[11px] font-mono text-zinc-500 mt-0.5 flex flex-wrap items-center gap-2">
+                                  {allPhones.map((ph, idx) => (
+                                    <span key={`${ph}-${idx}`} dir="ltr">
+                                      {ph}
+                                    </span>
+                                  ))}
+                                  <span>· {rec.creditDate || rec.createdAt.slice(0, 10)}</span>
+                                  {rec.note && <span className="font-sans">· {rec.note}</span>}
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="px-3 py-1 rounded-xl bg-orange-50 dark:bg-orange-500/15 border border-orange-200 dark:border-orange-500/30 font-mono font-black text-orange-800 dark:text-orange-200">
+                                  {effRem} MAD
+                                </span>
+                                {waUrl && (
+                                  <a
+                                    href={waUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold inline-flex items-center gap-1"
+                                  >
+                                    <MessageCircle className="w-3.5 h-3.5" />
+                                    <span>واتساب</span>
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBarberCreditReqKey(isOpen ? null : rowKey);
+                                    setBarberCreditReqAction('pay');
+                                    setBarberCreditReqAmount(String(effRem));
+                                    setBarberCreditReqNote('');
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-black cursor-pointer"
+                                >
+                                  يخلص ولا يفك من الكريدي
+                                </button>
+                              </div>
+                            </div>
+
+                            {isOpen && (
+                              <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setBarberCreditReqAction('pay')}
+                                    className={`py-1.5 px-2 rounded-lg font-black border cursor-pointer ${
+                                      barberCreditReqAction === 'pay'
+                                        ? 'bg-emerald-600 text-white border-emerald-600'
+                                        : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                                    }`}
+                                  >
+                                    يخلص الكريدي (أداء)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setBarberCreditReqAction('clear')}
+                                    className={`py-1.5 px-2 rounded-lg font-black border cursor-pointer ${
+                                      barberCreditReqAction === 'clear'
+                                        ? 'bg-amber-600 text-white border-amber-600'
+                                        : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                                    }`}
+                                  >
+                                    يفك من الكريدي (تسوية)
+                                  </button>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={effRem}
+                                    value={barberCreditReqAmount}
+                                    onChange={(e) => setBarberCreditReqAmount(e.target.value)}
+                                    className="w-28 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 font-mono font-bold text-zinc-900 dark:text-white"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={barberCreditReqNote}
+                                    onChange={(e) => setBarberCreditReqNote(e.target.value)}
+                                    placeholder="ملاحظة للمشرف العام (اختياري)..."
+                                    className="flex-1 min-w-[160px] bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-900 dark:text-white"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={barberCreditReqBusy}
+                                    onClick={() =>
+                                      void handleSubmitBarberCreditRequest({
+                                        sourceType: 'manual',
+                                        sourceId: rec.id,
+                                        clientName: rec.clientName,
+                                        clientPhone: allPhones[0],
+                                        maxAmount: effRem,
+                                      })
+                                    }
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black cursor-pointer disabled:opacity-50"
+                                  >
+                                    إرسال للمشرف ✓
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {workspaceSection === 'bookings' && (
               <>
             {scannedTicketNotice && (
@@ -3852,7 +4401,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   const bookingCredit = computeOutstandingCreditsForPhone(
                     booking.clientPhone,
                     caisseEntries,
-                    manualCredits
+                    manualCredits,
+                    barberRoster
                   );
                   const durationLabel = booking.totalDurationMinutes
                     ? `${booking.totalDurationMinutes}m`
@@ -4369,6 +4919,166 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1.5">
                           <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                           <span>{booking.loyaltyRewardApplied}</span>
+                        </div>
+                      )}
+
+                      {bookingCredit.hasCredit && (
+                        <div className="p-3 rounded-xl bg-orange-50 dark:bg-orange-950/35 border border-orange-300 dark:border-orange-500/45 text-xs space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 font-black text-orange-900 dark:text-orange-200">
+                              <AlertCircle className="w-4 h-4 text-orange-600 dark:text-orange-400 shrink-0" />
+                              <span>
+                                تنبيه كريدي على الزبون ({bookingCredit.totalOwedMAD} MAD) — معلومة فقط ولا يمنع الحجز
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (bookingSettlementOpenId === booking.id) {
+                                  setBookingSettlementOpenId(null);
+                                } else {
+                                  setBookingSettlementOpenId(booking.id);
+                                  setBookingSettlementAction('pay');
+                                  setBookingSettlementTargetBarberId('all');
+                                  setBookingSettlementAmount(String(bookingCredit.totalOwedMAD));
+                                  setBookingSettlementNote('');
+                                }
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] cursor-pointer"
+                            >
+                              {bookingSettlementOpenId === booking.id
+                                ? 'إغلاق'
+                                : 'يخلص ولا يفك من الكريدي'}
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {bookingCredit.creditorBreakdowns.map((cred) => (
+                              <span
+                                key={cred.creditorKey}
+                                className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-900 border border-orange-200 dark:border-orange-500/35 text-[11px] font-bold text-orange-900 dark:text-orange-200"
+                              >
+                                {cred.creditorLabel}: {cred.amountMAD} MAD
+                              </span>
+                            ))}
+                          </div>
+
+                          {bookingSettlementOpenId === booking.id && (
+                            <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-950 border border-emerald-200 dark:border-emerald-500/40 space-y-2">
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setBookingSettlementAction('pay')}
+                                  className={`py-1.5 px-2 rounded-lg font-black text-[11px] border cursor-pointer ${
+                                    bookingSettlementAction === 'pay'
+                                      ? 'bg-emerald-600 text-white border-emerald-600'
+                                      : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                                  }`}
+                                >
+                                  يخلص الكريدي (أداء)
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setBookingSettlementAction('clear')}
+                                  className={`py-1.5 px-2 rounded-lg font-black text-[11px] border cursor-pointer ${
+                                    bookingSettlementAction === 'clear'
+                                      ? 'bg-amber-600 text-white border-amber-600'
+                                      : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                                  }`}
+                                >
+                                  يفك من الكريدي (تسوية)
+                                </button>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2">
+                                {bookingCredit.creditorBreakdowns.length > 1 && (
+                                  <select
+                                    value={bookingSettlementTargetBarberId}
+                                    onChange={(e) => setBookingSettlementTargetBarberId(e.target.value)}
+                                    className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-bold text-zinc-900 dark:text-white"
+                                  >
+                                    <option value="all">الكل ({bookingCredit.totalOwedMAD} MAD)</option>
+                                    {bookingCredit.creditorBreakdowns.map((b) => (
+                                      <option key={b.creditorKey} value={b.barberId || b.creditorKey}>
+                                        {b.creditorLabel} ({b.amountMAD} MAD)
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={bookingCredit.totalOwedMAD}
+                                  value={bookingSettlementAmount}
+                                  onChange={(e) => setBookingSettlementAmount(e.target.value)}
+                                  className="w-24 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-1.5 font-mono font-bold text-zinc-900 dark:text-white"
+                                />
+                                <input
+                                  type="text"
+                                  value={bookingSettlementNote}
+                                  onChange={(e) => setBookingSettlementNote(e.target.value)}
+                                  placeholder="ملاحظة للمشرف العام (اختياري)..."
+                                  className="flex-1 min-w-[140px] bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-1.5 text-zinc-900 dark:text-white"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={bookingSettlementBusy}
+                                  onClick={async () => {
+                                    const chosen =
+                                      bookingSettlementTargetBarberId !== 'all'
+                                        ? bookingCredit.creditorBreakdowns.find(
+                                            (b) =>
+                                              (b.barberId || b.creditorKey) ===
+                                              bookingSettlementTargetBarberId
+                                          )
+                                        : undefined;
+                                    const maxTarget = chosen
+                                      ? chosen.amountMAD
+                                      : bookingCredit.totalOwedMAD;
+                                    const amt = Math.max(
+                                      0,
+                                      Number(bookingSettlementAmount) || maxTarget
+                                    );
+                                    if (amt <= 0) return;
+                                    setBookingSettlementBusy(true);
+                                    try {
+                                      await submitCreditSettlementRequest({
+                                        sourceType: 'aggregate',
+                                        barberId: chosen?.barberId,
+                                        barberName: chosen?.creditorLabel,
+                                        clientName: booking.clientName,
+                                        clientPhone: booking.clientPhone,
+                                        actionType: bookingSettlementAction,
+                                        originalRemainingMAD: maxTarget,
+                                        requestedAmountMAD: amt,
+                                        note: bookingSettlementNote.trim() || undefined,
+                                        submittedBy: session.name,
+                                        submittedRole:
+                                          session.role === 'caisse'
+                                            ? 'caisse'
+                                            : session.role === 'master'
+                                            ? 'master'
+                                            : 'barber',
+                                      });
+                                      setBookingSettlementOpenId(null);
+                                      showToast(
+                                        'تم إرسال طلب خلاص/فك الكريدي للمشرف العام ✓',
+                                        '',
+                                        'success'
+                                      );
+                                    } catch (err) {
+                                      console.error('Failed to submit booking credit request:', err);
+                                    } finally {
+                                      setBookingSettlementBusy(false);
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black cursor-pointer disabled:opacity-50"
+                                >
+                                  {bookingSettlementBusy ? '...' : 'إرسال الطلب للمشرف ✓'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -5115,6 +5825,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
+        {/* Compact Quick Scroll Up / Scroll Down Buttons ("بطونات صغار") inside Admin & Caisse Modal */}
+        {session && (
+          <div className="absolute bottom-3 end-3 z-30 flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                const el = adminScrollContainerRef.current;
+                if (!el) return;
+                const nextTop = Math.max(0, el.scrollTop - 420);
+                try {
+                  el.scrollTo({ top: nextTop, behavior: 'smooth' });
+                } catch {
+                  el.scrollTop = nextTop;
+                }
+              }}
+              aria-label="التمرير للأعلى"
+              title="للأعلى"
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-100 hover:bg-amber-50 dark:hover:bg-zinc-800 shadow-md flex items-center justify-center cursor-pointer transition-colors"
+            >
+              <ChevronUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const el = adminScrollContainerRef.current;
+                if (!el) return;
+                const nextTop = el.scrollTop + 420;
+                try {
+                  el.scrollTo({ top: nextTop, behavior: 'smooth' });
+                } catch {
+                  el.scrollTop = nextTop;
+                }
+              }}
+              aria-label="التمرير للأسفل"
+              title="للأسفل"
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-100 hover:bg-amber-50 dark:hover:bg-zinc-800 shadow-md flex items-center justify-center cursor-pointer transition-colors"
+            >
+              <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </button>
+          </div>
+        )}
+
       </div>
 
       {/* QR Code Scanner Dialog Modal (Forced Rear/Environment by default, with camera switcher & Client Tracking launch) */}
@@ -5658,6 +6410,165 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </span>
               </div>
             </div>
+
+            {(() => {
+              const promptCredit = computeOutstandingCreditsForPhone(
+                caissePromptBooking.clientPhone,
+                caisseEntries,
+                manualCredits,
+                barberRoster
+              );
+              if (!promptCredit.hasCredit) return null;
+              return (
+                <div className="p-3 rounded-xl bg-orange-50 dark:bg-orange-950/35 border border-orange-300 dark:border-orange-500/45 text-xs space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-black text-orange-900 dark:text-orange-200 flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 text-orange-600 dark:text-orange-400 shrink-0" />
+                      <span>
+                        عليه كريدي سابق: {promptCredit.totalOwedMAD} MAD (معلومة فقط — لا يمنع التسجيل)
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPromptCreditActionOpen((p) => !p);
+                        if (!promptCreditActionAmount) {
+                          setPromptCreditActionAmount(String(promptCredit.totalOwedMAD));
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] cursor-pointer"
+                    >
+                      {promptCreditActionOpen ? 'إغلاق' : 'يخلص ولا يفك من الكريدي'}
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {promptCredit.creditorBreakdowns.map((b) => (
+                      <span
+                        key={b.creditorKey}
+                        className="px-2 py-0.5 rounded bg-white dark:bg-zinc-900 border border-orange-200 dark:border-orange-500/35 text-[10px] font-bold text-orange-900 dark:text-orange-200"
+                      >
+                        {b.creditorLabel}: {b.amountMAD} MAD
+                      </span>
+                    ))}
+                  </div>
+                  {promptCreditActionOpen && (
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-950 border border-emerald-200 dark:border-emerald-500/40 space-y-2">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setPromptCreditActionType('pay')}
+                          className={`py-1.5 px-2 rounded-lg font-black text-[11px] border cursor-pointer ${
+                            promptCreditActionType === 'pay'
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                          }`}
+                        >
+                          يخلص الكريدي (أداء)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPromptCreditActionType('clear')}
+                          className={`py-1.5 px-2 rounded-lg font-black text-[11px] border cursor-pointer ${
+                            promptCreditActionType === 'clear'
+                              ? 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                          }`}
+                        >
+                          يفك من الكريدي (تسوية)
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {promptCredit.creditorBreakdowns.length > 1 && (
+                          <select
+                            value={promptCreditActionTargetBarber}
+                            onChange={(e) => setPromptCreditActionTargetBarber(e.target.value)}
+                            className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-bold text-zinc-900 dark:text-white"
+                          >
+                            <option value="all">الكل ({promptCredit.totalOwedMAD} MAD)</option>
+                            {promptCredit.creditorBreakdowns.map((b) => (
+                              <option key={b.creditorKey} value={b.barberId || b.creditorKey}>
+                                {b.creditorLabel} ({b.amountMAD} MAD)
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <input
+                          type="number"
+                          min={1}
+                          max={promptCredit.totalOwedMAD}
+                          value={promptCreditActionAmount}
+                          onChange={(e) => setPromptCreditActionAmount(e.target.value)}
+                          className="w-24 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-1.5 font-mono font-bold text-zinc-900 dark:text-white"
+                        />
+                        <input
+                          type="text"
+                          value={promptCreditActionNote}
+                          onChange={(e) => setPromptCreditActionNote(e.target.value)}
+                          placeholder="ملاحظة للمشرف العام..."
+                          className="flex-1 min-w-[120px] bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-1.5 text-zinc-900 dark:text-white"
+                        />
+                        <button
+                          type="button"
+                          disabled={promptCreditActionBusy}
+                          onClick={async () => {
+                            const chosen =
+                              promptCreditActionTargetBarber !== 'all'
+                                ? promptCredit.creditorBreakdowns.find(
+                                    (b) =>
+                                      (b.barberId || b.creditorKey) ===
+                                      promptCreditActionTargetBarber
+                                  )
+                                : undefined;
+                            const maxTarget = chosen
+                              ? chosen.amountMAD
+                              : promptCredit.totalOwedMAD;
+                            const amt = Math.max(
+                              0,
+                              Number(promptCreditActionAmount) || maxTarget
+                            );
+                            if (amt <= 0) return;
+                            setPromptCreditActionBusy(true);
+                            try {
+                              await submitCreditSettlementRequest({
+                                sourceType: 'aggregate',
+                                barberId: chosen?.barberId,
+                                barberName: chosen?.creditorLabel,
+                                clientName: caissePromptBooking.clientName,
+                                clientPhone: caissePromptBooking.clientPhone,
+                                actionType: promptCreditActionType,
+                                originalRemainingMAD: maxTarget,
+                                requestedAmountMAD: amt,
+                                note: promptCreditActionNote.trim() || undefined,
+                                submittedBy: session?.name || 'الطاقم',
+                                submittedRole:
+                                  session?.role === 'caisse'
+                                    ? 'caisse'
+                                    : session?.role === 'master'
+                                    ? 'master'
+                                    : 'barber',
+                              });
+                              setPromptCreditActionOpen(false);
+                              showToast(
+                                'تم إرسال طلب خلاص/فك الكريدي للمشرف العام ✓',
+                                '',
+                                'success'
+                              );
+                            } catch (err) {
+                              console.error('Failed to submit prompt credit request:', err);
+                            } finally {
+                              setPromptCreditActionBusy(false);
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black cursor-pointer disabled:opacity-50"
+                        >
+                          {promptCreditActionBusy ? '...' : 'إرسال للمشرف ✓'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {(() => {
               const paidNum = Math.max(0, Number(caissePromptPaid) || 0);

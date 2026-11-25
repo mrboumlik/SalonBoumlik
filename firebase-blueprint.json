@@ -1323,6 +1323,14 @@
         "normalizedAdditionalPhones": {
           "type": "array"
         },
+        "barberId": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "barberName": {
+          "type": "string",
+          "maxLength": 100
+        },
         "amountOwedMAD": {
           "type": "number"
         },
@@ -1483,6 +1491,49 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "CreditSettlementRequest": {
+      "title": "CreditSettlementRequest",
+      "description": "Client or barber request to pay or clear credit pending Master Admin confirmation, edit, or rejection",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 3, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sourceType": { "type": "string", "enum": ["caisse", "manual", "aggregate"] },
+        "sourceId": { "type": "string", "maxLength": 128 },
+        "barberId": { "type": "string", "maxLength": 64 },
+        "barberName": { "type": "string", "maxLength": 100 },
+        "clientName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "clientPhone": { "type": "string", "maxLength": 40 },
+        "normalizedPhone": { "type": "string", "maxLength": 32 },
+        "actionType": { "type": "string", "enum": ["pay", "clear"] },
+        "originalRemainingMAD": { "type": "number" },
+        "requestedAmountMAD": { "type": "number" },
+        "approvedAmountMAD": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "rejected"] },
+        "note": { "type": "string", "maxLength": 400 },
+        "submittedBy": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "submittedRole": { "type": "string", "enum": ["client", "barber", "caisse", "master"] },
+        "reviewerNote": { "type": "string", "maxLength": 400 },
+        "reviewedBy": { "type": "string", "maxLength": 100 },
+        "reviewedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      },
+      "required": [
+        "id",
+        "sourceType",
+        "clientName",
+        "clientPhone",
+        "normalizedPhone",
+        "actionType",
+        "originalRemainingMAD",
+        "requestedAmountMAD",
+        "status",
+        "submittedBy",
+        "submittedRole",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -1593,6 +1644,12 @@
         "$ref": "#/entities/CreditDispute"
       },
       "description": "Client credit disputes and inquiries submitted from the booking alert banner"
+    },
+    "/credit_settlement_requests/{requestId}": {
+      "schema": {
+        "$ref": "#/entities/CreditSettlementRequest"
+      },
+      "description": "Pay-or-clear credit requests submitted by clients or barbers awaiting Master Admin confirmation, amount edit, or rejection"
     },
     "/barber_daily_notes/{noteId}": {
       "schema": {

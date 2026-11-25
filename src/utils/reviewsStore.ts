@@ -2,15 +2,21 @@ import { useEffect, useState } from 'react';
 import {
   collection,
   doc,
+  getDocs,
+  getDocsFromServer,
   onSnapshot,
-  orderBy,
-  query,
   setDoc,
 } from 'firebase/firestore';
 import { INITIAL_REVIEWS, TEAM_MEMBERS } from '../data/barbershopData';
 import { CustomerReview } from '../types';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { getActiveRosterBarbers } from './barberRosterStore';
+import {
+  emitRealtimeSyncHint,
+  registerRealtimeRefreshHandler,
+  resetResilientRetry,
+  scheduleResilientRetry,
+} from './realtimeSync';
 
 const REVIEWS_COLLECTION = 'reviews';
 
@@ -100,6 +106,30 @@ let hasHydratedReviews = false;
 let seedInFlight: Promise<void> | null = null;
 const reviewListeners = new Set<(items: CustomerReview[]) => void>();
 let activeUnsubscribe: (() => void) | null = null;
+let reviewsRefreshUnsub: (() => void) | null = null;
+
+function sortReviewsDesc(list: CustomerReview[]): CustomerReview[] {
+  return [...list].sort((a, b) => {
+    const cmp = (b.createdAt || '').localeCompare(a.createdAt || '');
+    if (cmp !== 0) return cmp;
+    return (b.id || '').localeCompare(a.id || '');
+  });
+}
+
+function commitReviewsCache(next: CustomerReview[], broadcastHint = false): void {
+  cachedReviews = sortReviewsDesc(next);
+  hasHydratedReviews = true;
+  reviewListeners.forEach((cb) => {
+    try {
+      cb(cachedReviews);
+    } catch (err) {
+      console.warn('Reviews listener callback error:', err);
+    }
+  });
+  if (broadcastHint) {
+    emitRealtimeSyncHint('reviews');
+  }
+}
 
 function mapDocToCustomerReview(docData: FirestoreReviewRecord): CustomerReview {
   return {
@@ -110,11 +140,11 @@ function mapDocToCustomerReview(docData: FirestoreReviewRecord): CustomerReview 
     city: docData.city || 'Taroudant',
     serviceName: docData.serviceName || 'Coupe & Soin',
     rating: Math.max(1, Math.min(5, Number(docData.rating) || 5)),
-    date: docData.dateLabel || docData.createdAt.slice(0, 10),
+    date: docData.dateLabel || (docData.createdAt || '').slice(0, 10),
     comment: docData.comment,
     bookingId: docData.bookingId,
     verified: Boolean(docData.verified),
-    createdAt: docData.createdAt,
+    createdAt: docData.createdAt || '',
   };
 }
 
@@ -128,7 +158,7 @@ async function seedInitialReviewsIfEmpty() {
         )
       );
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, REVIEWS_COLLECTION);
+      console.warn('Review seed skipped or failed:', error);
     } finally {
       seedInFlight = null;
     }
@@ -137,12 +167,41 @@ async function seedInitialReviewsIfEmpty() {
 }
 
 function ensureReviewsListener() {
+  if (!reviewsRefreshUnsub) {
+    reviewsRefreshUnsub = registerRealtimeRefreshHandler(
+      'reviews',
+      'reviews',
+      async () => {
+        if (reviewListeners.size === 0) return;
+        ensureReviewsListener();
+        try {
+          let snap;
+          try {
+            snap = await getDocsFromServer(collection(db, REVIEWS_COLLECTION));
+          } catch {
+            snap = await getDocs(collection(db, REVIEWS_COLLECTION));
+          }
+          if (snap.empty) return;
+          const next: CustomerReview[] = snap.docs.map((docSnap) => {
+            const raw = docSnap.data() as FirestoreReviewRecord;
+            return mapDocToCustomerReview({
+              ...raw,
+              id: raw.id || docSnap.id,
+            });
+          });
+          commitReviewsCache(next);
+        } catch (err) {
+          console.warn('Reviews wake refresh warning:', err);
+        }
+      }
+    );
+  }
   if (activeUnsubscribe) return;
 
-  const q = query(collection(db, REVIEWS_COLLECTION), orderBy('createdAt', 'desc'));
   activeUnsubscribe = onSnapshot(
-    q,
+    collection(db, REVIEWS_COLLECTION),
     (snapshot) => {
+      resetResilientRetry('reviews');
       if (snapshot.empty) {
         void seedInitialReviewsIfEmpty();
         return;
@@ -156,12 +215,23 @@ function ensureReviewsListener() {
         });
       });
 
-      cachedReviews = next;
-      hasHydratedReviews = true;
-      reviewListeners.forEach((cb) => cb(next));
+      commitReviewsCache(next);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.LIST, REVIEWS_COLLECTION);
+      if (activeUnsubscribe) {
+        try {
+          activeUnsubscribe();
+        } catch {
+          // Ignore
+        }
+        activeUnsubscribe = null;
+      }
+      scheduleResilientRetry(
+        'reviews',
+        () => reviewListeners.size > 0,
+        () => ensureReviewsListener(),
+        error
+      );
     }
   );
 }
@@ -178,9 +248,16 @@ export function subscribeToFirestoreReviews(
 
   return () => {
     reviewListeners.delete(onData);
-    if (reviewListeners.size === 0 && activeUnsubscribe) {
-      activeUnsubscribe();
-      activeUnsubscribe = null;
+    if (reviewListeners.size === 0) {
+      resetResilientRetry('reviews');
+      if (activeUnsubscribe) {
+        activeUnsubscribe();
+        activeUnsubscribe = null;
+      }
+      if (reviewsRefreshUnsub) {
+        reviewsRefreshUnsub();
+        reviewsRefreshUnsub = null;
+      }
       hasHydratedReviews = false;
     }
   };
@@ -251,9 +328,7 @@ export async function submitBarberReview(input: {
   try {
     await setDoc(doc(db, REVIEWS_COLLECTION, cleanId), payload);
     const mapped = mapDocToCustomerReview(payload);
-    cachedReviews = [mapped, ...cachedReviews.filter((r) => r.id !== mapped.id)];
-    hasHydratedReviews = true;
-    reviewListeners.forEach((cb) => cb(cachedReviews));
+    commitReviewsCache([mapped, ...cachedReviews.filter((r) => r.id !== mapped.id)], true);
     return mapped;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);

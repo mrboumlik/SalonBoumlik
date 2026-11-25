@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, onSnapshot, setDoc } from 'firebase/firestore';
 import {
   BarberProfileOverride,
   ServiceBundleRule,
@@ -8,6 +8,12 @@ import {
 } from '../types';
 import { BASE_SERVICES, ServiceDefinition } from './pricingEngine';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import {
+  emitRealtimeSyncHint,
+  registerRealtimeRefreshHandler,
+  resetResilientRetry,
+  scheduleResilientRetry,
+} from './realtimeSync';
 
 const SHOP_PRICING_COLLECTION = 'shop_pricing';
 const SHOP_PRICING_DOC_ID = 'default';
@@ -85,6 +91,7 @@ let cachedShopPricing: ShopPricingConfig = DEFAULT_SHOP_PRICING_CONFIG;
 let hasHydratedShopPricing = false;
 const listeners = new Set<(cfg: ShopPricingConfig) => void>();
 let activeUnsub: (() => void) | null = null;
+let shopPricingRefreshUnsub: (() => void) | null = null;
 
 export function sanitizeHiddenServiceIds(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -229,41 +236,91 @@ function sanitizeServiceOverrides(
   return next;
 }
 
+function parseShopPricingSnap(
+  exists: boolean,
+  rawData?: Partial<ShopPricingConfig>
+): ShopPricingConfig {
+  if (!exists || !rawData) {
+    return DEFAULT_SHOP_PRICING_CONFIG;
+  }
+  return {
+    id: SHOP_PRICING_DOC_ID,
+    servicePriceOverrides: sanitizeServiceOverrides(rawData.servicePriceOverrides),
+    hiddenServiceIds: sanitizeHiddenServiceIds(rawData.hiddenServiceIds),
+    serviceBundles: sanitizeServiceBundles(rawData.serviceBundles),
+    specialRules: Array.isArray(rawData.specialRules)
+      ? rawData.specialRules.slice(0, 30).map(sanitizeSpecialRule)
+      : [],
+    enableNoWaitOption: Boolean(rawData.enableNoWaitOption),
+    giftWithHaircutBeardServiceId:
+      typeof rawData.giftWithHaircutBeardServiceId === 'string'
+        ? rawData.giftWithHaircutBeardServiceId.trim().slice(0, 64)
+        : '',
+    updatedBy: rawData.updatedBy || 'System',
+    updatedAt: rawData.updatedAt || '',
+  };
+}
+
+function commitShopPricingCache(next: ShopPricingConfig, broadcastHint = false): void {
+  cachedShopPricing = next;
+  hasHydratedShopPricing = true;
+  listeners.forEach((cb) => {
+    try {
+      cb(cachedShopPricing);
+    } catch (err) {
+      console.warn('Shop pricing listener callback error:', err);
+    }
+  });
+  if (broadcastHint) {
+    emitRealtimeSyncHint('pricing');
+  }
+}
+
 function ensureShopPricingListener() {
+  const ref = doc(db, SHOP_PRICING_COLLECTION, SHOP_PRICING_DOC_ID);
+  if (!shopPricingRefreshUnsub) {
+    shopPricingRefreshUnsub = registerRealtimeRefreshHandler('shop_pricing', 'pricing', async () => {
+      if (listeners.size === 0) return;
+      ensureShopPricingListener();
+      try {
+        let snap;
+        try {
+          snap = await getDocFromServer(ref);
+        } catch {
+          snap = await getDoc(ref);
+        }
+        commitShopPricingCache(
+          parseShopPricingSnap(snap.exists(), snap.data() as Partial<ShopPricingConfig>)
+        );
+      } catch (err) {
+        console.warn('Shop pricing wake refresh warning:', err);
+      }
+    });
+  }
   if (activeUnsub) return;
 
   activeUnsub = onSnapshot(
-    doc(db, SHOP_PRICING_COLLECTION, SHOP_PRICING_DOC_ID),
+    ref,
     (snap) => {
-      if (!snap.exists()) {
-        cachedShopPricing = DEFAULT_SHOP_PRICING_CONFIG;
-      } else {
-        const raw = snap.data() as Partial<ShopPricingConfig>;
-        cachedShopPricing = {
-          id: SHOP_PRICING_DOC_ID,
-          servicePriceOverrides: sanitizeServiceOverrides(raw.servicePriceOverrides),
-          hiddenServiceIds: sanitizeHiddenServiceIds(raw.hiddenServiceIds),
-          serviceBundles: sanitizeServiceBundles(raw.serviceBundles),
-          specialRules: Array.isArray(raw.specialRules)
-            ? raw.specialRules.slice(0, 30).map(sanitizeSpecialRule)
-            : [],
-          enableNoWaitOption: Boolean(raw.enableNoWaitOption),
-          giftWithHaircutBeardServiceId:
-            typeof raw.giftWithHaircutBeardServiceId === 'string'
-              ? raw.giftWithHaircutBeardServiceId.trim().slice(0, 64)
-              : '',
-          updatedBy: raw.updatedBy || 'System',
-          updatedAt: raw.updatedAt || '',
-        };
-      }
-      hasHydratedShopPricing = true;
-      listeners.forEach((cb) => cb(cachedShopPricing));
+      resetResilientRetry('shop_pricing');
+      commitShopPricingCache(
+        parseShopPricingSnap(snap.exists(), snap.data() as Partial<ShopPricingConfig>)
+      );
     },
     (error) => {
-      handleFirestoreError(
-        error,
-        OperationType.GET,
-        `${SHOP_PRICING_COLLECTION}/${SHOP_PRICING_DOC_ID}`
+      if (activeUnsub) {
+        try {
+          activeUnsub();
+        } catch {
+          // Ignore
+        }
+        activeUnsub = null;
+      }
+      scheduleResilientRetry(
+        'shop_pricing',
+        () => listeners.size > 0,
+        () => ensureShopPricingListener(),
+        error
       );
     }
   );
@@ -279,9 +336,16 @@ export function subscribeToShopPricingConfig(
   }
   return () => {
     listeners.delete(cb);
-    if (listeners.size === 0 && activeUnsub) {
-      activeUnsub();
-      activeUnsub = null;
+    if (listeners.size === 0) {
+      resetResilientRetry('shop_pricing');
+      if (activeUnsub) {
+        activeUnsub();
+        activeUnsub = null;
+      }
+      if (shopPricingRefreshUnsub) {
+        shopPricingRefreshUnsub();
+        shopPricingRefreshUnsub = null;
+      }
       hasHydratedShopPricing = false;
     }
   };
@@ -527,7 +591,7 @@ export async function saveShopPricingConfig(params: {
   const path = `${SHOP_PRICING_COLLECTION}/${SHOP_PRICING_DOC_ID}`;
   try {
     await setDoc(doc(db, SHOP_PRICING_COLLECTION, SHOP_PRICING_DOC_ID), payload);
-    cachedShopPricing = payload;
+    commitShopPricingCache(payload, true);
     return payload;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
