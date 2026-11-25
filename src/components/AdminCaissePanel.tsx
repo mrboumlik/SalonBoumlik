@@ -47,6 +47,7 @@ import {
   computeBarberCycleBalance,
   computeBarberDailyInOutHistory,
   computeBarberDayStats,
+  computeBarberOpenDailyStats,
   computeBarberPeriodSettlementPreview,
   computeMonthlyCaisseRollup,
   computeShopDrawerTotals,
@@ -61,7 +62,9 @@ import {
   getEffectiveCommissionPercent,
   getEffectiveCommissionPercentForDate,
   getSalonBusinessDate,
+  isFloatEntryType,
   matchesCaisseBarber,
+  matchesCaisseFinancialBarber,
   recordCaisseCreditRepayment,
   resolveCaisseBarberId,
   saveBarberDailyNoteReply,
@@ -254,9 +257,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     setDrillModal({ kind, barberId });
   };
 
-  // Master Admin "المجر ككل" (Total Cash in Drawer) Breakdown Modal
+  // Drawer Breakdown Modal Scope ('open_daily' = live open shift since last تصفية الحساب اليومي)
   const [drawerModalOpen, setDrawerModalOpen] = useState<boolean>(false);
-  const [drawerModalScope, setDrawerModalScope] = useState<'open_cycle' | 'day'>('open_cycle');
+  const [drawerModalScope, setDrawerModalScope] = useState<'open_daily' | 'day'>('open_daily');
 
   // Privacy Masking & Hassan PIN Reveal Gate:
   // - Strictly active ONLY inside the dedicated Caisse account (`sessionRole === 'caisse'`).
@@ -278,10 +281,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     setHassanPinModalOpen(null);
     setHassanPinInput('');
     setHassanPinError('');
-    if (sessionRole === 'caisse') {
-      setTxScopeFilter('day');
-      setDrawerModalScope('day');
-    }
+    setTxScopeFilter('open_daily');
+    setDrawerModalScope('open_daily');
   }, [sessionRole]);
 
   useEffect(() => {
@@ -512,7 +513,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
   // Expandable single-line transaction rows
   const [expandedEntryIds, setExpandedEntryIds] = useState<Record<string, boolean>>({});
-  const [txScopeFilter, setTxScopeFilter] = useState<'day' | 'cycle' | 'all'>('day');
+  const [txScopeFilter, setTxScopeFilter] = useState<'open_daily' | 'day' | 'cycle' | 'all'>('open_daily');
 
   // Repayment inline state + Pay/Clear settlement request state
   const [repayingEntryId, setRepayingEntryId] = useState<string | null>(null);
@@ -674,11 +675,77 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     ? findBarberDaySettlement(activeBarberId, selectedDate, settlementsMap, roster)
     : undefined;
 
-  // Post-daily-close daily stats (resets today's displayed intake, expenses, float, shop share & daily drawer cleanly to 0 after daily close, while keeping cycleBalance and monthly/annual history intact!)
+  const isLiveOpenDailyView = selectedDate === businessTodayStr;
+
+  const activeBarberOpenDailyStats = useMemo(
+    () =>
+      activeBarberId
+        ? computeBarberOpenDailyStats({
+            barberId: activeBarberId,
+            entries,
+            settingsMap,
+            settlementsMap,
+            cycles,
+            rosterMembers: roster,
+            referenceDate: businessTodayStr,
+          })
+        : {
+            barberId: 'hassan',
+            date: businessTodayStr,
+            incomeMAD: 0,
+            directIncomeMAD: 0,
+            repaymentIncomeMAD: 0,
+            creditsIssuedMAD: 0,
+            expensesMAD: 0,
+            floatInMAD: 0,
+            floatOutMAD: 0,
+            floatMAD: 0,
+            commissionPercent: 50,
+            extraPercentAbove50: 0,
+            barberGrossShareMAD: 0,
+            barberNetShareMAD: 0,
+            shopShareMAD: 0,
+            drawerCashMAD: 0,
+            entryCount: 0,
+            lastDailyCloseIso: null,
+            lastDailyCloseDate: null,
+            lastClosedIncomeMAD: 0,
+            lastClosedExpensesMAD: 0,
+            lastClosedShopShareMAD: 0,
+            isDailySettledClean: false,
+            openEntries: [] as CaisseEntry[],
+          },
+    [activeBarberId, entries, settingsMap, settlementsMap, cycles, roster, businessTodayStr]
+  );
+
+  // Authoritative daily stats:
+  // - On live view (`selectedDate === businessTodayStr`), read directly from `activeBarberOpenDailyStats` (anchored to last "تصفية الحساب اليومي", resets cleanly to 0 on daily settlement).
+  // - When inspecting a historical past date, read that date's stats cleanly.
   const displayedDayIntakeStats = useMemo(() => {
+    if (isLiveOpenDailyView) {
+      return {
+        isIntakeClosed: activeBarberOpenDailyStats.isDailySettledClean,
+        hasAnyDailyClose: Boolean(activeBarberOpenDailyStats.lastDailyCloseIso),
+        lastDailyCloseDate: activeBarberOpenDailyStats.lastDailyCloseDate,
+        displayedIncomeMAD: activeBarberOpenDailyStats.incomeMAD,
+        displayedExpensesMAD: activeBarberOpenDailyStats.expensesMAD,
+        displayedFloatInMAD: activeBarberOpenDailyStats.floatInMAD,
+        displayedFloatOutMAD: activeBarberOpenDailyStats.floatOutMAD,
+        displayedFloatMAD: activeBarberOpenDailyStats.floatMAD,
+        displayedShopShareMAD: activeBarberOpenDailyStats.shopShareMAD,
+        displayedDrawerCashMAD: activeBarberOpenDailyStats.drawerCashMAD,
+        closedAtAmountMAD: activeBarberOpenDailyStats.lastClosedIncomeMAD,
+        closedExpensesMAD: activeBarberOpenDailyStats.lastClosedExpensesMAD,
+        closedShopShareMAD: activeBarberOpenDailyStats.lastClosedShopShareMAD,
+        postCloseEntryCount: activeBarberOpenDailyStats.entryCount,
+      };
+    }
+
     if (!selectedDaySettlement?.intakeClosed) {
       return {
         isIntakeClosed: false,
+        hasAnyDailyClose: false,
+        lastDailyCloseDate: null as string | null,
         displayedIncomeMAD: selectedDayStats.incomeMAD,
         displayedExpensesMAD: selectedDayStats.expensesMAD,
         displayedFloatInMAD: selectedDayStats.floatInMAD,
@@ -692,10 +759,11 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         postCloseEntryCount: selectedDayStats.entryCount,
       };
     }
+
     const closedIso = selectedDaySettlement.confirmedAt || selectedDaySettlement.updatedAt;
     const postCloseEntries = entries.filter(
       (e) =>
-        matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
+        matchesCaisseFinancialBarber(e, activeBarberId, roster) &&
         e.date === selectedDate &&
         (!closedIso || e.createdAt > closedIso)
     );
@@ -719,7 +787,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     const postBarberGross = Math.round(postIncome * (pct / 100));
     const postShopShare = Math.max(0, Math.round(postIncome - postBarberGross));
     return {
-      isIntakeClosed: true,
+      isIntakeClosed: postCloseEntries.length === 0,
+      hasAnyDailyClose: true,
+      lastDailyCloseDate: selectedDaySettlement.date || selectedDate,
       displayedIncomeMAD: Math.round(postIncome),
       displayedExpensesMAD: Math.round(postExpenses),
       displayedFloatInMAD: Math.round(postFloatIn),
@@ -736,6 +806,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       postCloseEntryCount: postCloseEntries.length,
     };
   }, [
+    isLiveOpenDailyView,
+    activeBarberOpenDailyStats,
     selectedDaySettlement,
     selectedDayStats,
     entries,
@@ -792,6 +864,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             startDate: payoutStartDate,
             endDate: payoutEndDate,
             referenceDate: businessTodayStr,
+            rosterMembers: roster,
           })
         : { cycleBalance },
     [
@@ -805,6 +878,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       payoutEndDate,
       businessTodayStr,
       cycleBalance,
+      roster,
     ]
   );
 
@@ -820,6 +894,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         startDate: payoutStartDate,
         endDate: payoutEndDate,
         referenceDate: businessTodayStr,
+        rosterMembers: roster,
       });
       return { barber: b, preview };
     });
@@ -860,16 +935,23 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     payoutStartDate,
     payoutEndDate,
     businessTodayStr,
+    roster,
   ]);
 
   const dailyInOutHistory = useMemo(() => {
     if (!activeBarberId) return [];
-    const list = computeBarberDailyInOutHistory(activeBarberId, entries, settlementsMap, 12);
+    const list = computeBarberDailyInOutHistory(
+      activeBarberId,
+      entries,
+      settlementsMap,
+      12,
+      roster
+    );
     if (sessionRole === 'barber') {
       return list.filter((row) => row.date >= twoMonthsCutoffDate);
     }
     return list;
-  }, [activeBarberId, entries, settlementsMap, sessionRole, twoMonthsCutoffDate]);
+  }, [activeBarberId, entries, settlementsMap, roster, sessionRole, twoMonthsCutoffDate]);
 
   // Master All-Barbers Rollups
   const monthlyRollup = useMemo(
@@ -912,39 +994,24 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   const todayShopSummary = useMemo(() => {
     const perBarber = allCaisseBarbers.map((b) => {
       const pct = getEffectiveCommissionPercentForDate(b.id, selectedDate, settingsMap);
-      const dayStats = computeBarberDayStats(b.id, selectedDate, entries, pct);
+      const dayStats = computeBarberDayStats(b.id, selectedDate, entries, pct, roster);
       return { barber: b, dayStats };
     });
     const totalIncome = perBarber.reduce((s, x) => s + x.dayStats.incomeMAD, 0);
     const totalShopShare = perBarber.reduce((s, x) => s + x.dayStats.shopShareMAD, 0);
     const totalExpenses = perBarber.reduce((s, x) => s + x.dayStats.expensesMAD, 0);
     return { perBarber, totalIncome, totalShopShare, totalExpenses };
-  }, [allCaisseBarbers, selectedDate, entries, settingsMap]);
+  }, [allCaisseBarbers, selectedDate, entries, settingsMap, roster]);
 
-  // Live "الحساب في المجر" (Total Cash currently in Drawer = Float + Income - Expenses; resets cleanly to 0 on daily close)
-  const openCycleDrawerSummary = useMemo(
+  // Single Authoritative "الحساب في المجر" / "المجر اليوم" (Total Physical Cash in Drawer across ALL open shifts since each barber's last "تصفية الحساب اليومي")
+  const liveOpenDailyDrawerSummary = useMemo(
     () =>
       computeShopDrawerTotals({
         entries,
         settingsMap,
         cycles,
         rosterMembers: roster,
-        scope: 'open_cycle',
-        date: selectedDate,
-        settlementsMap,
-        respectDailyIntakeClose: true,
-      }),
-    [entries, settingsMap, cycles, roster, selectedDate, settlementsMap]
-  );
-
-  const todayDailyDrawerSummary = useMemo(
-    () =>
-      computeShopDrawerTotals({
-        entries,
-        settingsMap,
-        cycles,
-        rosterMembers: roster,
-        scope: 'day',
+        scope: 'open_daily',
         date: businessTodayStr,
         settlementsMap,
         respectDailyIntakeClose: true,
@@ -968,9 +1035,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   );
 
   const activeDrawerSummary =
-    sessionRole === 'caisse' || drawerModalScope === 'day'
+    sessionRole !== 'caisse' && drawerModalScope === 'day'
       ? selectedDayDrawerSummary
-      : openCycleDrawerSummary;
+      : liveOpenDailyDrawerSummary;
 
   // Open Credits across ALL dates (NEVER subject to 2-month cap until paid)
   const openCreditsList = useMemo(() => {
@@ -998,12 +1065,15 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     };
 
     const effectiveFilter =
-      sessionRole === 'caisse' && txScopeFilter === 'cycle' ? 'day' : txScopeFilter;
+      sessionRole === 'caisse' && txScopeFilter === 'cycle' ? 'open_daily' : txScopeFilter;
 
+    if (effectiveFilter === 'open_daily') {
+      return activeBarberOpenDailyStats.openEntries.filter(passesBarberArchiveCap);
+    }
     if (effectiveFilter === 'day') {
       return entries.filter(
         (e) =>
-          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
+          matchesCaisseFinancialBarber(e, activeBarberId, roster) &&
           e.date === selectedDate &&
           passesBarberArchiveCap(e)
       );
@@ -1014,7 +1084,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     return entries
       .filter(
         (e) =>
-          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
+          matchesCaisseFinancialBarber(e, activeBarberId, roster) &&
           passesBarberArchiveCap(e)
       )
       .slice(0, 80);
@@ -1024,6 +1094,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     roster,
     selectedDate,
     txScopeFilter,
+    activeBarberOpenDailyStats.openEntries,
     cycleBalance.openCycleEntries,
     sessionRole,
     twoMonthsCutoffDate,
@@ -1066,26 +1137,30 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         ? `${Math.round(Number(val) || 0).toLocaleString('en-US')} MAD`
         : '••• MAD';
     const closedIso =
-      selectedDaySettlement?.intakeClosed
+      !isLiveOpenDailyView && selectedDaySettlement?.intakeClosed
         ? selectedDaySettlement.confirmedAt || selectedDaySettlement.updatedAt
         : null;
 
     if (drillModal.kind === 'income_day') {
-      const list = entries.filter(
-        (e) =>
-          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
-          e.date === selectedDate &&
-          (e.type === 'income' || e.type === 'credit_repayment') &&
-          (!closedIso || e.createdAt > closedIso)
-      );
+      const list = isLiveOpenDailyView
+        ? activeBarberOpenDailyStats.openEntries.filter(
+            (e) => e.type === 'income' || e.type === 'credit_repayment'
+          )
+        : entries.filter(
+            (e) =>
+              matchesCaisseFinancialBarber(e, activeBarberId, roster) &&
+              e.date === selectedDate &&
+              (e.type === 'income' || e.type === 'credit_repayment') &&
+              (!closedIso || e.createdAt > closedIso)
+          );
       return {
         title: isViewingOwnAccount
-          ? `تفاصيل شحال حطيت (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`
-          : `تفاصيل شحال حط ${activeBarberMeta.arName} (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`,
+          ? `تفاصيل شحال حطيت (${isLiveOpenDailyView ? 'الدورة اليومية المفتوحة' : selectedDate})`
+          : `تفاصيل شحال حط ${activeBarberMeta.arName} (${isLiveOpenDailyView ? 'الدورة اليومية المفتوحة' : selectedDate})`,
         totalLabel: fmt(displayedDayIntakeStats.displayedIncomeMAD),
-        subtitle: displayedDayIntakeStats.isIntakeClosed
-          ? `تم جمع حساب اليوم بمبلغ ${fmt(displayedDayIntakeStats.closedAtAmountMAD)} · العمليات الجديدة بعد الجمع (${list.length})`
-          : `${list.length} عملية مسجلة في هذا اليوم`,
+        subtitle: displayedDayIntakeStats.hasAnyDailyClose
+          ? `آخر تصفية يومية (${fmt(displayedDayIntakeStats.closedAtAmountMAD)}) · العمليات المفتوحة حالياً (${list.length})`
+          : `${list.length} عملية مفتوحة منذ آخر تصفية يومية`,
         accentCls: 'text-emerald-700 dark:text-emerald-400',
         list,
         closedIso,
@@ -1094,28 +1169,28 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     }
 
     if (drillModal.kind === 'expenses') {
-      const list = entries.filter(
-        (e) =>
-          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
-          e.date === selectedDate &&
-          e.type === 'expense' &&
-          (!closedIso || e.createdAt > closedIso)
-      );
+      const list = isLiveOpenDailyView
+        ? activeBarberOpenDailyStats.openEntries.filter((e) => e.type === 'expense')
+        : entries.filter(
+            (e) =>
+              matchesCaisseFinancialBarber(e, activeBarberId, roster) &&
+              e.date === selectedDate &&
+              e.type === 'expense' &&
+              (!closedIso || e.createdAt > closedIso)
+          );
       const totalAmt = displayedDayIntakeStats.displayedExpensesMAD;
       return {
         title:
           sessionRole === 'caisse' || !isViewingOwnAccount
-            ? `تفاصيل شحال هز ${activeBarberMeta.arName} (${selectedDate})`
-            : `تفاصيل شحال هزيت (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`,
+            ? `تفاصيل شحال هز ${activeBarberMeta.arName} (${isLiveOpenDailyView ? 'الدورة اليومية المفتوحة' : selectedDate})`
+            : `تفاصيل شحال هزيت (${isLiveOpenDailyView ? 'الدورة اليومية المفتوحة' : selectedDate})`,
         totalLabel: fmt(totalAmt),
         subtitle:
           sessionRole === 'caisse'
-            ? closedIso
-              ? `سحوبات يوم ${selectedDate} بعد جمع الحساب`
-              : `سحوبات يوم ${selectedDate}`
-            : closedIso
-            ? `تم جمع سحوبات اليوم (${fmt(displayedDayIntakeStats.closedExpensesMAD)}) · التراكمي بالدورة المفتوحة: ${fmt(cycleBalance.expensesMAD)}`
-            : `سحوبات يوم ${selectedDate} (${list.length} عملية) · التراكمي بالدورة: ${fmt(cycleBalance.expensesMAD)}`,
+            ? `${list.length} عملية سحب في الدورة اليومية المفتوحة`
+            : displayedDayIntakeStats.hasAnyDailyClose
+            ? `عمليات مفتوحة (${list.length}) · التراكمي الشهري المفتوح: ${fmt(cycleBalance.expensesMAD)}`
+            : `سحوبات مفتوحة (${list.length} عملية) · التراكمي بالدورة: ${fmt(cycleBalance.expensesMAD)}`,
         accentCls: 'text-rose-700 dark:text-rose-400',
         list,
         closedIso,
@@ -1126,12 +1201,14 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     if (drillModal.kind === 'net_balance') {
       const list =
         sessionRole === 'caisse'
-          ? entries.filter(
-              (e) =>
-                matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
-                e.date === selectedDate &&
-                (!closedIso || e.createdAt > closedIso)
-            )
+          ? isLiveOpenDailyView
+            ? activeBarberOpenDailyStats.openEntries
+            : entries.filter(
+                (e) =>
+                  matchesCaisseFinancialBarber(e, activeBarberId, roster) &&
+                  e.date === selectedDate &&
+                  (!closedIso || e.createdAt > closedIso)
+              )
           : cycleBalance.openCycleEntries;
       const netVal =
         sessionRole === 'caisse'
@@ -1147,16 +1224,20 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         totalLabel: fmt(netVal),
         subtitle:
           sessionRole === 'caisse'
-            ? `المداخيل (${fmt(displayedDayIntakeStats.displayedIncomeMAD)}) + الصرف (${fmt(displayedDayIntakeStats.displayedFloatMAD)}) − السحوبات (${fmt(displayedDayIntakeStats.displayedExpensesMAD)})`
+            ? `المداخيل (${fmt(displayedDayIntakeStats.displayedIncomeMAD)})${
+                activeBarberId === 'hassan' || displayedDayIntakeStats.displayedFloatMAD !== 0
+                  ? ` + صرف حسن (${fmt(displayedDayIntakeStats.displayedFloatMAD)})`
+                  : ''
+              } − السحوبات (${fmt(displayedDayIntakeStats.displayedExpensesMAD)})`
             : `المداخيل بالدورة: ${fmt(cycleBalance.incomeMAD)} · حصة الحلاق (${cycleBalance.commissionPercent}%): ${fmt(cycleBalance.barberGrossShareMAD)}${
                 activeBarberId === 'hassan' && cycleBalance.floatMAD !== 0
-                  ? ` + صرف: ${fmt(cycleBalance.floatMAD)}`
+                  ? ` + الصرف الشخصي: ${fmt(cycleBalance.floatMAD)}`
                   : ''
               } − السحوبات: ${fmt(cycleBalance.expensesMAD)}`,
         accentCls:
           netVal < 0 ? 'text-rose-700 dark:text-rose-400' : 'text-amber-700 dark:text-amber-300',
         list,
-        closedIso: sessionRole === 'caisse' ? closedIso : null,
+        closedIso,
         canShowAmounts: isBoxVisible(boxKeyForDrill),
       };
     }
@@ -1178,18 +1259,22 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     }
 
     if (drillModal.kind === 'shop_day') {
-      const list = entries.filter(
-        (e) =>
-          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
-          e.date === selectedDate &&
-          (e.type === 'income' || e.type === 'credit_repayment') &&
-          (!closedIso || e.createdAt > closedIso)
-      );
+      const list = isLiveOpenDailyView
+        ? activeBarberOpenDailyStats.openEntries.filter(
+            (e) => e.type === 'income' || e.type === 'credit_repayment'
+          )
+        : entries.filter(
+            (e) =>
+              matchesCaisseFinancialBarber(e, activeBarberId, roster) &&
+              e.date === selectedDate &&
+              (e.type === 'income' || e.type === 'credit_repayment') &&
+              (!closedIso || e.createdAt > closedIso)
+          );
       return {
-        title: `تفاصيل حصة المحل من ${activeBarberMeta.arName} (${selectedDate})`,
+        title: `تفاصيل حصة المحل من ${activeBarberMeta.arName} (${isLiveOpenDailyView ? 'الدورة اليومية المفتوحة' : selectedDate})`,
         totalLabel: fmt(displayedDayIntakeStats.displayedShopShareMAD),
         subtitle: displayedDayIntakeStats.isIntakeClosed
-          ? `تم جمع حساب اليوم (${fmt(displayedDayIntakeStats.closedShopShareMAD)}) · العمليات الجديدة بعد الجمع (${list.length})`
+          ? `تمت التصفية اليومية (${fmt(displayedDayIntakeStats.closedShopShareMAD)}) · 0 عملية مفتوحة`
           : `من إجمالي دخل ${fmt(displayedDayIntakeStats.displayedIncomeMAD)} (نسبة المحل ${Math.max(0, 100 - selectedDayStats.commissionPercent)}%)`,
         accentCls: 'text-emerald-700 dark:text-emerald-400',
         list,
@@ -1214,19 +1299,21 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     }
 
     if (drillModal.kind === 'float_day') {
-      const list = entries.filter(
-        (e) =>
-          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
-          e.date === selectedDate &&
-          (e.type === 'float_adjustment' || e.type === 'float_return') &&
-          (!closedIso || e.createdAt > closedIso)
-      );
+      const list = isLiveOpenDailyView
+        ? activeBarberOpenDailyStats.openEntries.filter(
+            (e) => e.type === 'float_adjustment' || e.type === 'float_return'
+          )
+        : entries.filter(
+            (e) =>
+              matchesCaisseFinancialBarber(e, activeBarberId, roster) &&
+              e.date === selectedDate &&
+              (e.type === 'float_adjustment' || e.type === 'float_return') &&
+              (!closedIso || e.createdAt > closedIso)
+          );
       return {
-        title: `تفاصيل الصرف اليوم (${selectedDate}) — ${activeBarberMeta.arName}`,
+        title: `تفاصيل الصرف (${isLiveOpenDailyView ? 'الدورة اليومية المفتوحة' : selectedDate}) — حساب حسن الشخصي`,
         totalLabel: fmt(displayedDayIntakeStats.displayedFloatMAD),
-        subtitle: displayedDayIntakeStats.isIntakeClosed
-          ? `تم جمع حساب اليوم · عمليات الصرف بعد الجمع: ${list.length}`
-          : `${list.length} عملية (مضاف: ${fmt(displayedDayIntakeStats.displayedFloatInMAD)} · مرجوع: ${fmt(displayedDayIntakeStats.displayedFloatOutMAD)})`,
+        subtitle: `${list.length} عملية (مضاف: ${fmt(displayedDayIntakeStats.displayedFloatInMAD)} · مرجوع: ${fmt(displayedDayIntakeStats.displayedFloatOutMAD)} · غير محسوب في المداخيل)`,
         accentCls: 'text-amber-700 dark:text-amber-300',
         list,
         closedIso,
@@ -1239,9 +1326,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         (e) => e.type === 'float_adjustment' || e.type === 'float_return'
       );
       return {
-        title: `تفاصيل فلوس الصرف (الدورة المفتوحة) — ${activeBarberMeta.arName}`,
+        title: `تفاصيل فلوس الصرف (الدورة المفتوحة) — حساب حسن الشخصي`,
         totalLabel: fmt(cycleBalance.floatMAD),
-        subtitle: `${list.length} عملية (مضاف: ${fmt(cycleBalance.floatInMAD)} · مرجوع: ${fmt(cycleBalance.floatOutMAD)})`,
+        subtitle: `${list.length} عملية (مضاف: ${fmt(cycleBalance.floatInMAD)} · مرجوع: ${fmt(cycleBalance.floatOutMAD)} · غير محسوب في المداخيل)`,
         accentCls: 'text-amber-700 dark:text-amber-300',
         list,
         closedIso: null,
@@ -1253,8 +1340,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     const targetId = drillModal.barberId || activeBarberId;
     const targetMeta = getCaisseBarberMeta(targetId, roster);
     const pct = getEffectiveCommissionPercentForDate(targetId, selectedDate, settingsMap);
-    const targetDayStats = computeBarberDayStats(targetId, selectedDate, entries, pct);
-    const list = entries.filter((e) => e.barberId === targetId && e.date === selectedDate);
+    const targetDayStats = computeBarberDayStats(targetId, selectedDate, entries, pct, roster);
+    const list = entries.filter(
+      (e) => matchesCaisseFinancialBarber(e, targetId, roster) && e.date === selectedDate
+    );
     return {
       title: `حساب المحل والعمليات — ${targetMeta.arName} (${selectedDate})`,
       totalLabel: fmt(targetDayStats.shopShareMAD),
@@ -1273,7 +1362,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     activeBarberId,
     activeBarberMeta.arName,
     selectedDate,
-    businessTodayStr,
+    isLiveOpenDailyView,
+    activeBarberOpenDailyStats,
     isViewingOwnAccount,
     selectedDaySettlement,
     displayedDayIntakeStats,
@@ -1352,7 +1442,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     const nowMs = Date.now();
     const tenMinutesMs = 10 * 60 * 1000;
     return entries.find((entry) => {
-      if (entry.barberId !== activeBarberId) return false;
+      if (!matchesCaisseBarber(entry.barberId, entry.barberName, activeBarberId, roster)) return false;
       if (entry.date !== selectedDate) return false;
       if (entry.type !== kind) return false;
       if (Math.round(Number(entry.amountPaidMAD) || 0) !== roundedAmt) return false;
@@ -1546,26 +1636,28 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     }
   };
 
-  // Submit Float Adjustment / Return ("الصرف — إضافة أو إرجاع فلوس الفكة في المجر")
+  // Submit Float Adjustment / Return ("الصرف — إضافة أو إرجاع فلوس الفكة في المجر" -> دائماً لحساب حسن الشخصي)
   const handleSubmitFloat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeBarberId) return;
     const amt = Math.max(0, Number(floatAmount) || 0);
     if (amt <= 0) {
       showToast('أدخل مبلغ الصرف أولاً', '', 'warning');
       return;
     }
+    const hassanMeta = getCaisseBarberMeta('hassan', roster);
     const targetType: CaisseEntryType =
       floatMode === 'return' ? 'float_return' : 'float_adjustment';
     const defaultNote =
-      floatMode === 'return' ? 'إرجاع فلوس الصرف من المجر' : 'إضافة فلوس الصرف للمجر';
+      floatMode === 'return'
+        ? 'إرجاع فلوس الصرف من المجر (حسن)'
+        : 'إضافة فلوس الصرف للمجر (حسن)';
     setFloatSubmitting(true);
     try {
       await addCaisseEntry({
-        barberId: activeBarberId,
-        barberName: activeBarberMeta.name,
+        barberId: 'hassan',
+        barberName: hassanMeta.name,
         type: targetType,
-        date: selectedDate,
+        date: isLiveOpenDailyView ? businessTodayStr : selectedDate,
         expectedAmountMAD: amt,
         amountPaidMAD: amt,
         creditAmountMAD: 0,
@@ -1578,16 +1670,16 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setFloatAmount('');
       setFloatNote('');
       setOpenForm('none');
-      startPostEntryTimer();
+      if (activeBarberId) startPostEntryTimer();
       showToast(
         floatMode === 'return'
-          ? 'تم تسجيل إرجاع الصرف ✓'
+          ? 'تم تسجيل إرجاع الصرف (حساب حسن) ✓'
           : pickLang(lang, {
-              ar: 'تمت إضافة فلوس الصرف ✓',
-              fr: 'Fond de caisse ajouté ✓',
+              ar: 'تمت إضافة فلوس الصرف (حساب حسن) ✓',
+              fr: 'Fond de caisse ajouté (Hassan) ✓',
               amz: 'ⵜⵜⵓⵔⵏⴰⵏ ⵉⴷⵔⵉⵎⵏ ⵏ ⵓⵙⵏⴼⵍ ✓',
-              en: 'Float added ✓',
-              es: 'Fondo de cambio añadido ✓',
+              en: 'Float added (Hassan) ✓',
+              es: 'Fondo de cambio añadido (Hassan) ✓',
             }),
         `${floatMode === 'return' ? '-' : '+'}${amt} MAD`,
         'success'
@@ -1718,16 +1810,35 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     }
   };
 
-  // Master: Close Day Based on Gross Barber Intake ("إغلاق مداخيل اليوم حسب اللي دخل كل حلاق")
+  // Master: Close Daily Cycle ("تصفية الحساب اليومي / جمع حساب اليوم" — resets open daily drawer to 0 across all accounts)
   const handleCloseDayIntake = async () => {
     if (sessionRole !== 'master' || !activeBarberId) return;
     setDailyIntakeCloseBusy(true);
     try {
+      const targetCloseDate = isLiveOpenDailyView ? businessTodayStr : selectedDate;
+      const targetDayStats = isLiveOpenDailyView ? activeBarberOpenDailyStats : selectedDayStats;
+      const targetExistingSettlement = findBarberDaySettlement(
+        activeBarberId,
+        targetCloseDate,
+        settlementsMap,
+        roster
+      );
       let maxEntryCreatedAt = new Date().toISOString().slice(0, 64);
-      for (const e of entries) {
+      if (
+        isLiveOpenDailyView &&
+        activeBarberOpenDailyStats.lastDailyCloseIso &&
+        activeBarberOpenDailyStats.lastDailyCloseIso >= maxEntryCreatedAt
+      ) {
+        const prevMs = Date.parse(activeBarberOpenDailyStats.lastDailyCloseIso);
+        if (Number.isFinite(prevMs)) {
+          maxEntryCreatedAt = new Date(prevMs + 1).toISOString().slice(0, 64);
+        }
+      }
+      const sourceList = isLiveOpenDailyView ? activeBarberOpenDailyStats.openEntries : entries;
+      for (const e of sourceList) {
         if (
-          e.date === selectedDate &&
-          matchesCaisseBarber(e.barberId, e.barberName, activeBarberId, roster) &&
+          (isLiveOpenDailyView || e.date === targetCloseDate) &&
+          matchesCaisseFinancialBarber(e, activeBarberId, roster) &&
           e.createdAt &&
           e.createdAt > maxEntryCreatedAt
         ) {
@@ -1737,15 +1848,15 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       await closeBarberDayIntake({
         barberId: activeBarberId,
         barberName: activeBarberMeta.name,
-        date: selectedDate,
-        dayStats: selectedDayStats,
+        date: targetCloseDate,
+        dayStats: targetDayStats,
         carryOverOwedMAD: Math.max(0, cycleBalance.barberNetOwedMAD),
         confirmedBy: staffName,
-        existingSettlement: selectedDaySettlement,
+        existingSettlement: targetExistingSettlement,
         maxEntryCreatedAt,
       });
       showToast(
-        `تم جمع حساب اليوم (${activeBarberMeta.arName} · ${selectedDate}) ✓`,
+        `تمت تصفية الحساب اليومي (${activeBarberMeta.arName} · ${targetCloseDate}) ✓`,
         'تم تصفير رصيد المجر اليومي إلى 0 MAD · الرصيد الشهري/التراكمي محفوظ',
         'success'
       );
@@ -1756,14 +1867,15 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     }
   };
 
-  // Master: Close ALL Barbers' Daily Intake through selectedDate (resets entire drawer to 0 MAD while preserving monthly/cycle balances)
+  // Master: Close ALL Barbers' Daily Cycles ("تصفية الحساب اليومي للجميع" — resets entire drawer to 0 MAD while preserving monthly/cycle balances)
   const handleCloseAllBarbersDayIntake = async () => {
     if (sessionRole !== 'master') return;
     setDailyIntakeCloseBusy(true);
     try {
+      const targetCloseDate = isLiveOpenDailyView ? businessTodayStr : selectedDate;
       const closedCount = await closeAllBarbersDailyIntakeThrough({
         barbers: allCaisseBarbers,
-        throughDate: selectedDate,
+        throughDate: targetCloseDate,
         entries,
         settingsMap,
         settlementsMap,
@@ -1774,8 +1886,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       });
       showToast(
         closedCount > 0
-          ? `تم جمع حساب اليوم للجميع (${closedCount}) ✓`
-          : `حساب المجر مصفّر ومغلق بالفعل (${selectedDate}) ✓`,
+          ? `تمت تصفية الحساب اليومي للجميع (${closedCount}) ✓`
+          : `حساب المجر مصفّر ومغلق بالفعل (${targetCloseDate}) ✓`,
         'تم تصفير المجر اليومي إلى 0 MAD مع حفظ الرصيد الشهري والتراكمي',
         'success'
       );
@@ -2012,7 +2124,11 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     setEditBusy(true);
     try {
       const effectiveType = sessionRole === 'master' ? editType : editingEntry.type;
-      const effectiveBarberId = sessionRole === 'master' ? editBarberId : editingEntry.barberId;
+      const effectiveBarberId = isFloatEntryType(effectiveType)
+        ? 'hassan'
+        : sessionRole === 'master'
+        ? editBarberId
+        : editingEntry.barberId;
       const effectiveBarberMeta = getCaisseBarberMeta(effectiveBarberId, roster);
       const nextPaid = Math.max(0, Number(editPaid) || 0);
       const isCreditCapable = effectiveType === 'income' || effectiveType === 'credit_repayment';
@@ -2172,10 +2288,476 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     };
   };
 
+  const floatModalNode = openForm === 'float' ? (
+    <ModalPortal>
+      <div
+        className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 sb-modal-backdrop"
+        onClick={() => setOpenForm('none')}
+      >
+        <form
+          onSubmit={handleSubmitFloat}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border-2 border-amber-400 dark:border-amber-500/50 shadow-2xl space-y-4 text-xs"
+        >
+          <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
+            <span className="font-black text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2">
+              <Coins className="w-4 h-4" />
+              <span>الصرف (فلوس الفكة في المجر) — حساب حسن ايت بومليك الشخصي</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setOpenForm('none')}
+              className="p-1 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="px-3 py-2 rounded-xl bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-500/35 text-[11px] font-bold text-amber-900 dark:text-amber-200 leading-relaxed">
+            يُضاف/يُرجع من المجر ويُحتسب ضمن الرصيد الشخصي لحسن ايت بومليك دون دخوله في المداخيل أو نسبة الحلاقة.
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setFloatMode('add')}
+              className={`py-2 px-3 rounded-xl border font-black text-xs cursor-pointer transition-colors ${
+                floatMode === 'add'
+                  ? 'bg-amber-600 text-white border-amber-600'
+                  : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+              }`}
+            >
+              + إضافة صرف للمجر
+            </button>
+            <button
+              type="button"
+              onClick={() => setFloatMode('return')}
+              className={`py-2 px-3 rounded-xl border font-black text-xs cursor-pointer transition-colors ${
+                floatMode === 'return'
+                  ? 'bg-rose-600 text-white border-rose-600'
+                  : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+              }`}
+            >
+              − إرجاع / سحب صرف
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="block font-bold text-zinc-800 dark:text-zinc-200">
+                المبلغ (MAD) *
+              </label>
+              <input
+                type="number"
+                min={1}
+                step="any"
+                value={floatAmount}
+                onChange={(e) => setFloatAmount(e.target.value)}
+                placeholder="0"
+                required
+                autoFocus
+                className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-xl px-3.5 py-2.5 text-base font-mono font-black text-zinc-900 dark:text-white"
+              />
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                <span className="text-[10px] font-bold text-zinc-400">مبالغ سريعة:</span>
+                {[50, 100, 200, 500].map((amt) => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setFloatAmount(String(amt))}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-black border cursor-pointer ${
+                      Number(floatAmount) === amt
+                        ? 'bg-amber-600 text-white border-amber-600'
+                        : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 border-zinc-200 dark:border-zinc-700'
+                    }`}
+                  >
+                    {amt} MAD
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                ملاحظة (اختيارية)
+              </label>
+              <input
+                type="text"
+                value={floatNote}
+                onChange={(e) => setFloatNote(e.target.value)}
+                placeholder={
+                  floatMode === 'return' ? 'إرجاع الصرف بعد انتهاء العمل' : 'فلوس الفكة / الصرف لليوم'
+                }
+                className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-white"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setOpenForm('none')}
+              className="px-4 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-xs cursor-pointer"
+            >
+              إلغاء
+            </button>
+            <button
+              type="submit"
+              disabled={floatSubmitting}
+              className={`px-5 py-2 rounded-xl text-white font-black text-xs cursor-pointer ${
+                floatMode === 'return'
+                  ? 'bg-rose-600 hover:bg-rose-500'
+                  : 'bg-amber-600 hover:bg-amber-500'
+              }`}
+            >
+              {floatSubmitting
+                ? 'جاري الحفظ...'
+                : floatMode === 'return'
+                ? 'تأكيد إرجاع الصرف ✓'
+                : 'حفظ إضافة الصرف ✓'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </ModalPortal>
+  ) : null;
+
+  const drawerBreakdownModalNode =
+    (sessionRole === 'master' || sessionRole === 'caisse') && drawerModalOpen ? (
+      <ModalPortal>
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop"
+          onClick={() => setDrawerModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-3xl max-h-[88vh] flex flex-col rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 bg-emerald-50/50 dark:bg-emerald-950/20">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                  <Wallet className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">
+                    {sessionRole === 'caisse'
+                      ? 'الفلوس فـ المجر (الدورة اليومية المفتوحة)'
+                      : 'الحساب في المجر — المجموع والتفريق'}
+                  </h4>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    {sessionRole === 'caisse'
+                      ? 'صرف حسن + المداخيل − السحوبات في الدورة اليومية المفتوحة (يتصفر عند تصفية الحساب اليومي)'
+                      : 'الرصيد الفعلي في المجر (يتصفر تلقائياً بعد تصفية الحساب اليومي مع حفظ الرصيد الشهري)'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {canToggleCaissePrivacy && (
+                  <button
+                    type="button"
+                    onClick={handleToggleGlobalCaisseAmounts}
+                    className={`min-h-[34px] px-3 py-1 rounded-xl border text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors ${
+                      amountsVisible
+                        ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-300'
+                        : 'bg-zinc-900 dark:bg-amber-500 border-zinc-900 dark:border-amber-400 text-white dark:text-zinc-950'
+                    }`}
+                  >
+                    {amountsVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    <span>{amountsVisible ? 'إخفاء' : 'إظهار'}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDrawerModalOpen(false)}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+              {/* Scope Switcher (Master Only; Caisse shows open daily cycle strictly) */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {sessionRole === 'master' ? (
+                  <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                    <button
+                      type="button"
+                      onClick={() => setDrawerModalScope('open_daily')}
+                      className={`px-3 py-1.5 rounded-lg font-black text-xs cursor-pointer transition-colors ${
+                        drawerModalScope === 'open_daily'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white'
+                      }`}
+                    >
+                      الدورة اليومية المفتوحة (فـ المجر حالياً)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDrawerModalScope('day')}
+                      className={`px-3 py-1.5 rounded-lg font-black text-xs cursor-pointer transition-colors ${
+                        drawerModalScope === 'day'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white'
+                      }`}
+                    >
+                      تاريخ محدد ({selectedDate})
+                    </button>
+                  </div>
+                ) : (
+                  <span className="px-3 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-800 dark:text-emerald-200 font-black text-xs">
+                    الدورة اليومية المفتوحة (في المجر حالياً)
+                  </span>
+                )}
+
+                <span className="text-[11px] font-mono text-zinc-500">
+                  {activeDrawerSummary.entryCount} عملية مفتوحة
+                </span>
+              </div>
+
+              {/* Grand Formula Summary */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-500/35">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[11px] text-amber-800 dark:text-amber-300 font-bold block">
+                      فلوس الصرف (+)
+                    </span>
+                    {renderBoxEyeButton('drawer_float', true)}
+                  </div>
+                  <strong dir="ltr" className="text-base font-mono font-black text-amber-900 dark:text-amber-200 tabular-nums">
+                    {formatMAD(activeDrawerSummary.totalFloatMAD, 'drawer_float')}
+                  </strong>
+                </div>
+
+                <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-500/35">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[11px] text-emerald-800 dark:text-emerald-300 font-bold block">
+                      مجموع المداخيل (+)
+                    </span>
+                    {renderBoxEyeButton('drawer_income', true)}
+                  </div>
+                  <strong dir="ltr" className="text-base font-mono font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
+                    {formatMAD(activeDrawerSummary.totalIncomeMAD, 'drawer_income')}
+                  </strong>
+                </div>
+
+                <div className="p-3 rounded-xl bg-rose-50/70 dark:bg-rose-950/25 border border-rose-200 dark:border-rose-500/35">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[11px] text-rose-800 dark:text-rose-300 font-bold block">
+                      السحوبات والمصاريف (−)
+                    </span>
+                    {renderBoxEyeButton('drawer_expenses', true)}
+                  </div>
+                  <strong dir="ltr" className="text-base font-mono font-black text-rose-700 dark:text-rose-400 tabular-nums">
+                    {formatMAD(activeDrawerSummary.totalExpensesMAD, 'drawer_expenses')}
+                  </strong>
+                </div>
+
+                <div className="p-3 rounded-xl bg-zinc-900 dark:bg-emerald-600 text-white border border-zinc-900 dark:border-emerald-500">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[11px] text-zinc-300 dark:text-emerald-100 font-bold block">
+                      {sessionRole === 'caisse' ? 'المجموع فـ المجر حالياً' : 'المجموع فـ المجر ككل'}
+                    </span>
+                    {renderBoxEyeButton('drawer_net_total', true)}
+                  </div>
+                  <strong dir="ltr" className="text-lg font-mono font-black text-white tabular-nums">
+                    {formatMAD(activeDrawerSummary.netTotalMAD, 'drawer_net_total')}
+                  </strong>
+                </div>
+              </div>
+
+              {/* Per-Person / Source Breakdown ("التفريق") */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-black text-zinc-900 dark:text-white">
+                  <span>التفريق حسب كل حلاق ومصدر فـ المجر:</span>
+                  <span className="text-[11px] font-normal text-zinc-500">
+                    اضغط على أي حلاق لفتح حسابه
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+                  <table className="w-full text-xs text-start border-collapse">
+                    <thead>
+                      <tr className="bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400">
+                        <th className="py-2.5 px-3 text-start">الحلاق / المصدر</th>
+                        <th className="py-2.5 px-2 text-start">الصرف</th>
+                        <th className="py-2.5 px-2 text-start">المداخيل</th>
+                        <th className="py-2.5 px-2 text-start">السحوبات</th>
+                        {sessionRole === 'master' && (
+                          <th className="py-2.5 px-2 text-start">حصة المحل</th>
+                        )}
+                        <th className="py-2.5 px-3 text-start">صافي فـ المجر</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 font-mono tabular-nums">
+                      {activeDrawerSummary.byBarber.map((row) => {
+                        const bTone = getBarberIdentityTokens(row.barberId, row.arName);
+                        const rowBoxKey = `drawer_barber_${row.barberId}`;
+                        return (
+                          <tr
+                            key={row.barberId}
+                            onClick={() => {
+                              setSelectedBarberId(row.barberId);
+                              setDrawerModalOpen(false);
+                            }}
+                            className="hover:bg-zinc-50 dark:hover:bg-zinc-900/70 cursor-pointer transition-colors"
+                          >
+                            <td className="py-2.5 px-3 font-sans">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${bTone.dotClass}`} />
+                                <div>
+                                  <div className="font-black text-zinc-900 dark:text-white flex items-center gap-1.5">
+                                    <span>{row.arName}</span>
+                                    {renderBoxEyeButton(rowBoxKey, true)}
+                                  </div>
+                                  <div className="text-[10px] font-mono text-zinc-400">
+                                    {row.entryCount} عمليات
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-2 text-amber-700 dark:text-amber-300 font-bold">
+                              {row.barberId === 'hassan' ? formatMAD(row.floatMAD, rowBoxKey) : '—'}
+                            </td>
+                            <td className="py-2.5 px-2 text-emerald-700 dark:text-emerald-400 font-bold">
+                              {formatMAD(row.incomeMAD, rowBoxKey)}
+                            </td>
+                            <td className="py-2.5 px-2 text-rose-600 dark:text-rose-400 font-bold">
+                              {formatMAD(row.expensesMAD, rowBoxKey)}
+                            </td>
+                            {sessionRole === 'master' && (
+                              <td className="py-2.5 px-2 text-zinc-700 dark:text-zinc-300">
+                                {formatMAD(row.shopShareMAD, rowBoxKey)}
+                              </td>
+                            )}
+                            <td
+                              dir="ltr"
+                              className={`py-2.5 px-3 font-black ${
+                                row.netDrawerContributionMAD < 0
+                                  ? 'text-rose-700 dark:text-rose-400'
+                                  : 'text-zinc-900 dark:text-white'
+                              }`}
+                            >
+                              {formatMAD(row.netDrawerContributionMAD, rowBoxKey)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-zinc-50 dark:bg-zinc-900 border-t-2 border-zinc-200 dark:border-zinc-700 font-mono font-black tabular-nums">
+                        <td className="py-2.5 px-3 font-sans text-zinc-900 dark:text-white">
+                          المجموع الكلي
+                        </td>
+                        <td className="py-2.5 px-2 text-amber-700 dark:text-amber-300">
+                          {formatMAD(activeDrawerSummary.totalFloatMAD, 'drawer_float')}
+                        </td>
+                        <td className="py-2.5 px-2 text-emerald-700 dark:text-emerald-400">
+                          {formatMAD(activeDrawerSummary.totalIncomeMAD, 'drawer_income')}
+                        </td>
+                        <td className="py-2.5 px-2 text-rose-600 dark:text-rose-400">
+                          {formatMAD(activeDrawerSummary.totalExpensesMAD, 'drawer_expenses')}
+                        </td>
+                        {sessionRole === 'master' && (
+                          <td className="py-2.5 px-2 text-emerald-700 dark:text-emerald-400">
+                            {formatMAD(activeDrawerSummary.totalShopShareMAD, 'drawer_net_total')}
+                          </td>
+                        )}
+                        <td dir="ltr" className="py-2.5 px-3 text-emerald-700 dark:text-emerald-400 text-sm">
+                          {formatMAD(activeDrawerSummary.netTotalMAD, 'drawer_net_total')}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </ModalPortal>
+    ) : null;
+
+  const hassanPinModalNode = hassanPinModalOpen ? (
+    <ModalPortal>
+      <div
+        className="fixed inset-0 z-[110] flex items-center justify-center p-4 sb-modal-backdrop"
+        onClick={() => {
+          setHassanPinModalOpen(null);
+          setHassanPinInput('');
+          setHassanPinError('');
+        }}
+      >
+        <form
+          onSubmit={handleVerifyHassanRevealPin}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-sm rounded-2xl bg-white dark:bg-[#141720] border-2 border-amber-400 dark:border-amber-500/50 p-5 space-y-4 shadow-2xl text-xs"
+        >
+          <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
+            <span className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span>إظهار أرقام حسن ايت بومليك</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setHassanPinModalOpen(null);
+                setHassanPinInput('');
+                setHassanPinError('');
+              }}
+              className="p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <p className="text-[11px] text-zinc-600 dark:text-zinc-300 leading-relaxed">
+            أدخل رمز الدخول الخاص بحسن للكشف عن الأرقام السرية الخاصة بحسابه:
+          </p>
+          <input
+            type="password"
+            inputMode="numeric"
+            value={hassanPinInput}
+            onChange={(e) => {
+              setHassanPinInput(e.target.value);
+              setHassanPinError('');
+            }}
+            placeholder="أدخل الرمز..."
+            autoFocus
+            className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-center font-mono text-base font-black tracking-widest text-zinc-900 dark:text-white outline-none"
+          />
+          {hassanPinError && (
+            <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400">
+              {hassanPinError}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setHassanPinModalOpen(null);
+                setHassanPinInput('');
+                setHassanPinError('');
+              }}
+              className="px-3.5 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold cursor-pointer"
+            >
+              إلغاء
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black cursor-pointer"
+            >
+              كشف الأرقام ✓
+            </button>
+          </div>
+        </form>
+      </div>
+    </ModalPortal>
+  ) : null;
+
   if ((sessionRole === 'caisse' || sessionRole === 'master') && !activeBarberId) {
     const gridBarbers = sessionRole === 'master' ? allCaisseBarbers : activeCaisseBarbers;
-    const selectorDrawerSummary =
-      sessionRole === 'caisse' ? todayDailyDrawerSummary : openCycleDrawerSummary;
+    const selectorDrawerSummary = liveOpenDailyDrawerSummary;
     const overdrawnMainRows = selectorDrawerSummary.byBarber.filter(
       (r) =>
         r.netDrawerContributionMAD < 0 ||
@@ -2210,31 +2792,31 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 role="button"
                 tabIndex={0}
                 onClick={() => {
-                  setDrawerModalScope(sessionRole === 'caisse' ? 'day' : 'open_cycle');
+                  setDrawerModalScope('open_daily');
                   setDrawerModalOpen(true);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    setDrawerModalScope(sessionRole === 'caisse' ? 'day' : 'open_cycle');
+                    setDrawerModalScope('open_daily');
                     setDrawerModalOpen(true);
                   }
                 }}
                 className="min-h-[38px] px-3.5 py-1.5 rounded-xl border border-emerald-300 dark:border-emerald-500/45 bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 text-emerald-900 dark:text-emerald-200 text-xs font-black flex items-center gap-2 cursor-pointer transition-colors shadow-2xs"
                 title={
                   sessionRole === 'caisse'
-                    ? 'عرض تفاصيل المجر لليوم فقط'
+                    ? 'عرض تفاصيل المجر للدورة اليومية المفتوحة'
                     : 'عرض تفاصيل الحساب في المجر حالياً'
                 }
               >
                 <Wallet className="w-4 h-4 text-emerald-700 dark:text-emerald-300 shrink-0" />
                 <span>
                   {sessionRole === 'caisse'
-                    ? `إجمالي المجر اليوم (${businessTodayStr}):`
+                    ? 'المجر اليوم (الحساب المفتوح):'
                     : 'الحساب في المجر:'}
                 </span>
                 <span dir="ltr" className="font-mono font-black tabular-nums">
-                  {formatMAD(selectorDrawerSummary.netTotalMAD, 'drawer_total_chip')}
+                  {formatMAD(liveOpenDailyDrawerSummary.netTotalMAD, 'drawer_total_chip')}
                 </span>
                 {renderBoxEyeButton('drawer_total_chip', true)}
               </div>
@@ -2259,19 +2841,19 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           )}
         </div>
 
-        {/* Dedicated Caisse Daily Drawer Total Card ONLY (No "حساب المجر كامل", No monthly data; resets to 0 on daily settlement) */}
+        {/* Dedicated Caisse Daily Drawer Total Card ONLY (No "حساب المجر كامل", No monthly data; anchored strictly to last "تصفية الحساب اليومي") */}
         {sessionRole === 'caisse' && (
           <div
             role="button"
             tabIndex={0}
             onClick={() => {
-              setDrawerModalScope('day');
+              setDrawerModalScope('open_daily');
               setDrawerModalOpen(true);
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                setDrawerModalScope('day');
+                setDrawerModalScope('open_daily');
                 setDrawerModalOpen(true);
               }
             }}
@@ -2280,29 +2862,40 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             <div className="space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-black text-emerald-950 dark:text-emerald-100">
-                  الفلوس فـ المجر اليوم ({businessTodayStr})
+                  الفلوس فـ المجر (الدورة اليومية المفتوحة)
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-900 border border-emerald-200 dark:border-emerald-500/35 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
-                  {hasAnyDailySettledToday && todayDailyDrawerSummary.netTotalMAD === 0
-                    ? 'تم جمع حساب اليوم ✓'
-                    : 'حساب اليوم فقط · اضغط للتفاصيل'}
+                  {hasAnyDailySettledToday && liveOpenDailyDrawerSummary.entryCount === 0
+                    ? 'تمت التصفية اليومية ✓'
+                    : 'حساب اليوم المفتوح · اضغط للتفاصيل'}
                 </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openFloatModal('add');
+                  }}
+                  className="px-2.5 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-black flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>الصرف (حسن)</span>
+                </button>
                 {renderBoxEyeButton('drawer_total_chip', true)}
               </div>
               <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono text-zinc-700 dark:text-zinc-300">
-                <span>الصرف اليوم: {formatMAD(todayDailyDrawerSummary.totalFloatMAD, 'drawer_total_chip')}</span>
+                <span>الصرف (حسن): {formatMAD(liveOpenDailyDrawerSummary.totalFloatMAD, 'drawer_total_chip')}</span>
                 <span>·</span>
                 <span className="text-emerald-700 dark:text-emerald-300 font-bold">
-                  المداخيل: {formatMAD(todayDailyDrawerSummary.totalIncomeMAD, 'drawer_total_chip')}
+                  المداخيل: {formatMAD(liveOpenDailyDrawerSummary.totalIncomeMAD, 'drawer_total_chip')}
                 </span>
                 <span>·</span>
                 <span className="text-rose-700 dark:text-rose-300 font-bold">
-                  السحوبات: {formatMAD(todayDailyDrawerSummary.totalExpensesMAD, 'drawer_total_chip')}
+                  السحوبات: {formatMAD(liveOpenDailyDrawerSummary.totalExpensesMAD, 'drawer_total_chip')}
                 </span>
               </div>
             </div>
             <div dir="ltr" className="text-2xl font-black font-mono tabular-nums text-emerald-800 dark:text-emerald-300 shrink-0">
-              {formatMAD(todayDailyDrawerSummary.netTotalMAD, 'drawer_total_chip')}
+              {formatMAD(liveOpenDailyDrawerSummary.netTotalMAD, 'drawer_total_chip')}
             </div>
           </div>
         )}
@@ -2325,9 +2918,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                     <strong>{overdrawnMainRows.map((r) => r.arName).join('، ')}</strong> ·{' '}
                   </>
                 )}
-                {sessionRole === 'caisse'
-                  ? `صافي المجر اليوم (${businessTodayStr}):`
-                  : 'صافي المجر الكلي في الدورة المفتوحة:'}{' '}
+                صافي المجر في الدورة المفتوحة:{' '}
                 <strong dir="ltr" className="font-mono inline-block">
                   {formatMAD(selectorDrawerSummary.netTotalMAD, 'drawer_total_chip')}
                 </strong>
@@ -2339,12 +2930,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {gridBarbers.map((b) => {
             const bTone = getBarberIdentityTokens(b.id, b.arName);
-            const dayCount = entries.filter(
-              (e) => e.barberId === b.id && e.date === businessTodayStr
-            ).length;
             const barberDrawerRow = selectorDrawerSummary.byBarber.find(
               (r) => r.barberId === b.id
             );
+            const openCount = barberDrawerRow?.entryCount ?? 0;
             const isOverdrawn = Boolean(
               barberDrawerRow &&
                 (barberDrawerRow.netDrawerContributionMAD < 0 ||
@@ -2367,7 +2956,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 <div className="flex items-center justify-between gap-2">
                   <span className={`w-3 h-3 rounded-full ${bTone.dotClass}`} />
                   <span className="text-[11px] font-mono text-zinc-400">
-                    {dayCount} عملية اليوم
+                    {openCount} عملية مفتوحة
                   </span>
                 </div>
                 <div className="text-base font-black text-zinc-900 dark:text-white flex items-center justify-between gap-1.5">
@@ -2383,6 +2972,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             );
           })}
         </div>
+
+        {drawerBreakdownModalNode}
+        {hassanPinModalNode}
+        {floatModalNode}
       </div>
     );
   }
@@ -2456,36 +3049,31 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 role="button"
                 tabIndex={0}
                 onClick={() => {
-                  setDrawerModalScope(sessionRole === 'caisse' ? 'day' : 'open_cycle');
+                  setDrawerModalScope('open_daily');
                   setDrawerModalOpen(true);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    setDrawerModalScope(sessionRole === 'caisse' ? 'day' : 'open_cycle');
+                    setDrawerModalScope('open_daily');
                     setDrawerModalOpen(true);
                   }
                 }}
                 className="min-h-[36px] px-3 py-1.5 rounded-xl border border-emerald-300 dark:border-emerald-500/45 bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 text-emerald-900 dark:text-emerald-200 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors"
                 title={
                   sessionRole === 'caisse'
-                    ? 'عرض المجموع والتفريق فـ المجر لليوم'
+                    ? 'عرض المجموع والتفريق فـ المجر للدورة اليومية المفتوحة'
                     : 'عرض المجموع والتفريق فـ الحساب في المجر حالياً'
                 }
               >
                 <Wallet className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-300 shrink-0" />
                 <span>
                   {sessionRole === 'caisse'
-                    ? `المجر اليوم (${selectedDate}):`
+                    ? 'المجر اليوم (المفتوح):'
                     : 'الحساب في المجر:'}
                 </span>
                 <span dir="ltr" className="font-mono font-black tabular-nums">
-                  {formatMAD(
-                    sessionRole === 'caisse'
-                      ? selectedDayDrawerSummary.netTotalMAD
-                      : openCycleDrawerSummary.netTotalMAD,
-                    'drawer_total_chip'
-                  )}
+                  {formatMAD(liveOpenDailyDrawerSummary.netTotalMAD, 'drawer_total_chip')}
                 </span>
                 {renderBoxEyeButton('drawer_total_chip', true)}
               </div>
@@ -2718,7 +3306,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         )}
       </div>
 
-      {/* Req #1 & #2: "جمع حساب اليوم" + "تصفية الحساب الشهري" Side by Side ABOVE "غانحط في المجر" & "غانهز من المجر" */}
+      {/* Req #1 & #2: "تصفية الحساب اليومي (جمع حساب اليوم)" + "تصفية الحساب الشهري" Side by Side ABOVE "غانحط في المجر" & "غانهز من المجر" */}
       {sessionRole === 'master' && (
         <div className="p-3 sm:p-3.5 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 shadow-xs">
           <div className="flex items-center gap-2.5 text-xs">
@@ -2727,15 +3315,15 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             </div>
             <div>
               <div className="font-black text-zinc-900 dark:text-white flex items-center gap-2 flex-wrap">
-                <span>جمع حساب اليوم — {activeBarberMeta.arName}</span>
-                {selectedDaySettlement?.intakeClosed && (
+                <span>تصفية الحساب اليومي (جمع حساب اليوم) — {activeBarberMeta.arName}</span>
+                {displayedDayIntakeStats.isIntakeClosed && (
                   <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300 text-[10px] font-black">
-                    تم الإغلاق ✓
+                    تمت التصفية ✓
                   </span>
                 )}
               </div>
               <div className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 tabular-nums">
-                في المجر ({selectedDate}): {formatMAD(displayedDayIntakeStats.displayedDrawerCashMAD)} · حط: {formatMAD(displayedDayIntakeStats.displayedIncomeMAD)} · هز: {formatMAD(displayedDayIntakeStats.displayedExpensesMAD)} | الشهري المفتوح: {formatMAD(cycleBalance.barberNetOwedMAD)}
+                في المجر ({isLiveOpenDailyView ? 'المفتوح' : selectedDate}): {formatMAD(displayedDayIntakeStats.displayedDrawerCashMAD)} · حط: {formatMAD(displayedDayIntakeStats.displayedIncomeMAD)} · هز: {formatMAD(displayedDayIntakeStats.displayedExpensesMAD)} | الشهري المفتوح: {formatMAD(cycleBalance.barberNetOwedMAD)}
               </div>
             </div>
           </div>
@@ -2746,7 +3334,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               disabled={dailyIntakeCloseBusy}
               onClick={handleCloseDayIntake}
               className={`min-h-[42px] px-4 py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer border transition-colors ${
-                selectedDaySettlement?.intakeClosed
+                displayedDayIntakeStats.isIntakeClosed
                   ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-600 text-white'
                   : 'bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-zinc-900 dark:border-zinc-700 text-white'
               }`}
@@ -2754,10 +3342,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               <Lock className="w-3.5 h-3.5 shrink-0" />
               <span>
                 {dailyIntakeCloseBusy
-                  ? 'جاري الجمع...'
-                  : selectedDaySettlement?.intakeClosed
-                  ? 'إعادة جمع حساب اليوم ✓'
-                  : 'جمع حساب اليوم'}
+                  ? 'جاري التصفية...'
+                  : displayedDayIntakeStats.isIntakeClosed
+                  ? 'إعادة تصفية الحساب اليومي ✓'
+                  : 'تصفية الحساب اليومي'}
               </span>
             </button>
 
@@ -2765,11 +3353,11 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               type="button"
               disabled={dailyIntakeCloseBusy}
               onClick={handleCloseAllBarbersDayIntake}
-              title="جمع وتصفير حساب اليوم لجميع الحلاقين معاً"
+              title="تصفية وتصفير الحساب اليومي لجميع الحلاقين معاً"
               className="min-h-[42px] px-3 py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer border border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/35 dark:hover:bg-emerald-900/50 text-emerald-900 dark:text-emerald-200 transition-colors"
             >
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>جمع يوم الجميع</span>
+              <span>تصفية اليوم للجميع</span>
             </button>
 
             <button
@@ -3198,7 +3786,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
       {/* 4 Interactive Darija KPI Cards + Quick '+' Actions Inside Each Card */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* 1. شحال حط اليوم (مع احترام إغلاق اليوم -> 0) */}
+        {/* 1. شحال حط (الدورة اليومية المفتوحة / التاريخ المحدد) */}
         <div
           role="button"
           tabIndex={0}
@@ -3213,14 +3801,18 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         >
           <div className="flex items-center justify-between gap-1">
             <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 block">
-              {isViewingOwnAccount
-                ? `شحال حطيت اليوم (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`
-                : `شحال حط ${activeBarberMeta.arName} (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`}
+              {isLiveOpenDailyView
+                ? isViewingOwnAccount
+                  ? 'شحال حطيت (الدورة اليومية)'
+                  : `شحال حط ${activeBarberMeta.arName} (الدورة اليومية)`
+                : isViewingOwnAccount
+                ? `شحال حطيت (${selectedDate})`
+                : `شحال حط ${activeBarberMeta.arName} (${selectedDate})`}
             </span>
             <span className="flex items-center gap-1 shrink-0">
               {displayedDayIntakeStats.isIntakeClosed && (
                 <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[9px] font-black">
-                  مغلق ✓
+                  مصفّى ✓
                 </span>
               )}
               <button
@@ -3243,13 +3835,13 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             <span className="text-xs font-bold">MAD</span>
           </div>
           <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block font-mono tabular-nums">
-            {displayedDayIntakeStats.isIntakeClosed
-              ? `تم جمع اليوم (${formatMAD(displayedDayIntakeStats.closedAtAmountMAD, 'kpi_income')}) · ${displayedDayIntakeStats.postCloseEntryCount} عملية بعد الجمع`
-              : `${selectedDayStats.entryCount} عملية · اضغط للتفاصيل`}
+            {displayedDayIntakeStats.hasAnyDailyClose
+              ? `بعد آخر تصفية (${displayedDayIntakeStats.lastDailyCloseDate}) · ${displayedDayIntakeStats.postCloseEntryCount} عملية مفتوحة`
+              : `${displayedDayIntakeStats.postCloseEntryCount} عملية مفتوحة · اضغط للتفاصيل`}
           </span>
         </div>
 
-        {/* 2. شحال هز اليوم (يتصفر إلى 0 بعد التصفية اليومية في جميع الحسابات، مع بقاء التراكمي الشهري محفوظاً) */}
+        {/* 2. شحال هز (الدورة اليومية المفتوحة -> يتصفر إلى 0 بعد التصفية اليومية، مع بقاء التراكمي الشهري محفوظاً) */}
         <div
           role="button"
           tabIndex={0}
@@ -3264,16 +3856,22 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         >
           <div className="flex items-center justify-between gap-1">
             <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 block">
-              {sessionRole === 'caisse'
-                ? `شحال هز ${activeBarberMeta.arName} (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`
+              {isLiveOpenDailyView
+                ? sessionRole === 'caisse'
+                  ? `شحال هز ${activeBarberMeta.arName} (الدورة اليومية)`
+                  : isViewingOwnAccount
+                  ? 'شحال هزيت (الدورة اليومية)'
+                  : `شحال هز ${activeBarberMeta.arName} (الدورة اليومية)`
+                : sessionRole === 'caisse'
+                ? `شحال هز ${activeBarberMeta.arName} (${selectedDate})`
                 : isViewingOwnAccount
-                ? `شحال هزيت اليوم (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`
-                : `شحال هز ${activeBarberMeta.arName} (${selectedDate === businessTodayStr ? 'اليوم' : selectedDate})`}
+                ? `شحال هزيت (${selectedDate})`
+                : `شحال هز ${activeBarberMeta.arName} (${selectedDate})`}
             </span>
             <span className="flex items-center gap-1 shrink-0">
               {displayedDayIntakeStats.isIntakeClosed && (
                 <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[9px] font-black">
-                  مغلق ✓
+                  مصفّى ✓
                 </span>
               )}
               <button
@@ -3298,11 +3896,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           </div>
           <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block font-mono tabular-nums">
             {sessionRole === 'caisse'
-              ? displayedDayIntakeStats.isIntakeClosed
-                ? 'سحوبات اليوم بعد الجمع · اضغط للتفاصيل'
-                : 'مجموع سحوبات اليوم · اضغط للتفاصيل'
-              : displayedDayIntakeStats.isIntakeClosed
-              ? `تم جمع اليوم (${formatMAD(displayedDayIntakeStats.closedExpensesMAD, 'kpi_expenses')}) · الشهري: ${formatMAD(cycleBalance.expensesMAD, 'kpi_expenses')}`
+              ? 'سحوبات الدورة اليومية المفتوحة · اضغط للتفاصيل'
+              : displayedDayIntakeStats.hasAnyDailyClose
+              ? `تمت التصفية (${displayedDayIntakeStats.lastDailyCloseDate}) · الشهري: ${formatMAD(cycleBalance.expensesMAD, 'kpi_expenses')}`
               : `التراكمي الشهري المفتوح: ${formatMAD(cycleBalance.expensesMAD, 'kpi_expenses')}`}
           </span>
         </div>
@@ -3327,7 +3923,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           >
             <div className="flex items-center justify-between gap-1">
               <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 block">
-                الفلوس فـ المجر — {activeBarberMeta.arName} ({selectedDate === businessTodayStr ? 'اليوم' : selectedDate})
+                الفلوس فـ المجر — {activeBarberMeta.arName} ({isLiveOpenDailyView ? 'المفتوح' : selectedDate})
               </span>
               <span className="flex items-center gap-1 shrink-0">
                 <button
@@ -3378,7 +3974,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 ? 'رصيد سالب — السحوبات تجاوزت المجر · اضغط للتفاصيل'
                 : displayedDayIntakeStats.isIntakeClosed &&
                   displayedDayIntakeStats.displayedDrawerCashMAD === 0
-                ? 'تم جمع حساب اليوم ✓ · اضغط للتفاصيل'
+                ? 'تمت التصفية اليومية ✓ · الحساب مصفر 0'
                 : 'المداخيل + الصرف − السحوبات · اضغط للتفاصيل'}
             </span>
           </div>
@@ -3449,9 +4045,11 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             >
               {cycleBalance.barberNetOwedMAD < 0
                 ? 'رصيد سالب — السحوبات تجاوزت المستحقات · اضغط للتفاصيل'
-                : `في المجر اليوم: ${formatMAD(displayedDayIntakeStats.displayedDrawerCashMAD, 'kpi_net')}${
-                    cycleBalance.lastSettledDate ? ` · من بعد ${cycleBalance.lastSettledDate}` : ''
-                  }`}
+                : `في المجر حالياً: ${formatMAD(displayedDayIntakeStats.displayedDrawerCashMAD, 'kpi_net')}${
+                    activeBarberId === 'hassan' && cycleBalance.floatMAD !== 0
+                      ? ` · يتضمن الصرف الشخصي: ${formatMAD(cycleBalance.floatMAD, 'kpi_net')} (غير محسوب في المداخيل)`
+                      : ''
+                  }${cycleBalance.lastSettledDate ? ` · من بعد ${cycleBalance.lastSettledDate}` : ''}`}
             </span>
           </div>
         )}
@@ -3520,7 +4118,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             <div className="min-w-0 space-y-0.5">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-black text-amber-950 dark:text-amber-200">
-                  {`الصرف اليوم (${selectedDate})`}
+                  {`الصرف — حساب حسن الشخصي (${isLiveOpenDailyView ? 'الدورة اليومية المفتوحة' : selectedDate})`}
                 </span>
                 <span dir="ltr" className="font-mono font-black text-sm text-amber-800 dark:text-amber-300 tabular-nums">
                   {formatMAD(displayedDayIntakeStats.displayedFloatMAD, 'float_cycle_card')}
@@ -3528,7 +4126,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 {renderBoxEyeButton('float_cycle_card', true)}
               </div>
               <div className="text-[11px] font-mono text-zinc-600 dark:text-zinc-400 flex flex-wrap items-center gap-2">
-                <span>اليوم ({selectedDate}):</span>
                 <span className="text-emerald-700 dark:text-emerald-400 font-bold">
                   مضاف +{formatMAD(displayedDayIntakeStats.displayedFloatInMAD, 'float_cycle_card')}
                 </span>
@@ -3540,10 +4137,14 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                   <>
                     <span>·</span>
                     <span className="text-amber-700 dark:text-amber-300 font-bold">
-                      الدورة: {formatMAD(cycleBalance.floatMAD, 'float_cycle_card')}
+                      التراكمي الشهري: {formatMAD(cycleBalance.floatMAD, 'float_cycle_card')}
                     </span>
                   </>
                 )}
+                <span>·</span>
+                <span className="font-sans text-zinc-500 dark:text-zinc-400">
+                  خاص برصيد حسن · غير محسوب في المداخيل
+                </span>
               </div>
             </div>
           </div>
@@ -3587,7 +4188,11 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-zinc-500 dark:text-zinc-400 block text-[11px]">
-                  {isViewingOwnAccount
+                  {isLiveOpenDailyView
+                    ? isViewingOwnAccount
+                      ? 'اللي دخلت (المفتوح)'
+                      : `اللي دخل ${activeBarberMeta.arName} (المفتوح)`
+                    : isViewingOwnAccount
                     ? `اللي دخلت (${selectedDate})`
                     : `اللي دخل ${activeBarberMeta.arName} (${selectedDate})`}
                 </span>
@@ -3602,13 +4207,13 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               role="button"
               tabIndex={0}
               onClick={() => {
-                setDrawerModalScope('day');
+                setDrawerModalScope(isLiveOpenDailyView ? 'open_daily' : 'day');
                 setDrawerModalOpen(true);
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  setDrawerModalScope('day');
+                  setDrawerModalScope(isLiveOpenDailyView ? 'open_daily' : 'day');
                   setDrawerModalOpen(true);
                 }
               }}
@@ -3616,7 +4221,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-emerald-800 dark:text-emerald-300 block text-[11px] font-bold">
-                  الحساب في المجر ({selectedDate})
+                  الحساب في المجر ({isLiveOpenDailyView ? 'المفتوح' : selectedDate})
                 </span>
                 {renderBoxEyeButton('kpi_net', true)}
               </div>
@@ -3639,7 +4244,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-zinc-500 dark:text-zinc-400 block text-[11px]">
-                  حصة المحل ({selectedDate})
+                  حصة المحل ({isLiveOpenDailyView ? 'المفتوح' : selectedDate})
                 </span>
                 {renderBoxEyeButton('sum_shop_day', true)}
               </div>
@@ -4221,135 +4826,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         </ModalPortal>
       )}
 
-      {/* Centered Modal 3: الصرف — إضافة أو إرجاع فلوس الفكة في المجر (All Roles) */}
-      {openForm === 'float' && (
-        <ModalPortal>
-          <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 sb-modal-backdrop"
-            onClick={() => setOpenForm('none')}
-          >
-            <form
-              onSubmit={handleSubmitFloat}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border-2 border-amber-400 dark:border-amber-500/50 shadow-2xl space-y-4 text-xs"
-            >
-            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
-              <span className="font-black text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2">
-                <Coins className="w-4 h-4" />
-                <span>الصرف (فلوس الفكة في المجر) — {activeBarberMeta.arName}</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setOpenForm('none')}
-                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setFloatMode('add')}
-                className={`py-2 px-3 rounded-xl border font-black text-xs cursor-pointer transition-colors ${
-                  floatMode === 'add'
-                    ? 'bg-amber-600 text-white border-amber-600'
-                    : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
-                }`}
-              >
-                + إضافة صرف للمجر
-              </button>
-              <button
-                type="button"
-                onClick={() => setFloatMode('return')}
-                className={`py-2 px-3 rounded-xl border font-black text-xs cursor-pointer transition-colors ${
-                  floatMode === 'return'
-                    ? 'bg-rose-600 text-white border-rose-600'
-                    : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
-                }`}
-              >
-                − إرجاع / سحب صرف
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <label className="block font-bold text-zinc-800 dark:text-zinc-200">
-                  المبلغ (MAD) *
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  step="any"
-                  value={floatAmount}
-                  onChange={(e) => setFloatAmount(e.target.value)}
-                  placeholder="0"
-                  required
-                  autoFocus
-                  className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-xl px-3.5 py-2.5 text-base font-mono font-black text-zinc-900 dark:text-white"
-                />
-                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                  <span className="text-[10px] font-bold text-zinc-400">مبالغ سريعة:</span>
-                  {[50, 100, 200, 500].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setFloatAmount(String(amt))}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-black border cursor-pointer ${
-                        Number(floatAmount) === amt
-                          ? 'bg-amber-600 text-white border-amber-600'
-                          : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 border-zinc-200 dark:border-zinc-700'
-                      }`}
-                    >
-                      {amt} MAD
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                  ملاحظة (اختيارية)
-                </label>
-                <input
-                  type="text"
-                  value={floatNote}
-                  onChange={(e) => setFloatNote(e.target.value)}
-                  placeholder={
-                    floatMode === 'return' ? 'إرجاع الصرف بعد انتهاء العمل' : 'فلوس الفكة / الصرف لليوم'
-                  }
-                  className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-white"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setOpenForm('none')}
-                className="px-4 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-xs cursor-pointer"
-              >
-                إلغاء
-              </button>
-              <button
-                type="submit"
-                disabled={floatSubmitting}
-                className={`px-5 py-2 rounded-xl text-white font-black text-xs cursor-pointer ${
-                  floatMode === 'return'
-                    ? 'bg-rose-600 hover:bg-rose-500'
-                    : 'bg-amber-600 hover:bg-amber-500'
-                }`}
-              >
-                {floatSubmitting
-                  ? 'جاري الحفظ...'
-                  : floatMode === 'return'
-                  ? 'تأكيد إرجاع الصرف ✓'
-                  : 'حفظ إضافة الصرف ✓'}
-              </button>
-            </div>
-          </form>
-        </div>
-        </ModalPortal>
-      )}
+      {floatModalNode}
 
       {/* Open Credits Section (Persists Across ALL Dates Until Repaid; Combines Caisse + Manual Client Credits) */}
       {(openCreditsList.length > 0 ||
@@ -4852,25 +5329,27 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-950 p-1 rounded-xl text-[11px] font-bold">
+          <div className="flex flex-wrap items-center gap-1 bg-zinc-100 dark:bg-zinc-950 p-1 rounded-xl text-[11px] font-bold">
             {(
               (sessionRole === 'caisse'
                 ? [
-                    { id: 'day', label: selectedDate === businessTodayStr ? 'اليوم' : selectedDate },
+                    { id: 'open_daily', label: `الدورة اليومية (${activeBarberOpenDailyStats.entryCount})` },
+                    { id: 'day', label: selectedDate === businessTodayStr ? `تاريخ اليوم (${selectedDate})` : selectedDate },
                     { id: 'all', label: 'الأحدث' },
                   ]
                 : [
-                    { id: 'day', label: selectedDate === businessTodayStr ? 'اليوم' : selectedDate },
-                    { id: 'cycle', label: 'الدورة المفتوحة' },
+                    { id: 'open_daily', label: `الدورة اليومية (${activeBarberOpenDailyStats.entryCount})` },
+                    { id: 'day', label: selectedDate === businessTodayStr ? `تاريخ اليوم (${selectedDate})` : selectedDate },
+                    { id: 'cycle', label: 'الشهرية المفتوحة' },
                     { id: 'all', label: 'الأحدث' },
-                  ]) as ReadonlyArray<{ id: 'day' | 'cycle' | 'all'; label: string }>
+                  ]) as ReadonlyArray<{ id: 'open_daily' | 'day' | 'cycle' | 'all'; label: string }>
             ).map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setTxScopeFilter(tab.id)}
                 className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                  (sessionRole === 'caisse' && txScopeFilter === 'cycle' ? 'day' : txScopeFilter) ===
+                  (sessionRole === 'caisse' && txScopeFilter === 'cycle' ? 'open_daily' : txScopeFilter) ===
                   tab.id
                     ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-xs'
                     : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
@@ -5063,9 +5542,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                     الحلاق / الحساب
                   </label>
                   <select
-                    value={editBarberId}
+                    value={isFloatEntryType(editType) ? 'hassan' : editBarberId}
+                    disabled={isFloatEntryType(editType)}
                     onChange={(e) => setEditBarberId(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 font-bold text-zinc-900 dark:text-white"
+                    className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 font-bold text-zinc-900 dark:text-white disabled:opacity-65"
                   >
                     {allCaisseBarbers.map((b) => (
                       <option key={b.id} value={b.id}>
@@ -5073,6 +5553,11 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                       </option>
                     ))}
                   </select>
+                  {isFloatEntryType(editType) && (
+                    <span className="block mt-1 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                      الصرف مسجل دائماً لحساب حسن ايت بومليك
+                    </span>
+                  )}
                 </div>
                 <div>
                   <label className="block font-bold text-zinc-600 dark:text-zinc-400 mb-1">
@@ -5080,7 +5565,13 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                   </label>
                   <select
                     value={editType}
-                    onChange={(e) => setEditType(e.target.value as CaisseEntryType)}
+                    onChange={(e) => {
+                      const nextType = e.target.value as CaisseEntryType;
+                      setEditType(nextType);
+                      if (isFloatEntryType(nextType)) {
+                        setEditBarberId('hassan');
+                      }
+                    }}
                     className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 font-bold text-zinc-900 dark:text-white"
                   >
                     <option value="income">مدخول (+)</option>
@@ -6077,340 +6568,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         </ModalPortal>
       )}
 
-      {/* Master Drawer Breakdown / Caisse Daily Drawer Breakdown Modal */}
-      {(sessionRole === 'master' || sessionRole === 'caisse') && drawerModalOpen && (
-        <ModalPortal>
-          <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop"
-            onClick={() => setDrawerModalOpen(false)}
-          >
-            <div
-              className="w-full max-w-3xl max-h-[88vh] flex flex-col rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs"
-              onClick={(e) => e.stopPropagation()}
-            >
-            {/* Header */}
-            <div className="p-4 sm:p-5 border-b border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 bg-emerald-50/50 dark:bg-emerald-950/20">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                  <Wallet className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">
-                    {sessionRole === 'caisse'
-                      ? `الفلوس فـ المجر اليوم (${activeDrawerSummary.date || selectedDate})`
-                      : 'الحساب في المجر — المجموع والتفريق'}
-                  </h4>
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                    {sessionRole === 'caisse'
-                      ? 'صرف اليوم + مداخيل اليوم − سحوبات اليوم لكل حلاق (حساب اليوم فقط)'
-                      : 'الرصيد الفعلي في المجر (يتصفر تلقائياً بعد جمع حساب اليوم مع حفظ الرصيد الشهري)'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {canToggleCaissePrivacy && (
-                  <button
-                    type="button"
-                    onClick={handleToggleGlobalCaisseAmounts}
-                    className={`min-h-[34px] px-3 py-1 rounded-xl border text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors ${
-                      amountsVisible
-                        ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-300'
-                        : 'bg-zinc-900 dark:bg-amber-500 border-zinc-900 dark:border-amber-400 text-white dark:text-zinc-950'
-                    }`}
-                  >
-                    {amountsVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    <span>{amountsVisible ? 'إخفاء' : 'إظهار'}</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setDrawerModalOpen(false)}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Body */}
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
-              {/* Scope Switcher (Master Only; Caisse shows daily view strictly) */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                {sessionRole === 'master' ? (
-                  <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
-                    <button
-                      type="button"
-                      onClick={() => setDrawerModalScope('open_cycle')}
-                      className={`px-3 py-1.5 rounded-lg font-black text-xs cursor-pointer transition-colors ${
-                        drawerModalScope === 'open_cycle'
-                          ? 'bg-emerald-600 text-white shadow-2xs'
-                          : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white'
-                      }`}
-                    >
-                      فـ المجر حالياً (بعد التصفية اليومية)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDrawerModalScope('day')}
-                      className={`px-3 py-1.5 rounded-lg font-black text-xs cursor-pointer transition-colors ${
-                        drawerModalScope === 'day'
-                          ? 'bg-emerald-600 text-white shadow-2xs'
-                          : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white'
-                      }`}
-                    >
-                      اليوم المحدد ({selectedDate})
-                    </button>
-                  </div>
-                ) : (
-                  <span className="px-3 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-800 dark:text-emerald-200 font-black text-xs">
-                    حساب اليوم فقط ({activeDrawerSummary.date || selectedDate})
-                  </span>
-                )}
-
-                <span className="text-[11px] font-mono text-zinc-500">
-                  {activeDrawerSummary.entryCount} عملية مسجلة
-                </span>
-              </div>
-
-              {/* Grand Formula Summary */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-500/35">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-[11px] text-amber-800 dark:text-amber-300 font-bold block">
-                      فلوس الصرف (+)
-                    </span>
-                    {renderBoxEyeButton('drawer_float', true)}
-                  </div>
-                  <strong dir="ltr" className="text-base font-mono font-black text-amber-900 dark:text-amber-200 tabular-nums">
-                    {formatMAD(activeDrawerSummary.totalFloatMAD, 'drawer_float')}
-                  </strong>
-                </div>
-
-                <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-500/35">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-[11px] text-emerald-800 dark:text-emerald-300 font-bold block">
-                      مجموع المداخيل (+)
-                    </span>
-                    {renderBoxEyeButton('drawer_income', true)}
-                  </div>
-                  <strong dir="ltr" className="text-base font-mono font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
-                    {formatMAD(activeDrawerSummary.totalIncomeMAD, 'drawer_income')}
-                  </strong>
-                </div>
-
-                <div className="p-3 rounded-xl bg-rose-50/70 dark:bg-rose-950/25 border border-rose-200 dark:border-rose-500/35">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-[11px] text-rose-800 dark:text-rose-300 font-bold block">
-                      السحوبات والمصاريف (−)
-                    </span>
-                    {renderBoxEyeButton('drawer_expenses', true)}
-                  </div>
-                  <strong dir="ltr" className="text-base font-mono font-black text-rose-700 dark:text-rose-400 tabular-nums">
-                    {formatMAD(activeDrawerSummary.totalExpensesMAD, 'drawer_expenses')}
-                  </strong>
-                </div>
-
-                <div className="p-3 rounded-xl bg-zinc-900 dark:bg-emerald-600 text-white border border-zinc-900 dark:border-emerald-500">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-[11px] text-zinc-300 dark:text-emerald-100 font-bold block">
-                      {sessionRole === 'caisse' ? 'المجموع فـ المجر اليوم' : 'المجموع فـ المجر ككل'}
-                    </span>
-                    {renderBoxEyeButton('drawer_net_total', true)}
-                  </div>
-                  <strong dir="ltr" className="text-lg font-mono font-black text-white tabular-nums">
-                    {formatMAD(activeDrawerSummary.netTotalMAD, 'drawer_net_total')}
-                  </strong>
-                </div>
-              </div>
-
-              {/* Per-Person / Source Breakdown ("التفريق") */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs font-black text-zinc-900 dark:text-white">
-                  <span>التفريق حسب كل حلاق ومصدر فـ المجر:</span>
-                  <span className="text-[11px] font-normal text-zinc-500">
-                    اضغط على أي حلاق لفتح حسابه
-                  </span>
-                </div>
-
-                <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
-                  <table className="w-full text-xs text-start border-collapse">
-                    <thead>
-                      <tr className="bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400">
-                        <th className="py-2.5 px-3 text-start">الحلاق / المصدر</th>
-                        <th className="py-2.5 px-2 text-start">الصرف</th>
-                        <th className="py-2.5 px-2 text-start">المداخيل</th>
-                        <th className="py-2.5 px-2 text-start">السحوبات</th>
-                        {sessionRole === 'master' && (
-                          <th className="py-2.5 px-2 text-start">حصة المحل</th>
-                        )}
-                        <th className="py-2.5 px-3 text-start">صافي فـ المجر</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 font-mono tabular-nums">
-                      {activeDrawerSummary.byBarber.map((row) => {
-                        const bTone = getBarberIdentityTokens(row.barberId, row.arName);
-                        const rowBoxKey = `drawer_barber_${row.barberId}`;
-                        return (
-                          <tr
-                            key={row.barberId}
-                            onClick={() => {
-                              setSelectedBarberId(row.barberId);
-                              setDrawerModalOpen(false);
-                            }}
-                            className="hover:bg-zinc-50 dark:hover:bg-zinc-900/70 cursor-pointer transition-colors"
-                          >
-                            <td className="py-2.5 px-3 font-sans">
-                              <div className="flex items-center gap-2">
-                                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${bTone.dotClass}`} />
-                                <div>
-                                  <div className="font-black text-zinc-900 dark:text-white flex items-center gap-1.5">
-                                    <span>{row.arName}</span>
-                                    {renderBoxEyeButton(rowBoxKey, true)}
-                                  </div>
-                                  <div className="text-[10px] font-mono text-zinc-400">
-                                    {row.entryCount} عمليات
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="py-2.5 px-2 text-amber-700 dark:text-amber-300 font-bold">
-                              {row.barberId === 'hassan' ? formatMAD(row.floatMAD, rowBoxKey) : '—'}
-                            </td>
-                            <td className="py-2.5 px-2 text-emerald-700 dark:text-emerald-400 font-bold">
-                              {formatMAD(row.incomeMAD, rowBoxKey)}
-                            </td>
-                            <td className="py-2.5 px-2 text-rose-600 dark:text-rose-400 font-bold">
-                              {formatMAD(row.expensesMAD, rowBoxKey)}
-                            </td>
-                            {sessionRole === 'master' && (
-                              <td className="py-2.5 px-2 text-zinc-700 dark:text-zinc-300">
-                                {formatMAD(row.shopShareMAD, rowBoxKey)}
-                              </td>
-                            )}
-                            <td
-                              dir="ltr"
-                              className={`py-2.5 px-3 font-black ${
-                                row.netDrawerContributionMAD < 0
-                                  ? 'text-rose-700 dark:text-rose-400'
-                                  : 'text-zinc-900 dark:text-white'
-                              }`}
-                            >
-                              {formatMAD(row.netDrawerContributionMAD, rowBoxKey)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-zinc-50 dark:bg-zinc-900 border-t-2 border-zinc-200 dark:border-zinc-700 font-mono font-black tabular-nums">
-                        <td className="py-2.5 px-3 font-sans text-zinc-900 dark:text-white">
-                          المجموع الكلي
-                        </td>
-                        <td className="py-2.5 px-2 text-amber-700 dark:text-amber-300">
-                          {formatMAD(activeDrawerSummary.totalFloatMAD, 'drawer_float')}
-                        </td>
-                        <td className="py-2.5 px-2 text-emerald-700 dark:text-emerald-400">
-                          {formatMAD(activeDrawerSummary.totalIncomeMAD, 'drawer_income')}
-                        </td>
-                        <td className="py-2.5 px-2 text-rose-600 dark:text-rose-400">
-                          {formatMAD(activeDrawerSummary.totalExpensesMAD, 'drawer_expenses')}
-                        </td>
-                        {sessionRole === 'master' && (
-                          <td className="py-2.5 px-2 text-emerald-700 dark:text-emerald-400">
-                            {formatMAD(activeDrawerSummary.totalShopShareMAD, 'drawer_net_total')}
-                          </td>
-                        )}
-                        <td dir="ltr" className="py-2.5 px-3 text-emerald-700 dark:text-emerald-400 text-sm">
-                          {formatMAD(activeDrawerSummary.netTotalMAD, 'drawer_net_total')}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        </ModalPortal>
-      )}
-
-      {/* Hassan Reveal PIN Confirmation Modal (Only triggered for Hassan's account/boxes) */}
-      {hassanPinModalOpen && (
-        <ModalPortal>
-          <div
-            className="fixed inset-0 z-[110] flex items-center justify-center p-4 sb-modal-backdrop"
-            onClick={() => {
-              setHassanPinModalOpen(null);
-              setHassanPinInput('');
-              setHassanPinError('');
-            }}
-          >
-            <form
-              onSubmit={handleVerifyHassanRevealPin}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm rounded-2xl bg-white dark:bg-[#141720] border-2 border-amber-400 dark:border-amber-500/50 p-5 space-y-4 shadow-2xl text-xs"
-            >
-              <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
-                <span className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                  <span>إظهار أرقام حسن ايت بومليك</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHassanPinModalOpen(null);
-                    setHassanPinInput('');
-                    setHassanPinError('');
-                  }}
-                  className="p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <p className="text-[11px] text-zinc-600 dark:text-zinc-300 leading-relaxed">
-                أدخل رمز الدخول الخاص بحسن للكشف عن الأرقام السرية الخاصة بحسابه:
-              </p>
-              <input
-                type="password"
-                inputMode="numeric"
-                value={hassanPinInput}
-                onChange={(e) => {
-                  setHassanPinInput(e.target.value);
-                  setHassanPinError('');
-                }}
-                placeholder="أدخل الرمز..."
-                autoFocus
-                className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-center font-mono text-base font-black tracking-widest text-zinc-900 dark:text-white outline-none"
-              />
-              {hassanPinError && (
-                <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400">
-                  {hassanPinError}
-                </div>
-              )}
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHassanPinModalOpen(null);
-                    setHassanPinInput('');
-                    setHassanPinError('');
-                  }}
-                  className="px-3.5 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold cursor-pointer"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black cursor-pointer"
-                >
-                  كشف الأرقام ✓
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalPortal>
-      )}
+      {drawerBreakdownModalNode}
+      {hassanPinModalNode}
 
       {/* Small Solid Confirmation Modal ("موافقة") for Duplicate Deposit / Withdrawal Warning */}
       {duplicateWarning && (

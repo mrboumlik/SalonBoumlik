@@ -209,6 +209,10 @@ function sanitizeId(raw: string, fallbackPrefix: string): string {
   return `${fallbackPrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
+export function isFloatEntryType(type: CaisseEntryType | string | undefined): boolean {
+  return type === 'float_adjustment' || type === 'float_return';
+}
+
 export function matchesCaisseBarber(
   rawBarberId: string | undefined,
   rawBarberName: string | undefined,
@@ -220,6 +224,49 @@ export function matchesCaisseBarber(
     resolveCaisseBarberId(rawBarberId || 'hassan', rawBarberName, rosterMembers) ===
     targetBarberId
   );
+}
+
+/**
+ * Financial attribution matcher:
+ * Change float ("فلوس الصرف" / `float_adjustment` & `float_return`) always belongs
+ * to Hassan Ait Boumlik's personal funds (`hassan`) and never to other barbers.
+ */
+export function matchesCaisseFinancialBarber(
+  entry: Pick<CaisseEntry, 'barberId' | 'barberName' | 'type'>,
+  targetBarberId: CaisseBarberId,
+  rosterMembers?: RosterMemberAccount[]
+): boolean {
+  if (isFloatEntryType(entry.type)) {
+    return targetBarberId === 'hassan';
+  }
+  return matchesCaisseBarber(entry.barberId, entry.barberName, targetBarberId, rosterMembers);
+}
+
+function getNextMonotonicIsoForBarber(
+  barberId: CaisseBarberId,
+  rosterMembers?: RosterMemberAccount[]
+): string {
+  let maxAnchorMs = 0;
+  Object.values(settlementsCache).forEach((s) => {
+    if (
+      s.intakeClosed &&
+      matchesCaisseBarber(s.barberId, s.barberName, barberId, rosterMembers)
+    ) {
+      const iso = s.confirmedAt || s.updatedAt || '';
+      const ms = iso ? Date.parse(iso) : NaN;
+      if (Number.isFinite(ms) && ms > maxAnchorMs) maxAnchorMs = ms;
+    }
+  });
+  cyclesCache.forEach((c) => {
+    if (matchesCaisseBarber(c.barberId, c.barberName, barberId, rosterMembers)) {
+      const iso = c.settledThroughIso || c.confirmedAt || '';
+      const ms = iso ? Date.parse(iso) : NaN;
+      if (Number.isFinite(ms) && ms > maxAnchorMs) maxAnchorMs = ms;
+    }
+  });
+  const nowMs = Date.now();
+  const safeMs = nowMs <= maxAnchorMs ? maxAnchorMs + 1 : nowMs;
+  return new Date(safeMs).toISOString().slice(0, 64);
 }
 
 export function getEffectiveCaisseCreditRemaining(
@@ -1120,10 +1167,13 @@ export interface CreateCaisseEntryInput {
 }
 
 export async function addCaisseEntry(input: CreateCaisseEntryInput): Promise<CaisseEntry> {
-  const nowIso = new Date().toISOString().slice(0, 64);
+  const effectiveBarberId: CaisseBarberId = isFloatEntryType(input.type)
+    ? 'hassan'
+    : input.barberId;
+  const nowIso = getNextMonotonicIsoForBarber(effectiveBarberId);
   const rand = Math.random().toString(36).slice(2, 7);
   const id = sanitizeId(`ce_${Date.now()}_${rand}`, 'ce');
-  const meta = getCaisseBarberMeta(input.barberId);
+  const meta = getCaisseBarberMeta(effectiveBarberId);
 
   const expected = clampAmount(input.expectedAmountMAD);
   const paid = clampAmount(input.amountPaidMAD);
@@ -1143,10 +1193,12 @@ export async function addCaisseEntry(input: CreateCaisseEntryInput): Promise<Cai
 
   const payload: CaisseEntry = {
     id,
-    barberId: input.barberId,
-    barberName: (input.barberName || meta.name).trim().slice(0, 100),
+    barberId: effectiveBarberId,
+    barberName: (isFloatEntryType(input.type) ? meta.name : input.barberName || meta.name)
+      .trim()
+      .slice(0, 100),
     type: input.type,
-    date: String(input.date || new Date().toISOString().split('T')[0]).slice(0, 20),
+    date: String(input.date || getSalonBusinessDate()).slice(0, 20),
     expectedAmountMAD: expected,
     amountPaidMAD: paid,
     creditAmountMAD: creditTotal,
@@ -1238,10 +1290,16 @@ export async function updateCaisseEntry(
       updatedAt: new Date().toISOString().slice(0, 64),
     };
 
-    if (patch.barberId !== undefined) {
-      updatePayload.barberId = patch.barberId;
+    const resolvedPatchType = patch.type;
+    const isFloatType = isFloatEntryType(resolvedPatchType);
+    const forcedBarberId = isFloatType ? 'hassan' : patch.barberId;
+
+    if (forcedBarberId !== undefined) {
+      updatePayload.barberId = forcedBarberId;
       updatePayload.barberName = (
-        patch.barberName || getCaisseBarberMeta(patch.barberId).name
+        isFloatType
+          ? getCaisseBarberMeta('hassan').name
+          : patch.barberName || getCaisseBarberMeta(forcedBarberId).name
       )
         .trim()
         .slice(0, 100);
@@ -1309,8 +1367,8 @@ export async function updateCaisseEntry(
           ...item,
           updatedAt: String(updatePayload.updatedAt),
         };
-        if (patch.barberId !== undefined) {
-          merged.barberId = patch.barberId;
+        if (forcedBarberId !== undefined) {
+          merged.barberId = forcedBarberId;
           merged.barberName = String(updatePayload.barberName || item.barberName);
         } else if (patch.barberName !== undefined) {
           merged.barberName = String(updatePayload.barberName || item.barberName);
@@ -1386,7 +1444,7 @@ export async function recordCaisseCreditRepayment(params: {
     throw new Error('المبلغ المؤدى يجب أن يكون أكبر من 0 درهم.');
   }
 
-  const nowIso = new Date().toISOString().slice(0, 64);
+  const nowIso = getNextMonotonicIsoForBarber(creditEntry.barberId);
   const nextRemaining = clampAmount(creditEntry.creditRemainingMAD - applied);
   const nextStatus: CaisseCreditStatus = nextRemaining <= 0 ? 'paid' : 'partial';
   const prevRepaidTotal = clampAmount(creditEntry.repaidAmountMAD || 0);
@@ -1614,10 +1672,52 @@ export function findBarberDaySettlement(
   );
 }
 
+export interface BarberLastDailyCloseInfo {
+  closedIso: string | null;
+  closedDate: string | null;
+  settlement: CaisseDailySettlement | null;
+}
+
 /**
- * Closes a specific day for a barber based on gross intake ("اللي دخل كل حلاق"),
- * resetting the daily drawer & daily figures cleanly to 0 without erasing
- * monthly / cumulative balance owed ("شحال كيتسال هو").
+ * Canonical daily-cycle anchor ("آخر تصفية حساب يومي"):
+ * Finds the most recent `intakeClosed` settlement timestamp across ALL dates
+ * for a given barber so the open daily cycle does NOT falsely reset at midnight
+ * or 03:00 AM and ONLY resets when "تصفية الحساب اليومي" is executed.
+ */
+export function getBarberLastDailyCloseInfo(
+  barberId: CaisseBarberId,
+  settlementsMap?: Record<string, CaisseDailySettlement>,
+  rosterMembers?: RosterMemberAccount[]
+): BarberLastDailyCloseInfo {
+  if (!settlementsMap) {
+    return { closedIso: null, closedDate: null, settlement: null };
+  }
+  let bestSettlement: CaisseDailySettlement | null = null;
+  let bestIso = '';
+  Object.values(settlementsMap).forEach((s) => {
+    if (!s || !s.intakeClosed) return;
+    if (!matchesCaisseBarber(s.barberId, s.barberName, barberId, rosterMembers)) return;
+    const candidateIso =
+      asIsoString(s.confirmedAt, '') ||
+      asIsoString(s.updatedAt, '') ||
+      (s.date ? `${s.date}T23:59:59.999Z` : '');
+    if (candidateIso && (!bestIso || candidateIso > bestIso)) {
+      bestIso = candidateIso;
+      bestSettlement = s;
+    }
+  });
+  return {
+    closedIso: bestIso || null,
+    closedDate: bestSettlement ? asDateString((bestSettlement as CaisseDailySettlement).date, '') || null : null,
+    settlement: bestSettlement,
+  };
+}
+
+/**
+ * Closes the active daily cycle for a barber ("تصفية الحساب اليومي"),
+ * advancing their `intakeClosed` anchor timestamp past all currently open entries
+ * so the daily drawer & daily figures reset cleanly to 0 across all accounts/devices,
+ * while leaving cumulative/monthly balances (`cycleBalance`) untouched.
  */
 export async function closeBarberDayIntake(params: {
   barberId: CaisseBarberId;
@@ -1638,24 +1738,26 @@ export async function closeBarberDayIntake(params: {
     collectedAmountMAD: params.existingSettlement?.collectedAmountMAD ?? 0,
     barberShareMAD: Math.max(0, params.dayStats.barberNetShareMAD),
     shopShareMAD: Math.max(0, params.dayStats.shopShareMAD),
-    floatMAD: params.dayStats.floatMAD,
-    expensesMAD: params.dayStats.expensesMAD,
+    floatMAD: Math.max(0, params.dayStats.floatMAD),
+    expensesMAD: Math.max(0, params.dayStats.expensesMAD),
     carryOverOwedMAD: Math.max(0, params.carryOverOwedMAD),
     resetCount: (params.existingSettlement?.resetCount ?? 0) + 1,
     intakeClosed: true,
-    grossIntakeClosedMAD: params.dayStats.incomeMAD,
+    grossIntakeClosedMAD: Math.max(0, params.dayStats.incomeMAD),
     settlementMode: 'daily_intake',
     note:
       params.note?.trim() ||
-      `إغلاق مداخيل اليوم (${params.dayStats.incomeMAD} MAD)`,
+      `تصفية الحساب اليومي (${params.dayStats.incomeMAD} MAD)`,
     confirmedBy: params.confirmedBy,
     confirmedAtOverride: params.maxEntryCreatedAt,
   });
 }
 
 /**
- * Atomically closes all unclosed barber-days through `throughDate` (including `throughDate`)
- * so the daily physical drawer resets cleanly to 0 MAD while preserving all monthly / cycle balances.
+ * Atomically closes all unclosed open-daily entries for all barbers through now
+ * (regardless of how many calendar days elapsed since the previous daily settlement),
+ * resetting the physical drawer ("الحساب في المجر") cleanly to 0 MAD while preserving
+ * all monthly / cumulative cycle balances.
  */
 export async function closeAllBarbersDailyIntakeThrough(params: {
   barbers: CaisseBarberInfo[];
@@ -1684,14 +1786,19 @@ export async function closeAllBarbersDailyIntakeThrough(params: {
   const payloads: CaisseDailySettlement[] = [];
 
   for (const barber of barbers) {
-    const barberEntries = entries.filter(
-      (e) =>
-        e.date &&
-        e.date <= throughDate &&
-        matchesCaisseBarber(e.barberId, e.barberName, barber.id, rosterMembers)
-    );
-    const candidateDates = new Set<string>(barberEntries.map((e) => e.date));
-    candidateDates.add(throughDate);
+    const openDaily = computeBarberOpenDailyStats({
+      barberId: barber.id,
+      entries,
+      settingsMap,
+      settlementsMap,
+      cycles,
+      rosterMembers,
+      referenceDate: throughDate,
+    });
+
+    if (openDaily.openEntries.length === 0) {
+      continue;
+    }
 
     const bCycle = computeBarberCycleBalance(
       barber.id,
@@ -1703,60 +1810,49 @@ export async function closeAllBarbersDailyIntakeThrough(params: {
       rosterMembers
     );
 
-    for (const date of Array.from(candidateDates).sort()) {
-      const existingSettle = findBarberDaySettlement(
-        barber.id,
-        date,
-        settlementsMap,
-        rosterMembers
-      );
-      const closedIso = existingSettle?.intakeClosed
-        ? existingSettle.confirmedAt || existingSettle.updatedAt || null
-        : null;
-      const dayEntries = barberEntries.filter((e) => e.date === date);
-      const pendingDayEntries = dayEntries.filter(
-        (e) => !closedIso || e.createdAt > closedIso
-      );
+    const existingSettle = findBarberDaySettlement(
+      barber.id,
+      throughDate,
+      settlementsMap,
+      rosterMembers
+    );
 
-      if (pendingDayEntries.length === 0) {
-        if (date !== throughDate || existingSettle?.intakeClosed) continue;
-        // On throughDate itself, only close if not already closed and there's activity or it's explicitly closing today
-        if (dayEntries.length === 0) continue;
+    let maxCreatedAt = nowIso;
+    if (openDaily.lastDailyCloseIso && openDaily.lastDailyCloseIso >= maxCreatedAt) {
+      const nextMs = Date.parse(openDaily.lastDailyCloseIso);
+      if (Number.isFinite(nextMs)) {
+        maxCreatedAt = new Date(nextMs + 1).toISOString().slice(0, 64);
       }
-
-      let maxCreatedAt = nowIso;
-      for (const pe of pendingDayEntries) {
-        if (pe.createdAt && pe.createdAt > maxCreatedAt) {
-          maxCreatedAt = pe.createdAt.slice(0, 64);
-        }
-      }
-
-      const pct = getEffectiveCommissionPercentForDate(barber.id, date, settingsMap);
-      const dayStats = computeBarberDayStats(barber.id, date, entries, pct, rosterMembers);
-      const id = existingSettle?.id || sanitizeId(`${barber.id}_${date}`, 'cs');
-
-      payloads.push({
-        id,
-        barberId: barber.id,
-        barberName: String(barber.name).trim().slice(0, 100),
-        date: String(date).slice(0, 20),
-        collected: Boolean(existingSettle?.collected),
-        collectedAmountMAD: clampAmount(existingSettle?.collectedAmountMAD ?? 0),
-        barberShareMAD: clampAmount(Math.max(0, dayStats.barberNetShareMAD)),
-        shopShareMAD: clampAmount(Math.max(0, dayStats.shopShareMAD)),
-        floatMAD: clampAmount(dayStats.floatMAD),
-        expensesMAD: clampAmount(dayStats.expensesMAD),
-        carryOverOwedMAD: clampAmount(Math.max(0, bCycle.barberNetOwedMAD)),
-        resetCount: Math.max(0, Math.min(1000, (existingSettle?.resetCount ?? 0) + 1)),
-        intakeClosed: true,
-        grossIntakeClosedMAD: clampAmount(dayStats.incomeMAD),
-        settlementMode: 'daily_intake',
-        note: `إغلاق مداخيل اليوم (${dayStats.incomeMAD} MAD)`,
-        confirmedBy: String(confirmedBy || 'Hassan ait boumlik').trim().slice(0, 100),
-        confirmedAt: maxCreatedAt,
-        updatedAt: maxCreatedAt,
-      });
     }
+    for (const pe of openDaily.openEntries) {
+      if (pe.createdAt && pe.createdAt > maxCreatedAt) {
+        maxCreatedAt = pe.createdAt.slice(0, 64);
+      }
+    }
+
+    const id = existingSettle?.id || sanitizeId(`${barber.id}_${throughDate}`, 'cs');
+
+    payloads.push({
+      id,
+      barberId: barber.id,
+      barberName: String(barber.name).trim().slice(0, 100),
+      date: String(throughDate).slice(0, 20),
+      collected: Boolean(existingSettle?.collected),
+      collectedAmountMAD: clampAmount(existingSettle?.collectedAmountMAD ?? 0),
+      barberShareMAD: clampAmount(Math.max(0, openDaily.barberNetShareMAD)),
+      shopShareMAD: clampAmount(Math.max(0, openDaily.shopShareMAD)),
+      floatMAD: clampAmount(Math.max(0, openDaily.floatMAD)),
+      expensesMAD: clampAmount(Math.max(0, openDaily.expensesMAD)),
+      carryOverOwedMAD: clampAmount(Math.max(0, bCycle.barberNetOwedMAD)),
+      resetCount: Math.max(0, Math.min(1000, (existingSettle?.resetCount ?? 0) + 1)),
+      intakeClosed: true,
+      grossIntakeClosedMAD: clampAmount(Math.max(0, openDaily.incomeMAD)),
+      settlementMode: 'daily_intake',
+      note: `تصفية الحساب اليومي (${openDaily.incomeMAD} MAD)`,
+      confirmedBy: String(confirmedBy || 'Hassan ait boumlik').trim().slice(0, 100),
+      confirmedAt: maxCreatedAt,
+      updatedAt: maxCreatedAt,
+    });
   }
 
   if (payloads.length === 0) return 0;
@@ -1853,7 +1949,7 @@ export function computeBarberDayStats(
   const dayEntries = entries.filter(
     (e) =>
       e.date === date &&
-      matchesCaisseBarber(e.barberId, e.barberName, barberId, rosterMembers)
+      matchesCaisseFinancialBarber(e, barberId, rosterMembers)
   );
 
   let directIncomeMAD = 0;
@@ -2088,7 +2184,7 @@ export function computeMonthlyCaisseRollup(
     const barberMonthEntries = entries.filter(
       (e) =>
         asDateString(e.date, '').startsWith(monthYYYYMM) &&
-        matchesCaisseBarber(e.barberId, e.barberName, barber.id, rosterMembers)
+        matchesCaisseFinancialBarber(e, barber.id, rosterMembers)
     );
 
     const uniqueDates = Array.from(
@@ -2240,7 +2336,8 @@ export function summarizeBarberEntriesWithSettings(
   barberId: CaisseBarberId,
   targetEntries: CaisseEntry[],
   settingsMap: Record<string, CaisseBarberSetting>,
-  fallbackDate: string = getSalonBusinessDate()
+  fallbackDate: string = getSalonBusinessDate(),
+  rosterMembers?: RosterMemberAccount[]
 ): {
   incomeMAD: number;
   expensesMAD: number;
@@ -2268,7 +2365,7 @@ export function summarizeBarberEntriesWithSettings(
 
   for (const d of uniqueDates) {
     const dayPct = getEffectiveCommissionPercentForDate(barberId, d, settingsMap);
-    const ds = computeBarberDayStats(barberId, d, targetEntries, dayPct);
+    const ds = computeBarberDayStats(barberId, d, targetEntries, dayPct, rosterMembers);
     incomeMAD += ds.incomeMAD;
     expensesMAD += ds.expensesMAD;
     floatInMAD += ds.floatInMAD;
@@ -2314,7 +2411,7 @@ export function computeBarberCycleBalance(
 
   const openCycleEntries = entries.filter(
     (e) =>
-      matchesCaisseBarber(e.barberId, e.barberName, barberId, rosterMembers) &&
+      matchesCaisseFinancialBarber(e, barberId, rosterMembers) &&
       !isEntrySettledByCycles(e, barberCycles)
   );
 
@@ -2322,7 +2419,8 @@ export function computeBarberCycleBalance(
     barberId,
     openCycleEntries,
     settingsMap,
-    referenceDate
+    referenceDate,
+    rosterMembers
   );
 
   const caisseOpenCreditsMAD = entries
@@ -2368,6 +2466,7 @@ export function computeBarberPeriodSettlementPreview(params: {
   startDate?: string;
   endDate?: string;
   referenceDate?: string;
+  rosterMembers?: RosterMemberAccount[];
 }): {
   cycleBalance: BarberCycleBalance;
   periodStartDate?: string;
@@ -2383,6 +2482,7 @@ export function computeBarberPeriodSettlementPreview(params: {
     startDate,
     endDate,
     referenceDate = getSalonBusinessDate(),
+    rosterMembers,
   } = params;
 
   const fullCycle = computeBarberCycleBalance(
@@ -2390,7 +2490,9 @@ export function computeBarberPeriodSettlementPreview(params: {
     entries,
     settingsMap,
     cycles,
-    referenceDate
+    referenceDate,
+    undefined,
+    rosterMembers
   );
   if (scope === 'full_open') {
     return { cycleBalance: fullCycle };
@@ -2419,7 +2521,8 @@ export function computeBarberPeriodSettlementPreview(params: {
     barberId,
     scopedEntries,
     settingsMap,
-    rangeEnd
+    rangeEnd,
+    rosterMembers
   );
 
   return {
@@ -2543,18 +2646,19 @@ export function computeBarberDailyInOutHistory(
   barberId: CaisseBarberId,
   entries: CaisseEntry[],
   settlementsMap: Record<string, CaisseDailySettlement>,
-  limit: number = 14
+  limit: number = 14,
+  rosterMembers?: RosterMemberAccount[]
 ): BarberDailyInOutRow[] {
   const byDate = new Map<string, CaisseEntry[]>();
   entries.forEach((e) => {
-    if (e.barberId !== barberId) return;
+    if (!matchesCaisseFinancialBarber(e, barberId, rosterMembers)) return;
     const list = byDate.get(e.date) || [];
     list.push(e);
     byDate.set(e.date, list);
   });
 
   Object.values(settlementsMap).forEach((s) => {
-    if (s.barberId === barberId && !byDate.has(s.date)) {
+    if (matchesCaisseBarber(s.barberId, s.barberName, barberId, rosterMembers) && !byDate.has(s.date)) {
       byDate.set(s.date, []);
     }
   });
@@ -2573,7 +2677,7 @@ export function computeBarberDailyInOutHistory(
           expensesMAD += Number(e.amountPaidMAD) || 0;
         }
       }
-      const settlement = settlementsMap[`${barberId}_${date}`];
+      const settlement = findBarberDaySettlement(barberId, date, settlementsMap, rosterMembers);
       const isIntakeClosed = Boolean(settlement?.intakeClosed);
       return {
         date,
@@ -2711,7 +2815,9 @@ export function computeAnnualCaisseRollup(
   const barberList = getCaisseBarbersFromRoster(rosterMembers, entries);
   const byBarber: AnnualCaisseBarberSummary[] = barberList.map((barber) => {
     const yearEntries = entries.filter(
-      (e) => e.barberId === barber.id && asDateString(e.date, '').startsWith(yearYYYY)
+      (e) =>
+        matchesCaisseFinancialBarber(e, barber.id, rosterMembers) &&
+        asDateString(e.date, '').startsWith(yearYYYY)
     );
     const uniqueDates = Array.from(new Set(yearEntries.map((e) => asDateString(e.date, '')).filter(Boolean)));
 
@@ -2723,7 +2829,7 @@ export function computeAnnualCaisseRollup(
 
     for (const d of uniqueDates) {
       const pct = getEffectiveCommissionPercentForDate(barber.id, d, settingsMap);
-      const ds = computeBarberDayStats(barber.id, d, yearEntries, pct);
+      const ds = computeBarberDayStats(barber.id, d, yearEntries, pct, rosterMembers);
       incomeMAD += ds.incomeMAD;
       expensesMAD += ds.expensesMAD;
       creditsIssuedMAD += ds.creditsIssuedMAD;
@@ -2754,13 +2860,126 @@ export function computeAnnualCaisseRollup(
   };
 }
 
-// ---------- Total Shop Drawer ("المجر ككل") Cash & Breakdown ----------
+// ---------- Single Authoritative Open Daily Cycle & Shop Drawer Engine ----------
+
+export interface BarberOpenDailyStats extends BarberDayStats {
+  lastDailyCloseIso: string | null;
+  lastDailyCloseDate: string | null;
+  lastClosedIncomeMAD: number;
+  lastClosedExpensesMAD: number;
+  lastClosedShopShareMAD: number;
+  isDailySettledClean: boolean;
+  openEntries: CaisseEntry[];
+}
+
+/**
+ * Single Source of Truth for a barber's open daily cycle ("الدورة اليومية المفتوحة").
+ * Anchored strictly to the barber's last "تصفية الحساب اليومي" timestamp (`intakeClosed`),
+ * NOT to midnight / 03:00 AM rollover. Resets cleanly to 0 only when daily settlement runs.
+ */
+export function computeBarberOpenDailyStats(params: {
+  barberId: CaisseBarberId;
+  entries: CaisseEntry[];
+  settingsMap: Record<string, CaisseBarberSetting>;
+  settlementsMap?: Record<string, CaisseDailySettlement>;
+  cycles: CaisseCycleSettlement[];
+  rosterMembers?: RosterMemberAccount[];
+  referenceDate?: string;
+}): BarberOpenDailyStats {
+  const {
+    barberId,
+    entries,
+    settingsMap,
+    settlementsMap,
+    cycles,
+    rosterMembers,
+    referenceDate = getSalonBusinessDate(),
+  } = params;
+
+  const barberCycles = cycles.filter((c) =>
+    matchesCaisseBarber(c.barberId, c.barberName, barberId, rosterMembers)
+  );
+  const lastClose = getBarberLastDailyCloseInfo(barberId, settlementsMap, rosterMembers);
+
+  const openEntries = entries.filter((e) => {
+    if (!matchesCaisseFinancialBarber(e, barberId, rosterMembers)) return false;
+    if (lastClose.closedIso) {
+      if (e.createdAt) {
+        return e.createdAt > lastClose.closedIso;
+      }
+      return lastClose.closedDate ? e.date > lastClose.closedDate : true;
+    }
+    return !isEntrySettledByCycles(e, barberCycles);
+  });
+
+  const uniqueDates = Array.from(new Set(openEntries.map((e) => e.date))).sort();
+  let directIncomeMAD = 0;
+  let repaymentIncomeMAD = 0;
+  let creditsIssuedMAD = 0;
+  let expensesMAD = 0;
+  let floatInMAD = 0;
+  let floatOutMAD = 0;
+  let floatMAD = 0;
+  let incomeMAD = 0;
+  let barberGrossShareMAD = 0;
+  let barberNetShareMAD = 0;
+  let shopShareMAD = 0;
+  let drawerCashMAD = 0;
+
+  for (const d of uniqueDates) {
+    const dayPct = getEffectiveCommissionPercentForDate(barberId, d, settingsMap);
+    const ds = computeBarberDayStats(barberId, d, openEntries, dayPct, rosterMembers);
+    directIncomeMAD += ds.directIncomeMAD;
+    repaymentIncomeMAD += ds.repaymentIncomeMAD;
+    creditsIssuedMAD += ds.creditsIssuedMAD;
+    expensesMAD += ds.expensesMAD;
+    floatInMAD += ds.floatInMAD;
+    floatOutMAD += ds.floatOutMAD;
+    floatMAD += ds.floatMAD;
+    incomeMAD += ds.incomeMAD;
+    barberGrossShareMAD += ds.barberGrossShareMAD;
+    barberNetShareMAD += ds.barberNetShareMAD;
+    shopShareMAD += ds.shopShareMAD;
+    drawerCashMAD += ds.drawerCashMAD;
+  }
+
+  const pct = getEffectiveCommissionPercentForDate(barberId, referenceDate, settingsMap);
+
+  return {
+    barberId,
+    date: referenceDate,
+    incomeMAD: Math.round(incomeMAD),
+    directIncomeMAD: Math.round(directIncomeMAD),
+    repaymentIncomeMAD: Math.round(repaymentIncomeMAD),
+    creditsIssuedMAD: Math.round(creditsIssuedMAD),
+    expensesMAD: Math.round(expensesMAD),
+    floatInMAD: Math.round(floatInMAD),
+    floatOutMAD: Math.round(floatOutMAD),
+    floatMAD: Math.round(floatMAD),
+    commissionPercent: pct,
+    extraPercentAbove50: Math.max(0, pct - 50),
+    barberGrossShareMAD: Math.round(barberGrossShareMAD),
+    barberNetShareMAD: Math.round(barberNetShareMAD),
+    shopShareMAD: Math.round(shopShareMAD),
+    drawerCashMAD: Math.round(drawerCashMAD),
+    entryCount: openEntries.length,
+    lastDailyCloseIso: lastClose.closedIso,
+    lastDailyCloseDate: lastClose.closedDate,
+    lastClosedIncomeMAD: Number(lastClose.settlement?.grossIntakeClosedMAD) || 0,
+    lastClosedExpensesMAD: Number(lastClose.settlement?.expensesMAD) || 0,
+    lastClosedShopShareMAD: Number(lastClose.settlement?.shopShareMAD) || 0,
+    isDailySettledClean: Boolean(lastClose.closedIso && openEntries.length === 0),
+    openEntries,
+  };
+}
 
 export interface ShopDrawerBarberRow {
   barberId: CaisseBarberId;
   barberName: string;
   arName: string;
   color: string;
+  floatInMAD: number;
+  floatOutMAD: number;
   floatMAD: number;
   directIncomeMAD: number;
   repaymentIncomeMAD: number;
@@ -2771,11 +2990,14 @@ export interface ShopDrawerBarberRow {
   barberNetShareMAD: number;
   netDrawerContributionMAD: number;
   entryCount: number;
+  isDailySettledClean?: boolean;
 }
 
 export interface ShopDrawerSummary {
-  scope: 'open_cycle' | 'day';
+  scope: 'open_daily' | 'open_cycle' | 'day';
   date?: string;
+  totalFloatInMAD: number;
+  totalFloatOutMAD: number;
   totalFloatMAD: number;
   totalDirectIncomeMAD: number;
   totalRepaymentIncomeMAD: number;
@@ -2792,7 +3014,7 @@ export function computeShopDrawerTotals(params: {
   settingsMap: Record<string, CaisseBarberSetting>;
   cycles: CaisseCycleSettlement[];
   rosterMembers?: RosterMemberAccount[];
-  scope: 'open_cycle' | 'day';
+  scope: 'open_daily' | 'open_cycle' | 'day';
   date?: string;
   settlementsMap?: Record<string, CaisseDailySettlement>;
   respectDailyIntakeClose?: boolean;
@@ -2811,11 +3033,42 @@ export function computeShopDrawerTotals(params: {
   const barberList = getCaisseBarbersFromRoster(rosterMembers, entries);
 
   const byBarber: ShopDrawerBarberRow[] = barberList.map((barber) => {
+    if (scope === 'open_daily' || (scope === 'open_cycle' && respectDailyIntakeClose)) {
+      const openStats = computeBarberOpenDailyStats({
+        barberId: barber.id,
+        entries,
+        settingsMap,
+        settlementsMap,
+        cycles,
+        rosterMembers,
+        referenceDate: date,
+      });
+      return {
+        barberId: barber.id,
+        barberName: barber.name,
+        arName: barber.arName,
+        color: barber.color,
+        floatInMAD: openStats.floatInMAD,
+        floatOutMAD: openStats.floatOutMAD,
+        floatMAD: openStats.floatMAD,
+        directIncomeMAD: openStats.directIncomeMAD,
+        repaymentIncomeMAD: openStats.repaymentIncomeMAD,
+        incomeMAD: openStats.incomeMAD,
+        expensesMAD: openStats.expensesMAD,
+        barberGrossShareMAD: openStats.barberGrossShareMAD,
+        shopShareMAD: openStats.shopShareMAD,
+        barberNetShareMAD: openStats.barberNetShareMAD,
+        netDrawerContributionMAD: openStats.drawerCashMAD,
+        entryCount: openStats.entryCount,
+        isDailySettledClean: openStats.isDailySettledClean,
+      };
+    }
+
     const barberCycles = cycles.filter((c) =>
       matchesCaisseBarber(c.barberId, c.barberName, barber.id, rosterMembers)
     );
     const scopedEntries = entries.filter((e) => {
-      if (!matchesCaisseBarber(e.barberId, e.barberName, barber.id, rosterMembers)) {
+      if (!matchesCaisseFinancialBarber(e, barber.id, rosterMembers)) {
         return false;
       }
       if (scope === 'day') {
@@ -2835,24 +3088,12 @@ export function computeShopDrawerTotals(params: {
         }
         return true;
       }
-      if (isEntrySettledByCycles(e, barberCycles)) return false;
-      if (respectDailyIntakeClose && settlementsMap) {
-        const entryDaySettlement = findBarberDaySettlement(
-          barber.id,
-          e.date,
-          settlementsMap,
-          rosterMembers
-        );
-        if (entryDaySettlement?.intakeClosed) {
-          const closedIso =
-            entryDaySettlement.confirmedAt || entryDaySettlement.updatedAt || null;
-          if (!closedIso || e.createdAt <= closedIso) return false;
-        }
-      }
-      return true;
+      return !isEntrySettledByCycles(e, barberCycles);
     });
 
     const uniqueDates = Array.from(new Set(scopedEntries.map((e) => e.date))).sort();
+    let floatInMAD = 0;
+    let floatOutMAD = 0;
     let floatMAD = 0;
     let directIncomeMAD = 0;
     let repaymentIncomeMAD = 0;
@@ -2865,6 +3106,8 @@ export function computeShopDrawerTotals(params: {
     for (const d of uniqueDates) {
       const pct = getEffectiveCommissionPercentForDate(barber.id, d, settingsMap);
       const ds = computeBarberDayStats(barber.id, d, scopedEntries, pct, rosterMembers);
+      floatInMAD += ds.floatInMAD;
+      floatOutMAD += ds.floatOutMAD;
       floatMAD += ds.floatMAD;
       directIncomeMAD += ds.directIncomeMAD;
       repaymentIncomeMAD += ds.repaymentIncomeMAD;
@@ -2880,6 +3123,8 @@ export function computeShopDrawerTotals(params: {
       barberName: barber.name,
       arName: barber.arName,
       color: barber.color,
+      floatInMAD: Math.round(floatInMAD),
+      floatOutMAD: Math.round(floatOutMAD),
       floatMAD: Math.round(floatMAD),
       directIncomeMAD: Math.round(directIncomeMAD),
       repaymentIncomeMAD: Math.round(repaymentIncomeMAD),
@@ -2893,6 +3138,8 @@ export function computeShopDrawerTotals(params: {
     };
   });
 
+  const totalFloatInMAD = byBarber.reduce((s, r) => s + r.floatInMAD, 0);
+  const totalFloatOutMAD = byBarber.reduce((s, r) => s + r.floatOutMAD, 0);
   const totalFloatMAD = byBarber.reduce((s, r) => s + r.floatMAD, 0);
   const totalDirectIncomeMAD = byBarber.reduce((s, r) => s + r.directIncomeMAD, 0);
   const totalRepaymentIncomeMAD = byBarber.reduce((s, r) => s + r.repaymentIncomeMAD, 0);
@@ -2904,6 +3151,8 @@ export function computeShopDrawerTotals(params: {
   return {
     scope,
     date: scope === 'day' ? date : undefined,
+    totalFloatInMAD,
+    totalFloatOutMAD,
     totalFloatMAD,
     totalDirectIncomeMAD,
     totalRepaymentIncomeMAD,
