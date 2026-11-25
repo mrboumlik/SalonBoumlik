@@ -17,6 +17,7 @@ import {
   resetResilientRetry,
   scheduleResilientRetry,
 } from './realtimeSync';
+import { asFiniteNum, asIsoString, asStr, safeCompareDesc } from './safeCoerce';
 
 const REVIEWS_COLLECTION = 'reviews';
 
@@ -110,9 +111,9 @@ let reviewsRefreshUnsub: (() => void) | null = null;
 
 function sortReviewsDesc(list: CustomerReview[]): CustomerReview[] {
   return [...list].sort((a, b) => {
-    const cmp = (b.createdAt || '').localeCompare(a.createdAt || '');
+    const cmp = safeCompareDesc(a.createdAt, b.createdAt);
     if (cmp !== 0) return cmp;
-    return (b.id || '').localeCompare(a.id || '');
+    return safeCompareDesc(a.id, b.id);
   });
 }
 
@@ -132,19 +133,20 @@ function commitReviewsCache(next: CustomerReview[], broadcastHint = false): void
 }
 
 function mapDocToCustomerReview(docData: FirestoreReviewRecord): CustomerReview {
+  const createdAt = asIsoString(docData.createdAt, '');
   return {
-    id: docData.id,
-    barberId: docData.barberId,
-    barberName: docData.barberName,
-    author: docData.author,
-    city: docData.city || 'Taroudant',
-    serviceName: docData.serviceName || 'Coupe & Soin',
-    rating: Math.max(1, Math.min(5, Number(docData.rating) || 5)),
-    date: docData.dateLabel || (docData.createdAt || '').slice(0, 10),
-    comment: docData.comment,
-    bookingId: docData.bookingId,
+    id: asStr(docData.id, ''),
+    barberId: asStr(docData.barberId, 'hassan'),
+    barberName: asStr(docData.barberName, 'Salon Boumlik'),
+    author: asStr(docData.author, 'Client'),
+    city: asStr(docData.city, 'Taroudant') || 'Taroudant',
+    serviceName: asStr(docData.serviceName, 'Coupe & Soin') || 'Coupe & Soin',
+    rating: Math.max(1, Math.min(5, asFiniteNum(docData.rating, 5))),
+    date: asStr(docData.dateLabel, '') || createdAt.slice(0, 10),
+    comment: asStr(docData.comment, ''),
+    bookingId: docData.bookingId ? asStr(docData.bookingId, '') : undefined,
     verified: Boolean(docData.verified),
-    createdAt: docData.createdAt || '',
+    createdAt,
   };
 }
 

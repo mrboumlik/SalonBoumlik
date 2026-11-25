@@ -41,6 +41,143 @@
       })();
     </script>
 
+    <!-- Legacy browser polyfills (Win7 / Supermium / Chrome 79+) & pre-React boot recovery -->
+    <script>
+      (function () {
+        try {
+          if (typeof globalThis === 'undefined' && typeof window !== 'undefined') {
+            window.globalThis = window;
+          }
+          if (typeof Object.hasOwn !== 'function') {
+            Object.hasOwn = function (obj, prop) {
+              return obj != null && Object.prototype.hasOwnProperty.call(Object(obj), prop);
+            };
+          }
+          if (typeof String.prototype.replaceAll !== 'function') {
+            String.prototype.replaceAll = function (search, replacement) {
+              var str = String(this);
+              if (search instanceof RegExp) {
+                if (!search.global) {
+                  throw new TypeError('replaceAll must be called with a global RegExp');
+                }
+                return str.replace(search, replacement);
+              }
+              return str.split(String(search)).join(String(replacement));
+            };
+          }
+        } catch (e) {}
+
+        window.__SB_BOOT_OK = false;
+        var BOOT_FLAG = 'sb_boot_recover_v1';
+        var handled = false;
+
+        function clearSwCachesThen(done) {
+          try {
+            var tasks = [];
+            if (typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              tasks.push(
+                navigator.serviceWorker.getRegistrations().then(function (regs) {
+                  return Promise.all(regs.map(function (r) { return r.unregister(); }));
+                }).catch(function () {})
+              );
+            }
+            if (typeof window !== 'undefined' && window.caches && window.caches.keys) {
+              tasks.push(
+                window.caches.keys().then(function (keys) {
+                  return Promise.all(keys.map(function (k) { return window.caches.delete(k); }));
+                }).catch(function () {})
+              );
+            }
+            if (tasks.length > 0 && typeof Promise !== 'undefined') {
+              Promise.all(tasks).then(done, done);
+              return;
+            }
+          } catch (e) {}
+          done();
+        }
+
+        function renderBootFallback() {
+          var rootEl = document.getElementById('root');
+          if (!rootEl || rootEl.childElementCount > 0) return;
+          rootEl.innerHTML =
+            '<div dir="rtl" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#FAF9F6;color:#0F172A;font-family:system-ui,-apple-system,sans-serif;">' +
+              '<div style="max-width:420px;width:100%;background:#FFFFFF;border:1px solid #E7E5E4;border-radius:20px;padding:24px;text-align:center;box-shadow:0 12px 30px rgba(15,23,42,0.08);">' +
+                '<div style="font-size:20px;font-weight:900;letter-spacing:0.06em;margin-bottom:10px;">SALON BOUMLIK</div>' +
+                '<p style="font-size:14px;color:#44403C;line-height:1.7;margin:0 0 18px 0;">تعذّر تحميل هذه النسخة مؤقتاً في المتصفح. اضغط على تحديث الصفحة للمتابعة.<br/>Une mise à jour est nécessaire pour charger l’application.</p>' +
+                '<button id="sb-boot-reload-btn" type="button" style="width:100%;min-height:46px;padding:12px 18px;border:0;border-radius:12px;background:#D97706;color:#FFFFFF;font-size:14px;font-weight:800;cursor:pointer;">تحديث الصفحة • Recharger</button>' +
+              '</div>' +
+            '</div>';
+          var btn = document.getElementById('sb-boot-reload-btn');
+          if (btn) {
+            btn.onclick = function () {
+              try {
+                if (window.sessionStorage) window.sessionStorage.removeItem(BOOT_FLAG);
+              } catch (e) {}
+              clearSwCachesThen(function () {
+                window.location.reload();
+              });
+            };
+          }
+        }
+
+        function handleBootFailure() {
+          if (window.__SB_BOOT_OK === true || handled) return;
+          handled = true;
+          var alreadyRetried = false;
+          try {
+            alreadyRetried = window.sessionStorage && window.sessionStorage.getItem(BOOT_FLAG) === '1';
+          } catch (e) {}
+
+          if (!alreadyRetried) {
+            try {
+              if (window.sessionStorage) window.sessionStorage.setItem(BOOT_FLAG, '1');
+            } catch (e) {}
+            clearSwCachesThen(function () {
+              window.location.reload();
+            });
+            return;
+          }
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', renderBootFallback);
+          } else {
+            renderBootFallback();
+          }
+        }
+
+        window.addEventListener('error', function (ev) {
+          if (window.__SB_BOOT_OK === true) return;
+          var target = ev && ev.target;
+          if (target && target !== window) {
+            var tag = target.tagName ? String(target.tagName).toUpperCase() : '';
+            var src = target.src || '';
+            if (tag === 'SCRIPT' && (src.indexOf('/assets/') !== -1 || src.indexOf('/src/') !== -1)) {
+              handleBootFailure();
+            }
+            return;
+          }
+          if (ev && ev.message) {
+            handleBootFailure();
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function () {
+          if (window.__SB_BOOT_OK === true) return;
+          var rootEl = document.getElementById('root');
+          if (!rootEl || rootEl.childElementCount === 0) {
+            handleBootFailure();
+          }
+        });
+
+        setTimeout(function () {
+          if (window.__SB_BOOT_OK === true) return;
+          var rootEl = document.getElementById('root');
+          if (!rootEl || rootEl.childElementCount === 0) {
+            handleBootFailure();
+          }
+        }, 9000);
+      })();
+    </script>
+
     <!-- Google Analytics (GA4) Placeholder - Replace G-XXXXXXXXXX with your live Measurement ID -->
     <script>
       window.dataLayer = window.dataLayer || [];

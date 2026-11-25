@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { pickLang } from '../utils/i18n';
+import { safeCompareDesc } from '../utils/safeCoerce';
 import {
   Award,
   BellRing,
@@ -149,7 +150,7 @@ export const LoyaltyProgramSection: React.FC<LoyaltyProgramSectionProps> = ({
         (b) =>
           normalizeMoroccanPhoneDigits(b.clientPhone) === resolvedClientIdentity.phoneDigits
       )
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      .sort((a, b) => safeCompareDesc(a.createdAt, b.createdAt));
   }, [liveBookings, resolvedClientIdentity]);
 
   const crmProfile = useMemo(() => {

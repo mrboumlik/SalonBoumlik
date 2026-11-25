@@ -27,6 +27,7 @@ import {
   parseDateWeekday,
   saveBarberSchedule,
 } from './barberScheduleStore';
+import { asDateString, asIsoString, asStr, asStrArray, safeCompareDesc } from './safeCoerce';
 
 const SHIFT_REQUESTS_COLLECTION = 'shift_requests';
 
@@ -36,6 +37,27 @@ const shiftListeners = new Set<(items: ShiftRequest[]) => void>();
 let activeShiftUnsubscribe: (() => void) | null = null;
 let shiftRefreshUnsub: (() => void) | null = null;
 
+function coerceShiftRequestDoc(rawInput: unknown, docId: string): ShiftRequest {
+  const raw = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>;
+  const id = asStr(raw.id, docId) || docId;
+  const targetSlots = asStrArray(raw.targetSlots);
+  return {
+    ...(raw as Partial<ShiftRequest>),
+    id,
+    barberId: asStr(raw.barberId, 'hassan'),
+    barberName: asStr(raw.barberName, ''),
+    requestType: (asStr(raw.requestType, 'day_off') || 'day_off') as ShiftRequestType,
+    targetDate: asDateString(raw.targetDate, ''),
+    targetSlots: targetSlots.length > 0 ? targetSlots : undefined,
+    swapWithBarberId: raw.swapWithBarberId !== undefined ? asStr(raw.swapWithBarberId, '') : undefined,
+    swapWithBarberName: raw.swapWithBarberName !== undefined ? asStr(raw.swapWithBarberName, '') : undefined,
+    swapDate: raw.swapDate !== undefined ? asDateString(raw.swapDate, '') : undefined,
+    status: (asStr(raw.status, 'pending') || 'pending') as ShiftRequest['status'],
+    createdAt: asIsoString(raw.createdAt, ''),
+    updatedAt: asIsoString(raw.updatedAt, ''),
+  };
+}
+
 function sortShiftRequests(list: ShiftRequest[]): ShiftRequest[] {
   return [...list].sort((a, b) => {
     // Pending requests first, then newest createdAt
@@ -43,9 +65,9 @@ function sortShiftRequests(list: ShiftRequest[]): ShiftRequest[] {
       if (a.status === 'pending') return -1;
       if (b.status === 'pending') return 1;
     }
-    const cmp = (b.createdAt || '').localeCompare(a.createdAt || '');
+    const cmp = safeCompareDesc(a.createdAt, b.createdAt);
     if (cmp !== 0) return cmp;
-    return (b.id || '').localeCompare(a.id || '');
+    return safeCompareDesc(a.id, b.id);
   });
 }
 
@@ -76,13 +98,9 @@ function ensureShiftRequestsListener() {
         } catch {
           snap = await getDocs(collection(db, SHIFT_REQUESTS_COLLECTION));
         }
-        const next: ShiftRequest[] = snap.docs.map((docSnap) => {
-          const data = docSnap.data() as ShiftRequest;
-          return {
-            ...data,
-            id: data.id || docSnap.id,
-          };
-        });
+        const next: ShiftRequest[] = snap.docs.map((docSnap) =>
+          coerceShiftRequestDoc(docSnap.data(), docSnap.id)
+        );
         commitShiftRequestsCache(next);
       } catch (err) {
         console.warn('Shift requests wake refresh warning:', err);
@@ -95,13 +113,9 @@ function ensureShiftRequestsListener() {
     collection(db, SHIFT_REQUESTS_COLLECTION),
     (snapshot) => {
       resetResilientRetry('shift_requests');
-      const next: ShiftRequest[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data() as ShiftRequest;
-        return {
-          ...data,
-          id: data.id || docSnap.id,
-        };
-      });
+      const next: ShiftRequest[] = snapshot.docs.map((docSnap) =>
+        coerceShiftRequestDoc(docSnap.data(), docSnap.id)
+      );
       commitShiftRequestsCache(next);
     },
     (error) => {

@@ -39,6 +39,7 @@ import { sendDualAlert, showToast } from '../utils/notifications';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
 import { safeCopyToClipboard } from '../utils/safeBrowser';
+import { asStr, safeCompareDesc } from '../utils/safeCoerce';
 import { ModalPortal } from './ModalPortal';
 
 interface AdminQrCheckInGeneratorModalProps {
@@ -92,16 +93,16 @@ export const AdminQrCheckInGeneratorModal: React.FC<AdminQrCheckInGeneratorModal
         if (['cancelled', 'rejected', 'no_show'].includes(b.status)) return false;
         if (!q) return true;
         return (
-          b.clientName.toLowerCase().includes(q) ||
-          b.clientPhone.toLowerCase().includes(q) ||
-          b.ticketNumber.toLowerCase().includes(q)
+          asStr(b.clientName, '').toLowerCase().includes(q) ||
+          asStr(b.clientPhone, '').toLowerCase().includes(q) ||
+          asStr(b.ticketNumber, '').toLowerCase().includes(q)
         );
       })
       .sort((a, b) => {
         const aScore = (a.date === todayIso ? 2 : 0) + (a.status !== 'completed' ? 1 : 0);
         const bScore = (b.date === todayIso ? 2 : 0) + (b.status !== 'completed' ? 1 : 0);
         if (aScore !== bScore) return bScore - aScore;
-        return b.createdAt.localeCompare(a.createdAt);
+        return safeCompareDesc(a.createdAt, b.createdAt);
       })
       .slice(0, 15);
   }, [bookings, scopedBarberId, bookingSearch, todayIso]);

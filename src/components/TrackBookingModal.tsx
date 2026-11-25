@@ -36,6 +36,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import QRCode from 'qrcode';
 import { useLanguage } from '../context/LanguageContext';
 import { safeCopyToClipboard } from '../utils/safeBrowser';
+import { safeCompareAsc, safeCompareDesc } from '../utils/safeCoerce';
 import { buildBookingCheckInQrPayload, parseScannedQrResult } from '../utils/clientQr';
 import { 
   subscribeToBookings,
@@ -884,9 +885,9 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
       ? liveBookings
           .filter((b) => normalizeMoroccanPhoneDigits(b.clientPhone) === primaryClientDigits)
           .sort((a, b) =>
-            b.date === a.date
-              ? b.timeSlot.localeCompare(a.timeSlot)
-              : b.date.localeCompare(a.date)
+            a.date === b.date
+              ? safeCompareDesc(a.timeSlot, b.timeSlot)
+              : safeCompareDesc(a.date, b.date)
           )
       : [];
 
@@ -896,7 +897,7 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     .sort((a, b) => {
       const timeA = a.attendanceConfirmedAt || `${a.date}T${a.timeSlot}:00`;
       const timeB = b.attendanceConfirmedAt || `${b.date}T${b.timeSlot}:00`;
-      return timeA.localeCompare(timeB);
+      return safeCompareAsc(timeA, timeB);
     });
   const loyaltyHistoryEntries = completedVisitsChronological
     .map((booking, idx) => ({

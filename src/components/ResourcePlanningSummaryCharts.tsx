@@ -21,6 +21,7 @@ import { ALL_SALON_CONFIGURABLE_HOURS } from '../utils/barberScheduleStore';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { pickLang } from '../utils/i18n';
+import { safeCompareAsc } from '../utils/safeCoerce';
 
 interface ResourcePlanningSummaryChartsProps {
   bookings: AppointmentBooking[];
@@ -123,7 +124,7 @@ export const ResourcePlanningSummaryCharts: React.FC<ResourcePlanningSummaryChar
       if (h) hourSet.add(h);
     });
 
-    const sortedHours = Array.from(hourSet).sort((a, b) => a.localeCompare(b));
+    const sortedHours = Array.from(hourSet).sort((a, b) => safeCompareAsc(a, b));
 
     const buckets = sortedHours.map((hour) => {
       let completed = 0;

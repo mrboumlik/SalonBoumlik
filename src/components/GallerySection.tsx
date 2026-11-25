@@ -23,7 +23,10 @@ export const GallerySection: React.FC = () => {
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(() => {
     try {
       const stored = safeStorageGet('salon_boumlik_gallery_v1', 'local');
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return parsed;
+      }
     } catch (e) {
       console.error(e);
     }

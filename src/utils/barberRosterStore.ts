@@ -23,6 +23,7 @@ import {
   resetResilientRetry,
   scheduleResilientRetry,
 } from './realtimeSync';
+import { asIsoString, safeCompareAsc } from './safeCoerce';
 
 const BARBER_ROSTER_COLLECTION = 'barber_roster';
 export const CAISSE_ACCOUNT_ID = 'caisse_register';
@@ -155,7 +156,7 @@ function mergeWithDefaults(remoteDocs: RosterMemberAccount[]): RosterMemberAccou
 
   const sorted = Array.from(byId.values()).sort((a, b) => {
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-    return a.nameFr.localeCompare(b.nameFr);
+    return safeCompareAsc(a.nameFr, b.nameFr);
   });
 
   syncBarberIdentityRegistry(sorted);
@@ -199,8 +200,8 @@ function mapSnapshotDocsToRoster(
       defaultInstagram: d.defaultInstagram,
       replacesBarberId: d.replacesBarberId,
       replacedById: d.replacedById,
-      updatedBy: d.updatedBy || 'System',
-      updatedAt: d.updatedAt || '',
+      updatedBy: String(d.updatedBy || 'System'),
+      updatedAt: asIsoString(d.updatedAt, ''),
     };
   });
   return mergeWithDefaults(remotes);

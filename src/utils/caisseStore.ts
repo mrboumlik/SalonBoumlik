@@ -34,6 +34,14 @@ import {
   resetResilientRetry,
   scheduleResilientRetry,
 } from './realtimeSync';
+import {
+  asDateString,
+  asFiniteNum,
+  asIsoString,
+  asStr,
+  asStrArray,
+  safeCompareDesc,
+} from './safeCoerce';
 
 const CAISSE_ENTRIES_COLLECTION = 'caisse_entries';
 const CAISSE_SETTINGS_COLLECTION = 'caisse_settings';
@@ -238,23 +246,148 @@ export function getEffectiveCaisseCreditRemaining(
   return 0;
 }
 
+function coerceCaisseEntryDoc(rawInput: unknown, docId: string): CaisseEntry {
+  const raw = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>;
+  const id = asStr(raw.id, docId) || docId;
+  const createdAt = asIsoString(raw.createdAt, '') || asIsoString(raw.updatedAt, '');
+  const updatedAt = asIsoString(raw.updatedAt, createdAt);
+  const date = asDateString(raw.date, '') || (createdAt ? createdAt.slice(0, 10) : getSalonBusinessDate());
+  return {
+    ...(raw as Partial<CaisseEntry>),
+    id,
+    barberId: asStr(raw.barberId, 'hassan'),
+    barberName: asStr(raw.barberName, 'Hassan ait boumlik'),
+    type: (asStr(raw.type, 'income') || 'income') as CaisseEntryType,
+    date,
+    serviceIds: asStrArray(raw.serviceIds),
+    serviceNames: asStrArray(raw.serviceNames),
+    expectedAmountMAD: asFiniteNum(raw.expectedAmountMAD, 0),
+    amountPaidMAD: asFiniteNum(raw.amountPaidMAD, 0),
+    creditAmountMAD: asFiniteNum(raw.creditAmountMAD, 0),
+    creditRemainingMAD: asFiniteNum(raw.creditRemainingMAD, 0),
+    creditStatus: (asStr(raw.creditStatus, 'none') || 'none') as CaisseCreditStatus,
+    clientName: raw.clientName !== undefined ? asStr(raw.clientName, '') : undefined,
+    clientPhone: raw.clientPhone !== undefined ? asStr(raw.clientPhone, '') : undefined,
+    expectedRepaymentDate: raw.expectedRepaymentDate !== undefined ? asDateString(raw.expectedRepaymentDate, '') : undefined,
+    repaidDate: raw.repaidDate !== undefined ? asDateString(raw.repaidDate, '') : undefined,
+    repaidAmountMAD: raw.repaidAmountMAD !== undefined ? asFiniteNum(raw.repaidAmountMAD, 0) : undefined,
+    parentCreditEntryId: raw.parentCreditEntryId !== undefined ? asStr(raw.parentCreditEntryId, '') : undefined,
+    sourceBookingId: raw.sourceBookingId !== undefined ? asStr(raw.sourceBookingId, '') : undefined,
+    note: raw.note !== undefined ? asStr(raw.note, '') : undefined,
+    createdByRole: (asStr(raw.createdByRole, 'barber') || 'barber') as StaffRole,
+    createdByName: asStr(raw.createdByName, 'Staff'),
+    createdAt,
+    updatedAt,
+  };
+}
+
+function coerceCaisseSettlementDoc(rawInput: unknown, docId: string): CaisseDailySettlement {
+  const raw = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>;
+  const id = asStr(raw.id, docId) || docId;
+  return {
+    ...(raw as Partial<CaisseDailySettlement>),
+    id,
+    barberId: asStr(raw.barberId, 'hassan'),
+    barberName: asStr(raw.barberName, 'Hassan ait boumlik'),
+    date: asDateString(raw.date, ''),
+    collected: Boolean(raw.collected),
+    collectedAmountMAD: asFiniteNum(raw.collectedAmountMAD, 0),
+    barberShareMAD: asFiniteNum(raw.barberShareMAD, 0),
+    shopShareMAD: asFiniteNum(raw.shopShareMAD, 0),
+    floatMAD: asFiniteNum(raw.floatMAD, 0),
+    expensesMAD: asFiniteNum(raw.expensesMAD, 0),
+    carryOverOwedMAD: asFiniteNum(raw.carryOverOwedMAD, 0),
+    resetCount: asFiniteNum(raw.resetCount, 0),
+    intakeClosed: Boolean(raw.intakeClosed),
+    grossIntakeClosedMAD: asFiniteNum(raw.grossIntakeClosedMAD, 0),
+    confirmedBy: asStr(raw.confirmedBy, ''),
+    confirmedAt: asIsoString(raw.confirmedAt, ''),
+    updatedAt: asIsoString(raw.updatedAt, ''),
+  };
+}
+
+function coerceCaisseCycleDoc(rawInput: unknown, docId: string): CaisseCycleSettlement {
+  const raw = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>;
+  const id = asStr(raw.id, docId) || docId;
+  const settledThroughIso = asIsoString(raw.settledThroughIso, '') || asIsoString(raw.confirmedAt, '');
+  return {
+    ...(raw as Partial<CaisseCycleSettlement>),
+    id,
+    barberId: asStr(raw.barberId, 'hassan'),
+    barberName: asStr(raw.barberName, 'Hassan ait boumlik'),
+    settledThroughIso,
+    settledThroughDate: asDateString(raw.settledThroughDate, ''),
+    periodStartDate: raw.periodStartDate !== undefined ? asDateString(raw.periodStartDate, '') : undefined,
+    periodEndDate: raw.periodEndDate !== undefined ? asDateString(raw.periodEndDate, '') : undefined,
+    totalCollectedMAD: asFiniteNum(raw.totalCollectedMAD, 0),
+    barberSharePaidMAD: asFiniteNum(raw.barberSharePaidMAD, 0),
+    shopShareMAD: asFiniteNum(raw.shopShareMAD, 0),
+    expensesMAD: asFiniteNum(raw.expensesMAD, 0),
+    floatMAD: asFiniteNum(raw.floatMAD, 0),
+    creditsIssuedMAD: asFiniteNum(raw.creditsIssuedMAD, 0),
+    entryCount: asFiniteNum(raw.entryCount, 0),
+    confirmedBy: asStr(raw.confirmedBy, ''),
+    confirmedAt: asIsoString(raw.confirmedAt, settledThroughIso),
+  };
+}
+
+function coerceCaisseArchiveDoc(rawInput: unknown, docId: string): CaisseDailyArchive {
+  const raw = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>;
+  const id = asStr(raw.id, docId) || docId;
+  return {
+    ...(raw as Partial<CaisseDailyArchive>),
+    id,
+    barberId: asStr(raw.barberId, 'hassan'),
+    barberName: asStr(raw.barberName, ''),
+    date: asDateString(raw.date, ''),
+    incomeMAD: asFiniteNum(raw.incomeMAD, 0),
+    repaymentIncomeMAD: asFiniteNum(raw.repaymentIncomeMAD, 0),
+    expensesMAD: asFiniteNum(raw.expensesMAD, 0),
+    floatMAD: asFiniteNum(raw.floatMAD, 0),
+    creditsIssuedMAD: asFiniteNum(raw.creditsIssuedMAD, 0),
+    entryCount: asFiniteNum(raw.entryCount, 0),
+    entriesSummary: Array.isArray(raw.entriesSummary) ? raw.entriesSummary : [],
+    archivedAt: asIsoString(raw.archivedAt, ''),
+  };
+}
+
+function coerceDailyNoteDoc(rawInput: unknown, docId: string): BarberDailyNote {
+  const raw = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>;
+  const id = asStr(raw.id, docId) || docId;
+  return {
+    ...(raw as Partial<BarberDailyNote>),
+    id,
+    barberId: asStr(raw.barberId, 'hassan'),
+    barberName: asStr(raw.barberName, ''),
+    date: asDateString(raw.date, ''),
+    masterNote: asStr(raw.masterNote, ''),
+    masterUpdatedBy: asStr(raw.masterUpdatedBy, ''),
+    masterUpdatedAt: asIsoString(raw.masterUpdatedAt, ''),
+    barberReply: raw.barberReply !== undefined ? asStr(raw.barberReply, '') : undefined,
+    barberRepliedBy: raw.barberRepliedBy !== undefined ? asStr(raw.barberRepliedBy, '') : undefined,
+    barberRepliedAt: raw.barberRepliedAt !== undefined ? asIsoString(raw.barberRepliedAt, '') : undefined,
+    createdAt: asIsoString(raw.createdAt, ''),
+    updatedAt: asIsoString(raw.updatedAt, ''),
+  };
+}
+
 function sortCaisseEntriesDesc(list: CaisseEntry[]): CaisseEntry[] {
   return [...list].sort((a, b) => {
-    const ka = a.createdAt || a.date || '';
-    const kb = b.createdAt || b.date || '';
-    const cmp = kb.localeCompare(ka);
+    const ka = asStr(a.createdAt, '') || asStr(a.date, '');
+    const kb = asStr(b.createdAt, '') || asStr(b.date, '');
+    const cmp = safeCompareDesc(ka, kb);
     if (cmp !== 0) return cmp;
-    return (b.id || '').localeCompare(a.id || '');
+    return safeCompareDesc(a.id, b.id);
   });
 }
 
 function sortCaisseCyclesDesc(list: CaisseCycleSettlement[]): CaisseCycleSettlement[] {
   return [...list].sort((a, b) => {
-    const ka = a.confirmedAt || a.settledThroughIso || a.settledThroughDate || '';
-    const kb = b.confirmedAt || b.settledThroughIso || b.settledThroughDate || '';
-    const cmp = kb.localeCompare(ka);
+    const ka = asStr(a.confirmedAt, '') || asStr(a.settledThroughIso, '') || asStr(a.settledThroughDate, '');
+    const kb = asStr(b.confirmedAt, '') || asStr(b.settledThroughIso, '') || asStr(b.settledThroughDate, '');
+    const cmp = safeCompareDesc(ka, kb);
     if (cmp !== 0) return cmp;
-    return (b.id || '').localeCompare(a.id || '');
+    return safeCompareDesc(a.id, b.id);
   });
 }
 
@@ -295,10 +428,7 @@ function ensureEntriesListener() {
         try {
           const snap = await getCollectionDocsFast(CAISSE_ENTRIES_COLLECTION);
           entriesCache = sortCaisseEntriesDesc(
-            snap.docs.map((d) => ({
-              ...(d.data() as CaisseEntry),
-              id: (d.data() as CaisseEntry).id || d.id,
-            }))
+            snap.docs.map((d) => coerceCaisseEntryDoc(d.data(), d.id))
           );
           hasEntriesHydrated = true;
           notifyEntriesListeners();
@@ -315,10 +445,7 @@ function ensureEntriesListener() {
     (snapshot) => {
       resetResilientRetry('caisse_entries');
       entriesCache = sortCaisseEntriesDesc(
-        snapshot.docs.map((d) => ({
-          ...(d.data() as CaisseEntry),
-          id: (d.data() as CaisseEntry).id || d.id,
-        }))
+        snapshot.docs.map((d) => coerceCaisseEntryDoc(d.data(), d.id))
       );
       hasEntriesHydrated = true;
       notifyEntriesListeners();
@@ -500,8 +627,7 @@ function ensureSettlementsListener() {
           const snap = await getCollectionDocsFast(CAISSE_SETTLEMENTS_COLLECTION);
           const next: Record<string, CaisseDailySettlement> = {};
           snap.docs.forEach((d) => {
-            const data = d.data() as CaisseDailySettlement;
-            next[d.id] = { ...data, id: data.id || d.id };
+            next[d.id] = coerceCaisseSettlementDoc(d.data(), d.id);
           });
           settlementsCache = next;
           hasSettlementsHydrated = true;
@@ -520,8 +646,7 @@ function ensureSettlementsListener() {
       resetResilientRetry('caisse_settlements');
       const next: Record<string, CaisseDailySettlement> = {};
       snapshot.docs.forEach((d) => {
-        const data = d.data() as CaisseDailySettlement;
-        next[d.id] = { ...data, id: data.id || d.id };
+        next[d.id] = coerceCaisseSettlementDoc(d.data(), d.id);
       });
       settlementsCache = next;
       hasSettlementsHydrated = true;
@@ -604,10 +729,7 @@ function ensureCyclesListener() {
         try {
           const snap = await getCollectionDocsFast(CAISSE_CYCLES_COLLECTION);
           cyclesCache = sortCaisseCyclesDesc(
-            snap.docs.map((d) => ({
-              ...(d.data() as CaisseCycleSettlement),
-              id: (d.data() as CaisseCycleSettlement).id || d.id,
-            }))
+            snap.docs.map((d) => coerceCaisseCycleDoc(d.data(), d.id))
           );
           hasCyclesHydrated = true;
           notifyCyclesListeners();
@@ -624,10 +746,7 @@ function ensureCyclesListener() {
     (snapshot) => {
       resetResilientRetry('caisse_cycles');
       cyclesCache = sortCaisseCyclesDesc(
-        snapshot.docs.map((d) => ({
-          ...(d.data() as CaisseCycleSettlement),
-          id: (d.data() as CaisseCycleSettlement).id || d.id,
-        }))
+        snapshot.docs.map((d) => coerceCaisseCycleDoc(d.data(), d.id))
       );
       hasCyclesHydrated = true;
       notifyCyclesListeners();
@@ -708,8 +827,7 @@ function ensureArchivesListener() {
           const snap = await getCollectionDocsFast(CAISSE_ARCHIVES_COLLECTION);
           const next: Record<string, CaisseDailyArchive> = {};
           snap.docs.forEach((d) => {
-            const data = d.data() as CaisseDailyArchive;
-            next[d.id] = { ...data, id: data.id || d.id };
+            next[d.id] = coerceCaisseArchiveDoc(d.data(), d.id);
           });
           archivesCache = next;
           hasArchivesHydrated = true;
@@ -728,8 +846,7 @@ function ensureArchivesListener() {
       resetResilientRetry('caisse_archives');
       const next: Record<string, CaisseDailyArchive> = {};
       snapshot.docs.forEach((d) => {
-        const data = d.data() as CaisseDailyArchive;
-        next[d.id] = { ...data, id: data.id || d.id };
+        next[d.id] = coerceCaisseArchiveDoc(d.data(), d.id);
       });
       archivesCache = next;
       hasArchivesHydrated = true;
@@ -813,8 +930,7 @@ function ensureDailyNotesListener() {
           const snap = await getCollectionDocsFast(BARBER_DAILY_NOTES_COLLECTION);
           const next: Record<string, BarberDailyNote> = {};
           snap.docs.forEach((d) => {
-            const data = d.data() as BarberDailyNote;
-            next[d.id] = { ...data, id: data.id || d.id };
+            next[d.id] = coerceDailyNoteDoc(d.data(), d.id);
           });
           dailyNotesCache = next;
           hasDailyNotesHydrated = true;
@@ -833,8 +949,7 @@ function ensureDailyNotesListener() {
       resetResilientRetry('caisse_daily_notes');
       const next: Record<string, BarberDailyNote> = {};
       snapshot.docs.forEach((d) => {
-        const data = d.data() as BarberDailyNote;
-        next[d.id] = { ...data, id: data.id || d.id };
+        next[d.id] = coerceDailyNoteDoc(d.data(), d.id);
       });
       dailyNotesCache = next;
       hasDailyNotesHydrated = true;
@@ -1825,17 +1940,20 @@ export function computeBarberCarryOverOwed(
   settingsMap: Record<string, CaisseBarberSetting>,
   settlementsMap: Record<string, CaisseDailySettlement>
 ): BarberCarryOverSummary {
-  const month = referenceDate.slice(0, 7);
+  const safeRefDate = asDateString(referenceDate, getSalonBusinessDate());
+  const month = safeRefDate.slice(0, 7);
 
   const dateSet = new Set<string>();
   entries.forEach((e) => {
-    if (e.barberId === barberId && e.date.startsWith(month) && e.date < referenceDate) {
-      dateSet.add(e.date);
+    const ed = asDateString(e.date, '');
+    if (e.barberId === barberId && ed.startsWith(month) && ed < safeRefDate) {
+      dateSet.add(ed);
     }
   });
   Object.values(settlementsMap).forEach((s) => {
-    if (s.barberId === barberId && s.date.startsWith(month) && s.date < referenceDate) {
-      dateSet.add(s.date);
+    const sd = asDateString(s.date, '');
+    if (s.barberId === barberId && sd.startsWith(month) && sd < safeRefDate) {
+      dateSet.add(sd);
     }
   });
 
@@ -1969,11 +2087,13 @@ export function computeMonthlyCaisseRollup(
     );
     const barberMonthEntries = entries.filter(
       (e) =>
-        e.date.startsWith(monthYYYYMM) &&
+        asDateString(e.date, '').startsWith(monthYYYYMM) &&
         matchesCaisseBarber(e.barberId, e.barberName, barber.id, rosterMembers)
     );
 
-    const uniqueDates = Array.from(new Set(barberMonthEntries.map((e) => e.date))).sort();
+    const uniqueDates = Array.from(
+      new Set(barberMonthEntries.map((e) => asDateString(e.date, '')).filter(Boolean))
+    ).sort();
 
     let incomeMAD = 0;
     let repaymentIncomeMAD = 0;
@@ -2022,7 +2142,7 @@ export function computeMonthlyCaisseRollup(
         if (!matchesCaisseBarber(r.barberId || 'hassan', r.barberName, barber.id, rosterMembers)) {
           return false;
         }
-        const recDate = r.creditDate?.trim() || r.createdAt?.slice(0, 10) || '';
+        const recDate = asDateString(r.creditDate, '') || asIsoString(r.createdAt, '').slice(0, 10);
         return recDate.startsWith(monthYYYYMM);
       })
       .reduce((acc, r) => acc + Math.max(0, Number(r.amountOwedMAD) || 0), 0);
@@ -2075,18 +2195,21 @@ export function isEntrySettledByCycles(
   entry: CaisseEntry,
   barberCycles: CaisseCycleSettlement[]
 ): boolean {
+  const entryCreatedIso = asIsoString(entry.createdAt, '');
+  const entryDate = asDateString(entry.date, '');
   for (const cyc of barberCycles) {
-    if (entry.createdAt > cyc.settledThroughIso) continue;
+    const cycSettledIso = asIsoString(cyc.settledThroughIso, '');
+    if (!cycSettledIso || entryCreatedIso > cycSettledIso) continue;
     if (!cyc.settlementPeriodScope || cyc.settlementPeriodScope === 'full_open') {
       return true;
     }
     if (cyc.periodStartDate && cyc.periodEndDate) {
-      if (entry.date >= cyc.periodStartDate && entry.date <= cyc.periodEndDate) {
+      if (entryDate >= cyc.periodStartDate && entryDate <= cyc.periodEndDate) {
         return true;
       }
     } else if (cyc.settlementPeriodScope === 'month' && cyc.periodStartDate) {
-      const monthPrefix = cyc.periodStartDate.slice(0, 7);
-      if (entry.date.startsWith(monthPrefix)) {
+      const monthPrefix = asStr(cyc.periodStartDate, '').slice(0, 7);
+      if (monthPrefix && entryDate.startsWith(monthPrefix)) {
         return true;
       }
     }
@@ -2184,7 +2307,7 @@ export function computeBarberCycleBalance(
 ): BarberCycleBalance {
   const barberCycles = cycles
     .filter((c) => matchesCaisseBarber(c.barberId, c.barberName, barberId, rosterMembers))
-    .sort((a, b) => b.settledThroughIso.localeCompare(a.settledThroughIso));
+    .sort((a, b) => safeCompareDesc(a.settledThroughIso, b.settledThroughIso));
   const latestCycle = barberCycles[0] || null;
   const lastSettledIso = latestCycle ? latestCycle.settledThroughIso : null;
   const lastSettledDate = latestCycle ? latestCycle.settledThroughDate : null;
@@ -2437,7 +2560,7 @@ export function computeBarberDailyInOutHistory(
   });
 
   return Array.from(byDate.keys())
-    .sort((a, b) => b.localeCompare(a))
+    .sort((a, b) => safeCompareDesc(a, b))
     .slice(0, limit)
     .map((date) => {
       const dayEntries = byDate.get(date) || [];
@@ -2588,9 +2711,9 @@ export function computeAnnualCaisseRollup(
   const barberList = getCaisseBarbersFromRoster(rosterMembers, entries);
   const byBarber: AnnualCaisseBarberSummary[] = barberList.map((barber) => {
     const yearEntries = entries.filter(
-      (e) => e.barberId === barber.id && e.date.startsWith(yearYYYY)
+      (e) => e.barberId === barber.id && asDateString(e.date, '').startsWith(yearYYYY)
     );
-    const uniqueDates = Array.from(new Set(yearEntries.map((e) => e.date)));
+    const uniqueDates = Array.from(new Set(yearEntries.map((e) => asDateString(e.date, '')).filter(Boolean)));
 
     let incomeMAD = 0;
     let expensesMAD = 0;

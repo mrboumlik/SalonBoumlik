@@ -37,9 +37,25 @@ export class AppErrorBoundary extends React.Component<
               type="button"
               onClick={() => {
                 this.setState({ hasError: false });
-                if (typeof window !== 'undefined' && window.location) {
-                  window.location.reload();
-                }
+                if (typeof window === 'undefined') return;
+                const clearAndReload = async () => {
+                  try {
+                    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+                      const regs = await navigator.serviceWorker.getRegistrations();
+                      await Promise.all(regs.map((r) => r.unregister()));
+                    }
+                    if ('caches' in window) {
+                      const keys = await window.caches.keys();
+                      await Promise.all(keys.map((k) => window.caches.delete(k)));
+                    }
+                  } catch {
+                    // Ignore cache clear failure
+                  }
+                  if (window.location) {
+                    window.location.reload();
+                  }
+                };
+                void clearAndReload();
               }}
               className="w-full py-3 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm cursor-pointer"
             >

@@ -98,6 +98,7 @@ import { getBarberIdentityTokens } from '../utils/barberIdentity';
 import { buildCreditWhatsAppReminderUrl } from '../utils/whatsappAutomation';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
+import { asDateString, asIsoString, asStr, safeCompareDesc, safeFormatTime } from '../utils/safeCoerce';
 import { showToast } from '../utils/notifications';
 import { ModalPortal } from './ModalPortal';
 
@@ -1037,7 +1038,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         }
         return true;
       })
-      .sort((a, b) => b.date.localeCompare(a.date))
+      .sort((a, b) => safeCompareDesc(a.date, b.date))
       .slice(0, 60);
   }, [archivesMap, sessionRole, activeBarberId, twoMonthsCutoffDate]);
 
@@ -1394,12 +1395,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     if (!bypassDuplicateCheck && paidNum > 0) {
       const dup = findRecentDuplicateEntry('income', paidNum);
       if (dup) {
-        const matchedTimeLabel = dup.createdAt
-          ? new Date(dup.createdAt).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })
-          : '';
+        const matchedTimeLabel = safeFormatTime(dup.createdAt, [], { hour: '2-digit', minute: '2-digit' }, '');
         setDuplicateWarning({
           kind: 'income',
           amount: Math.round(paidNum),
@@ -1500,12 +1496,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     if (!bypassDuplicateCheck) {
       const dup = findRecentDuplicateEntry('expense', amt);
       if (dup) {
-        const matchedTimeLabel = dup.createdAt
-          ? new Date(dup.createdAt).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })
-          : '';
+        const matchedTimeLabel = safeFormatTime(dup.createdAt, [], { hour: '2-digit', minute: '2-digit' }, '');
         setDuplicateWarning({
           kind: 'expense',
           amount: Math.round(amt),
@@ -3722,7 +3713,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             </div>
             {currentDailyNote?.masterUpdatedAt && (
               <span className="text-[10px] font-mono text-zinc-400">
-                آخر تحديث: {new Date(currentDailyNote.masterUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                آخر تحديث: {safeFormatTime(currentDailyNote.masterUpdatedAt, [], { hour: '2-digit', minute: '2-digit' }, '')}
               </span>
             )}
           </div>
@@ -4160,7 +4151,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                         const aBarber = a.barberId === activeBarberId ? 1 : 0;
                         const bBarber = b.barberId === activeBarberId ? 1 : 0;
                         if (aBarber !== bBarber) return bBarber - aBarber;
-                        return `${b.date} ${b.timeSlot}`.localeCompare(`${a.date} ${a.timeSlot}`);
+                        return safeCompareDesc(`${a.date} ${a.timeSlot}`, `${b.date} ${b.timeSlot}`);
                       })
                       .slice(0, 25)
                       .map((b) => (
@@ -4637,7 +4628,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               const allPhones = [rec.clientPhone, ...(rec.additionalPhones || [])]
                 .map((p) => String(p || '').trim())
                 .filter(Boolean);
-              const dateLabel = rec.creditDate || rec.createdAt.slice(0, 10);
+              const dateLabel = asDateString(rec.creditDate, '') || asIsoString(rec.createdAt, '').slice(0, 10);
               const isManualRepaying = repayingManualId === rec.id;
               const isManualReqOpen = settleReqManualId === rec.id;
               const manualReqs = creditSettlementRequests.filter(
@@ -4904,12 +4895,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 entry.serviceNames && entry.serviceNames.length > 0
                   ? entry.serviceNames.join(' + ')
                   : entry.note?.trim() || entry.clientName || badge.label;
-              const timePart = entry.createdAt
-                ? new Date(entry.createdAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                : '';
+              const timePart = safeFormatTime(entry.createdAt, [], { hour: '2-digit', minute: '2-digit' }, '');
 
               return (
                 <div key={entry.id} className="py-2 first:pt-0 last:pb-0">
@@ -5744,12 +5730,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                       (selectedDrillEntry.type === 'income' ||
                         Number(selectedDrillEntry.creditAmountMAD) > 0 ||
                         Number(selectedDrillEntry.creditRemainingMAD) > 0));
-                  const exactTime = selectedDrillEntry.createdAt
-                    ? new Date(selectedDrillEntry.createdAt).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : '';
+                  const exactTime = safeFormatTime(selectedDrillEntry.createdAt, [], { hour: '2-digit', minute: '2-digit' }, '');
 
                   return (
                     <div className="space-y-3">
@@ -5903,12 +5884,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                   {drillViewData.list.map((item) => {
                     const badge = formatEntryTypeBadge(item.type);
                     const effCredRem = getEffectiveCaisseCreditRemaining(item);
-                    const itemTime = item.createdAt
-                      ? new Date(item.createdAt).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
-                      : '';
+                    const itemTime = safeFormatTime(item.createdAt, [], { hour: '2-digit', minute: '2-digit' }, '');
                     const label =
                       item.serviceNames && item.serviceNames.length > 0
                         ? item.serviceNames.join(' + ')
@@ -6035,7 +6011,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                     const allPhones = [rec.clientPhone, ...(rec.additionalPhones || [])]
                       .map((p) => String(p || '').trim())
                       .filter(Boolean);
-                    const dateLabel = rec.creditDate || rec.createdAt.slice(0, 10);
+                    const dateLabel = asDateString(rec.creditDate, '') || asIsoString(rec.createdAt, '').slice(0, 10);
                     const waUrl = buildCreditWhatsAppReminderUrl({
                       clientPhone: allPhones[0] || '',
                       clientName: rec.clientName,

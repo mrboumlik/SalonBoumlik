@@ -39,6 +39,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
+import { safeCompareAsc } from '../utils/safeCoerce';
 import {
   AppointmentBooking,
   BarberBreakRange,
@@ -4031,7 +4032,7 @@ export function getLiveQueueBookings(
         if (a.status === 'confirmed') return -1;
         if (b.status === 'confirmed') return 1;
       }
-      return (a.createdAt || '').localeCompare(b.createdAt || '');
+      return safeCompareAsc(a.createdAt, b.createdAt);
     });
 }
 

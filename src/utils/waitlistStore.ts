@@ -18,6 +18,7 @@ import {
   scheduleResilientRetry,
 } from './realtimeSync';
 import { dispatchStaffBackgroundPush } from './webPushClient';
+import { asDateString, asIsoString, asStr, safeCompareDesc } from './safeCoerce';
 
 const WAITLIST_COLLECTION = 'waitlist';
 
@@ -27,11 +28,29 @@ const waitlistListeners = new Set<(entries: WaitlistEntry[]) => void>();
 let activeWaitlistUnsubscribe: (() => void) | null = null;
 let waitlistRefreshUnsub: (() => void) | null = null;
 
+function coerceWaitlistDoc(rawInput: unknown, docId: string): WaitlistEntry {
+  const raw = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>;
+  const id = asStr(raw.id, docId) || docId;
+  return {
+    ...(raw as Partial<WaitlistEntry>),
+    id,
+    barberId: asStr(raw.barberId, 'hassan'),
+    barberName: asStr(raw.barberName, 'Hassan ait boumlik'),
+    date: asDateString(raw.date, ''),
+    preferredTime: asStr(raw.preferredTime, ''),
+    clientName: asStr(raw.clientName, 'Client'),
+    clientPhone: asStr(raw.clientPhone, ''),
+    servicesSummary: asStr(raw.servicesSummary, ''),
+    status: (asStr(raw.status, 'waiting') || 'waiting') as WaitlistStatus,
+    createdAt: asIsoString(raw.createdAt, ''),
+  };
+}
+
 function sortWaitlistDesc(list: WaitlistEntry[]): WaitlistEntry[] {
   return [...list].sort((a, b) => {
-    const cmp = (b.createdAt || '').localeCompare(a.createdAt || '');
+    const cmp = safeCompareDesc(a.createdAt, b.createdAt);
     if (cmp !== 0) return cmp;
-    return (b.id || '').localeCompare(a.id || '');
+    return safeCompareDesc(a.id, b.id);
   });
 }
 
@@ -65,10 +84,9 @@ function ensureWaitlistListener() {
           } catch {
             snap = await getDocs(collection(db, WAITLIST_COLLECTION));
           }
-          const items: WaitlistEntry[] = snap.docs.map((docSnap) => ({
-            ...(docSnap.data() as WaitlistEntry),
-            id: docSnap.id,
-          }));
+          const items: WaitlistEntry[] = snap.docs.map((docSnap) =>
+            coerceWaitlistDoc(docSnap.data(), docSnap.id)
+          );
           commitWaitlistCache(items);
         } catch (err) {
           console.warn('Waitlist wake refresh warning:', err);
@@ -82,10 +100,9 @@ function ensureWaitlistListener() {
     collection(db, WAITLIST_COLLECTION),
     (snapshot) => {
       resetResilientRetry('waitlist');
-      const items: WaitlistEntry[] = snapshot.docs.map((docSnap) => ({
-        ...(docSnap.data() as WaitlistEntry),
-        id: docSnap.id,
-      }));
+      const items: WaitlistEntry[] = snapshot.docs.map((docSnap) =>
+        coerceWaitlistDoc(docSnap.data(), docSnap.id)
+      );
       commitWaitlistCache(items);
     },
     (error) => {

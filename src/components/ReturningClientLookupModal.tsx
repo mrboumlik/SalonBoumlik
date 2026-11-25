@@ -25,6 +25,7 @@ import { parseScannedQrResult, scanQrImageFile } from '../utils/clientQr';
 import { computeClientPointsSummary, getVerifiedVisitsCount } from '../utils/loyaltyEngine';
 import { db } from '../utils/firebase';
 import { pickLang } from '../utils/i18n';
+import { safeCompareDesc } from '../utils/safeCoerce';
 import { ModalPortal } from './ModalPortal';
 
 export interface RecognizedClientData {
@@ -208,7 +209,7 @@ export const ReturningClientLookupModal: React.FC<ReturningClientLookupModalProp
         cleanDigits.length >= 6
           ? sourceBookings
               .filter((b) => normalizeMoroccanPhoneDigits(b.clientPhone) === cleanDigits)
-              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+              .sort((a, b) => safeCompareDesc(a.createdAt, b.createdAt))
           : matchedBookings;
 
       const resolvedName =

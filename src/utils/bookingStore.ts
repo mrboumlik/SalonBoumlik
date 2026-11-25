@@ -23,6 +23,13 @@ import {
   dispatchStaffBackgroundPush,
 } from './webPushClient';
 import { generateCheckInToken } from './clientQr';
+import {
+  asDateString,
+  asFiniteNum,
+  asIsoString,
+  asStr,
+  safeCompareDesc,
+} from './safeCoerce';
 
 const BOOKINGS_COLLECTION = 'bookings';
 
@@ -39,12 +46,40 @@ const listeners = new Set<BookingsListener>();
 let activeUnsubscribe: (() => void) | null = null;
 let bookingsRefreshUnsub: (() => void) | null = null;
 
+function coerceBookingDoc(rawInput: unknown, docId: string): AppointmentBooking {
+  const raw = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>;
+  const id = asStr(raw.id, docId) || docId;
+  const createdAt = asIsoString(raw.createdAt, '');
+  const date = asDateString(raw.date, '') || (createdAt ? createdAt.slice(0, 10) : '');
+  return {
+    ...(raw as Partial<AppointmentBooking>),
+    id,
+    ticketNumber: asStr(raw.ticketNumber, '#SB-1000'),
+    barberId: asStr(raw.barberId, 'hassan'),
+    barberName: asStr(raw.barberName, 'Hassan ait boumlik'),
+    date,
+    timeSlot: asStr(raw.timeSlot, '16:00'),
+    clientName: asStr(raw.clientName, 'Client'),
+    clientPhone: asStr(raw.clientPhone, ''),
+    status: (asStr(raw.status, 'pending') || 'pending') as BookingStatus,
+    createdAt,
+    services: Array.isArray(raw.services) ? raw.services : [],
+    finalTotalMAD: raw.finalTotalMAD !== undefined ? asFiniteNum(raw.finalTotalMAD, 0) : undefined,
+    originalTotalMAD: raw.originalTotalMAD !== undefined ? asFiniteNum(raw.originalTotalMAD, 0) : undefined,
+    totalSavingsMAD: raw.totalSavingsMAD !== undefined ? asFiniteNum(raw.totalSavingsMAD, 0) : undefined,
+    attendanceConfirmedAt:
+      raw.attendanceConfirmedAt !== undefined
+        ? asIsoString(raw.attendanceConfirmedAt, '')
+        : undefined,
+  };
+}
+
 function sortBookingsDesc(list: AppointmentBooking[]): AppointmentBooking[] {
   return [...list].sort((a, b) => {
-    const aKey = a.createdAt || a.date || '';
-    const bKey = b.createdAt || b.date || '';
-    if (aKey !== bKey) return bKey.localeCompare(aKey);
-    return (b.id || '').localeCompare(a.id || '');
+    const aKey = asIsoString(a.createdAt, '') || asDateString(a.date, '');
+    const bKey = asIsoString(b.createdAt, '') || asDateString(b.date, '');
+    if (aKey !== bKey) return safeCompareDesc(aKey, bKey);
+    return safeCompareDesc(a.id, b.id);
   });
 }
 
@@ -212,13 +247,9 @@ function ensureFirestoreListener() {
               return await getDocs(collection(db, BOOKINGS_COLLECTION));
             }
           })();
-          const items: AppointmentBooking[] = snap.docs.map((docSnap) => {
-            const data = docSnap.data() as AppointmentBooking;
-            return {
-              ...data,
-              id: data.id || docSnap.id,
-            };
-          });
+          const items: AppointmentBooking[] = snap.docs.map((docSnap) =>
+            coerceBookingDoc(docSnap.data(), docSnap.id)
+          );
           commitBookingsCache(items);
         } catch (err) {
           console.warn('Bookings wake refresh warning:', err);
@@ -232,13 +263,9 @@ function ensureFirestoreListener() {
     collection(db, BOOKINGS_COLLECTION),
     (snapshot) => {
       resetResilientRetry('bookings');
-      const nextBookings: AppointmentBooking[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data() as AppointmentBooking;
-        return {
-          ...data,
-          id: data.id || docSnap.id,
-        };
-      });
+      const nextBookings: AppointmentBooking[] = snapshot.docs.map((docSnap) =>
+        coerceBookingDoc(docSnap.data(), docSnap.id)
+      );
 
       commitBookingsCache(nextBookings);
     },
@@ -322,10 +349,7 @@ export async function fetchAllBookingsOnce(): Promise<AppointmentBooking[]> {
       snap = await getDocs(collection(db, BOOKINGS_COLLECTION));
     }
     const items = sortBookingsDesc(
-      snap.docs.map((d) => ({
-        ...(d.data() as AppointmentBooking),
-        id: d.id,
-      }))
+      snap.docs.map((d) => coerceBookingDoc(d.data(), d.id))
     );
     commitBookingsCache(items);
     return items;
@@ -338,14 +362,14 @@ export async function fetchAllBookingsOnce(): Promise<AppointmentBooking[]> {
  * Normalizes ticket numbers (e.g., "#SB-7328", "SB-7328", "7328", "sb-7328")
  */
 function cleanTicketString(ticket: string): string {
-  return ticket.trim().replace(/^#+/, '').replace(/^SB-?/i, '').trim().toUpperCase();
+  return asStr(ticket, '').trim().replace(/^#+/, '').replace(/^SB-?/i, '').trim().toUpperCase();
 }
 
 /**
  * Normalizes Moroccan phone numbers across "+212...", "212...", "06...", and spaced formats.
  */
 export function normalizeMoroccanPhoneDigits(rawPhone: string): string {
-  let digits = String(rawPhone || '').replace(/\D/g, '');
+  let digits = asStr(rawPhone, '').replace(/\D/g, '');
   if (!digits) return '';
   if (digits.startsWith('00212') && digits.length >= 13) {
     digits = digits.slice(5);
@@ -363,12 +387,13 @@ export function getBookingByTicket(
   sourceBookings: AppointmentBooking[] = memoryCache
 ): AppointmentBooking | undefined {
   if (!ticket) return undefined;
-  const rawClean = ticket.trim().toUpperCase();
+  const rawClean = asStr(ticket, '').trim().toUpperCase();
   const digitsOrCode = cleanTicketString(ticket);
 
   return sourceBookings.find((b) => {
-    const bRaw = b.ticketNumber.toUpperCase();
-    const bClean = cleanTicketString(b.ticketNumber);
+    const ticketNum = asStr(b.ticketNumber, '');
+    const bRaw = ticketNum.toUpperCase();
+    const bClean = cleanTicketString(ticketNum);
 
     if (bRaw === rawClean || bRaw === `#${rawClean}` || bRaw.replace('#', '') === rawClean) {
       return true;
@@ -376,7 +401,11 @@ export function getBookingByTicket(
     if (digitsOrCode && bClean === digitsOrCode) {
       return true;
     }
-    if (digitsOrCode.length >= 3 && digitsOrCode.length <= 6 && (bRaw.includes(digitsOrCode) || b.id.includes(digitsOrCode))) {
+    if (
+      digitsOrCode.length >= 3 &&
+      digitsOrCode.length <= 6 &&
+      (bRaw.includes(digitsOrCode) || asStr(b.id, '').includes(digitsOrCode))
+    ) {
       return true;
     }
     return false;
@@ -387,13 +416,14 @@ export function getBookingsByPhone(
   rawPhone: string,
   sourceBookings: AppointmentBooking[] = memoryCache
 ): AppointmentBooking[] {
-  const rawDigits = rawPhone.replace(/\D/g, '');
+  const rawDigits = asStr(rawPhone, '').replace(/\D/g, '');
   const canonicalDigits = normalizeMoroccanPhoneDigits(rawPhone);
   if (rawDigits.length < 4 && canonicalDigits.length < 4) return [];
 
   return sourceBookings.filter((b) => {
-    const bRawDigits = b.clientPhone.replace(/\D/g, '');
-    const bCanonical = normalizeMoroccanPhoneDigits(b.clientPhone);
+    const phone = asStr(b.clientPhone, '');
+    const bRawDigits = phone.replace(/\D/g, '');
+    const bCanonical = normalizeMoroccanPhoneDigits(phone);
     return (
       (rawDigits.length >= 4 && (bRawDigits.includes(rawDigits) || rawDigits.includes(bRawDigits))) ||
       (canonicalDigits.length >= 4 && (bCanonical.includes(canonicalDigits) || canonicalDigits.includes(bCanonical)))
@@ -405,14 +435,15 @@ export function matchesUniversalBookingQuery(
   booking: AppointmentBooking,
   rawQuery: string
 ): boolean {
-  const q = rawQuery.trim();
+  const q = asStr(rawQuery, '').trim();
   if (!q) return true;
 
   const qLower = q.toLowerCase();
   const qUpper = q.toUpperCase();
   const cleanQTicket = cleanTicketString(q);
-  const bTicketUpper = booking.ticketNumber.toUpperCase();
-  const bTicketClean = cleanTicketString(booking.ticketNumber);
+  const ticketNum = asStr(booking.ticketNumber, '');
+  const bTicketUpper = ticketNum.toUpperCase();
+  const bTicketClean = cleanTicketString(ticketNum);
 
   // 1. Ticket ID matching (#SB-1234, SB-1234, 1234)
   if (
@@ -429,8 +460,9 @@ export function matchesUniversalBookingQuery(
   const rawDigits = phoneLookupQuery.replace(/\D/g, '');
   const canonicalDigits = normalizeMoroccanPhoneDigits(phoneLookupQuery);
   if (rawDigits.length >= 3) {
-    const bRawDigits = booking.clientPhone.replace(/\D/g, '');
-    const bCanonical = normalizeMoroccanPhoneDigits(booking.clientPhone);
+    const phone = asStr(booking.clientPhone, '');
+    const bRawDigits = phone.replace(/\D/g, '');
+    const bCanonical = normalizeMoroccanPhoneDigits(phone);
     if (
       bRawDigits.includes(rawDigits) ||
       (rawDigits.length >= 9 && rawDigits.includes(bRawDigits)) ||
@@ -442,9 +474,9 @@ export function matchesUniversalBookingQuery(
 
   // 3. Name / Barber / Email text matching
   return (
-    booking.clientName.toLowerCase().includes(qLower) ||
-    booking.barberName.toLowerCase().includes(qLower) ||
-    (booking.clientEmail ? booking.clientEmail.toLowerCase().includes(qLower) : false)
+    asStr(booking.clientName, '').toLowerCase().includes(qLower) ||
+    asStr(booking.barberName, '').toLowerCase().includes(qLower) ||
+    (booking.clientEmail ? asStr(booking.clientEmail, '').toLowerCase().includes(qLower) : false)
   );
 }
 

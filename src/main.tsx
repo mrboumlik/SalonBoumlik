@@ -60,6 +60,37 @@ if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'servic
   }
 }
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('vite:preloadError', (event) => {
+    event.preventDefault();
+    const CHUNK_RELOAD_FLAG = 'sb_chunk_recover_v1';
+    try {
+      if (window.sessionStorage && window.sessionStorage.getItem(CHUNK_RELOAD_FLAG) === '1') {
+        return;
+      }
+      window.sessionStorage?.setItem(CHUNK_RELOAD_FLAG, '1');
+    } catch {
+      // Ignore sessionStorage restrictions
+    }
+    const clearAndReload = async () => {
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map((r) => r.unregister()));
+        }
+        if ('caches' in window) {
+          const keys = await window.caches.keys();
+          await Promise.all(keys.map((k) => window.caches.delete(k)));
+        }
+      } catch {
+        // Ignore cache clearing errors
+      }
+      window.location.reload();
+    };
+    void clearAndReload();
+  });
+}
+
 const rootEl = document.getElementById('root');
 if (rootEl) {
   createRoot(rootEl).render(
@@ -67,4 +98,13 @@ if (rootEl) {
       <App />
     </AppErrorBoundary>
   );
+  if (typeof window !== 'undefined') {
+    (window as unknown as { __SB_BOOT_OK?: boolean }).__SB_BOOT_OK = true;
+    try {
+      window.sessionStorage?.removeItem('sb_boot_recover_v1');
+      window.sessionStorage?.removeItem('sb_chunk_recover_v1');
+    } catch {
+      // Ignore
+    }
+  }
 }

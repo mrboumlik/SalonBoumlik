@@ -55,6 +55,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
 import { showToast } from '../utils/notifications';
 import { ModalPortal } from './ModalPortal';
+import { asDateString, asIsoString, asStr } from '../utils/safeCoerce';
 
 function parseImportedContactText(rawText: string): {
   name: string;
@@ -361,14 +362,18 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
         return false;
       }
       if (!q) return true;
-      const matchName = rec.clientName.toLowerCase().includes(q);
-      const allPhones = [rec.clientPhone, ...(rec.additionalPhones || [])].filter(Boolean);
-      const allNorms = [rec.normalizedPhone, ...(rec.normalizedAdditionalPhones || [])].filter(Boolean);
+      const matchName = asStr(rec.clientName, '').toLowerCase().includes(q);
+      const allPhones = [rec.clientPhone, ...(Array.isArray(rec.additionalPhones) ? rec.additionalPhones : [])]
+        .map((p) => asStr(p, ''))
+        .filter(Boolean);
+      const allNorms = [rec.normalizedPhone, ...(Array.isArray(rec.normalizedAdditionalPhones) ? rec.normalizedAdditionalPhones : [])]
+        .map((p) => asStr(p, ''))
+        .filter(Boolean);
       const matchPhone =
         allPhones.some((p) => p.toLowerCase().includes(q)) ||
         (qDigits.length >= 3 && allNorms.some((np) => np.includes(qDigits)));
-      const matchNote = (rec.note || '').toLowerCase().includes(q);
-      const matchBarber = (rec.barberName || '').toLowerCase().includes(q);
+      const matchNote = asStr(rec.note, '').toLowerCase().includes(q);
+      const matchBarber = asStr(rec.barberName, '').toLowerCase().includes(q);
       return matchName || matchPhone || matchNote || matchBarber;
     });
   }, [manualCredits, searchQuery, statusFilter, barberFilter, roster]);
@@ -486,8 +491,8 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
     setEditPhone(rec.clientPhone);
     setEditAdditionalPhones(rec.additionalPhones || []);
     setEditBarberId(rec.barberId || 'hassan');
-    setEditAmount(String(rec.amountOwedMAD));
-    setEditCreditDate(rec.creditDate || rec.createdAt.slice(0, 10));
+    setEditAmount(String(rec.amountOwedMAD ?? 0));
+    setEditCreditDate(asDateString(rec.creditDate, '') || asIsoString(rec.createdAt, '').slice(0, 10));
     setEditNote(rec.note || '');
   };
 
@@ -874,7 +879,7 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
                     ) : (
                       <div className="flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400">
                         <span>
-                          بواسطة: {req.reviewedBy || staffName} · {(req.reviewedAt || req.updatedAt).slice(0, 10)}
+                          بواسطة: {req.reviewedBy || staffName} · {(asIsoString(req.reviewedAt, '') || asIsoString(req.updatedAt, '')).slice(0, 10)}
                           {req.reviewerNote ? ` · ${req.reviewerNote}` : ''}
                         </span>
                         <button
@@ -949,7 +954,7 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
                       </span>
                     </div>
                     <span className="text-[10px] font-mono text-zinc-400">
-                      {disp.createdAt.slice(0, 10)}
+                      {asIsoString(disp.createdAt, '').slice(0, 10)}
                     </span>
                   </div>
 
@@ -1778,10 +1783,10 @@ export const MasterClientCreditsPanel: React.FC<MasterClientCreditsPanelProps> =
         ) : (
           filteredManualCredits.map((rec) => {
             const isPaid = rec.status === 'paid' || rec.amountOwedMAD <= 0;
-            const displayDate = rec.creditDate || rec.createdAt.slice(0, 10);
+            const displayDate = asDateString(rec.creditDate, '') || asIsoString(rec.createdAt, '').slice(0, 10);
             const assignedBarberId = rec.barberId || 'hassan';
             const assignedBarberMeta = getCaisseBarberMeta(assignedBarberId, roster);
-            const allPhones = [rec.clientPhone, ...(rec.additionalPhones || [])]
+            const allPhones = [rec.clientPhone, ...(Array.isArray(rec.additionalPhones) ? rec.additionalPhones : [])]
               .map((p) => String(p || '').trim())
               .filter(Boolean);
             const primaryWaPhone = allPhones[0] || '';

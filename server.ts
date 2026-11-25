@@ -15,7 +15,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT) || 3000;
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const DIST_DIR = path.join(__dirname, 'dist');
+const DIST_INDEX = path.join(DIST_DIR, 'index.html');
+const IS_PRODUCTION =
+  process.env.NODE_ENV === 'production' ||
+  (process.env.NODE_ENV !== 'development' && fs.existsSync(DIST_INDEX));
 const VAPID_KEYS_FILE = path.join(__dirname, '.vapid-keys.json');
 const DEFAULT_VAPID_SUBJECT = 'mailto:MrBoumlik@gmail.com';
 
@@ -390,10 +394,56 @@ async function startServer() {
 
     app.use(vite.middlewares);
   } else {
-    const distDir = path.join(__dirname, 'dist');
-    app.use(express.static(distDir));
+    const setNoStoreHtmlHeaders = (res: express.Response) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    };
+
+    app.use(
+      '/assets',
+      express.static(path.join(DIST_DIR, 'assets'), {
+        maxAge: '365d',
+        immutable: true,
+        fallthrough: true,
+      })
+    );
+
+    app.use(
+      express.static(DIST_DIR, {
+        index: false,
+        setHeaders: (res, filePath) => {
+          const base = path.basename(filePath);
+          if (
+            filePath.endsWith('.html') ||
+            base === 'sw.js' ||
+            base === 'sw-push.js' ||
+            base === 'manifest.webmanifest'
+          ) {
+            setNoStoreHtmlHeaders(res);
+          }
+        },
+      })
+    );
+
+    // Never return index.html for missing JS/CSS/font/image/API assets (prevents MIME-type white screen)
+    app.use((req, res, next) => {
+      if (
+        req.path.startsWith('/api/') ||
+        req.path.startsWith('/assets/') ||
+        /\.(?:js|mjs|css|map|png|jpg|jpeg|webp|svg|ico|json|webmanifest|woff2?|ttf|eot)$/i.test(
+          req.path
+        )
+      ) {
+        res.status(404).type('text/plain').send('Not Found');
+        return;
+      }
+      next();
+    });
+
     app.get('*', (_req, res) => {
-      res.sendFile(path.join(distDir, 'index.html'));
+      setNoStoreHtmlHeaders(res);
+      res.sendFile(DIST_INDEX);
     });
   }
 

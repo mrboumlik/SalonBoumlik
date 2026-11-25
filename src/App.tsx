@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -15,7 +15,6 @@ import { Footer } from './components/Footer';
 import { PublicInfoModal, PublicInfoSection } from './components/PublicInfoModal';
 import { DrawerMenu, HomepageSectionKey } from './components/DrawerMenu';
 import { TrackBookingModal } from './components/TrackBookingModal';
-import { AdminDashboard } from './components/AdminDashboard';
 import { ToastContainer } from './components/ToastContainer';
 import { ModalPortal } from './components/ModalPortal';
 import { OfflineIndicator } from './components/OfflineIndicator';
@@ -32,20 +31,7 @@ import {
   useShopPricingConfig,
 } from './utils/shopPricingStore';
 import { HairColorConfig } from './types';
-import {
-  Phone,
-  Ticket,
-  AlertTriangle,
-  RotateCcw,
-  Scissors,
-  Crown,
-  Users,
-  Star,
-  HelpCircle,
-  QrCode,
-  ChevronDown,
-  X,
-} from 'lucide-react';
+import { Phone, Ticket, Scissors, Crown, Users, Star, HelpCircle, QrCode, ChevronDown, X } from 'lucide-react';
 import { SALON_INFO } from './data/barbershopData';
 import { pickLang } from './utils/i18n';
 import {
@@ -55,59 +41,11 @@ import {
 } from './utils/salonSettingsStore';
 import { bootstrapRealtimeSync } from './utils/bootstrapRealtimeSync';
 
-interface ErrorBoundaryState {
-  hasError: boolean;
-  errorMessage: string;
-}
-
-class AppErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  ErrorBoundaryState
-> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { hasError: false, errorMessage: '' };
-  }
-
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return {
-      hasError: true,
-      errorMessage: error?.message || 'Unexpected rendering error',
-    };
-  }
-
-  componentDidCatch(error: Error, info: React.ErrorInfo): void {
-    console.error('Salon Boumlik UI ErrorBoundary caught error:', error, info);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#0B0C10] text-slate-900 dark:text-white flex items-center justify-center p-6">
-          <div className="max-w-md w-full rounded-3xl bg-white dark:bg-[#13151B] border border-red-200 dark:border-red-500/40 p-6 shadow-2xl text-center space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-red-500/15 border border-red-500/30 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-            <h1 className="text-lg font-black font-display">Salon Boumlik</h1>
-            <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
-              حدث خطأ في العرض / Une erreur d’affichage est survenue.
-            </p>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="w-full min-h-[44px] py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-xs inline-flex items-center justify-center gap-2 cursor-pointer transition-colors"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>إعادة التحميل / Recharger</span>
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
+const LazyAdminDashboard = React.lazy(() =>
+  import('./components/AdminDashboard').then((m) => ({
+    default: m.AdminDashboard,
+  }))
+);
 
 function SalonBoumlikApp() {
   const { lang, isRtl } = useLanguage();
@@ -189,16 +127,26 @@ function SalonBoumlikApp() {
       if (path.includes('admin')) {
         setIsAdminOpen(true);
       } else if (rawHash.toLowerCase().includes('checkin=')) {
-        const ticket = decodeURIComponent(rawHash.split(/checkin=/i)[1].split('&')[0]).trim();
-        if (ticket) {
-          setTrackSearchInitial(ticket);
-          setIsTrackBookingOpen(true);
+        try {
+          const part = rawHash.split(/checkin=/i)[1] || '';
+          const ticket = decodeURIComponent(part.split('&')[0] || '').trim();
+          if (ticket) {
+            setTrackSearchInitial(ticket);
+            setIsTrackBookingOpen(true);
+          }
+        } catch {
+          // Ignore malformed URI sequence in hash
         }
       } else if (rawHash.toLowerCase().includes('track=')) {
-        const ticket = decodeURIComponent(rawHash.split(/track=/i)[1].split('&')[0]).trim();
-        if (ticket) {
-          setTrackSearchInitial(ticket);
-          setIsTrackBookingOpen(true);
+        try {
+          const part = rawHash.split(/track=/i)[1] || '';
+          const ticket = decodeURIComponent(part.split('&')[0] || '').trim();
+          if (ticket) {
+            setTrackSearchInitial(ticket);
+            setIsTrackBookingOpen(true);
+          }
+        } catch {
+          // Ignore malformed URI sequence in hash
         }
       }
     };
@@ -755,17 +703,34 @@ function SalonBoumlikApp() {
         onOpenBooking={handleOpenBookingModal}
       />
 
-      {/* 7. Hidden Admin Dashboard (Protected by PIN) */}
-      <AdminDashboard
-        isOpen={isAdminOpen}
-        onClose={() => {
-          setIsAdminOpen(false);
-          if (window.location.hash.includes('admin')) {
-            window.history.replaceState(null, '', window.location.pathname);
+      {/* 7. Hidden Admin Dashboard (Protected by PIN, lazy-loaded when opened) */}
+      {isAdminOpen && (
+        <Suspense
+          fallback={
+            <ModalPortal>
+              <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sb-modal-backdrop">
+                <div className="rounded-2xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-800 px-6 py-5 shadow-2xl text-center space-y-2">
+                  <div className="w-7 h-7 rounded-full border-2 border-amber-600 border-t-transparent animate-spin mx-auto" />
+                  <p className="text-xs font-bold text-slate-800 dark:text-zinc-200">
+                    جاري فتح لوحة الإدارة... • Chargement...
+                  </p>
+                </div>
+              </div>
+            </ModalPortal>
           }
-        }}
-        onOpenClientTracking={handleOpenTrackWithTicket}
-      />
+        >
+          <LazyAdminDashboard
+            isOpen={isAdminOpen}
+            onClose={() => {
+              setIsAdminOpen(false);
+              if (window.location.hash.includes('admin')) {
+                window.history.replaceState(null, '', window.location.pathname);
+              }
+            }}
+            onOpenClientTracking={handleOpenTrackWithTicket}
+          />
+        </Suspense>
+      )}
 
       {/* 8. Floating Mobile Quick Action Bar */}
       <aside
@@ -834,12 +799,10 @@ function SalonBoumlikApp() {
 
 export default function App() {
   return (
-    <AppErrorBoundary>
-      <ThemeProvider>
-        <LanguageProvider>
-          <SalonBoumlikApp />
-        </LanguageProvider>
-      </ThemeProvider>
-    </AppErrorBoundary>
+    <ThemeProvider>
+      <LanguageProvider>
+        <SalonBoumlikApp />
+      </LanguageProvider>
+    </ThemeProvider>
   );
 }

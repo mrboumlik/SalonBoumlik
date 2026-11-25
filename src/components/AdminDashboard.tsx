@@ -158,6 +158,7 @@ import { AppointmentBooking, BookingStatus, CreditSettlementActionType, StaffRol
 import { SALON_INFO } from '../data/barbershopData';
 import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
+import { safeCompareAsc, safeCompareDesc } from '../utils/safeCoerce';
 import { ModalPortal } from './ModalPortal';
 
 interface AdminDashboardProps {
@@ -200,14 +201,26 @@ const readInitialAdminSession = (): StaffSession | null => {
   try {
     const raw = safeStorageGet(ADMIN_SESSION_STORAGE_KEY, 'local');
     if (raw) {
-      const stored: StoredAdminSession = JSON.parse(raw);
-      if (stored && stored.expiresAt > Date.now()) {
-        return stored.session;
+      const stored = JSON.parse(raw) as Partial<StoredAdminSession> | null;
+      const s = stored?.session;
+      if (
+        stored &&
+        typeof stored.expiresAt === 'number' &&
+        stored.expiresAt > Date.now() &&
+        s &&
+        typeof s === 'object' &&
+        typeof s.barberId === 'string' &&
+        s.barberId.trim().length > 0 &&
+        typeof s.name === 'string' &&
+        (s.role === 'master' || s.role === 'barber' || s.role === 'caisse')
+      ) {
+        return s;
       }
       safeStorageRemove(ADMIN_SESSION_STORAGE_KEY, 'local');
     }
   } catch (e) {
     console.warn('Error reading admin session:', e);
+    safeStorageRemove(ADMIN_SESSION_STORAGE_KEY, 'local');
   }
   return null;
 };
@@ -1825,7 +1838,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           return true;
         })
         .sort((a, b) => {
-          if (a.date !== b.date) return a.date.localeCompare(b.date);
+          if (a.date !== b.date) return safeCompareAsc(a.date, b.date);
           return parseSlotMin(a.time) - parseSlotMin(b.time);
         });
 
@@ -2137,17 +2150,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     .sort((a, b) => {
       const diff = parseBookingStartMinutes(a.timeSlot) - parseBookingStartMinutes(b.timeSlot);
       if (diff !== 0) return diff;
-      return (a.createdAt || '').localeCompare(b.createdAt || '');
+      return safeCompareAsc(a.createdAt, b.createdAt);
     });
 
   const futureUpcomingQueue = visibleBookings
     .filter((b) => b.date > todayStr && !isTerminalStatus(b.status))
     .sort((a, b) => {
-      const dateCmp = a.date.localeCompare(b.date);
+      const dateCmp = safeCompareAsc(a.date, b.date);
       if (dateCmp !== 0) return dateCmp;
       const timeDiff = parseBookingStartMinutes(a.timeSlot) - parseBookingStartMinutes(b.timeSlot);
       if (timeDiff !== 0) return timeDiff;
-      return (a.createdAt || '').localeCompare(b.createdAt || '');
+      return safeCompareAsc(a.createdAt, b.createdAt);
     });
 
   const todayActiveIdSet = new Set(todayActiveQueue.map((b) => b.id));
@@ -2156,13 +2169,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const todayPastOrDoneQueue = visibleBookings
     .filter((b) => !todayActiveIdSet.has(b.id) && !futureUpcomingIdSet.has(b.id))
     .sort((a, b) => {
-      const dateCmp = b.date.localeCompare(a.date);
+      const dateCmp = safeCompareDesc(a.date, b.date);
       if (dateCmp !== 0) return dateCmp;
       return parseBookingStartMinutes(b.timeSlot) - parseBookingStartMinutes(a.timeSlot);
     });
 
   const sortedArchiveBookings = [...visibleBookings].sort((a, b) => {
-    const dateCmp = b.date.localeCompare(a.date);
+    const dateCmp = safeCompareDesc(a.date, b.date);
     if (dateCmp !== 0) return dateCmp;
     return parseBookingStartMinutes(b.timeSlot) - parseBookingStartMinutes(a.timeSlot);
   });

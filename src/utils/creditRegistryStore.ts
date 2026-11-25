@@ -38,6 +38,14 @@ import {
   resetResilientRetry,
   scheduleResilientRetry,
 } from './realtimeSync';
+import {
+  asDateString,
+  asFiniteNum,
+  asIsoString,
+  asStr,
+  asStrArray,
+  safeCompareDesc,
+} from './safeCoerce';
 
 const CLIENT_CREDITS_COLLECTION = 'client_credits';
 const CREDIT_DISPUTES_COLLECTION = 'credit_disputes';
@@ -69,14 +77,97 @@ async function getCreditDocsFast(colName: string) {
   }
 }
 
+function coerceManualCreditDoc(rawInput: unknown, docId: string): ClientCreditRecord {
+  const raw = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>;
+  const id = asStr(raw.id, docId) || docId;
+  const createdAt = asIsoString(raw.createdAt, '') || asIsoString(raw.updatedAt, '');
+  const updatedAt = asIsoString(raw.updatedAt, createdAt);
+  const additionalPhones = asStrArray(raw.additionalPhones);
+  const normalizedAdditionalPhones = asStrArray(raw.normalizedAdditionalPhones);
+  return {
+    ...(raw as Partial<ClientCreditRecord>),
+    id,
+    clientName: asStr(raw.clientName, 'زبون'),
+    clientPhone: asStr(raw.clientPhone, ''),
+    normalizedPhone: asStr(raw.normalizedPhone, ''),
+    additionalPhones: additionalPhones.length > 0 ? additionalPhones : undefined,
+    normalizedAdditionalPhones:
+      normalizedAdditionalPhones.length > 0 ? normalizedAdditionalPhones : undefined,
+    barberId: raw.barberId !== undefined ? asStr(raw.barberId, '') : undefined,
+    barberName: raw.barberName !== undefined ? asStr(raw.barberName, '') : undefined,
+    amountOwedMAD: asFiniteNum(raw.amountOwedMAD, 0),
+    originalAmountMAD: asFiniteNum(raw.originalAmountMAD, asFiniteNum(raw.amountOwedMAD, 0)),
+    status: (asStr(raw.status, 'open') || 'open') as ManualCreditStatus,
+    creditDate: raw.creditDate !== undefined ? asDateString(raw.creditDate, '') : undefined,
+    note: raw.note !== undefined ? asStr(raw.note, '') : undefined,
+    createdBy: asStr(raw.createdBy, ''),
+    createdAt,
+    updatedAt,
+  };
+}
+
+function coerceCreditDisputeDoc(rawInput: unknown, docId: string): CreditDisputeRecord {
+  const raw = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>;
+  const id = asStr(raw.id, docId) || docId;
+  const createdAt = asIsoString(raw.createdAt, '') || asIsoString(raw.updatedAt, '');
+  const updatedAt = asIsoString(raw.updatedAt, createdAt);
+  return {
+    ...(raw as Partial<CreditDisputeRecord>),
+    id,
+    clientName: asStr(raw.clientName, 'زبون'),
+    clientPhone: asStr(raw.clientPhone, ''),
+    normalizedPhone: asStr(raw.normalizedPhone, ''),
+    targetBarberId: raw.targetBarberId !== undefined ? asStr(raw.targetBarberId, '') : undefined,
+    creditorSummary: asStr(raw.creditorSummary, ''),
+    totalOwedSnapshotMAD: asFiniteNum(raw.totalOwedSnapshotMAD, 0),
+    message: asStr(raw.message, ''),
+    status: (asStr(raw.status, 'open') || 'open') as CreditDisputeStatus,
+    staffNote: raw.staffNote !== undefined ? asStr(raw.staffNote, '') : undefined,
+    createdAt,
+    updatedAt,
+  };
+}
+
+function coerceSettlementRequestDoc(rawInput: unknown, docId: string): CreditSettlementRequest {
+  const raw = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>;
+  const id = asStr(raw.id, docId) || docId;
+  const createdAt = asIsoString(raw.createdAt, '') || asIsoString(raw.updatedAt, '');
+  const updatedAt = asIsoString(raw.updatedAt, createdAt);
+  return {
+    ...(raw as Partial<CreditSettlementRequest>),
+    id,
+    sourceType: (asStr(raw.sourceType, 'manual') || 'manual') as CreditSettlementSourceType,
+    sourceId: raw.sourceId !== undefined ? asStr(raw.sourceId, '') : undefined,
+    barberId: asStr(raw.barberId, 'hassan'),
+    barberName: asStr(raw.barberName, ''),
+    clientName: asStr(raw.clientName, 'زبون'),
+    clientPhone: asStr(raw.clientPhone, ''),
+    normalizedPhone: asStr(raw.normalizedPhone, ''),
+    actionType: (asStr(raw.actionType, 'pay') || 'pay') as CreditSettlementActionType,
+    requestedAmountMAD: asFiniteNum(raw.requestedAmountMAD, 0),
+    originalRemainingMAD: asFiniteNum(raw.originalRemainingMAD, 0),
+    approvedAmountMAD:
+      raw.approvedAmountMAD !== undefined ? asFiniteNum(raw.approvedAmountMAD, 0) : undefined,
+    status: (asStr(raw.status, 'pending') || 'pending') as CreditSettlementRequest['status'],
+    note: raw.note !== undefined ? asStr(raw.note, '') : undefined,
+    submittedBy: asStr(raw.submittedBy, ''),
+    submittedRole: (asStr(raw.submittedRole, 'client') || 'client') as CreditSettlementRequest['submittedRole'],
+    reviewedBy: raw.reviewedBy !== undefined ? asStr(raw.reviewedBy, '') : undefined,
+    reviewedAt: raw.reviewedAt !== undefined ? asIsoString(raw.reviewedAt, '') : undefined,
+    reviewerNote: raw.reviewerNote !== undefined ? asStr(raw.reviewerNote, '') : undefined,
+    createdAt,
+    updatedAt,
+  };
+}
+
 function sortByCreatedAtDesc<T extends { id?: string; createdAt?: string; updatedAt?: string }>(
   list: T[]
 ): T[] {
   return [...list].sort((a, b) => {
-    const aKey = a.createdAt || a.updatedAt || '';
-    const bKey = b.createdAt || b.updatedAt || '';
-    if (aKey !== bKey) return bKey.localeCompare(aKey);
-    return (b.id || '').localeCompare(a.id || '');
+    const aKey = asIsoString(a.createdAt, '') || asIsoString(a.updatedAt, '');
+    const bKey = asIsoString(b.createdAt, '') || asIsoString(b.updatedAt, '');
+    if (aKey !== bKey) return safeCompareDesc(aKey, bKey);
+    return safeCompareDesc(a.id, b.id);
   });
 }
 
@@ -141,13 +232,7 @@ function ensureClientCreditsListener() {
         try {
           const snap = await getCreditDocsFast(CLIENT_CREDITS_COLLECTION);
           creditsCache = sortByCreatedAtDesc(
-            snap.docs.map((d) => {
-              const raw = d.data() as ClientCreditRecord;
-              return {
-                ...raw,
-                id: raw.id || d.id,
-              };
-            })
+            snap.docs.map((d) => coerceManualCreditDoc(d.data(), d.id))
           );
           hasCreditsHydrated = true;
           notifyCreditsListeners();
@@ -164,13 +249,7 @@ function ensureClientCreditsListener() {
     (snapshot) => {
       resetResilientRetry('client_credits');
       creditsCache = sortByCreatedAtDesc(
-        snapshot.docs.map((d) => {
-          const raw = d.data() as ClientCreditRecord;
-          return {
-            ...raw,
-            id: raw.id || d.id,
-          };
-        })
+        snapshot.docs.map((d) => coerceManualCreditDoc(d.data(), d.id))
       );
       hasCreditsHydrated = true;
       notifyCreditsListeners();
@@ -236,13 +315,7 @@ function ensureCreditDisputesListener() {
         try {
           const snap = await getCreditDocsFast(CREDIT_DISPUTES_COLLECTION);
           disputesCache = sortByCreatedAtDesc(
-            snap.docs.map((d) => {
-              const raw = d.data() as CreditDisputeRecord;
-              return {
-                ...raw,
-                id: raw.id || d.id,
-              };
-            })
+            snap.docs.map((d) => coerceCreditDisputeDoc(d.data(), d.id))
           );
           hasDisputesHydrated = true;
           notifyDisputesListeners();
@@ -259,13 +332,7 @@ function ensureCreditDisputesListener() {
     (snapshot) => {
       resetResilientRetry('credit_disputes');
       disputesCache = sortByCreatedAtDesc(
-        snapshot.docs.map((d) => {
-          const raw = d.data() as CreditDisputeRecord;
-          return {
-            ...raw,
-            id: raw.id || d.id,
-          };
-        })
+        snapshot.docs.map((d) => coerceCreditDisputeDoc(d.data(), d.id))
       );
       hasDisputesHydrated = true;
       notifyDisputesListeners();
@@ -331,13 +398,7 @@ function ensureCreditSettlementRequestsListener() {
         try {
           const snap = await getCreditDocsFast(CREDIT_SETTLEMENT_REQUESTS_COLLECTION);
           settlementRequestsCache = sortByCreatedAtDesc(
-            snap.docs.map((d) => {
-              const raw = d.data() as CreditSettlementRequest;
-              return {
-                ...raw,
-                id: raw.id || d.id,
-              };
-            })
+            snap.docs.map((d) => coerceSettlementRequestDoc(d.data(), d.id))
           );
           hasSettlementRequestsHydrated = true;
           notifySettlementRequestsListeners();
@@ -354,13 +415,7 @@ function ensureCreditSettlementRequestsListener() {
     (snapshot) => {
       resetResilientRetry('credit_settlement_requests');
       settlementRequestsCache = sortByCreatedAtDesc(
-        snapshot.docs.map((d) => {
-          const raw = d.data() as CreditSettlementRequest;
-          return {
-            ...raw,
-            id: raw.id || d.id,
-          };
-        })
+        snapshot.docs.map((d) => coerceSettlementRequestDoc(d.data(), d.id))
       );
       hasSettlementRequestsHydrated = true;
       notifySettlementRequestsListeners();
@@ -1184,13 +1239,15 @@ export function computeOutstandingCreditsForPhone(
   const namesSet = new Set<string>();
   const datesSet = new Set<string>();
   manualItems.forEach((m) => {
-    if (m.clientName?.trim()) namesSet.add(m.clientName.trim());
-    const d = m.creditDate?.trim() || m.createdAt?.slice(0, 10);
+    const cname = asStr(m.clientName, '').trim();
+    if (cname) namesSet.add(cname);
+    const d = asDateString(m.creditDate, '') || asIsoString(m.createdAt, '').slice(0, 10);
     if (d) datesSet.add(d);
   });
   caisseItems.forEach((c) => {
-    if (c.clientName?.trim()) namesSet.add(c.clientName.trim());
-    const d = c.date?.trim() || c.createdAt?.slice(0, 10);
+    const cname = asStr(c.clientName, '').trim();
+    if (cname) namesSet.add(cname);
+    const d = asDateString(c.date, '') || asIsoString(c.createdAt, '').slice(0, 10);
     if (d) datesSet.add(d);
   });
 

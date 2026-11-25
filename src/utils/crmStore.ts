@@ -29,6 +29,7 @@ import {
   LoyaltyPointRewardKind,
 } from './loyaltyEngine';
 import { dispatchClientBackgroundPush } from './webPushClient';
+import { asFiniteNum, asIsoString, asStr, safeCompareDesc } from './safeCoerce';
 
 const CRM_COLLECTION = 'crm_clients';
 
@@ -77,6 +78,30 @@ function commitCrmCache(next: Record<string, CrmClientProfile>, broadcastHint = 
   }
 }
 
+function coerceCrmProfileDoc(rawInput: unknown, docId: string): CrmClientProfile {
+  const raw = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>;
+  const id = asStr(raw.id, docId) || docId;
+  return {
+    ...(raw as Partial<CrmClientProfile>),
+    id,
+    normalizedPhone: asStr(raw.normalizedPhone, ''),
+    phoneDisplay: asStr(raw.phoneDisplay, ''),
+    clientName: asStr(raw.clientName, 'Client'),
+    isVip: Boolean(raw.isVip),
+    noShowCount: asFiniteNum(raw.noShowCount, 0),
+    isBanned: Boolean(raw.isBanned),
+    freeWashesRedeemed: asFiniteNum(raw.freeWashesRedeemed, 0),
+    customDiscountMAD: asFiniteNum(raw.customDiscountMAD, 0),
+    verifiedVisits: asFiniteNum(raw.verifiedVisits, 0),
+    loyaltyPoints: raw.loyaltyPoints !== undefined ? asFiniteNum(raw.loyaltyPoints, 0) : undefined,
+    pointsEarnedTotal:
+      raw.pointsEarnedTotal !== undefined ? asFiniteNum(raw.pointsEarnedTotal, 0) : undefined,
+    pointsRedeemedTotal:
+      raw.pointsRedeemedTotal !== undefined ? asFiniteNum(raw.pointsRedeemedTotal, 0) : undefined,
+    updatedAt: asIsoString(raw.updatedAt, ''),
+  };
+}
+
 function ensureCrmListener() {
   if (!crmRefreshUnsub) {
     crmRefreshUnsub = registerRealtimeRefreshHandler('crm_clients', 'crm', async () => {
@@ -91,9 +116,8 @@ function ensureCrmListener() {
         }
         const next: Record<string, CrmClientProfile> = {};
         snap.docs.forEach((docSnap) => {
-          const data = docSnap.data() as CrmClientProfile;
-          const id = data.id || docSnap.id;
-          next[id] = { ...data, id };
+          const item = coerceCrmProfileDoc(docSnap.data(), docSnap.id);
+          next[item.id] = item;
         });
         commitCrmCache(next);
       } catch (err) {
@@ -109,9 +133,8 @@ function ensureCrmListener() {
       resetResilientRetry('crm_clients');
       const next: Record<string, CrmClientProfile> = {};
       snapshot.docs.forEach((docSnap) => {
-        const data = docSnap.data() as CrmClientProfile;
-        const id = data.id || docSnap.id;
-        next[id] = { ...data, id };
+        const item = coerceCrmProfileDoc(docSnap.data(), docSnap.id);
+        next[item.id] = item;
       });
       commitCrmCache(next);
     },
@@ -332,9 +355,9 @@ export function buildCrmClientSummaries(
 
   const list = Array.from(grouped.values()).map((client) => {
     const sortedBookings = [...client.bookings].sort((a, b) =>
-      b.date === a.date
-        ? b.timeSlot.localeCompare(a.timeSlot)
-        : b.date.localeCompare(a.date)
+      a.date === b.date
+        ? safeCompareDesc(a.timeSlot, b.timeSlot)
+        : safeCompareDesc(a.date, b.date)
     );
     const canonicalVerified = Math.max(client.verifiedVisits, client.completedCount);
     const storedProfile =
@@ -378,7 +401,7 @@ export function buildCrmClientSummaries(
   return list.sort((a, b) => {
     if (a.isVip !== b.isVip) return a.isVip ? -1 : 1;
     if (a.visitCount !== b.visitCount) return b.visitCount - a.visitCount;
-    return b.lastVisitDate.localeCompare(a.lastVisitDate);
+    return safeCompareDesc(a.lastVisitDate, b.lastVisitDate);
   });
 }
 
