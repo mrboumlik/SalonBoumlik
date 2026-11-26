@@ -269,7 +269,7 @@ service cloud.firestore {
         'createdByRole', 'createdByName', 'createdAt', 'updatedAt'
       ])
       && data.keys().hasOnly([
-        'id', 'barberId', 'barberName', 'type', 'date',
+        'id', 'barberId', 'barberName', 'type', 'adjustmentDirection', 'date',
         'serviceIds', 'serviceNames',
         'expectedAmountMAD', 'amountPaidMAD', 'creditAmountMAD', 'creditRemainingMAD',
         'creditStatus', 'clientName', 'clientPhone', 'expectedRepaymentDate',
@@ -280,7 +280,8 @@ service cloud.firestore {
       && isValidId(data.id)
       && isValidBarberSlug(data.barberId)
       && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
-      && data.type in ['income', 'expense', 'float_adjustment', 'float_return', 'credit_repayment']
+      && data.type in ['income', 'expense', 'float_adjustment', 'float_return', 'credit_repayment', 'barber_adjustment']
+      && (!('adjustmentDirection' in data) || data.adjustmentDirection in ['credit', 'debit'])
       && data.date is string && data.date.size() >= 8 && data.date.size() <= 20
       && (!('serviceIds' in data) || (data.serviceIds is list && data.serviceIds.size() <= 20))
       && (!('serviceNames' in data) || (data.serviceNames is list && data.serviceNames.size() <= 20))
@@ -397,6 +398,7 @@ service cloud.firestore {
         'settlementPeriodScope', 'periodStartDate', 'periodEndDate',
         'totalCollectedMAD', 'barberSharePaidMAD', 'shopShareMAD',
         'expensesMAD', 'floatMAD', 'creditsIssuedMAD', 'entryCount',
+        'carryForwardBalanceMAD', 'negativeResolution',
         'note', 'confirmedBy', 'confirmedAt'
       ])
       && isValidId(data.id)
@@ -414,6 +416,8 @@ service cloud.firestore {
       && data.floatMAD is number && data.floatMAD >= 0 && data.floatMAD <= 10000000
       && data.creditsIssuedMAD is number && data.creditsIssuedMAD >= 0 && data.creditsIssuedMAD <= 10000000
       && data.entryCount is number && data.entryCount >= 0 && data.entryCount <= 100000
+      && (!('carryForwardBalanceMAD' in data) || (data.carryForwardBalanceMAD is number && data.carryForwardBalanceMAD >= -10000000 && data.carryForwardBalanceMAD <= 10000000))
+      && (!('negativeResolution' in data) || data.negativeResolution in ['cleared', 'carried_forward'])
       && (!('note' in data) || (data.note is string && data.note.size() <= 400))
       && data.confirmedBy is string && data.confirmedBy.size() >= 1 && data.confirmedBy.size() <= 100
       && data.confirmedAt is string && data.confirmedAt.size() >= 10 && data.confirmedAt.size() <= 64;
@@ -734,7 +738,7 @@ service cloud.firestore {
         && incoming().id == existing().id
         && incoming().createdAt == existing().createdAt
         && incoming().diff(existing()).affectedKeys().hasOnly([
-          'barberId', 'barberName', 'type', 'date',
+          'barberId', 'barberName', 'type', 'adjustmentDirection', 'date',
           'serviceIds', 'serviceNames',
           'expectedAmountMAD', 'amountPaidMAD', 'creditAmountMAD', 'creditRemainingMAD',
           'creditStatus', 'clientName', 'clientPhone', 'expectedRepaymentDate',

@@ -41,6 +41,7 @@ import {
 } from '../types';
 import {
   addCaisseEntry,
+  BarberCycleBalance,
   closeAllBarbersDailyIntakeThrough,
   closeBarberDayIntake,
   computeAnnualCaisseRollup,
@@ -283,6 +284,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     setHassanPinError('');
     setTxScopeFilter('open_daily');
     setDrawerModalScope('open_daily');
+    setCaisseBarbersCumulativeModalOpen(false);
+    setBalanceAdjustModalOpen(false);
+    setNegativePayoutPrompt(null);
   }, [sessionRole]);
 
   useEffect(() => {
@@ -299,7 +303,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         boxKey === 'monthly_barber_hassan' ||
         boxKey === 'annual_barber_hassan' ||
         boxKey === 'sum_float_cycle' ||
-        boxKey === 'drawer_barber_hassan'
+        boxKey === 'drawer_barber_hassan' ||
+        boxKey === 'caisse_cum_hassan'
       ) {
         return true;
       }
@@ -309,6 +314,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         boxKey === 'drawer_income' ||
         boxKey === 'drawer_expenses' ||
         boxKey === 'drawer_net_total' ||
+        boxKey.startsWith('caisse_cum_') ||
         boxKey.startsWith('shop_barber_day_') ||
         boxKey.startsWith('monthly_barber_') ||
         boxKey.startsWith('annual_barber_') ||
@@ -476,6 +482,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setHassanPinVerifiedInCaisse(false);
       setShowCaisseAmounts(false);
       setRevealedCards({});
+      setCaisseBarbersCumulativeModalOpen(false);
+      setBalanceAdjustModalOpen(false);
+      setNegativePayoutPrompt(null);
       if (sessionRole === 'barber') {
         onAutoExitBarberSession?.();
       } else {
@@ -572,6 +581,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   const [editingEntry, setEditingEntry] = useState<CaisseEntry | null>(null);
   const [editBarberId, setEditBarberId] = useState<CaisseBarberId>('hassan');
   const [editType, setEditType] = useState<CaisseEntryType>('income');
+  const [editAdjustmentDirection, setEditAdjustmentDirection] = useState<'credit' | 'debit'>('credit');
   const [editPaid, setEditPaid] = useState<string>('');
   const [editCreditRem, setEditCreditRem] = useState<string>('');
   const [editClientName, setEditClientName] = useState<string>('');
@@ -585,6 +595,33 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   const [confirmDeleteCycle, setConfirmDeleteCycle] =
     useState<import('../types').CaisseCycleSettlement | null>(null);
   const [deleteCycleBusy, setDeleteCycleBusy] = useState<boolean>(false);
+
+  // Master-Only Isolated Barber Balance Adjust / Clear Negative Modal
+  const [balanceAdjustModalOpen, setBalanceAdjustModalOpen] = useState<boolean>(false);
+  const [balanceAdjustMode, setBalanceAdjustMode] = useState<'zero_negative' | 'set_target' | 'delta'>('zero_negative');
+  const [balanceAdjustDirection, setBalanceAdjustDirection] = useState<'credit' | 'debit'>('credit');
+  const [balanceAdjustAmount, setBalanceAdjustAmount] = useState<string>('');
+  const [balanceAdjustNote, setBalanceAdjustNote] = useState<string>('');
+  const [balanceAdjustDate, setBalanceAdjustDate] = useState<string>(() => getSalonBusinessDate());
+  const [balanceAdjustBusy, setBalanceAdjustBusy] = useState<boolean>(false);
+
+  // Monthly Settlement Negative-Balance Confirmation Prompt Modal
+  const [negativePayoutPrompt, setNegativePayoutPrompt] = useState<{
+    mode: 'single' | 'all_barbers';
+    barbers: Array<{
+      barberId: CaisseBarberId;
+      arName: string;
+      negativeAmountMAD: number;
+      cycleBalance: BarberCycleBalance;
+      periodStartDate?: string;
+      periodEndDate?: string;
+    }>;
+    resolutions: Record<string, 'cleared' | 'carried_forward'>;
+  } | null>(null);
+
+  // Dedicated Caisse View: Popup Modal Showing Remaining Full/Cumulative Balance for Mounir, Anwar & Lahcen
+  const [caisseBarbersCumulativeModalOpen, setCaisseBarbersCumulativeModalOpen] =
+    useState<boolean>(false);
 
   // Master Accountant Sub-tabs ('periods' | 'annual' | 'archives' | 'cycles')
   const [accountantTab, setAccountantTab] = useState<
@@ -660,6 +697,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             floatInMAD: 0,
             floatOutMAD: 0,
             floatMAD: 0,
+            barberAdjustmentMAD: 0,
             commissionPercent: 50,
             extraPercentAbove50: 0,
             barberGrossShareMAD: 0,
@@ -700,6 +738,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             floatInMAD: 0,
             floatOutMAD: 0,
             floatMAD: 0,
+            barberAdjustmentMAD: 0,
             commissionPercent: 50,
             extraPercentAbove50: 0,
             barberGrossShareMAD: 0,
@@ -840,6 +879,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             floatInMAD: 0,
             floatOutMAD: 0,
             floatMAD: 0,
+            barberAdjustmentMAD: 0,
+            carryForwardMAD: 0,
             drawerCashMAD: 0,
             creditsIssuedMAD: 0,
             barberGrossShareMAD: 0,
@@ -850,6 +891,43 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           },
     [activeBarberId, entries, settingsMap, cycles, selectedDate, manualCredits, roster]
   );
+
+  const caisseBarbersCumulativeList = useMemo(() => {
+    const preferredOrder = ['mounir-querdeny', 'anouar-arif', 'lahcen-lhanz'];
+    const nonHassanBarbers = activeCaisseBarbers.filter((b) => {
+      if (b.id === 'hassan') return false;
+      const rAcc = roster.find((m) => m.id === b.id);
+      return !rAcc?.isOwner;
+    });
+    const sorted = [...nonHassanBarbers].sort((a, b) => {
+      const ia = preferredOrder.indexOf(a.id);
+      const ib = preferredOrder.indexOf(b.id);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return 0;
+    });
+    return sorted.map((barber) => ({
+      barber,
+      balance: computeBarberCycleBalance(
+        barber.id,
+        entries,
+        settingsMap,
+        cycles,
+        businessTodayStr,
+        manualCredits,
+        roster
+      ),
+    }));
+  }, [
+    activeCaisseBarbers,
+    roster,
+    entries,
+    settingsMap,
+    cycles,
+    businessTodayStr,
+    manualCredits,
+  ]);
 
   const payoutPreview = useMemo(
     () =>
@@ -899,7 +977,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       return { barber: b, preview };
     });
     const barbersWithOpenEntries = items.filter(
-      (item) => item.preview.cycleBalance.openCycleEntries.length > 0
+      (item) =>
+        item.preview.cycleBalance.openCycleEntries.length > 0 ||
+        item.preview.cycleBalance.carryForwardMAD !== 0 ||
+        item.preview.cycleBalance.barberNetOwedMAD !== 0
     );
     const totalIncomeMAD = barbersWithOpenEntries.reduce(
       (s, x) => s + x.preview.cycleBalance.incomeMAD,
@@ -1417,6 +1498,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     setEditingEntry(entry);
     setEditBarberId(entry.barberId);
     setEditType(entry.type);
+    setEditAdjustmentDirection(entry.adjustmentDirection === 'debit' ? 'debit' : 'credit');
     setEditPaid(String(entry.amountPaidMAD));
     setEditCreditRem(String(entry.creditRemainingMAD));
     setEditClientName(entry.clientName || '');
@@ -1898,29 +1980,40 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     }
   };
 
-  // Master: Confirm Cumulative / Monthly / Custom-Period Payout Settlement (Single Barber OR All Barbers Together)
-  const handleConfirmPayout = async () => {
+  // Execute Monthly / Cycle Payout Settlement After Negative-Balance Prompt (If Applicable)
+  const executePayoutWithResolutions = async (
+    targetMode: 'single' | 'all_barbers',
+    resolutionsByBarber: Record<string, 'cleared' | 'carried_forward'>
+  ) => {
     if (sessionRole !== 'master') return;
     setPayoutBusy(true);
     try {
-      if (payoutTargetMode === 'all_barbers') {
+      if (targetMode === 'all_barbers') {
         const targets = allBarbersPayoutPreview.barbersWithOpenEntries;
         if (targets.length === 0) {
           showToast('لا توجد عمليات مفتوحة للتصفية حالياً', '', 'info');
-          setPayoutBusy(false);
           return;
         }
         for (const item of targets) {
+          const cb = item.preview.cycleBalance;
+          const isNeg = cb.barberNetOwedMAD < 0;
+          const negRes = isNeg
+            ? resolutionsByBarber[cb.barberId] || 'carried_forward'
+            : undefined;
           await confirmBarberCyclePayout({
-            cycleBalance: item.preview.cycleBalance,
+            cycleBalance: cb,
             confirmedBy: staffName,
             businessDate: businessTodayStr,
             settlementPeriodScope: payoutScope,
             periodStartDate: item.preview.periodStartDate,
             periodEndDate: item.preview.periodEndDate,
+            negativeResolution: negRes,
+            carryForwardBalanceMAD:
+              isNeg && negRes === 'carried_forward' ? cb.barberNetOwedMAD : undefined,
             note: payoutNote.trim() || undefined,
           });
         }
+        setNegativePayoutPrompt(null);
         setPayoutConfirmOpen(false);
         setPayoutNote('');
         showToast(
@@ -1930,6 +2023,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         );
       } else {
         const targetCycle = payoutPreview.cycleBalance;
+        const isNeg = targetCycle.barberNetOwedMAD < 0;
+        const negRes = isNeg
+          ? resolutionsByBarber[targetCycle.barberId] || 'carried_forward'
+          : undefined;
         await confirmBarberCyclePayout({
           cycleBalance: targetCycle,
           confirmedBy: staffName,
@@ -1937,10 +2034,16 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           settlementPeriodScope: payoutScope,
           periodStartDate: payoutPreview.periodStartDate,
           periodEndDate: payoutPreview.periodEndDate,
+          negativeResolution: negRes,
+          carryForwardBalanceMAD:
+            isNeg && negRes === 'carried_forward' ? targetCycle.barberNetOwedMAD : undefined,
           note: payoutNote.trim() || undefined,
         });
+        setNegativePayoutPrompt(null);
         setPayoutConfirmOpen(false);
         setPayoutNote('');
+        const settledDisplayMAD =
+          isNeg && negRes === 'cleared' ? 0 : targetCycle.barberNetOwedMAD;
         showToast(
           pickLang(lang, {
             ar: `تمت تصفية حساب ${activeBarberMeta.arName} ✓`,
@@ -1949,7 +2052,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             en: `Payout settled for ${activeBarberMeta.name} ✓`,
             es: `Cuenta liquidada para ${activeBarberMeta.name} ✓`,
           }),
-          `${targetCycle.barberNetOwedMAD} MAD`,
+          isNeg && negRes === 'carried_forward'
+            ? `ترحيل للشهر الجاي: ${targetCycle.barberNetOwedMAD} MAD`
+            : `${settledDisplayMAD} MAD`,
           'success'
         );
       }
@@ -1957,6 +2062,158 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       console.error('Failed to confirm payout settlement:', err);
     } finally {
       setPayoutBusy(false);
+    }
+  };
+
+  // Master: Confirm Cumulative / Monthly / Custom-Period Payout Settlement (Single Barber OR All Barbers Together)
+  const handleConfirmPayout = async () => {
+    if (sessionRole !== 'master') return;
+    if (payoutTargetMode === 'all_barbers') {
+      const targets = allBarbersPayoutPreview.barbersWithOpenEntries;
+      if (targets.length === 0) {
+        showToast('لا توجد عمليات مفتوحة للتصفية حالياً', '', 'info');
+        return;
+      }
+      const negativeItems = targets.filter(
+        (item) => item.preview.cycleBalance.barberNetOwedMAD < 0
+      );
+      if (negativeItems.length > 0) {
+        const initResolutions: Record<string, 'cleared' | 'carried_forward'> = {};
+        negativeItems.forEach((item) => {
+          initResolutions[item.barber.id] = 'carried_forward';
+        });
+        setNegativePayoutPrompt({
+          mode: 'all_barbers',
+          barbers: negativeItems.map((item) => ({
+            barberId: item.barber.id,
+            arName: item.barber.arName,
+            negativeAmountMAD: item.preview.cycleBalance.barberNetOwedMAD,
+            cycleBalance: item.preview.cycleBalance,
+            periodStartDate: item.preview.periodStartDate,
+            periodEndDate: item.preview.periodEndDate,
+          })),
+          resolutions: initResolutions,
+        });
+        return;
+      }
+      await executePayoutWithResolutions('all_barbers', {});
+    } else {
+      const targetCycle = payoutPreview.cycleBalance;
+      if (targetCycle.barberNetOwedMAD < 0) {
+        setNegativePayoutPrompt({
+          mode: 'single',
+          barbers: [
+            {
+              barberId: targetCycle.barberId,
+              arName: activeBarberMeta.arName,
+              negativeAmountMAD: targetCycle.barberNetOwedMAD,
+              cycleBalance: targetCycle,
+              periodStartDate: payoutPreview.periodStartDate,
+              periodEndDate: payoutPreview.periodEndDate,
+            },
+          ],
+          resolutions: {
+            [targetCycle.barberId]: 'carried_forward',
+          },
+        });
+        return;
+      }
+      await executePayoutWithResolutions('single', {});
+    }
+  };
+
+  // Master: Isolated Edit / Clear of Barber Balance (Zeroes negative balance or sets/adjusts isolated barber balance without altering shop totals or other barbers)
+  const openBalanceAdjustModal = (preferredMode?: 'zero_negative' | 'set_target' | 'delta') => {
+    if (sessionRole !== 'master' || !activeBarberId) return;
+    const isNeg = cycleBalance.barberNetOwedMAD < 0;
+    const mode = preferredMode || (isNeg ? 'zero_negative' : 'set_target');
+    setBalanceAdjustMode(mode);
+    setBalanceAdjustDirection('credit');
+    setBalanceAdjustAmount(
+      mode === 'zero_negative' && isNeg
+        ? String(Math.abs(Math.round(cycleBalance.barberNetOwedMAD)))
+        : mode === 'set_target'
+        ? '0'
+        : ''
+    );
+    setBalanceAdjustNote(
+      mode === 'zero_negative' && isNeg
+        ? `تصفية الرصيد السالب (${cycleBalance.barberNetOwedMAD} MAD) — دفع المبلغ معزولاً`
+        : ''
+    );
+    setBalanceAdjustDate(businessTodayStr);
+    setBalanceAdjustModalOpen(true);
+  };
+
+  const handleSubmitBalanceAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (sessionRole !== 'master' || !activeBarberId) return;
+    const currentBal = Math.round(cycleBalance.barberNetOwedMAD);
+    let direction: 'credit' | 'debit' = 'credit';
+    let amt = 0;
+    let autoNote = '';
+
+    if (balanceAdjustMode === 'zero_negative') {
+      if (currentBal >= 0) {
+        showToast('رصيد الحلاق ليس سالباً حالياً', '', 'info');
+        return;
+      }
+      direction = 'credit';
+      amt = Math.abs(currentBal);
+      autoNote = `تصفير الرصيد السالب (${currentBal} MAD) — أداء الحلاق معزول`;
+    } else if (balanceAdjustMode === 'set_target') {
+      const targetVal = Math.round(Number(balanceAdjustAmount) || 0);
+      const diff = targetVal - currentBal;
+      if (diff === 0) {
+        showToast('الرصيد يطابق هذا المبلغ بالفعل', '', 'info');
+        return;
+      }
+      direction = diff > 0 ? 'credit' : 'debit';
+      amt = Math.abs(diff);
+      autoNote = `تعديل رصيد ${activeBarberMeta.arName} من ${currentBal} إلى ${targetVal} MAD (معزول)`;
+    } else {
+      amt = Math.max(0, Math.round(Number(balanceAdjustAmount) || 0));
+      direction = balanceAdjustDirection;
+      autoNote =
+        direction === 'credit'
+          ? `تسوية رصيد معزولة (+${amt} MAD لـ ${activeBarberMeta.arName})`
+          : `تسوية رصيد معزولة (−${amt} MAD على ${activeBarberMeta.arName})`;
+    }
+
+    if (amt <= 0) {
+      showToast('أدخل مبلغاً أكبر من 0', '', 'warning');
+      return;
+    }
+
+    setBalanceAdjustBusy(true);
+    try {
+      await addCaisseEntry({
+        barberId: activeBarberId,
+        barberName: activeBarberMeta.name,
+        type: 'barber_adjustment',
+        adjustmentDirection: direction,
+        date: balanceAdjustDate || businessTodayStr,
+        expectedAmountMAD: amt,
+        amountPaidMAD: amt,
+        creditAmountMAD: 0,
+        creditRemainingMAD: 0,
+        creditStatus: 'none',
+        note: balanceAdjustNote.trim() || autoNote,
+        createdByRole: 'master',
+        createdByName: staffName,
+      });
+      setBalanceAdjustModalOpen(false);
+      setBalanceAdjustAmount('');
+      setBalanceAdjustNote('');
+      showToast(
+        `تم تعديل رصيد ${activeBarberMeta.arName} بشكل معزول ✓`,
+        `${direction === 'credit' ? '+' : '-'}${amt} MAD (دون المساس بباقي الحلاقين أو المحل)`,
+        'success'
+      );
+    } catch (err) {
+      console.error('Failed to adjust barber balance:', err);
+    } finally {
+      setBalanceAdjustBusy(false);
     }
   };
 
@@ -2143,6 +2400,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         barberId: effectiveBarberId,
         barberName: effectiveBarberMeta.name,
         type: effectiveType,
+        adjustmentDirection:
+          effectiveType === 'barber_adjustment' ? editAdjustmentDirection : undefined,
         amountPaidMAD: nextPaid,
         expectedAmountMAD: nextExpected,
         creditAmountMAD: nextCreditOrig,
@@ -2222,7 +2481,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     }
   };
 
-  const formatEntryTypeBadge = (type: CaisseEntryType) => {
+  const formatEntryTypeBadge = (
+    type: CaisseEntryType,
+    adjustmentDirection?: 'credit' | 'debit'
+  ) => {
     if (type === 'income') {
       return {
         label: pickLang(lang, {
@@ -2273,6 +2535,16 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         }),
         cls: 'bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-500/40',
         sign: '-',
+      };
+    }
+    if (type === 'barber_adjustment') {
+      const isDebit = adjustmentDirection === 'debit';
+      return {
+        label: isDebit ? 'تسوية رصيد معزولة (−)' : 'تعديل / تصفية رصيد معزول (+)',
+        cls: isDebit
+          ? 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-500/15 dark:text-rose-300 dark:border-rose-500/30'
+          : 'bg-indigo-50 text-indigo-800 border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/30',
+        sign: isDebit ? '-' : '+',
       };
     }
     return {
@@ -2441,7 +2713,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 <div>
                   <h4 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">
                     {sessionRole === 'caisse'
-                      ? 'الفلوس فـ المجر (الدورة اليومية المفتوحة)'
+                      ? 'المجر اليوم (الدورة اليومية المفتوحة)'
                       : 'الحساب في المجر — المجموع والتفريق'}
                   </h4>
                   <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
@@ -2755,6 +3027,154 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     </ModalPortal>
   ) : null;
 
+  const caisseBarbersCumulativeModalNode =
+    sessionRole === 'caisse' && caisseBarbersCumulativeModalOpen ? (
+      <ModalPortal>
+        <div
+          className="fixed inset-0 z-[105] flex items-center justify-center p-4 sb-modal-backdrop"
+          onClick={() => setCaisseBarbersCumulativeModalOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-xl max-h-[88vh] flex flex-col rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs"
+          >
+            <div className="p-4 sm:p-5 border-b border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 bg-amber-50/60 dark:bg-amber-950/20">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0">
+                  <Wallet className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">
+                    الفلوس اللي بقاو في الحساب كامل (منير · أنور · لحسن)
+                  </h4>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    الرصيد الكامل المتبقي لكل حلاق في حسابه (الشهر المفتوح + أي رصيد مرحّل)
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {canToggleCaissePrivacy && (
+                  <button
+                    type="button"
+                    onClick={handleToggleGlobalCaisseAmounts}
+                    className={`min-h-[34px] px-3 py-1 rounded-xl border text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors ${
+                      amountsVisible
+                        ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-300'
+                        : 'bg-zinc-900 dark:bg-amber-500 border-zinc-900 dark:border-amber-400 text-white dark:text-zinc-950'
+                    }`}
+                  >
+                    {amountsVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    <span>{amountsVisible ? 'إخفاء' : 'إظهار'}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setCaisseBarbersCumulativeModalOpen(false)}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-3 flex-1">
+              {caisseBarbersCumulativeList.length === 0 ? (
+                <div className="py-8 text-center text-zinc-500">
+                  لا يوجد حلاقون متاحون حالياً.
+                </div>
+              ) : (
+                caisseBarbersCumulativeList.map(({ barber, balance }) => {
+                  const bTone = getBarberIdentityTokens(barber.id, barber.arName);
+                  const boxKey = `caisse_cum_${barber.id}`;
+                  const isNeg = balance.barberNetOwedMAD < 0;
+                  return (
+                    <div
+                      key={barber.id}
+                      className={`p-4 rounded-2xl border bg-white dark:bg-zinc-900/90 shadow-xs space-y-2.5 ${bTone.borderLeftClass} ${
+                        isNeg
+                          ? 'border-rose-300 dark:border-rose-500/50 bg-rose-50/40 dark:bg-rose-950/20'
+                          : 'border-stone-200 dark:border-zinc-800'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`w-3 h-3 rounded-full shrink-0 ${bTone.dotClass}`} />
+                          <div>
+                            <div className="text-sm font-black text-zinc-900 dark:text-white flex items-center gap-1.5">
+                              <span>{barber.arName}</span>
+                              <span className="text-[10px] font-mono text-zinc-400">
+                                ({balance.commissionPercent}%)
+                              </span>
+                              {renderBoxEyeButton(boxKey, true)}
+                            </div>
+                            <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block">
+                              الفلوس اللي بقاو ليه في الحساب كامل
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div
+                            dir="ltr"
+                            className={`text-lg sm:text-xl font-black font-mono tabular-nums ${
+                              isNeg
+                                ? 'text-rose-700 dark:text-rose-400'
+                                : balance.barberNetOwedMAD === 0
+                                ? 'text-emerald-700 dark:text-emerald-400'
+                                : 'text-zinc-900 dark:text-white'
+                            }`}
+                          >
+                            {formatMAD(balance.barberNetOwedMAD, boxKey)}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedBarberId(barber.id);
+                              setCaisseBarbersCumulativeModalOpen(false);
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-amber-500 hover:text-white text-zinc-700 dark:text-zinc-200 font-bold text-[11px] cursor-pointer transition-colors"
+                          >
+                            فتح الحساب
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono tabular-nums text-zinc-600 dark:text-zinc-400">
+                        <span>المداخيل: {formatMAD(balance.incomeMAD, boxKey)}</span>
+                        <span>·</span>
+                        <span>حصة الحلاق: {formatMAD(balance.barberGrossShareMAD, boxKey)}</span>
+                        <span>·</span>
+                        <span className="text-rose-600 dark:text-rose-400">
+                          السحوبات: {formatMAD(balance.expensesMAD, boxKey)}
+                        </span>
+                        {balance.carryForwardMAD !== 0 && (
+                          <>
+                            <span>·</span>
+                            <span className="text-rose-700 dark:text-rose-300 font-bold">
+                              مرحل من الشهر السابق: {formatMAD(balance.carryForwardMAD, boxKey)}
+                            </span>
+                          </>
+                        )}
+                        {balance.barberAdjustmentMAD !== 0 && (
+                          <>
+                            <span>·</span>
+                            <span className="text-indigo-700 dark:text-indigo-300 font-bold">
+                              تسوية: {formatMAD(balance.barberAdjustmentMAD, boxKey)}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      </ModalPortal>
+    ) : null;
+
   if ((sessionRole === 'caisse' || sessionRole === 'master') && !activeBarberId) {
     const gridBarbers = sessionRole === 'master' ? allCaisseBarbers : activeCaisseBarbers;
     const selectorDrawerSummary = liveOpenDailyDrawerSummary;
@@ -2765,9 +3185,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     );
     const hasMainCaisseOverdrawn =
       selectorDrawerSummary.netTotalMAD < 0 || overdrawnMainRows.length > 0;
-    const hasAnyDailySettledToday = gridBarbers.some(
-      (b) => Boolean(settlementsMap[`${b.id}_${businessTodayStr}`]?.intakeClosed)
-    );
     return (
       <div className="space-y-4 pb-28">
         <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2821,6 +3238,27 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 {renderBoxEyeButton('drawer_total_chip', true)}
               </div>
 
+              {sessionRole === 'caisse' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setCaisseBarbersCumulativeModalOpen(true)}
+                    className="min-h-[38px] px-3.5 py-1.5 rounded-xl border border-amber-300 dark:border-amber-500/45 bg-amber-50 dark:bg-amber-500/15 hover:bg-amber-100 dark:hover:bg-amber-500/25 text-amber-900 dark:text-amber-200 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                  >
+                    <User className="w-3.5 h-3.5 shrink-0" />
+                    <span>الفلوس اللي بقاو في الحساب كامل (منير · أنور · لحسن)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openFloatModal('add')}
+                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-black flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>الصرف (حسن)</span>
+                  </button>
+                </>
+              )}
+
               {canToggleCaissePrivacy && (
                 <button
                   type="button"
@@ -2840,65 +3278,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             </div>
           )}
         </div>
-
-        {/* Dedicated Caisse Daily Drawer Total Card ONLY (No "حساب المجر كامل", No monthly data; anchored strictly to last "تصفية الحساب اليومي") */}
-        {sessionRole === 'caisse' && (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              setDrawerModalScope('open_daily');
-              setDrawerModalOpen(true);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setDrawerModalScope('open_daily');
-                setDrawerModalOpen(true);
-              }
-            }}
-            className="p-4 sm:p-5 rounded-2xl bg-emerald-50/75 dark:bg-emerald-950/25 border-2 border-emerald-300 dark:border-emerald-500/45 hover:border-emerald-500 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer shadow-xs transition-all"
-          >
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-black text-emerald-950 dark:text-emerald-100">
-                  الفلوس فـ المجر (الدورة اليومية المفتوحة)
-                </span>
-                <span className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-900 border border-emerald-200 dark:border-emerald-500/35 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
-                  {hasAnyDailySettledToday && liveOpenDailyDrawerSummary.entryCount === 0
-                    ? 'تمت التصفية اليومية ✓'
-                    : 'حساب اليوم المفتوح · اضغط للتفاصيل'}
-                </span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openFloatModal('add');
-                  }}
-                  className="px-2.5 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-black flex items-center gap-1 cursor-pointer transition-colors"
-                >
-                  <Plus className="w-3 h-3" />
-                  <span>الصرف (حسن)</span>
-                </button>
-                {renderBoxEyeButton('drawer_total_chip', true)}
-              </div>
-              <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono text-zinc-700 dark:text-zinc-300">
-                <span>الصرف (حسن): {formatMAD(liveOpenDailyDrawerSummary.totalFloatMAD, 'drawer_total_chip')}</span>
-                <span>·</span>
-                <span className="text-emerald-700 dark:text-emerald-300 font-bold">
-                  المداخيل: {formatMAD(liveOpenDailyDrawerSummary.totalIncomeMAD, 'drawer_total_chip')}
-                </span>
-                <span>·</span>
-                <span className="text-rose-700 dark:text-rose-300 font-bold">
-                  السحوبات: {formatMAD(liveOpenDailyDrawerSummary.totalExpensesMAD, 'drawer_total_chip')}
-                </span>
-              </div>
-            </div>
-            <div dir="ltr" className="text-2xl font-black font-mono tabular-nums text-emerald-800 dark:text-emerald-300 shrink-0">
-              {formatMAD(liveOpenDailyDrawerSummary.netTotalMAD, 'drawer_total_chip')}
-            </div>
-          </div>
-        )}
 
         {/* Main Caisse Overdrawn / Exceeded Funds Alert */}
         {hasMainCaisseOverdrawn && (
@@ -2974,6 +3353,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         </div>
 
         {drawerBreakdownModalNode}
+        {caisseBarbersCumulativeModalNode}
         {hassanPinModalNode}
         {floatModalNode}
       </div>
@@ -3077,6 +3457,17 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 </span>
                 {renderBoxEyeButton('drawer_total_chip', true)}
               </div>
+            )}
+
+            {sessionRole === 'caisse' && (
+              <button
+                type="button"
+                onClick={() => setCaisseBarbersCumulativeModalOpen(true)}
+                className="min-h-[36px] px-3 py-1.5 rounded-xl border border-amber-300 dark:border-amber-500/45 bg-amber-50 dark:bg-amber-500/15 hover:bg-amber-100 dark:hover:bg-amber-500/25 text-amber-900 dark:text-amber-200 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <User className="w-3.5 h-3.5 shrink-0" />
+                <span>الفلوس اللي بقاو في الحساب كامل</span>
+              </button>
             )}
 
             {canToggleCaissePrivacy && (
@@ -3483,11 +3874,15 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
                   {allBarbersPayoutPreview.items.map(({ barber, preview }) => {
                     const count = preview.cycleBalance.openCycleEntries.length;
+                    const isIncluded =
+                      count > 0 ||
+                      preview.cycleBalance.carryForwardMAD !== 0 ||
+                      preview.cycleBalance.barberNetOwedMAD !== 0;
                     return (
                       <div
                         key={barber.id}
                         className={`px-2.5 py-1.5 rounded-lg border text-[11px] flex items-center justify-between gap-2 ${
-                          count > 0
+                          isIncluded
                             ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-500/35'
                             : 'bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 opacity-60'
                         }`}
@@ -3495,7 +3890,14 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                         <span className="font-bold text-zinc-900 dark:text-white truncate">
                           {barber.arName} ({count})
                         </span>
-                        <span dir="ltr" className="font-mono font-black text-zinc-800 dark:text-zinc-200 shrink-0">
+                        <span
+                          dir="ltr"
+                          className={`font-mono font-black shrink-0 ${
+                            preview.cycleBalance.barberNetOwedMAD < 0
+                              ? 'text-rose-700 dark:text-rose-400'
+                              : 'text-zinc-800 dark:text-zinc-200'
+                          }`}
+                        >
                           {formatMAD(preview.cycleBalance.barberNetOwedMAD)}
                         </span>
                       </div>
@@ -3641,39 +4043,52 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       {isAccountOverdrawn && (
         <div
           role="alert"
-          className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-500/50 text-rose-800 dark:text-rose-200 text-xs flex items-start gap-2.5 shadow-2xs"
+          className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-500/50 text-rose-800 dark:text-rose-200 text-xs flex flex-wrap items-center justify-between gap-2.5 shadow-2xs"
         >
-          <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-          <div className="space-y-0.5">
-            <div className="font-black">
-              تنبيه: السحوبات والمصاريف تجاوزت المستحقات المتاحة في الصندوق
-            </div>
-            <p className="text-[11px] leading-relaxed">
-              {sessionRole === 'caisse' ? (
-                <>
-                  صافي الفلوس فـ المجر اليوم:{' '}
-                  <strong dir="ltr" className="font-mono inline-block">
-                    {formatMAD(displayedDayIntakeStats.displayedDrawerCashMAD, 'kpi_net')}
-                  </strong>
-                </>
-              ) : (
-                <>
-                  الرصيد الحالي:{' '}
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <div className="font-black">
+                تنبيه: السحوبات والمصاريف تجاوزت المستحقات المتاحة في الصندوق
+              </div>
+              <p className="text-[11px] leading-relaxed">
+                {sessionRole === 'caisse' ? (
+                  <>
+                    صافي الحساب اليومي المفتوح:{' '}
                     <strong dir="ltr" className="font-mono inline-block">
-                    {formatMAD(
-                      cycleBalance.barberNetOwedMAD < 0
-                        ? cycleBalance.barberNetOwedMAD
-                        : cycleBalance.drawerCashMAD < 0
-                        ? cycleBalance.drawerCashMAD
-                        : displayedDayIntakeStats.displayedDrawerCashMAD,
-                      'kpi_net'
-                    )}
-                  </strong>
-                </>
-              )}
-              . سيبقى هذا الفارق السالب مسجلاً حتى تغطيته من المداخيل القادمة.
-            </p>
+                      {formatMAD(displayedDayIntakeStats.displayedDrawerCashMAD, 'kpi_net')}
+                    </strong>
+                  </>
+                ) : (
+                  <>
+                    الرصيد الحالي:{' '}
+                    <strong dir="ltr" className="font-mono inline-block">
+                      {formatMAD(
+                        cycleBalance.barberNetOwedMAD < 0
+                          ? cycleBalance.barberNetOwedMAD
+                          : cycleBalance.drawerCashMAD < 0
+                          ? cycleBalance.drawerCashMAD
+                          : displayedDayIntakeStats.displayedDrawerCashMAD,
+                        'kpi_net'
+                      )}
+                    </strong>
+                  </>
+                )}
+                . سيبقى هذا الفارق السالب مسجلاً حتى تغطيته أو تصفيته من الإدارة.
+              </p>
+            </div>
           </div>
+
+          {sessionRole === 'master' && cycleBalance.barberNetOwedMAD < 0 && (
+            <button
+              type="button"
+              onClick={() => openBalanceAdjustModal('zero_negative')}
+              className="px-3 py-1.5 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-black text-[11px] flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>تصفية / تعديل الرصيد السالب (معزول)</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -3692,14 +4107,18 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className={`px-2.5 py-1 rounded-lg border font-mono font-black text-[11px] tabular-nums ${
-                  cycleBalance.barberNetOwedMAD === 0 && cycleBalance.openCycleEntries.length === 0
+                  cycleBalance.barberNetOwedMAD === 0 &&
+                  cycleBalance.openCycleEntries.length === 0 &&
+                  cycleBalance.carryForwardMAD === 0
                     ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300'
                     : cycleBalance.barberNetOwedMAD < 0
                     ? 'bg-rose-50 dark:bg-rose-950/35 border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300'
                     : 'bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-500/35 text-amber-900 dark:text-amber-200'
                 }`}
               >
-                {cycleBalance.barberNetOwedMAD === 0 && cycleBalance.openCycleEntries.length === 0
+                {cycleBalance.barberNetOwedMAD === 0 &&
+                cycleBalance.openCycleEntries.length === 0 &&
+                cycleBalance.carryForwardMAD === 0
                   ? `الرصيد المفتوح: ${formatMAD(0, 'kpi_net')} (تمت التصفية ✓)`
                   : isViewingOwnAccount
                   ? `رصيدي المفتوح المستحق: ${formatMAD(cycleBalance.barberNetOwedMAD, 'kpi_net')}`
@@ -3710,8 +4129,34 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                   آخر تصفية شهرية: {cycleBalance.lastSettledDate}
                 </span>
               )}
+              {sessionRole === 'master' && (
+                <button
+                  type="button"
+                  onClick={() => openBalanceAdjustModal()}
+                  className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-amber-500 hover:text-white border border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+                  title="تعديل أو مسح الرصيد السالب لهذا الحلاق فقط دون المساس بباقي الحسابات"
+                >
+                  <Edit3 className="w-3 h-3" />
+                  <span>تعديل الرصيد (معزول)</span>
+                </button>
+              )}
             </div>
           </div>
+
+          {(cycleBalance.carryForwardMAD !== 0 || cycleBalance.barberAdjustmentMAD !== 0) && (
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              {cycleBalance.carryForwardMAD !== 0 && (
+                <span className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/35 border border-rose-200 dark:border-rose-500/40 text-rose-800 dark:text-rose-200 font-mono font-bold">
+                  رصيد مرحل من الشهر السابق: {formatMAD(cycleBalance.carryForwardMAD, 'kpi_net')}
+                </span>
+              )}
+              {cycleBalance.barberAdjustmentMAD !== 0 && (
+                <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/35 border border-indigo-200 dark:border-indigo-500/40 text-indigo-800 dark:text-indigo-200 font-mono font-bold">
+                  تسوية رصيد معزولة: {formatMAD(cycleBalance.barberAdjustmentMAD, 'kpi_net')}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Open Monthly/Cycle Breakdown Strip (Remains intact across daily closes; resets only on "تصفية الحساب الشهري") */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -3784,8 +4229,12 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         </div>
       )}
 
-      {/* 4 Interactive Darija KPI Cards + Quick '+' Actions Inside Each Card */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Interactive Darija KPI Cards + Quick '+' Actions Inside Each Card (In Caisse Mode: 3 Cards without "الفلوس فـ المجر") */}
+      <div
+        className={`grid gap-3 ${
+          sessionRole === 'caisse' ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2 lg:grid-cols-4'
+        }`}
+      >
         {/* 1. شحال حط (الدورة اليومية المفتوحة / التاريخ المحدد) */}
         <div
           role="button"
@@ -3903,82 +4352,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           </span>
         </div>
 
-        {/* 3. الصافي التراكمي/الشهري (Master/Barber) OR صافي المجر اليومي (Caisse Mode — resets cleanly to 0 on daily settlement) */}
-        {sessionRole === 'caisse' ? (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => openDrillModal('net_balance')}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                openDrillModal('net_balance');
-              }
-            }}
-            className={`p-4 rounded-2xl border shadow-xs hover:shadow-md hover:border-amber-400 active:scale-[0.99] transition-all text-start space-y-1 cursor-pointer group ${
-              displayedDayIntakeStats.displayedDrawerCashMAD < 0
-                ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-300 dark:border-rose-500/50'
-                : activeTone.softSurfaceClass
-            }`}
-          >
-            <div className="flex items-center justify-between gap-1">
-              <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 block">
-                الفلوس فـ المجر — {activeBarberMeta.arName} ({isLiveOpenDailyView ? 'المفتوح' : selectedDate})
-              </span>
-              <span className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openQuickIncomeForm(false);
-                  }}
-                  title="إضافة سريعة للمجر"
-                  aria-label="إضافة سريعة للمجر"
-                  className="w-6 h-6 rounded-lg bg-white/80 dark:bg-zinc-900 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 hover:bg-amber-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-                {renderBoxEyeButton('kpi_net', true)}
-              </span>
-            </div>
-            <div
-              dir="ltr"
-              className={`inline-flex items-baseline gap-1 text-xl sm:text-2xl font-black font-mono tabular-nums ${
-                displayedDayIntakeStats.displayedDrawerCashMAD < 0
-                  ? 'text-rose-700 dark:text-rose-400'
-                  : 'text-zinc-900 dark:text-white'
-              }`}
-            >
-              <span>{maskNum(displayedDayIntakeStats.displayedDrawerCashMAD, 'kpi_net')}</span>
-              <span
-                className={`text-xs font-bold ${
-                  displayedDayIntakeStats.displayedDrawerCashMAD < 0
-                    ? 'text-rose-600 dark:text-rose-400'
-                    : 'text-amber-600 dark:text-amber-400'
-                }`}
-              >
-                MAD
-              </span>
-            </div>
-            <span
-              className={`text-[10px] block ${
-                displayedDayIntakeStats.displayedDrawerCashMAD < 0
-                  ? 'text-rose-700 dark:text-rose-300 font-bold'
-                  : displayedDayIntakeStats.isIntakeClosed &&
-                    displayedDayIntakeStats.displayedDrawerCashMAD === 0
-                  ? 'text-emerald-700 dark:text-emerald-300 font-bold'
-                  : 'text-zinc-500 dark:text-zinc-400'
-              }`}
-            >
-              {displayedDayIntakeStats.displayedDrawerCashMAD < 0
-                ? 'رصيد سالب — السحوبات تجاوزت المجر · اضغط للتفاصيل'
-                : displayedDayIntakeStats.isIntakeClosed &&
-                  displayedDayIntakeStats.displayedDrawerCashMAD === 0
-                ? 'تمت التصفية اليومية ✓ · الحساب مصفر 0'
-                : 'المداخيل + الصرف − السحوبات · اضغط للتفاصيل'}
-            </span>
-          </div>
-        ) : (
+        {/* 3. الصافي التراكمي/الشهري (Master/Barber Only — Removed "الفلوس فـ المجر" Box in Dedicated Caisse Mode) */}
+        {sessionRole === 'caisse' ? null : (
           <div
             role="button"
             tabIndex={0}
@@ -5368,13 +5743,17 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         ) : (
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
             {visibleEntries.map((entry) => {
-              const badge = formatEntryTypeBadge(entry.type);
+              const badge = formatEntryTypeBadge(entry.type, entry.adjustmentDirection);
               const isExpanded = Boolean(expandedEntryIds[entry.id]);
               const primaryLabel =
                 entry.serviceNames && entry.serviceNames.length > 0
                   ? entry.serviceNames.join(' + ')
                   : entry.note?.trim() || entry.clientName || badge.label;
               const timePart = safeFormatTime(entry.createdAt, [], { hour: '2-digit', minute: '2-digit' }, '');
+              const isNegativeAmount =
+                entry.type === 'expense' ||
+                entry.type === 'float_return' ||
+                (entry.type === 'barber_adjustment' && entry.adjustmentDirection === 'debit');
 
               return (
                 <div key={entry.id} className="py-2 first:pt-0 last:pb-0">
@@ -5407,7 +5786,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                       <span
                         dir="ltr"
                         className={`text-xs sm:text-sm font-black font-mono tabular-nums ${
-                          entry.type === 'expense' || entry.type === 'float_return'
+                          isNegativeAmount
                             ? 'text-rose-700 dark:text-rose-400'
                             : 'text-emerald-700 dark:text-emerald-400'
                         }`}
@@ -5579,7 +5958,40 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                     <option value="credit_repayment">خلاص كريدي (+)</option>
                     <option value="float_adjustment">إضافة صرف (+)</option>
                     <option value="float_return">إرجاع صرف (−)</option>
+                    <option value="barber_adjustment">تسوية رصيد حلاق معزولة (±)</option>
                   </select>
+                </div>
+              </div>
+            )}
+
+            {sessionRole === 'master' && editType === 'barber_adjustment' && (
+              <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/25 border border-indigo-200 dark:border-indigo-500/35 space-y-2">
+                <div className="text-[11px] font-bold text-indigo-900 dark:text-indigo-200">
+                  تسوية معزولة للحلاق المختار فقط (لا تغير حصة المحل أو المجر العام أو باقي الحلاقين):
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditAdjustmentDirection('credit')}
+                    className={`px-3 py-2 rounded-xl border font-black text-xs cursor-pointer ${
+                      editAdjustmentDirection === 'credit'
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                    }`}
+                  >
+                    + إضافة / مسح دين عن الحلاق
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditAdjustmentDirection('debit')}
+                    className={`px-3 py-2 rounded-xl border font-black text-xs cursor-pointer ${
+                      editAdjustmentDirection === 'debit'
+                        ? 'bg-rose-600 text-white border-rose-600'
+                        : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                    }`}
+                  >
+                    − خصم / دين على الحلاق
+                  </button>
                 </div>
               </div>
             )}
@@ -6198,7 +6610,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             <div className="p-4 overflow-y-auto space-y-2.5 flex-1">
               {selectedDrillEntry ? (
                 (() => {
-                  const badge = formatEntryTypeBadge(selectedDrillEntry.type);
+                  const badge = formatEntryTypeBadge(
+                    selectedDrillEntry.type,
+                    selectedDrillEntry.adjustmentDirection
+                  );
                   const entryMeta = getCaisseBarberMeta(selectedDrillEntry.barberId, roster);
                   const isOpenCred =
                     (Number(selectedDrillEntry.creditRemainingMAD) || 0) > 0 &&
@@ -6247,7 +6662,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                             dir="ltr"
                             className={`text-lg font-black font-mono tabular-nums ${
                               selectedDrillEntry.type === 'expense' ||
-                              selectedDrillEntry.type === 'float_return'
+                              selectedDrillEntry.type === 'float_return' ||
+                              (selectedDrillEntry.type === 'barber_adjustment' &&
+                                selectedDrillEntry.adjustmentDirection === 'debit')
                                 ? 'text-rose-700 dark:text-rose-400'
                                 : 'text-emerald-700 dark:text-emerald-400'
                             }`}
@@ -6373,7 +6790,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               ) : (
                 <>
                   {drillViewData.list.map((item) => {
-                    const badge = formatEntryTypeBadge(item.type);
+                    const badge = formatEntryTypeBadge(item.type, item.adjustmentDirection);
                     const effCredRem = getEffectiveCaisseCreditRemaining(item);
                     const itemTime = safeFormatTime(item.createdAt, [], { hour: '2-digit', minute: '2-digit' }, '');
                     const label =
@@ -6445,7 +6862,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                             <span
                               dir="ltr"
                               className={`font-mono font-black text-sm tabular-nums ${
-                                item.type === 'expense' || item.type === 'float_return'
+                                item.type === 'expense' ||
+                                item.type === 'float_return' ||
+                                (item.type === 'barber_adjustment' &&
+                                  item.adjustmentDirection === 'debit')
                                   ? 'text-rose-700 dark:text-rose-400'
                                   : 'text-emerald-700 dark:text-emerald-400'
                               }`}
@@ -6569,7 +6989,447 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       )}
 
       {drawerBreakdownModalNode}
+      {caisseBarbersCumulativeModalNode}
       {hassanPinModalNode}
+
+      {/* Master Admin: Isolated Barber Balance Adjust / Clear Negative Modal */}
+      {sessionRole === 'master' && balanceAdjustModalOpen && activeBarberId && (
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 sb-modal-backdrop"
+            onClick={() => !balanceAdjustBusy && setBalanceAdjustModalOpen(false)}
+          >
+            <form
+              onSubmit={handleSubmitBalanceAdjustment}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#141720] border-2 border-indigo-400 dark:border-indigo-500/50 p-5 space-y-4 shadow-2xl text-xs"
+            >
+              <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
+                <span className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-2">
+                  <Edit3 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>تعديل / تصفية الرصيد (معزول) — {activeBarberMeta.arName}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => !balanceAdjustBusy && setBalanceAdjustModalOpen(false)}
+                  className="p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-3 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/35 text-[11px] text-indigo-950 dark:text-indigo-200 space-y-1">
+                <div className="font-bold">
+                  الرصيد المفتوح الحالي لـ {activeBarberMeta.arName}:{' '}
+                  <strong
+                    dir="ltr"
+                    className={`font-mono ${
+                      cycleBalance.barberNetOwedMAD < 0
+                        ? 'text-rose-700 dark:text-rose-400'
+                        : 'text-emerald-700 dark:text-emerald-400'
+                    }`}
+                  >
+                    {Math.round(cycleBalance.barberNetOwedMAD)} MAD
+                  </strong>
+                </div>
+                <p className="text-[10px] leading-relaxed">
+                  هذا التعديل معزول 100% لحساب {activeBarberMeta.arName} فقط — لن يغير رصيد باقي الحلاقين أو المجر اليومي أو حصة المحل.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5">
+                {cycleBalance.barberNetOwedMAD < 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBalanceAdjustMode('zero_negative');
+                      setBalanceAdjustAmount(String(Math.abs(Math.round(cycleBalance.barberNetOwedMAD))));
+                      setBalanceAdjustNote(
+                        `تصفية الرصيد السالب (${cycleBalance.barberNetOwedMAD} MAD) — دفع المبلغ معزولاً`
+                      );
+                    }}
+                    className={`px-2 py-2 rounded-xl border font-black text-[11px] cursor-pointer ${
+                      balanceAdjustMode === 'zero_negative'
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                    }`}
+                  >
+                    تصفير السالب إلى 0
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBalanceAdjustMode('set_target');
+                    setBalanceAdjustAmount('0');
+                  }}
+                  className={`px-2 py-2 rounded-xl border font-black text-[11px] cursor-pointer ${
+                    balanceAdjustMode === 'set_target'
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                  } ${cycleBalance.barberNetOwedMAD >= 0 ? 'col-span-1' : ''}`}
+                >
+                  تحديد الرصيد الجديد
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBalanceAdjustMode('delta');
+                    setBalanceAdjustAmount('');
+                  }}
+                  className={`px-2 py-2 rounded-xl border font-black text-[11px] cursor-pointer ${
+                    balanceAdjustMode === 'delta'
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                  }`}
+                >
+                  إضافة أو خصم (+ / −)
+                </button>
+              </div>
+
+              {balanceAdjustMode === 'zero_negative' && cycleBalance.barberNetOwedMAD < 0 ? (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-500/35 text-xs font-bold text-emerald-900 dark:text-emerald-200">
+                  سيتم تسجيل مسح دين معزول بقيمة{' '}
+                  <span dir="ltr" className="font-mono font-black">
+                    +{Math.abs(Math.round(cycleBalance.barberNetOwedMAD))} MAD
+                  </span>{' '}
+                  ليصبح رصيد {activeBarberMeta.arName} المفتوح <span className="font-mono">0 MAD</span>.
+                </div>
+              ) : balanceAdjustMode === 'set_target' ? (
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    الرصيد المستهدف الجديد لـ {activeBarberMeta.arName} (MAD)
+                  </label>
+                  <input
+                    type="number"
+                    step="1"
+                    value={balanceAdjustAmount}
+                    onChange={(e) => setBalanceAdjustAmount(e.target.value)}
+                    placeholder="0"
+                    required
+                    className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-xl px-3 py-2 font-mono font-black text-base text-zinc-900 dark:text-white"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setBalanceAdjustDirection('credit')}
+                      className={`px-3 py-2 rounded-xl border font-black text-xs cursor-pointer ${
+                        balanceAdjustDirection === 'credit'
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                      }`}
+                    >
+                      + إضافة لرصيده (تخفيف السالب)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBalanceAdjustDirection('debit')}
+                      className={`px-3 py-2 rounded-xl border font-black text-xs cursor-pointer ${
+                        balanceAdjustDirection === 'debit'
+                          ? 'bg-rose-600 text-white border-rose-600'
+                          : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                      }`}
+                    >
+                      − خصم من رصيده
+                    </button>
+                  </div>
+                  <div>
+                    <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                      المبلغ (MAD)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      step="1"
+                      value={balanceAdjustAmount}
+                      onChange={(e) => setBalanceAdjustAmount(e.target.value)}
+                      placeholder="0"
+                      required
+                      className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-xl px-3 py-2 font-mono font-black text-base text-zinc-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-zinc-600 dark:text-zinc-400 mb-1">
+                    التاريخ
+                  </label>
+                  <input
+                    type="date"
+                    value={balanceAdjustDate}
+                    onChange={(e) => setBalanceAdjustDate(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 font-mono text-zinc-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-zinc-600 dark:text-zinc-400 mb-1">
+                    ملاحظة / سبب التعديل
+                  </label>
+                  <input
+                    type="text"
+                    value={balanceAdjustNote}
+                    onChange={(e) => setBalanceAdjustNote(e.target.value)}
+                    placeholder="مثال: خلص اللي كان عليه..."
+                    className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-zinc-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={balanceAdjustBusy}
+                  onClick={() => setBalanceAdjustModalOpen(false)}
+                  className="px-3.5 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={balanceAdjustBusy}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black cursor-pointer disabled:opacity-60"
+                >
+                  {balanceAdjustBusy ? 'جاري الحفظ...' : 'حفظ التعديل المعزول ✓'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </ModalPortal>
+      )}
+
+      {/* Master Admin: Prompt on Monthly Settlement When Barber(s) Have Negative Balance */}
+      {sessionRole === 'master' && negativePayoutPrompt && (
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-[115] flex items-center justify-center p-4 sb-modal-backdrop"
+            onClick={() => !payoutBusy && setNegativePayoutPrompt(null)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#141720] border-2 border-amber-400 dark:border-amber-500/60 p-5 space-y-4 shadow-2xl text-xs"
+            >
+              <div className="flex items-start justify-between gap-2 border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm text-zinc-900 dark:text-white">
+                      تنبيه تصفية الحساب الشهري — يوجد رصيد سالب
+                    </h4>
+                    <p className="text-[11px] text-zinc-600 dark:text-zinc-300 mt-0.5">
+                      {negativePayoutPrompt.barbers.length === 1
+                        ? `الحلاق ${negativePayoutPrompt.barbers[0].arName} عندو رصيد سالب بقيمة ${negativePayoutPrompt.barbers[0].negativeAmountMAD} MAD. واش عطاك المبلغ باش نحيدوه، ولا غادي يدوز للشهر الجاي؟`
+                        : 'كاينين حلاقين عندهم رصيد سالب. اختار لكل حلاق واش عطاك باش نحيدها ولا تدوز للشهر الجاي:'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={payoutBusy}
+                  onClick={() => setNegativePayoutPrompt(null)}
+                  className="p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {negativePayoutPrompt.barbers.length === 1 ? (
+                <div className="space-y-3">
+                  <div className="p-3.5 rounded-xl bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-500/40 flex items-center justify-between gap-2">
+                    <span className="font-black text-zinc-900 dark:text-white">
+                      {negativePayoutPrompt.barbers[0].arName}
+                    </span>
+                    <span dir="ltr" className="font-mono font-black text-base text-rose-700 dark:text-rose-400">
+                      {negativePayoutPrompt.barbers[0].negativeAmountMAD} MAD
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2.5">
+                    <button
+                      type="button"
+                      disabled={payoutBusy}
+                      onClick={() =>
+                        void executePayoutWithResolutions(negativePayoutPrompt.mode, {
+                          [negativePayoutPrompt.barbers[0].barberId]: 'cleared',
+                        })
+                      }
+                      className="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs text-start flex items-center justify-between gap-2 cursor-pointer disabled:opacity-60"
+                    >
+                      <span>واش عطاني باش نحيدها (عطاني الفلوس وتصفّى لـ 0 MAD ✓)</span>
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={payoutBusy}
+                      onClick={() =>
+                        void executePayoutWithResolutions(negativePayoutPrompt.mode, {
+                          [negativePayoutPrompt.barbers[0].barberId]: 'carried_forward',
+                        })
+                      }
+                      className="w-full px-4 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-xs text-start flex items-center justify-between gap-2 cursor-pointer disabled:opacity-60"
+                    >
+                      <span>
+                        لا، باقي عليه باش دوز للشهر الجاي (يتسجل{' '}
+                        <span dir="ltr" className="font-mono">
+                          {negativePayoutPrompt.barbers[0].negativeAmountMAD} MAD
+                        </span>{' '}
+                        في الشهر الجاي)
+                      </span>
+                      <Calendar className="w-4 h-4 shrink-0" />
+                    </button>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      disabled={payoutBusy}
+                      onClick={() => setNegativePayoutPrompt(null)}
+                      className="px-3.5 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold cursor-pointer"
+                    >
+                      رجوع / إلغاء
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next: Record<string, 'cleared' | 'carried_forward'> = {};
+                        negativePayoutPrompt.barbers.forEach((b) => {
+                          next[b.barberId] = 'cleared';
+                        });
+                        setNegativePayoutPrompt((prev) =>
+                          prev ? { ...prev, resolutions: next } : null
+                        );
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-800 dark:text-emerald-200 font-black text-[11px] cursor-pointer"
+                    >
+                      الكل: عطاني باش نحيدها (0 MAD)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next: Record<string, 'cleared' | 'carried_forward'> = {};
+                        negativePayoutPrompt.barbers.forEach((b) => {
+                          next[b.barberId] = 'carried_forward';
+                        });
+                        setNegativePayoutPrompt((prev) =>
+                          prev ? { ...prev, resolutions: next } : null
+                        );
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/35 text-amber-900 dark:text-amber-200 font-black text-[11px] cursor-pointer"
+                    >
+                      الكل: دوز للشهر الجاي
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {negativePayoutPrompt.barbers.map((nb) => {
+                      const choice =
+                        negativePayoutPrompt.resolutions[nb.barberId] || 'carried_forward';
+                      return (
+                        <div
+                          key={nb.barberId}
+                          className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-zinc-900 dark:text-white">
+                              {nb.arName}
+                            </span>
+                            <span dir="ltr" className="font-mono font-black text-rose-700 dark:text-rose-400">
+                              {nb.negativeAmountMAD} MAD
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setNegativePayoutPrompt((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        resolutions: {
+                                          ...prev.resolutions,
+                                          [nb.barberId]: 'cleared',
+                                        },
+                                      }
+                                    : null
+                                )
+                              }
+                              className={`px-2.5 py-1.5 rounded-lg border font-black text-[11px] cursor-pointer ${
+                                choice === 'cleared'
+                                  ? 'bg-emerald-600 text-white border-emerald-600'
+                                  : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                              }`}
+                            >
+                              عطاني باش نحيدها (0 MAD)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setNegativePayoutPrompt((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        resolutions: {
+                                          ...prev.resolutions,
+                                          [nb.barberId]: 'carried_forward',
+                                        },
+                                      }
+                                    : null
+                                )
+                              }
+                              className={`px-2.5 py-1.5 rounded-lg border font-black text-[11px] cursor-pointer ${
+                                choice === 'carried_forward'
+                                  ? 'bg-amber-600 text-white border-amber-600'
+                                  : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                              }`}
+                            >
+                              دوز للشهر الجاي ({nb.negativeAmountMAD})
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      disabled={payoutBusy}
+                      onClick={() => setNegativePayoutPrompt(null)}
+                      className="px-3.5 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold cursor-pointer"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="button"
+                      disabled={payoutBusy}
+                      onClick={() =>
+                        void executePayoutWithResolutions(
+                          negativePayoutPrompt.mode,
+                          negativePayoutPrompt.resolutions
+                        )
+                      }
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black cursor-pointer disabled:opacity-60"
+                    >
+                      {payoutBusy ? 'جاري التصفية...' : 'تأكيد وتصفية الحساب الشهري ✓'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </ModalPortal>
+      )}
 
       {/* Small Solid Confirmation Modal ("موافقة") for Duplicate Deposit / Withdrawal Warning */}
       {duplicateWarning && (

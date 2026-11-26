@@ -731,7 +731,12 @@
         },
         "type": {
           "type": "string",
-          "enum": ["income", "expense", "float_adjustment", "float_return", "credit_repayment"]
+          "enum": ["income", "expense", "float_adjustment", "float_return", "credit_repayment", "barber_adjustment"]
+        },
+        "adjustmentDirection": {
+          "type": "string",
+          "enum": ["credit", "debit"],
+          "description": "Direction for isolated barber_adjustment entries (credit adds to barber net balance, debit subtracts)"
         },
         "date": {
           "type": "string",
@@ -1169,6 +1174,15 @@
         },
         "entryCount": {
           "type": "number"
+        },
+        "carryForwardBalanceMAD": {
+          "type": "number",
+          "description": "Negative or adjusted balance carried forward into the next monthly cycle for this barber only"
+        },
+        "negativeResolution": {
+          "type": "string",
+          "enum": ["cleared", "carried_forward"],
+          "description": "How negative balance at cycle settlement was resolved by Master Admin"
         },
         "note": {
           "type": "string",

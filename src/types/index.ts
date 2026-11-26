@@ -244,7 +244,8 @@ export type CaisseEntryType =
   | 'expense'
   | 'float_adjustment'
   | 'float_return'
-  | 'credit_repayment';
+  | 'credit_repayment'
+  | 'barber_adjustment';
 
 export type CaisseCreditStatus = 'none' | 'open' | 'partial' | 'paid';
 
@@ -253,6 +254,7 @@ export interface CaisseEntry {
   barberId: CaisseBarberId;
   barberName: string;
   type: CaisseEntryType;
+  adjustmentDirection?: 'credit' | 'debit';
   date: string; // YYYY-MM-DD
   serviceIds?: string[];
   serviceNames?: string[];
@@ -525,6 +527,8 @@ export interface CaisseCycleSettlement {
   floatMAD: number;
   creditsIssuedMAD: number;
   entryCount: number;
+  carryForwardBalanceMAD?: number;
+  negativeResolution?: 'cleared' | 'carried_forward';
   note?: string;
   confirmedBy: string;
   confirmedAt: string;

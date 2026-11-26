@@ -305,6 +305,12 @@ function coerceCaisseEntryDoc(rawInput: unknown, docId: string): CaisseEntry {
     barberId: asStr(raw.barberId, 'hassan'),
     barberName: asStr(raw.barberName, 'Hassan ait boumlik'),
     type: (asStr(raw.type, 'income') || 'income') as CaisseEntryType,
+    adjustmentDirection:
+      raw.adjustmentDirection === 'debit'
+        ? 'debit'
+        : raw.adjustmentDirection === 'credit'
+        ? 'credit'
+        : undefined,
     date,
     serviceIds: asStrArray(raw.serviceIds),
     serviceNames: asStrArray(raw.serviceNames),
@@ -373,6 +379,14 @@ function coerceCaisseCycleDoc(rawInput: unknown, docId: string): CaisseCycleSett
     floatMAD: asFiniteNum(raw.floatMAD, 0),
     creditsIssuedMAD: asFiniteNum(raw.creditsIssuedMAD, 0),
     entryCount: asFiniteNum(raw.entryCount, 0),
+    carryForwardBalanceMAD:
+      typeof raw.carryForwardBalanceMAD === 'number' && Number.isFinite(raw.carryForwardBalanceMAD)
+        ? Math.round(raw.carryForwardBalanceMAD)
+        : undefined,
+    negativeResolution:
+      raw.negativeResolution === 'cleared' || raw.negativeResolution === 'carried_forward'
+        ? raw.negativeResolution
+        : undefined,
     confirmedBy: asStr(raw.confirmedBy, ''),
     confirmedAt: asIsoString(raw.confirmedAt, settledThroughIso),
   };
@@ -1145,6 +1159,7 @@ export interface CreateCaisseEntryInput {
   barberId: CaisseBarberId;
   barberName?: string;
   type: CaisseEntryType;
+  adjustmentDirection?: 'credit' | 'debit';
   date: string;
   serviceIds?: string[];
   serviceNames?: string[];
@@ -1164,13 +1179,16 @@ export interface CreateCaisseEntryInput {
   note?: string;
   createdByRole: StaffRole;
   createdByName: string;
+  createdAtOverride?: string;
 }
 
 export async function addCaisseEntry(input: CreateCaisseEntryInput): Promise<CaisseEntry> {
   const effectiveBarberId: CaisseBarberId = isFloatEntryType(input.type)
     ? 'hassan'
     : input.barberId;
-  const nowIso = getNextMonotonicIsoForBarber(effectiveBarberId);
+  const nowIso = (input.createdAtOverride && input.createdAtOverride.trim())
+    ? input.createdAtOverride.trim().slice(0, 64)
+    : getNextMonotonicIsoForBarber(effectiveBarberId);
   const rand = Math.random().toString(36).slice(2, 7);
   const id = sanitizeId(`ce_${Date.now()}_${rand}`, 'ce');
   const meta = getCaisseBarberMeta(effectiveBarberId);
@@ -1209,6 +1227,10 @@ export async function addCaisseEntry(input: CreateCaisseEntryInput): Promise<Cai
     createdAt: nowIso,
     updatedAt: nowIso,
   };
+
+  if (input.type === 'barber_adjustment') {
+    payload.adjustmentDirection = input.adjustmentDirection === 'debit' ? 'debit' : 'credit';
+  }
 
   if (Array.isArray(input.serviceIds) && input.serviceIds.length > 0) {
     payload.serviceIds = input.serviceIds.slice(0, 20).map((s) => String(s).slice(0, 64));
@@ -1264,6 +1286,7 @@ export interface UpdateCaisseEntryPatch {
   barberId?: CaisseBarberId;
   barberName?: string;
   type?: CaisseEntryType;
+  adjustmentDirection?: 'credit' | 'debit';
   date?: string;
   serviceIds?: string[];
   serviceNames?: string[];
@@ -1308,6 +1331,11 @@ export async function updateCaisseEntry(
     }
 
     if (patch.type !== undefined) updatePayload.type = patch.type;
+    if (patch.type !== undefined && patch.type !== 'barber_adjustment') {
+      updatePayload.adjustmentDirection = deleteField();
+    } else if (patch.adjustmentDirection !== undefined) {
+      updatePayload.adjustmentDirection = patch.adjustmentDirection === 'debit' ? 'debit' : 'credit';
+    }
     if (patch.date !== undefined) updatePayload.date = String(patch.date).slice(0, 20);
     if (patch.serviceIds !== undefined) {
       updatePayload.serviceIds = patch.serviceIds.slice(0, 20).map((s) => String(s).slice(0, 64));
@@ -1374,6 +1402,11 @@ export async function updateCaisseEntry(
           merged.barberName = String(updatePayload.barberName || item.barberName);
         }
         if (patch.type !== undefined) merged.type = patch.type;
+        if (patch.type !== undefined && patch.type !== 'barber_adjustment') {
+          merged.adjustmentDirection = undefined;
+        } else if (patch.adjustmentDirection !== undefined) {
+          merged.adjustmentDirection = patch.adjustmentDirection === 'debit' ? 'debit' : 'credit';
+        }
         if (patch.date !== undefined) merged.date = String(updatePayload.date);
         if (patch.serviceIds !== undefined) merged.serviceIds = updatePayload.serviceIds as string[];
         if (patch.serviceNames !== undefined) merged.serviceNames = updatePayload.serviceNames as string[];
@@ -1930,6 +1963,7 @@ export interface BarberDayStats {
   floatInMAD: number;
   floatOutMAD: number;
   floatMAD: number;
+  barberAdjustmentMAD: number;
   commissionPercent: number;
   extraPercentAbove50: number;
   barberGrossShareMAD: number;
@@ -1958,6 +1992,7 @@ export function computeBarberDayStats(
   let expensesMAD = 0;
   let floatInMAD = 0;
   let floatOutMAD = 0;
+  let barberAdjustmentMAD = 0;
 
   for (const e of dayEntries) {
     if (e.type === 'income') {
@@ -1971,6 +2006,9 @@ export function computeBarberDayStats(
       floatInMAD += Number(e.amountPaidMAD) || 0;
     } else if (e.type === 'float_return') {
       floatOutMAD += Number(e.amountPaidMAD) || 0;
+    } else if (e.type === 'barber_adjustment') {
+      const adjAmt = Number(e.amountPaidMAD) || 0;
+      barberAdjustmentMAD += e.adjustmentDirection === 'debit' ? -adjAmt : adjAmt;
     }
   }
 
@@ -1979,10 +2017,11 @@ export function computeBarberDayStats(
   const pct = Math.max(0, Math.min(100, commissionPercent));
   const barberGrossShareMAD = Math.round(incomeMAD * (pct / 100));
   const shopShareMAD = Math.max(0, Math.round(incomeMAD - barberGrossShareMAD));
+  const roundedAdj = Math.round(barberAdjustmentMAD);
   const barberNetShareMAD =
     barberId === 'hassan'
-      ? Math.round(barberGrossShareMAD + floatMAD - expensesMAD)
-      : Math.round(barberGrossShareMAD - expensesMAD);
+      ? Math.round(barberGrossShareMAD + floatMAD - expensesMAD + roundedAdj)
+      : Math.round(barberGrossShareMAD - expensesMAD + roundedAdj);
   const drawerCashMAD = Math.round(incomeMAD + floatMAD - expensesMAD);
 
   return {
@@ -1996,6 +2035,7 @@ export function computeBarberDayStats(
     floatInMAD: clampAmount(floatInMAD),
     floatOutMAD: clampAmount(floatOutMAD),
     floatMAD,
+    barberAdjustmentMAD: roundedAdj,
     commissionPercent: pct,
     extraPercentAbove50: Math.max(0, pct - 50),
     barberGrossShareMAD,
@@ -2324,6 +2364,8 @@ export interface BarberCycleBalance {
   floatInMAD: number;
   floatOutMAD: number;
   floatMAD: number;
+  barberAdjustmentMAD: number;
+  carryForwardMAD: number;
   drawerCashMAD: number;
   creditsIssuedMAD: number;
   barberGrossShareMAD: number;
@@ -2344,6 +2386,7 @@ export function summarizeBarberEntriesWithSettings(
   floatInMAD: number;
   floatOutMAD: number;
   floatMAD: number;
+  barberAdjustmentMAD: number;
   drawerCashMAD: number;
   creditsIssuedMAD: number;
   barberGrossShareMAD: number;
@@ -2357,6 +2400,7 @@ export function summarizeBarberEntriesWithSettings(
   let floatInMAD = 0;
   let floatOutMAD = 0;
   let floatMAD = 0;
+  let barberAdjustmentMAD = 0;
   let drawerCashMAD = 0;
   let creditsIssuedMAD = 0;
   let barberGrossShareMAD = 0;
@@ -2371,6 +2415,7 @@ export function summarizeBarberEntriesWithSettings(
     floatInMAD += ds.floatInMAD;
     floatOutMAD += ds.floatOutMAD;
     floatMAD += ds.floatMAD;
+    barberAdjustmentMAD += ds.barberAdjustmentMAD;
     drawerCashMAD += ds.drawerCashMAD;
     creditsIssuedMAD += ds.creditsIssuedMAD;
     barberGrossShareMAD += ds.barberGrossShareMAD;
@@ -2384,6 +2429,7 @@ export function summarizeBarberEntriesWithSettings(
     floatInMAD: Math.round(floatInMAD),
     floatOutMAD: Math.round(floatOutMAD),
     floatMAD: Math.round(floatMAD),
+    barberAdjustmentMAD: Math.round(barberAdjustmentMAD),
     drawerCashMAD: Math.round(drawerCashMAD),
     creditsIssuedMAD: Math.round(creditsIssuedMAD),
     barberGrossShareMAD: Math.round(barberGrossShareMAD),
@@ -2408,6 +2454,13 @@ export function computeBarberCycleBalance(
   const latestCycle = barberCycles[0] || null;
   const lastSettledIso = latestCycle ? latestCycle.settledThroughIso : null;
   const lastSettledDate = latestCycle ? latestCycle.settledThroughDate : null;
+
+  const carryForwardMAD =
+    latestCycle &&
+    typeof latestCycle.carryForwardBalanceMAD === 'number' &&
+    Number.isFinite(latestCycle.carryForwardBalanceMAD)
+      ? Math.round(latestCycle.carryForwardBalanceMAD)
+      : 0;
 
   const openCycleEntries = entries.filter(
     (e) =>
@@ -2447,10 +2500,12 @@ export function computeBarberCycleBalance(
     floatInMAD: summary.floatInMAD,
     floatOutMAD: summary.floatOutMAD,
     floatMAD: summary.floatMAD,
+    barberAdjustmentMAD: summary.barberAdjustmentMAD,
+    carryForwardMAD,
     drawerCashMAD: summary.drawerCashMAD,
     creditsIssuedMAD: summary.creditsIssuedMAD,
     barberGrossShareMAD: summary.barberGrossShareMAD,
-    barberNetOwedMAD: summary.barberNetOwedMAD,
+    barberNetOwedMAD: Math.round(summary.barberNetOwedMAD + carryForwardMAD),
     shopShareMAD: summary.shopShareMAD,
     openCreditsAllTimeMAD: Math.round(caisseOpenCreditsMAD + manualOpenCreditsMAD),
   };
@@ -2525,6 +2580,11 @@ export function computeBarberPeriodSettlementPreview(params: {
     rosterMembers
   );
 
+  const includeCarryForward =
+    fullCycle.carryForwardMAD !== 0 &&
+    (!fullCycle.lastSettledDate || rangeEnd >= fullCycle.lastSettledDate);
+  const appliedCarryForward = includeCarryForward ? fullCycle.carryForwardMAD : 0;
+
   return {
     cycleBalance: {
       ...fullCycle,
@@ -2535,10 +2595,12 @@ export function computeBarberPeriodSettlementPreview(params: {
       floatInMAD: summary.floatInMAD,
       floatOutMAD: summary.floatOutMAD,
       floatMAD: summary.floatMAD,
+      barberAdjustmentMAD: summary.barberAdjustmentMAD,
+      carryForwardMAD: appliedCarryForward,
       drawerCashMAD: summary.drawerCashMAD,
       creditsIssuedMAD: summary.creditsIssuedMAD,
       barberGrossShareMAD: summary.barberGrossShareMAD,
-      barberNetOwedMAD: summary.barberNetOwedMAD,
+      barberNetOwedMAD: Math.round(summary.barberNetOwedMAD + appliedCarryForward),
       shopShareMAD: summary.shopShareMAD,
     },
     periodStartDate: rangeStart,
@@ -2553,6 +2615,8 @@ export async function confirmBarberCyclePayout(params: {
   settlementPeriodScope?: 'full_open' | 'month' | 'custom_range';
   periodStartDate?: string;
   periodEndDate?: string;
+  negativeResolution?: 'cleared' | 'carried_forward';
+  carryForwardBalanceMAD?: number;
   note?: string;
 }): Promise<CaisseCycleSettlement> {
   const {
@@ -2562,17 +2626,71 @@ export async function confirmBarberCyclePayout(params: {
     settlementPeriodScope = 'full_open',
     periodStartDate,
     periodEndDate,
+    negativeResolution,
+    carryForwardBalanceMAD,
     note,
   } = params;
   let settledThroughIso = new Date().toISOString().slice(0, 64);
+  if (cycleBalance.lastSettledIso && settledThroughIso <= cycleBalance.lastSettledIso) {
+    const prevMs = Date.parse(cycleBalance.lastSettledIso);
+    if (Number.isFinite(prevMs)) {
+      settledThroughIso = new Date(prevMs + 2).toISOString().slice(0, 64);
+    }
+  }
   for (const e of cycleBalance.openCycleEntries) {
-    if (e.createdAt && e.createdAt > settledThroughIso) {
-      settledThroughIso = e.createdAt.slice(0, 64);
+    if (e.createdAt && e.createdAt >= settledThroughIso) {
+      const eMs = Date.parse(e.createdAt);
+      settledThroughIso = Number.isFinite(eMs)
+        ? new Date(eMs + 1).toISOString().slice(0, 64)
+        : e.createdAt.slice(0, 64);
     }
   }
   const nowIso = new Date().toISOString().slice(0, 64);
   const meta = getCaisseBarberMeta(cycleBalance.barberId);
   const id = sanitizeId(`${cycleBalance.barberId}_cyc_${Date.now()}`, 'cyc');
+
+  let finalBarberSharePaidMAD = Math.max(
+    -10000000,
+    Math.min(10000000, Math.round(cycleBalance.barberNetOwedMAD))
+  );
+  let resolvedCarryForwardMAD: number | undefined = undefined;
+  let resolvedNegativeMode: 'cleared' | 'carried_forward' | undefined = negativeResolution;
+  let finalEntryCount = Math.max(0, cycleBalance.openCycleEntries.length);
+
+  if (cycleBalance.barberNetOwedMAD < 0) {
+    if (negativeResolution === 'cleared') {
+      const clearAmt = Math.abs(Math.round(cycleBalance.barberNetOwedMAD));
+      if (clearAmt > 0) {
+        await addCaisseEntry({
+          barberId: cycleBalance.barberId,
+          barberName: meta.name,
+          type: 'barber_adjustment',
+          adjustmentDirection: 'credit',
+          date: String(periodEndDate || businessDate || getSalonBusinessDate()).slice(0, 20),
+          expectedAmountMAD: clearAmt,
+          amountPaidMAD: clearAmt,
+          creditAmountMAD: 0,
+          creditRemainingMAD: 0,
+          creditStatus: 'none',
+          note: `تصفير الرصيد السالب عند تصفية الحساب الشهري (+${clearAmt} MAD معزول للحلاق)`,
+          createdByRole: 'master',
+          createdByName: String(confirmedBy || 'Hassan ait boumlik').trim().slice(0, 100),
+          createdAtOverride: settledThroughIso,
+        });
+        finalEntryCount += 1;
+      }
+      finalBarberSharePaidMAD = 0;
+      resolvedCarryForwardMAD = 0;
+      resolvedNegativeMode = 'cleared';
+    } else if (negativeResolution === 'carried_forward') {
+      const carriedVal =
+        typeof carryForwardBalanceMAD === 'number' && Number.isFinite(carryForwardBalanceMAD)
+          ? Math.round(carryForwardBalanceMAD)
+          : Math.round(cycleBalance.barberNetOwedMAD);
+      resolvedCarryForwardMAD = Math.max(-10000000, Math.min(10000000, carriedVal));
+      resolvedNegativeMode = 'carried_forward';
+    }
+  }
 
   const payload: CaisseCycleSettlement = {
     id,
@@ -2582,18 +2700,21 @@ export async function confirmBarberCyclePayout(params: {
     settledThroughDate: String(businessDate || getSalonBusinessDate()).slice(0, 20),
     settlementPeriodScope,
     totalCollectedMAD: clampAmount(cycleBalance.incomeMAD, 10000000),
-    barberSharePaidMAD: Math.max(
-      -10000000,
-      Math.min(10000000, Math.round(cycleBalance.barberNetOwedMAD))
-    ),
+    barberSharePaidMAD: finalBarberSharePaidMAD,
     shopShareMAD: clampAmount(cycleBalance.shopShareMAD, 10000000),
     expensesMAD: clampAmount(cycleBalance.expensesMAD, 10000000),
     floatMAD: clampAmount(cycleBalance.floatMAD, 10000000),
     creditsIssuedMAD: clampAmount(cycleBalance.creditsIssuedMAD, 10000000),
-    entryCount: Math.max(0, cycleBalance.openCycleEntries.length),
+    entryCount: finalEntryCount,
     confirmedBy: String(confirmedBy || 'Hassan ait boumlik').trim().slice(0, 100),
     confirmedAt: nowIso,
   };
+  if (resolvedCarryForwardMAD !== undefined) {
+    payload.carryForwardBalanceMAD = resolvedCarryForwardMAD;
+  }
+  if (resolvedNegativeMode !== undefined) {
+    payload.negativeResolution = resolvedNegativeMode;
+  }
   if (periodStartDate && periodStartDate.trim()) {
     payload.periodStartDate = periodStartDate.trim().slice(0, 20);
   }
@@ -2920,6 +3041,7 @@ export function computeBarberOpenDailyStats(params: {
   let floatInMAD = 0;
   let floatOutMAD = 0;
   let floatMAD = 0;
+  let barberAdjustmentMAD = 0;
   let incomeMAD = 0;
   let barberGrossShareMAD = 0;
   let barberNetShareMAD = 0;
@@ -2936,6 +3058,7 @@ export function computeBarberOpenDailyStats(params: {
     floatInMAD += ds.floatInMAD;
     floatOutMAD += ds.floatOutMAD;
     floatMAD += ds.floatMAD;
+    barberAdjustmentMAD += ds.barberAdjustmentMAD;
     incomeMAD += ds.incomeMAD;
     barberGrossShareMAD += ds.barberGrossShareMAD;
     barberNetShareMAD += ds.barberNetShareMAD;
@@ -2956,6 +3079,7 @@ export function computeBarberOpenDailyStats(params: {
     floatInMAD: Math.round(floatInMAD),
     floatOutMAD: Math.round(floatOutMAD),
     floatMAD: Math.round(floatMAD),
+    barberAdjustmentMAD: Math.round(barberAdjustmentMAD),
     commissionPercent: pct,
     extraPercentAbove50: Math.max(0, pct - 50),
     barberGrossShareMAD: Math.round(barberGrossShareMAD),
