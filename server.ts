@@ -24,7 +24,33 @@ const VAPID_KEYS_FILE = path.join(__dirname, '.vapid-keys.json');
 const DEFAULT_VAPID_SUBJECT = 'mailto:MrBoumlik@gmail.com';
 
 function stripQuotes(value?: string): string {
-  return (value || '').trim().replace(/^["']+|["']+$/g, '');
+  return (value || '').trim().replace(/^["']+|["']+$/g, '').trim();
+}
+
+function normalizeUrlSafeBase64(value?: string): string {
+  return stripQuotes(value)
+    .replace(/\s+/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+const URL_SAFE_B64_RE = /^[A-Za-z0-9\-_]+$/;
+
+function isValidVapidKeyPair(
+  keys?: { publicKey?: string; privateKey?: string } | null
+): keys is VapidKeyPair {
+  if (!keys || !keys.publicKey || !keys.privateKey) return false;
+  if (!URL_SAFE_B64_RE.test(keys.publicKey) || !URL_SAFE_B64_RE.test(keys.privateKey)) {
+    return false;
+  }
+  try {
+    const pubLen = Buffer.from(keys.publicKey, 'base64url').length;
+    const privLen = Buffer.from(keys.privateKey, 'base64url').length;
+    return pubLen === 65 && privLen === 32;
+  } catch {
+    return false;
+  }
 }
 
 function resolveVapidSubject(rawSubject?: string): string {
@@ -41,7 +67,7 @@ function resolveVapidSubject(rawSubject?: string): string {
       return candidate;
     }
   } catch {
-    // Fall through to warning + safe default
+    // Fall through to safe default
   }
 
   console.warn(
@@ -57,33 +83,14 @@ interface VapidKeyPair {
   privateKey: string;
 }
 
-function loadOrGenerateVapidKeys(): VapidKeyPair {
-  const envPub = stripQuotes(process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY);
-  const envPriv = stripQuotes(process.env.VAPID_PRIVATE_KEY);
-  if (envPub && envPriv) {
-    return { publicKey: envPub, privateKey: envPriv };
-  }
-
-  try {
-    if (fs.existsSync(VAPID_KEYS_FILE)) {
-      const raw = fs.readFileSync(VAPID_KEYS_FILE, 'utf-8');
-      const parsed = JSON.parse(raw) as Partial<VapidKeyPair>;
-      if (parsed.publicKey && parsed.privateKey) {
-        return { publicKey: parsed.publicKey, privateKey: parsed.privateKey };
-      }
-    }
-  } catch (err) {
-    console.warn('Could not read persisted VAPID keys, regenerating:', err);
-  }
-
-  const generated = webpush.generateVAPIDKeys();
+function persistVapidKeys(keys: VapidKeyPair): void {
   try {
     fs.writeFileSync(
       VAPID_KEYS_FILE,
       JSON.stringify(
         {
-          publicKey: generated.publicKey,
-          privateKey: generated.privateKey,
+          publicKey: keys.publicKey,
+          privateKey: keys.privateKey,
           createdAt: new Date().toISOString(),
         },
         null,
@@ -91,14 +98,42 @@ function loadOrGenerateVapidKeys(): VapidKeyPair {
       ),
       'utf-8'
     );
-  } catch (err) {
-    console.warn('Could not persist VAPID keys to disk (using in-memory keys):', err);
+  } catch {
+    // Read-only filesystems keep runtime keys in memory
+  }
+}
+
+function loadOrGenerateVapidKeys(): VapidKeyPair {
+  const envPub = normalizeUrlSafeBase64(process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY);
+  const envPriv = normalizeUrlSafeBase64(process.env.VAPID_PRIVATE_KEY);
+  const envPair = { publicKey: envPub, privateKey: envPriv };
+  if (isValidVapidKeyPair(envPair)) {
+    return envPair;
   }
 
-  return {
-    publicKey: generated.publicKey,
-    privateKey: generated.privateKey,
+  try {
+    if (fs.existsSync(VAPID_KEYS_FILE)) {
+      const raw = fs.readFileSync(VAPID_KEYS_FILE, 'utf-8');
+      const parsed = JSON.parse(raw) as Partial<VapidKeyPair>;
+      const filePair = {
+        publicKey: normalizeUrlSafeBase64(parsed.publicKey),
+        privateKey: normalizeUrlSafeBase64(parsed.privateKey),
+      };
+      if (isValidVapidKeyPair(filePair)) {
+        return filePair;
+      }
+    }
+  } catch {
+    // Regenerate below if persisted file is unreadable or corrupt
+  }
+
+  const generated = webpush.generateVAPIDKeys();
+  const normalizedGenerated: VapidKeyPair = {
+    publicKey: normalizeUrlSafeBase64(generated.publicKey),
+    privateKey: normalizeUrlSafeBase64(generated.privateKey),
   };
+  persistVapidKeys(normalizedGenerated);
+  return normalizedGenerated;
 }
 
 function initializeVapid(): { keys: VapidKeyPair; ready: boolean } {
@@ -106,17 +141,21 @@ function initializeVapid(): { keys: VapidKeyPair; ready: boolean } {
   try {
     webpush.setVapidDetails(VAPID_SUBJECT, candidateKeys.publicKey, candidateKeys.privateKey);
     return { keys: candidateKeys, ready: true };
-  } catch (err) {
-    console.warn(
-      'Configured VAPID keys failed validation; generating fresh runtime VAPID keys so server can start:',
-      err
-    );
+  } catch {
     try {
       const fallbackKeys = webpush.generateVAPIDKeys();
-      webpush.setVapidDetails(DEFAULT_VAPID_SUBJECT, fallbackKeys.publicKey, fallbackKeys.privateKey);
-      return { keys: fallbackKeys, ready: true };
-    } catch (fallbackErr) {
-      console.error('Web Push initialization disabled due to VAPID error:', fallbackErr);
+      const normalizedFallback: VapidKeyPair = {
+        publicKey: normalizeUrlSafeBase64(fallbackKeys.publicKey),
+        privateKey: normalizeUrlSafeBase64(fallbackKeys.privateKey),
+      };
+      webpush.setVapidDetails(
+        DEFAULT_VAPID_SUBJECT,
+        normalizedFallback.publicKey,
+        normalizedFallback.privateKey
+      );
+      persistVapidKeys(normalizedFallback);
+      return { keys: normalizedFallback, ready: true };
+    } catch {
       return { keys: { publicKey: '', privateKey: '' }, ready: false };
     }
   }

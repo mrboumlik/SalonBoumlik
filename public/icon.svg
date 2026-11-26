@@ -1,15 +1,46 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <rect width="512" height="512" rx="112" fill="#08090C" />
-  <rect x="24" y="24" width="464" height="464" rx="92" stroke="#D97706" stroke-opacity="0.45" stroke-width="8" />
-  <rect x="136" y="72" width="240" height="14" rx="7" fill="url(#pole)" />
-  <defs>
-    <linearGradient id="pole" x1="136" y1="79" x2="376" y2="79" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#DC2626" />
-      <stop offset="0.5" stop-color="#FFFFFF" />
-      <stop offset="1" stop-color="#2563EB" />
-    </linearGradient>
-  </defs>
-  <text x="256" y="274" text-anchor="middle" fill="#FFFFFF" font-family="Georgia, serif" font-weight="900" font-size="148" letter-spacing="4">SB</text>
-  <text x="256" y="346" text-anchor="middle" fill="#F59E0B" font-family="sans-serif" font-weight="800" font-size="38" letter-spacing="8">BOUMLIK</text>
-  <text x="256" y="392" text-anchor="middle" fill="#A1A1AA" font-family="sans-serif" font-weight="600" font-size="22" letter-spacing="4">TAROUDANT</text>
+  <!-- Light Ivory Base Matching Official Salon Boumlik Identity -->
+  <rect x="12" y="12" width="488" height="488" rx="112" fill="#FAF9F6" stroke="#E5E0D5" stroke-width="8" />
+  <rect x="30" y="30" width="452" height="452" rx="94" stroke="#1E293B" stroke-opacity="0.14" stroke-width="4" />
+
+  <!-- Authentic Salon Boumlik Red/White/Blue Barber Pole Motif -->
+  <g transform="translate(154, 62)">
+    <!-- Mounting Post -->
+    <rect x="148" y="22" width="7" height="316" rx="3.5" fill="#18181B" />
+    <rect x="134" y="88" width="16" height="16" rx="3" fill="#27272A" />
+    <rect x="134" y="254" width="16" height="16" rx="3" fill="#27272A" />
+
+    <!-- Top & Bottom Dark Chrome Caps -->
+    <path d="M 38 66 C 38 30 118 30 118 66 Z" fill="#27272A" />
+    <ellipse cx="62" cy="48" rx="10" ry="5" transform="rotate(-24 62 48)" fill="#FFFFFF" fill-opacity="0.7" />
+    <rect x="24" y="64" width="108" height="22" rx="8" fill="#3F3F46" stroke="#18181B" stroke-width="4" />
+    <rect x="28" y="68" width="100" height="6" rx="3" fill="#E4E4E7" fill-opacity="0.75" />
+
+    <!-- Glass Cylinder With Classic Red/White/Blue Stripes -->
+    <clipPath id="poleGlass">
+      <rect x="34" y="86" width="88" height="186" rx="4" />
+    </clipPath>
+    <rect x="34" y="86" width="88" height="186" fill="#FFFFFF" stroke="#18181B" stroke-width="5" />
+    <g clip-path="url(#poleGlass)">
+      <path d="M 10 112 L 146 60 L 146 92 L 10 144 Z" fill="#2F3E66" />
+      <path d="M 10 156 L 146 104 L 146 134 L 10 186 Z" fill="#992B34" />
+      <path d="M 10 198 L 146 146 L 146 176 L 10 228 Z" fill="#2F3E66" />
+      <path d="M 10 240 L 146 188 L 146 218 L 10 270 Z" fill="#992B34" />
+      <path d="M 10 282 L 146 230 L 146 260 L 10 312 Z" fill="#2F3E66" />
+      <!-- Vertical Specular Glass Highlight -->
+      <rect x="44" y="86" width="9" height="186" fill="#FFFFFF" fill-opacity="0.55" />
+    </g>
+    <rect x="34" y="86" width="88" height="186" stroke="#18181B" stroke-width="5" />
+
+    <!-- Bottom Cap -->
+    <rect x="24" y="272" width="108" height="22" rx="8" fill="#3F3F46" stroke="#18181B" stroke-width="4" />
+    <rect x="28" y="276" width="100" height="6" rx="3" fill="#E4E4E7" fill-opacity="0.75" />
+    <path d="M 38 294 C 38 330 118 330 118 294 Z" fill="#27272A" />
+  </g>
+
+  <!-- Navy Heritage Mustache Accent -->
+  <path
+    d="M 256 426 C 242 426 232 414 218 416 C 194 420 176 444 148 434 C 138 430 132 420 135 412 C 141 422 152 424 166 418 C 186 409 204 398 228 400 C 242 401 250 407 256 413 C 262 407 270 401 284 400 C 308 398 326 409 346 418 C 360 424 371 422 377 412 C 380 420 374 430 364 434 C 336 444 318 420 294 416 C 280 414 270 426 256 426 Z"
+    fill="#2F3E66"
+  />
 </svg>

@@ -490,7 +490,7 @@ export const BarberProfileServicesPanel: React.FC<BarberProfileServicesPanelProp
     <form onSubmit={handleSaveProfile} className="space-y-5 pb-28">
       {/* Top Header Card */}
       <div
-        className={`p-4 sm:p-5 rounded-2xl border shadow-sm bg-white dark:bg-zinc-900/90 border-zinc-200 dark:border-zinc-800 ${tone.borderLeftClass}`}
+        className={`p-4 sm:p-5 rounded-2xl border shadow-sm ${tone.cardSurfaceClass} ${tone.topAccentClass} ${tone.borderLeftClass}`}
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -577,13 +577,13 @@ export const BarberProfileServicesPanel: React.FC<BarberProfileServicesPanelProp
                   key={b.id}
                   type="button"
                   onClick={() => setSelectedBarberId(b.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-all cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black border flex items-center gap-1.5 transition-all cursor-pointer ${
                     isSelected
-                      ? bTone.activeTabClass
-                      : 'bg-zinc-50 dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                      ? `${bTone.activeTabClass} shadow-xs`
+                      : bTone.softButtonClass
                   }`}
                 >
-                  <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-current' : bTone.dotClass}`} />
+                  <span className={`w-2.5 h-2.5 rounded-full ${isSelected ? 'bg-current' : bTone.dotClass}`} />
                   <span>{b.name[lang] || b.name.ar}</span>
                 </button>
               );

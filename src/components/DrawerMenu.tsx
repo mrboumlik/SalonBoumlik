@@ -354,7 +354,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
 
   const galleryPhotos = [
     {
-      src: SALON_INFO.media.logoClean,
+      src: '/assets/aistudio/Screenshot_20261109_132240_Chrome_681619c4.jpg',
       alt: 'Salon Boumlik Interior and Style',
     },
     {
@@ -750,7 +750,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
         {/* Drawer Header */}
         <div className="px-5 py-4 border-b border-stone-200 dark:border-zinc-800 flex items-center justify-between bg-white dark:bg-[#111318]">
           <div className="flex items-center gap-3 min-w-0">
-            <BrandMark className="h-9 w-auto object-contain flex-shrink-0" />
+            <BrandMark variant="compact" className="flex-shrink-0" />
             <div className="min-w-0">
               <p className="text-[11px] text-stone-500 dark:text-zinc-400 font-semibold truncate">
                 {SALON_INFO.slogan[lang] || SALON_INFO.slogan.fr}

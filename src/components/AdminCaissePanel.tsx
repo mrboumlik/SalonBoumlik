@@ -50,6 +50,7 @@ import {
   computeBarberDayStats,
   computeBarberOpenDailyStats,
   computeBarberPeriodSettlementPreview,
+  computeClosedDayCreatedAtOverride,
   computeMonthlyCaisseRollup,
   computeShopDrawerTotals,
   confirmBarberCyclePayout,
@@ -68,6 +69,7 @@ import {
   matchesCaisseFinancialBarber,
   recordCaisseCreditRepayment,
   resolveCaisseBarberId,
+  resyncBarberDayArchiveAndSettlement,
   saveBarberDailyNoteReply,
   saveMasterDailyBarberNote,
   updateBarberCommissionPercent,
@@ -84,7 +86,6 @@ import {
   useBarberProfiles,
 } from '../utils/barberProfileStore';
 import {
-  getQuickPriceSuggestionsForServices,
   useShopPricingConfig,
 } from '../utils/shopPricingStore';
 import { useBarberRoster } from '../utils/barberRosterStore';
@@ -105,6 +106,11 @@ import { pickLang } from '../utils/i18n';
 import { asDateString, asIsoString, asStr, safeCompareDesc, safeFormatTime } from '../utils/safeCoerce';
 import { showToast } from '../utils/notifications';
 import { ModalPortal } from './ModalPortal';
+import {
+  CAISSE_QUICK_AMOUNTS,
+  CaisseAmountField,
+  evaluateAmountExpression,
+} from './CaisseAmountField';
 
 interface AdminCaissePanelProps {
   sessionRole: StaffRole;
@@ -284,7 +290,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     setHassanPinError('');
     setTxScopeFilter('open_daily');
     setDrawerModalScope('open_daily');
-    setCaisseBarbersCumulativeModalOpen(false);
     setBalanceAdjustModalOpen(false);
     setNegativePayoutPrompt(null);
   }, [sessionRole]);
@@ -482,7 +487,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setHassanPinVerifiedInCaisse(false);
       setShowCaisseAmounts(false);
       setRevealedCards({});
-      setCaisseBarbersCumulativeModalOpen(false);
       setBalanceAdjustModalOpen(false);
       setNegativePayoutPrompt(null);
       if (sessionRole === 'barber') {
@@ -596,6 +600,17 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     useState<import('../types').CaisseCycleSettlement | null>(null);
   const [deleteCycleBusy, setDeleteCycleBusy] = useState<boolean>(false);
 
+  // Interactive Day Card Detail Modal (lists all "حط" & "هز" for a barber+date; Master Admin full CRUD even on "مغلق" days)
+  const [dayDetailTarget, setDayDetailTarget] = useState<{
+    barberId: CaisseBarberId;
+    date: string;
+  } | null>(null);
+  const [dayModalAddType, setDayModalAddType] = useState<'income' | 'expense' | 'credit_repayment'>('income');
+  const [dayModalAddAmount, setDayModalAddAmount] = useState<string>('');
+  const [dayModalAddNote, setDayModalAddNote] = useState<string>('');
+  const [dayModalAddClientName, setDayModalAddClientName] = useState<string>('');
+  const [dayModalAddBusy, setDayModalAddBusy] = useState<boolean>(false);
+
   // Master-Only Isolated Barber Balance Adjust / Clear Negative Modal
   const [balanceAdjustModalOpen, setBalanceAdjustModalOpen] = useState<boolean>(false);
   const [balanceAdjustMode, setBalanceAdjustMode] = useState<'zero_negative' | 'set_target' | 'delta'>('zero_negative');
@@ -619,10 +634,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     resolutions: Record<string, 'cleared' | 'carried_forward'>;
   } | null>(null);
 
-  // Dedicated Caisse View: Popup Modal Showing Remaining Full/Cumulative Balance for Mounir, Anwar & Lahcen
-  const [caisseBarbersCumulativeModalOpen, setCaisseBarbersCumulativeModalOpen] =
-    useState<boolean>(false);
-
   // Master Accountant Sub-tabs ('periods' | 'annual' | 'archives' | 'cycles')
   const [accountantTab, setAccountantTab] = useState<
     'periods' | 'annual' | 'archives' | 'cycles'
@@ -640,19 +651,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           )
         : [],
     [activeBarberId, profilesMap, shopPricingConfig, businessTodayStr]
-  );
-
-  const caisseQuickSuggestions = useMemo(
-    () =>
-      activeBarberId
-        ? getQuickPriceSuggestionsForServices(
-            selectedServiceIds,
-            shopPricingConfig,
-            profilesMap[activeBarberId],
-            selectedDate
-          )
-        : [15, 20, 25, 30, 35, 40, 50],
-    [selectedServiceIds, shopPricingConfig, profilesMap, activeBarberId, selectedDate]
   );
 
   // Base Commission & Date-Effective Commission sync
@@ -891,43 +889,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           },
     [activeBarberId, entries, settingsMap, cycles, selectedDate, manualCredits, roster]
   );
-
-  const caisseBarbersCumulativeList = useMemo(() => {
-    const preferredOrder = ['mounir-querdeny', 'anouar-arif', 'lahcen-lhanz'];
-    const nonHassanBarbers = activeCaisseBarbers.filter((b) => {
-      if (b.id === 'hassan') return false;
-      const rAcc = roster.find((m) => m.id === b.id);
-      return !rAcc?.isOwner;
-    });
-    const sorted = [...nonHassanBarbers].sort((a, b) => {
-      const ia = preferredOrder.indexOf(a.id);
-      const ib = preferredOrder.indexOf(b.id);
-      if (ia !== -1 && ib !== -1) return ia - ib;
-      if (ia !== -1) return -1;
-      if (ib !== -1) return 1;
-      return 0;
-    });
-    return sorted.map((barber) => ({
-      barber,
-      balance: computeBarberCycleBalance(
-        barber.id,
-        entries,
-        settingsMap,
-        cycles,
-        businessTodayStr,
-        manualCredits,
-        roster
-      ),
-    }));
-  }, [
-    activeCaisseBarbers,
-    roster,
-    entries,
-    settingsMap,
-    cycles,
-    businessTodayStr,
-    manualCredits,
-  ]);
 
   const payoutPreview = useMemo(
     () =>
@@ -1280,45 +1241,58 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     }
 
     if (drillModal.kind === 'net_balance') {
-      const list =
-        sessionRole === 'caisse'
-          ? isLiveOpenDailyView
-            ? activeBarberOpenDailyStats.openEntries
-            : entries.filter(
-                (e) =>
-                  matchesCaisseFinancialBarber(e, activeBarberId, roster) &&
-                  e.date === selectedDate &&
-                  (!closedIso || e.createdAt > closedIso)
-              )
-          : cycleBalance.openCycleEntries;
-      const netVal =
-        sessionRole === 'caisse'
-          ? displayedDayIntakeStats.displayedDrawerCashMAD
-          : cycleBalance.barberNetOwedMAD;
+      const isHassanCaisseDrawer =
+        sessionRole === 'caisse' &&
+        (activeBarberId === 'hassan' || Boolean(activeBarberMeta?.isOwner));
+      if (isHassanCaisseDrawer) {
+        const list = isLiveOpenDailyView
+          ? activeBarberOpenDailyStats.openEntries
+          : entries.filter(
+              (e) =>
+                matchesCaisseFinancialBarber(e, activeBarberId, roster) &&
+                e.date === selectedDate &&
+                (!closedIso || e.createdAt > closedIso)
+            );
+        const drawerVal = displayedDayIntakeStats.displayedDrawerCashMAD;
+        return {
+          title: `تفاصيل المجر كامل — ${activeBarberMeta.arName}`,
+          totalLabel: fmt(drawerVal),
+          subtitle: `المداخيل (${fmt(displayedDayIntakeStats.displayedIncomeMAD)}) + فلوس الصرف (${fmt(
+            displayedDayIntakeStats.displayedFloatMAD
+          )}) − مصاريف حسن فقط (${fmt(displayedDayIntakeStats.displayedExpensesMAD)})`,
+          accentCls:
+            drawerVal < 0
+              ? 'text-rose-700 dark:text-rose-400'
+              : 'text-emerald-700 dark:text-emerald-400',
+          list,
+          closedIso,
+          canShowAmounts: isBoxVisible(boxKeyForDrill),
+        };
+      }
+
+      const list = cycleBalance.openCycleEntries;
+      const netVal = cycleBalance.barberNetOwedMAD;
       return {
         title:
           sessionRole === 'caisse'
-            ? `تفاصيل الفلوس فـ المجر (${activeBarberMeta.arName})`
+            ? `تفاصيل شحال بقى ليه في الحساب كامل — ${activeBarberMeta.arName}`
             : isViewingOwnAccount
             ? 'تفاصيل شحال بقى ليا (الحساب الشهري/التراكمي)'
             : `تفاصيل شحال كيتسال ${activeBarberMeta.arName} (الحساب الشهري/التراكمي)`,
         totalLabel: fmt(netVal),
-        subtitle:
-          sessionRole === 'caisse'
-            ? `المداخيل (${fmt(displayedDayIntakeStats.displayedIncomeMAD)})${
-                activeBarberId === 'hassan' || displayedDayIntakeStats.displayedFloatMAD !== 0
-                  ? ` + صرف حسن (${fmt(displayedDayIntakeStats.displayedFloatMAD)})`
-                  : ''
-              } − السحوبات (${fmt(displayedDayIntakeStats.displayedExpensesMAD)})`
-            : `المداخيل بالدورة: ${fmt(cycleBalance.incomeMAD)} · حصة الحلاق (${cycleBalance.commissionPercent}%): ${fmt(cycleBalance.barberGrossShareMAD)}${
-                activeBarberId === 'hassan' && cycleBalance.floatMAD !== 0
-                  ? ` + الصرف الشخصي: ${fmt(cycleBalance.floatMAD)}`
-                  : ''
-              } − السحوبات: ${fmt(cycleBalance.expensesMAD)}`,
+        subtitle: `المداخيل بالدورة: ${fmt(cycleBalance.incomeMAD)} · حصة الحلاق (${cycleBalance.commissionPercent}%): ${fmt(cycleBalance.barberGrossShareMAD)}${
+          activeBarberId === 'hassan' && cycleBalance.floatMAD !== 0
+            ? ` + الصرف الشخصي: ${fmt(cycleBalance.floatMAD)}`
+            : ''
+        } − السحوبات: ${fmt(cycleBalance.expensesMAD)}${
+          cycleBalance.carryForwardMAD !== 0 ? ` · مرحل: ${fmt(cycleBalance.carryForwardMAD)}` : ''
+        }${
+          cycleBalance.barberAdjustmentMAD !== 0 ? ` · تسوية: ${fmt(cycleBalance.barberAdjustmentMAD)}` : ''
+        }`,
         accentCls:
           netVal < 0 ? 'text-rose-700 dark:text-rose-400' : 'text-amber-700 dark:text-amber-300',
         list,
-        closedIso,
+        closedIso: null,
         canShowAmounts: isBoxVisible(boxKeyForDrill),
       };
     }
@@ -1494,6 +1468,125 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     });
   }, [creditDisputes, openCreditsList, openManualCreditsForBarber, activeBarberId, roster]);
 
+  const dayDetailView = useMemo(() => {
+    if (!dayDetailTarget) return null;
+    const { barberId, date } = dayDetailTarget;
+    const meta = getCaisseBarberMeta(barberId, roster);
+    const pct = getEffectiveCommissionPercentForDate(barberId, date, settingsMap);
+    const dayStats = computeBarberDayStats(barberId, date, entries, pct, roster);
+    const daySettlement = findBarberDaySettlement(barberId, date, settlementsMap, roster);
+    const isClosed = Boolean(daySettlement?.intakeClosed);
+
+    const dayEntries = entries
+      .filter((e) => matchesCaisseFinancialBarber(e, barberId, roster) && e.date === date)
+      .slice()
+      .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+
+    const depositEntries = dayEntries.filter(
+      (e) =>
+        e.type === 'income' ||
+        e.type === 'credit_repayment' ||
+        e.type === 'float_adjustment' ||
+        (e.type === 'barber_adjustment' && e.adjustmentDirection !== 'debit')
+    );
+
+    const withdrawalEntries = dayEntries.filter(
+      (e) =>
+        e.type === 'expense' ||
+        e.type === 'float_return' ||
+        (e.type === 'barber_adjustment' && e.adjustmentDirection === 'debit')
+    );
+
+    return {
+      barberId,
+      date,
+      meta,
+      pct,
+      dayStats,
+      daySettlement,
+      isClosed,
+      dayEntries,
+      depositEntries,
+      withdrawalEntries,
+    };
+  }, [dayDetailTarget, entries, settingsMap, settlementsMap, roster]);
+
+  const openDayDetailModal = (barberId: CaisseBarberId, date: string) => {
+    setDayDetailTarget({ barberId, date });
+    setDayModalAddType('income');
+    setDayModalAddAmount('');
+    setDayModalAddNote('');
+    setDayModalAddClientName('');
+  };
+
+  const handleAddEntryInDayModal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (sessionRole !== 'master' || !dayDetailTarget || dayModalAddBusy) return;
+    const amt = Math.round(evaluateAmountExpression(dayModalAddAmount));
+    if (amt <= 0) {
+      showToast(
+        'أدخل مبلغاً أكبر من 0',
+        'يرجى تحديد مبلغ العملية بالدرهم قبل الحفظ.',
+        'warning'
+      );
+      return;
+    }
+
+    setDayModalAddBusy(true);
+    try {
+      const { barberId, date } = dayDetailTarget;
+      const meta = getCaisseBarberMeta(barberId, roster);
+      const createdAtOverride = computeClosedDayCreatedAtOverride({
+        barberId,
+        date,
+        entries,
+        settlementsMap,
+        rosterMembers: roster,
+        businessTodayStr,
+      });
+
+      await addCaisseEntry({
+        barberId,
+        barberName: meta.name,
+        type: dayModalAddType,
+        date,
+        expectedAmountMAD: amt,
+        amountPaidMAD: amt,
+        creditAmountMAD: 0,
+        creditRemainingMAD: 0,
+        creditStatus: 'none',
+        clientName: dayModalAddClientName.trim() || undefined,
+        note: dayModalAddNote.trim() || undefined,
+        createdByRole: 'master',
+        createdByName: staffName,
+        createdAtOverride,
+      });
+
+      await resyncBarberDayArchiveAndSettlement({
+        barberId,
+        date,
+        settingsMap,
+        settlementsMap,
+        rosterMembers: roster,
+        currentBusinessDate: businessTodayStr,
+      });
+
+      setDayModalAddAmount('');
+      setDayModalAddNote('');
+      setDayModalAddClientName('');
+      showToast(
+        `تمت إضافة العملية ليوم ${date} ✓`,
+        `${dayModalAddType === 'expense' ? 'سحب (هز)' : 'إيداع (حط)'}: ${amt} MAD`,
+        'success'
+      );
+    } catch (err) {
+      console.error('Failed to add entry in day modal:', err);
+      showToast('تعذر حفظ العملية', 'يرجى المحاولة مرة أخرى.', 'warning');
+    } finally {
+      setDayModalAddBusy(false);
+    }
+  };
+
   const openEditModalForEntry = (entry: CaisseEntry) => {
     setEditingEntry(entry);
     setEditBarberId(entry.barberId);
@@ -1509,7 +1602,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   };
 
   // Computed live remaining credit in income form
-  const paidNum = Math.max(0, Number(amountPaidInput) || 0);
+  const paidNum = Math.max(0, evaluateAmountExpression(amountPaidInput));
   const agreedNum = hasCreditToggle
     ? Math.max(paidNum, Number(agreedTotalInput) || paidNum)
     : paidNum;
@@ -1649,7 +1742,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     bypassDuplicateCheck = false
   ) => {
     if (e) e.preventDefault();
-    const amt = Math.max(0, Number(expenseAmount) || 0);
+    const amt = Math.max(0, evaluateAmountExpression(expenseAmount));
     if (amt <= 0) {
       showToast(
         pickLang(lang, {
@@ -1721,7 +1814,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   // Submit Float Adjustment / Return ("الصرف — إضافة أو إرجاع فلوس الفكة في المجر" -> دائماً لحساب حسن الشخصي)
   const handleSubmitFloat = async (e: React.FormEvent) => {
     e.preventDefault();
-    const amt = Math.max(0, Number(floatAmount) || 0);
+    const amt = Math.max(0, evaluateAmountExpression(floatAmount));
     if (amt <= 0) {
       showToast('أدخل مبلغ الصرف أولاً', '', 'warning');
       return;
@@ -2396,6 +2489,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       const nextExpected = isCreditCapable
         ? Math.max(nextPaid + nextCreditRem, nextPaid)
         : nextPaid;
+      const targetNewDate = sessionRole === 'master' ? editDate || editingEntry.date : editingEntry.date;
       await updateCaisseEntry(editingEntry.id, {
         barberId: effectiveBarberId,
         barberName: effectiveBarberMeta.name,
@@ -2418,9 +2512,29 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         clientName: editClientName.trim() || '',
         clientPhone: editClientPhone.trim() || '',
         expectedRepaymentDate: editRepayDate.trim() || '',
-        date: sessionRole === 'master' ? editDate || editingEntry.date : editingEntry.date,
+        date: targetNewDate,
         note: editNote.trim(),
       });
+      if (sessionRole === 'master') {
+        await resyncBarberDayArchiveAndSettlement({
+          barberId: editingEntry.barberId,
+          date: editingEntry.date,
+          settingsMap,
+          settlementsMap,
+          rosterMembers: roster,
+          currentBusinessDate: businessTodayStr,
+        });
+        if (effectiveBarberId !== editingEntry.barberId || targetNewDate !== editingEntry.date) {
+          await resyncBarberDayArchiveAndSettlement({
+            barberId: effectiveBarberId,
+            date: targetNewDate,
+            settingsMap,
+            settlementsMap,
+            rosterMembers: roster,
+            currentBusinessDate: businessTodayStr,
+          });
+        }
+      }
       setEditingEntry(null);
       showToast(
         pickLang(lang, {
@@ -2442,10 +2556,19 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
   const handleConfirmDeleteEntry = async () => {
     if (sessionRole !== 'master' || !confirmDeleteEntry) return;
-    const targetId = confirmDeleteEntry.id;
+    const deletedEntry = confirmDeleteEntry;
+    const targetId = deletedEntry.id;
     setDeleteEntryBusy(true);
     try {
       await deleteCaisseEntry(targetId);
+      await resyncBarberDayArchiveAndSettlement({
+        barberId: deletedEntry.barberId,
+        date: deletedEntry.date,
+        settingsMap,
+        settlementsMap,
+        rosterMembers: roster,
+        currentBusinessDate: businessTodayStr,
+      });
       setConfirmDeleteEntry(null);
       if (editingEntry?.id === targetId) setEditingEntry(null);
       if (selectedDrillEntry?.id === targetId) setSelectedDrillEntry(null);
@@ -2615,39 +2738,17 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           </div>
 
           <div className="space-y-3">
-            <div className="space-y-1.5">
-              <label className="block font-bold text-zinc-800 dark:text-zinc-200">
-                المبلغ (MAD) *
-              </label>
-              <input
-                type="number"
-                min={1}
-                step="any"
-                value={floatAmount}
-                onChange={(e) => setFloatAmount(e.target.value)}
-                placeholder="0"
-                required
-                autoFocus
-                className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-xl px-3.5 py-2.5 text-base font-mono font-black text-zinc-900 dark:text-white"
-              />
-              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                <span className="text-[10px] font-bold text-zinc-400">مبالغ سريعة:</span>
-                {[50, 100, 200, 500].map((amt) => (
-                  <button
-                    key={amt}
-                    type="button"
-                    onClick={() => setFloatAmount(String(amt))}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-black border cursor-pointer ${
-                      Number(floatAmount) === amt
-                        ? 'bg-amber-600 text-white border-amber-600'
-                        : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 border-zinc-200 dark:border-zinc-700'
-                    }`}
-                  >
-                    {amt} MAD
-                  </button>
-                ))}
-              </div>
-            </div>
+            <CaisseAmountField
+              label="المبلغ (MAD) *"
+              value={floatAmount}
+              onChange={setFloatAmount}
+              quickAmounts={[50, 100, 200, 500]}
+              accent="amber"
+              placeholder="0"
+              required
+              autoFocus
+              unitOnChips
+            />
             <div>
               <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
                 ملاحظة (اختيارية)
@@ -2874,14 +2975,17 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                               setSelectedBarberId(row.barberId);
                               setDrawerModalOpen(false);
                             }}
-                            className="hover:bg-zinc-50 dark:hover:bg-zinc-900/70 cursor-pointer transition-colors"
+                            className={`hover:bg-zinc-50 dark:hover:bg-zinc-900/70 cursor-pointer transition-colors ${bTone.borderLeftClass}`}
                           >
                             <td className="py-2.5 px-3 font-sans">
                               <div className="flex items-center gap-2">
-                                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${bTone.dotClass}`} />
+                                <span className={`w-3 h-3 rounded-full shrink-0 ${bTone.dotClass}`} />
                                 <div>
-                                  <div className="font-black text-zinc-900 dark:text-white flex items-center gap-1.5">
+                                  <div className="font-black text-zinc-900 dark:text-white flex items-center gap-1.5 flex-wrap">
                                     <span>{row.arName}</span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-black border ${bTone.badgeClass}`}>
+                                      {bTone.shortLabelAr}
+                                    </span>
                                     {renderBoxEyeButton(rowBoxKey, true)}
                                   </div>
                                   <div className="text-[10px] font-mono text-zinc-400">
@@ -3027,154 +3131,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     </ModalPortal>
   ) : null;
 
-  const caisseBarbersCumulativeModalNode =
-    sessionRole === 'caisse' && caisseBarbersCumulativeModalOpen ? (
-      <ModalPortal>
-        <div
-          className="fixed inset-0 z-[105] flex items-center justify-center p-4 sb-modal-backdrop"
-          onClick={() => setCaisseBarbersCumulativeModalOpen(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xl max-h-[88vh] flex flex-col rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs"
-          >
-            <div className="p-4 sm:p-5 border-b border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 bg-amber-50/60 dark:bg-amber-950/20">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0">
-                  <Wallet className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">
-                    الفلوس اللي بقاو في الحساب كامل (منير · أنور · لحسن)
-                  </h4>
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                    الرصيد الكامل المتبقي لكل حلاق في حسابه (الشهر المفتوح + أي رصيد مرحّل)
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {canToggleCaissePrivacy && (
-                  <button
-                    type="button"
-                    onClick={handleToggleGlobalCaisseAmounts}
-                    className={`min-h-[34px] px-3 py-1 rounded-xl border text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors ${
-                      amountsVisible
-                        ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-300'
-                        : 'bg-zinc-900 dark:bg-amber-500 border-zinc-900 dark:border-amber-400 text-white dark:text-zinc-950'
-                    }`}
-                  >
-                    {amountsVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    <span>{amountsVisible ? 'إخفاء' : 'إظهار'}</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setCaisseBarbersCumulativeModalOpen(false)}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-3 flex-1">
-              {caisseBarbersCumulativeList.length === 0 ? (
-                <div className="py-8 text-center text-zinc-500">
-                  لا يوجد حلاقون متاحون حالياً.
-                </div>
-              ) : (
-                caisseBarbersCumulativeList.map(({ barber, balance }) => {
-                  const bTone = getBarberIdentityTokens(barber.id, barber.arName);
-                  const boxKey = `caisse_cum_${barber.id}`;
-                  const isNeg = balance.barberNetOwedMAD < 0;
-                  return (
-                    <div
-                      key={barber.id}
-                      className={`p-4 rounded-2xl border bg-white dark:bg-zinc-900/90 shadow-xs space-y-2.5 ${bTone.borderLeftClass} ${
-                        isNeg
-                          ? 'border-rose-300 dark:border-rose-500/50 bg-rose-50/40 dark:bg-rose-950/20'
-                          : 'border-stone-200 dark:border-zinc-800'
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className={`w-3 h-3 rounded-full shrink-0 ${bTone.dotClass}`} />
-                          <div>
-                            <div className="text-sm font-black text-zinc-900 dark:text-white flex items-center gap-1.5">
-                              <span>{barber.arName}</span>
-                              <span className="text-[10px] font-mono text-zinc-400">
-                                ({balance.commissionPercent}%)
-                              </span>
-                              {renderBoxEyeButton(boxKey, true)}
-                            </div>
-                            <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block">
-                              الفلوس اللي بقاو ليه في الحساب كامل
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          <div
-                            dir="ltr"
-                            className={`text-lg sm:text-xl font-black font-mono tabular-nums ${
-                              isNeg
-                                ? 'text-rose-700 dark:text-rose-400'
-                                : balance.barberNetOwedMAD === 0
-                                ? 'text-emerald-700 dark:text-emerald-400'
-                                : 'text-zinc-900 dark:text-white'
-                            }`}
-                          >
-                            {formatMAD(balance.barberNetOwedMAD, boxKey)}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedBarberId(barber.id);
-                              setCaisseBarbersCumulativeModalOpen(false);
-                            }}
-                            className="px-2.5 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-amber-500 hover:text-white text-zinc-700 dark:text-zinc-200 font-bold text-[11px] cursor-pointer transition-colors"
-                          >
-                            فتح الحساب
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono tabular-nums text-zinc-600 dark:text-zinc-400">
-                        <span>المداخيل: {formatMAD(balance.incomeMAD, boxKey)}</span>
-                        <span>·</span>
-                        <span>حصة الحلاق: {formatMAD(balance.barberGrossShareMAD, boxKey)}</span>
-                        <span>·</span>
-                        <span className="text-rose-600 dark:text-rose-400">
-                          السحوبات: {formatMAD(balance.expensesMAD, boxKey)}
-                        </span>
-                        {balance.carryForwardMAD !== 0 && (
-                          <>
-                            <span>·</span>
-                            <span className="text-rose-700 dark:text-rose-300 font-bold">
-                              مرحل من الشهر السابق: {formatMAD(balance.carryForwardMAD, boxKey)}
-                            </span>
-                          </>
-                        )}
-                        {balance.barberAdjustmentMAD !== 0 && (
-                          <>
-                            <span>·</span>
-                            <span className="text-indigo-700 dark:text-indigo-300 font-bold">
-                              تسوية: {formatMAD(balance.barberAdjustmentMAD, boxKey)}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      </ModalPortal>
-    ) : null;
-
   if ((sessionRole === 'caisse' || sessionRole === 'master') && !activeBarberId) {
     const gridBarbers = sessionRole === 'master' ? allCaisseBarbers : activeCaisseBarbers;
     const selectorDrawerSummary = liveOpenDailyDrawerSummary;
@@ -3239,24 +3195,14 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               </div>
 
               {sessionRole === 'caisse' && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setCaisseBarbersCumulativeModalOpen(true)}
-                    className="min-h-[38px] px-3.5 py-1.5 rounded-xl border border-amber-300 dark:border-amber-500/45 bg-amber-50 dark:bg-amber-500/15 hover:bg-amber-100 dark:hover:bg-amber-500/25 text-amber-900 dark:text-amber-200 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
-                  >
-                    <User className="w-3.5 h-3.5 shrink-0" />
-                    <span>الفلوس اللي بقاو في الحساب كامل (منير · أنور · لحسن)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openFloatModal('add')}
-                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-black flex items-center gap-1 cursor-pointer transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>الصرف (حسن)</span>
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={() => openFloatModal('add')}
+                  className="min-h-[38px] px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-black flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>الصرف (حسن)</span>
+                </button>
               )}
 
               {canToggleCaissePrivacy && (
@@ -3326,15 +3272,18 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                   setAutoTimerSecondsLeft(null);
                   setSelectedBarberId(b.id);
                 }}
-                className={`p-5 rounded-2xl border bg-white dark:bg-[#141720] ${
+                className={`p-5 rounded-2xl border text-start transition-all shadow-sm hover:shadow-md cursor-pointer space-y-2.5 ${
                   isOverdrawn
-                    ? 'border-rose-300 dark:border-rose-500/50 bg-rose-50/30 dark:bg-rose-950/10'
-                    : 'border-stone-200 dark:border-zinc-800'
-                } hover:border-amber-400 dark:hover:border-amber-500/50 text-start transition-all shadow-sm hover:shadow-md cursor-pointer space-y-2 ${bTone.borderLeftClass}`}
+                    ? `bg-rose-50 dark:bg-[#2B141A] border-rose-400 dark:border-rose-500/60 ${bTone.topAccentClass} ${bTone.borderLeftClass}`
+                    : `${bTone.cardSurfaceClass} ${bTone.topAccentClass} ${bTone.borderLeftClass} hover:brightness-98`
+                }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className={`w-3 h-3 rounded-full ${bTone.dotClass}`} />
-                  <span className="text-[11px] font-mono text-zinc-400">
+                  <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-black border inline-flex items-center gap-1.5 ${bTone.badgeClass}`}>
+                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${bTone.dotClass}`} />
+                    <span>{bTone.shortLabelAr}</span>
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-zinc-600 dark:text-zinc-300">
                     {openCount} عملية مفتوحة
                   </span>
                 </div>
@@ -3346,14 +3295,13 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                     </span>
                   )}
                 </div>
-                <div className="text-xs text-zinc-500 dark:text-zinc-400">{b.name}</div>
+                <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{b.name}</div>
               </button>
             );
           })}
         </div>
 
         {drawerBreakdownModalNode}
-        {caisseBarbersCumulativeModalNode}
         {hassanPinModalNode}
         {floatModalNode}
       </div>
@@ -3371,11 +3319,11 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     <div className="space-y-5 pb-28">
       {/* Top Header + Barber Switcher (Master / Caisse) + Date Picker */}
       <div
-        className={`p-5 sm:p-6 rounded-2xl border bg-white dark:bg-[#141720] border-stone-200 dark:border-zinc-800 shadow-sm space-y-4 ${activeTone.borderLeftClass}`}
+        className={`p-5 sm:p-6 rounded-2xl border shadow-sm space-y-4 ${activeTone.cardSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center text-emerald-700 dark:text-emerald-300 shrink-0">
+            <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${activeTone.iconBoxClass}`}>
               <Wallet className="w-5 h-5" />
             </div>
             <div>
@@ -3393,8 +3341,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                         es: 'Caja y Contabilidad',
                       })}
                 </h3>
-                <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold border ${activeTone.badgeClass}`}>
-                  {activeBarberMeta.arName}
+                <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-black border inline-flex items-center gap-1.5 ${activeTone.badgeClass}`}>
+                  <span className={`w-2 h-2 rounded-full ${activeTone.dotClass}`} />
+                  <span>{activeBarberMeta.arName}</span>
                 </span>
                 {(sessionRole === 'caisse' || sessionRole === 'master') && (
                   <button
@@ -3457,17 +3406,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 </span>
                 {renderBoxEyeButton('drawer_total_chip', true)}
               </div>
-            )}
-
-            {sessionRole === 'caisse' && (
-              <button
-                type="button"
-                onClick={() => setCaisseBarbersCumulativeModalOpen(true)}
-                className="min-h-[36px] px-3 py-1.5 rounded-xl border border-amber-300 dark:border-amber-500/45 bg-amber-50 dark:bg-amber-500/15 hover:bg-amber-100 dark:hover:bg-amber-500/25 text-amber-900 dark:text-amber-200 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors"
-              >
-                <User className="w-3.5 h-3.5 shrink-0" />
-                <span>الفلوس اللي بقاو في الحساب كامل</span>
-              </button>
             )}
 
             {canToggleCaissePrivacy && (
@@ -3544,13 +3482,13 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                     key={b.id}
                     type="button"
                     onClick={() => setSelectedBarberId(b.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-all cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black border flex items-center gap-1.5 transition-all cursor-pointer ${
                       isSelected
-                        ? bTone.activeTabClass
-                        : 'bg-zinc-50 dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                        ? `${bTone.activeTabClass} shadow-xs`
+                        : bTone.softButtonClass
                     }`}
                   >
-                    <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-current' : bTone.dotClass}`} />
+                    <span className={`w-2.5 h-2.5 rounded-full ${isSelected ? 'bg-current' : bTone.dotClass}`} />
                     <span>{b.arName}</span>
                   </button>
                 );
@@ -3873,6 +3811,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
                   {allBarbersPayoutPreview.items.map(({ barber, preview }) => {
+                    const bTone = getBarberIdentityTokens(barber.id, barber.arName);
                     const count = preview.cycleBalance.openCycleEntries.length;
                     const isIncluded =
                       count > 0 ||
@@ -3883,12 +3822,13 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                         key={barber.id}
                         className={`px-2.5 py-1.5 rounded-lg border text-[11px] flex items-center justify-between gap-2 ${
                           isIncluded
-                            ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-500/35'
+                            ? `${bTone.cardSurfaceClass} ${bTone.borderLeftClass}`
                             : 'bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 opacity-60'
                         }`}
                       >
-                        <span className="font-bold text-zinc-900 dark:text-white truncate">
-                          {barber.arName} ({count})
+                        <span className="font-bold text-zinc-900 dark:text-white truncate flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${bTone.dotClass}`} />
+                          <span className="truncate">{barber.arName} ({count})</span>
                         </span>
                         <span
                           dir="ltr"
@@ -4094,14 +4034,17 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
       {/* Req #3 (Swapped Up): Monthly/Cumulative Balance & Recent Days Summary Block */}
       {sessionRole !== 'caisse' && activeBarberId && (
-        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 space-y-3 text-xs shadow-xs">
+        <div className={`p-4 rounded-2xl border space-y-3 text-xs shadow-xs ${activeTone.cardSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h4 className="font-black text-zinc-900 dark:text-white flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            <h4 className="font-black text-zinc-900 dark:text-white flex items-center gap-2 flex-wrap">
+              <Calendar className="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
               <span>
                 {isViewingOwnAccount
                   ? 'الحساب الشهري وملخص الأيام الأخيرة'
                   : `الحساب الشهري وملخص الأيام الأخيرة (${activeBarberMeta.arName})`}
+              </span>
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${activeTone.badgeClass}`}>
+                {activeBarberMeta.arName}
               </span>
             </h4>
             <div className="flex flex-wrap items-center gap-2">
@@ -4194,47 +4137,63 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           </div>
 
           {dailyInOutHistory.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-              {dailyInOutHistory.slice(0, 6).map((row) => (
-                <button
-                  key={row.date}
-                  type="button"
-                  onClick={() => setSelectedDate(row.date)}
-                  className={`p-2.5 rounded-xl border text-start transition-colors cursor-pointer space-y-1 ${
-                    row.date === selectedDate
-                      ? 'bg-amber-50/80 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/40'
-                      : 'bg-zinc-50 dark:bg-zinc-950/70 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="font-mono font-bold text-[11px] text-zinc-900 dark:text-white">
-                      {row.date.slice(5)}
-                    </span>
-                    {row.isIntakeClosed && (
-                      <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[9px] font-black">
-                        مغلق
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400">
+                <span className="font-bold">سجل الأيام (اضغط على أي يوم لعرض تفاصيل حط وهز)</span>
+                {sessionRole === 'master' && (
+                  <span className="font-bold text-amber-700 dark:text-amber-300">
+                    صلاحية المشرف: تعديل / إضافة / حذف حتى في الأيام المغلقة
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                {dailyInOutHistory.slice(0, 12).map((row) => (
+                  <button
+                    key={row.date}
+                    type="button"
+                    onClick={() => openDayDetailModal(activeBarberId, row.date)}
+                    className={`p-2.5 rounded-xl border text-start transition-all cursor-pointer space-y-1 hover:shadow-sm ${
+                      dayDetailTarget?.date === row.date && dayDetailTarget?.barberId === activeBarberId
+                        ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-400 dark:border-amber-400'
+                        : row.date === selectedDate
+                        ? 'bg-amber-50/80 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/40'
+                        : 'bg-zinc-50 dark:bg-zinc-950/70 border-zinc-200 dark:border-zinc-800 hover:border-amber-300 dark:hover:border-amber-500/40'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-mono font-bold text-[11px] text-zinc-900 dark:text-white">
+                        {row.date.slice(5)}
                       </span>
-                    )}
-                  </div>
-                  <div className="text-[11px] font-mono tabular-nums text-emerald-700 dark:text-emerald-400 font-bold">
-                    حط: {formatMAD(row.incomeMAD)}
-                  </div>
-                  <div className="text-[11px] font-mono tabular-nums text-rose-600 dark:text-rose-400 font-bold">
-                    هز: {formatMAD(row.expensesMAD)}
-                  </div>
-                </button>
-              ))}
+                      {row.isIntakeClosed ? (
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[9px] font-black">
+                          مغلق
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[9px] font-black">
+                          مفتوح
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] font-mono tabular-nums text-emerald-700 dark:text-emerald-400 font-bold">
+                      حط: {formatMAD(row.incomeMAD, 'kpi_income')}
+                    </div>
+                    <div className="text-[11px] font-mono tabular-nums text-rose-600 dark:text-rose-400 font-bold">
+                      هز: {formatMAD(row.expensesMAD, 'kpi_expenses')}
+                    </div>
+                    <div className="text-[9px] font-bold text-zinc-400 dark:text-zinc-500 flex items-center justify-between pt-0.5">
+                      <span>{row.entryCount} عملية</span>
+                      <span className="text-amber-700 dark:text-amber-300">تفاصيل ←</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Interactive Darija KPI Cards + Quick '+' Actions Inside Each Card (In Caisse Mode: 3 Cards without "الفلوس فـ المجر") */}
-      <div
-        className={`grid gap-3 ${
-          sessionRole === 'caisse' ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2 lg:grid-cols-4'
-        }`}
-      >
+      {/* Interactive Darija KPI Cards + Quick '+' Actions Inside Each Card */}
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         {/* 1. شحال حط (الدورة اليومية المفتوحة / التاريخ المحدد) */}
         <div
           role="button"
@@ -4246,10 +4205,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               openDrillModal('income_day');
             }
           }}
-          className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-400 dark:hover:border-emerald-500/60 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group"
+          className={`p-4 rounded-2xl border hover:border-emerald-500 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group ${activeTone.cardSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}
         >
           <div className="flex items-center justify-between gap-1">
-            <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 block">
+            <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 block">
               {isLiveOpenDailyView
                 ? isViewingOwnAccount
                   ? 'شحال حطيت (الدورة اليومية)'
@@ -4283,7 +4242,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             {maskNum(displayedDayIntakeStats.displayedIncomeMAD, 'kpi_income')}{' '}
             <span className="text-xs font-bold">MAD</span>
           </div>
-          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block font-mono tabular-nums">
+          <span className="text-[10px] text-zinc-600 dark:text-zinc-400 block font-mono tabular-nums">
             {displayedDayIntakeStats.hasAnyDailyClose
               ? `بعد آخر تصفية (${displayedDayIntakeStats.lastDailyCloseDate}) · ${displayedDayIntakeStats.postCloseEntryCount} عملية مفتوحة`
               : `${displayedDayIntakeStats.postCloseEntryCount} عملية مفتوحة · اضغط للتفاصيل`}
@@ -4301,10 +4260,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               openDrillModal('expenses');
             }
           }}
-          className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 hover:border-rose-400 dark:hover:border-rose-500/60 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group"
+          className={`p-4 rounded-2xl border hover:border-rose-500 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group ${activeTone.cardSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}
         >
           <div className="flex items-center justify-between gap-1">
-            <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 block">
+            <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 block">
               {isLiveOpenDailyView
                 ? sessionRole === 'caisse'
                   ? `شحال هز ${activeBarberMeta.arName} (الدورة اليومية)`
@@ -4352,8 +4311,126 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           </span>
         </div>
 
-        {/* 3. الصافي التراكمي/الشهري (Master/Barber Only — Removed "الفلوس فـ المجر" Box in Dedicated Caisse Mode) */}
-        {sessionRole === 'caisse' ? null : (
+        {/* 3. في لاكيس الصالون: "المجر كامل" لحسن فقط ((المداخيل + الصرف) - مصاريف حسن فقط)، و"شحال بقى ليه في الحساب كامل" لباقي الحلاقين | للمشرف والحلاق: الصافي التراكمي */}
+        {sessionRole === 'caisse' ? (
+          activeBarberId === 'hassan' || activeBarberMeta.isOwner ? (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => openDrillModal('net_balance')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openDrillModal('net_balance');
+                }
+              }}
+              className={`p-4 rounded-2xl border shadow-xs hover:shadow-md hover:border-emerald-500 active:scale-[0.99] transition-all text-start space-y-1 cursor-pointer group ${
+                displayedDayIntakeStats.displayedDrawerCashMAD < 0
+                  ? `bg-rose-50 dark:bg-[#2B141A] border-rose-400 dark:border-rose-500/60 ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`
+                  : `${activeTone.softSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`
+              }`}
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[11px] font-bold text-zinc-800 dark:text-zinc-200 block">
+                  {`المجر كامل (${activeBarberMeta.arName})`}
+                </span>
+                <span className="flex items-center gap-1 shrink-0">
+                  {renderBoxEyeButton('kpi_net', true)}
+                </span>
+              </div>
+              <div
+                dir="ltr"
+                className={`inline-flex items-baseline gap-1 text-xl sm:text-2xl font-black font-mono tabular-nums ${
+                  displayedDayIntakeStats.displayedDrawerCashMAD < 0
+                    ? 'text-rose-700 dark:text-rose-400'
+                    : 'text-emerald-800 dark:text-emerald-300'
+                }`}
+              >
+                <span>{maskNum(displayedDayIntakeStats.displayedDrawerCashMAD, 'kpi_net')}</span>
+                <span
+                  className={`text-xs font-bold ${
+                    displayedDayIntakeStats.displayedDrawerCashMAD < 0
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : 'text-emerald-700 dark:text-emerald-400'
+                  }`}
+                >
+                  MAD
+                </span>
+              </div>
+              <span
+                className={`text-[10px] block font-mono tabular-nums ${
+                  displayedDayIntakeStats.displayedDrawerCashMAD < 0
+                    ? 'text-rose-700 dark:text-rose-300 font-bold'
+                    : 'text-zinc-700 dark:text-zinc-300'
+                }`}
+              >
+                {displayedDayIntakeStats.displayedDrawerCashMAD < 0
+                  ? 'رصيد المجر سالب — اضغط للتفاصيل'
+                  : `المداخيل (${formatMAD(displayedDayIntakeStats.displayedIncomeMAD, 'kpi_net')}) + الصرف (${formatMAD(displayedDayIntakeStats.displayedFloatMAD, 'kpi_net')}) − مصاريف حسن (${formatMAD(displayedDayIntakeStats.displayedExpensesMAD, 'kpi_net')})`}
+              </span>
+            </div>
+          ) : (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => openDrillModal('net_balance')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openDrillModal('net_balance');
+                }
+              }}
+              className={`p-4 rounded-2xl border shadow-xs hover:shadow-md hover:border-amber-500 active:scale-[0.99] transition-all text-start space-y-1 cursor-pointer group ${
+                cycleBalance.barberNetOwedMAD < 0
+                  ? `bg-rose-50 dark:bg-[#2B141A] border-rose-400 dark:border-rose-500/60 ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`
+                  : `${activeTone.softSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`
+              }`}
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[11px] font-bold text-zinc-800 dark:text-zinc-200 block">
+                  {`شحال بقى ليه في الحساب كامل (${activeBarberMeta.arName})`}
+                </span>
+                <span className="flex items-center gap-1 shrink-0">
+                  {renderBoxEyeButton('kpi_net', true)}
+                </span>
+              </div>
+              <div
+                dir="ltr"
+                className={`inline-flex items-baseline gap-1 text-xl sm:text-2xl font-black font-mono tabular-nums ${
+                  cycleBalance.barberNetOwedMAD < 0
+                    ? 'text-rose-700 dark:text-rose-400'
+                    : 'text-zinc-900 dark:text-white'
+                }`}
+              >
+                <span>{maskNum(cycleBalance.barberNetOwedMAD, 'kpi_net')}</span>
+                <span
+                  className={`text-xs font-bold ${
+                    cycleBalance.barberNetOwedMAD < 0
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : 'text-amber-700 dark:text-amber-400'
+                  }`}
+                >
+                  MAD
+                </span>
+              </div>
+              <span
+                className={`text-[10px] block font-mono tabular-nums ${
+                  cycleBalance.barberNetOwedMAD < 0
+                    ? 'text-rose-700 dark:text-rose-300 font-bold'
+                    : 'text-zinc-700 dark:text-zinc-300'
+                }`}
+              >
+                {cycleBalance.barberNetOwedMAD < 0
+                  ? 'رصيد سالب — اضغط لتفاصيل الحساب الكامل'
+                  : `حصة ${cycleBalance.commissionPercent}% (${formatMAD(cycleBalance.barberGrossShareMAD, 'kpi_net')}) − سحوبات (${formatMAD(cycleBalance.expensesMAD, 'kpi_net')})${
+                      cycleBalance.carryForwardMAD !== 0
+                        ? ` · مرحل: ${formatMAD(cycleBalance.carryForwardMAD, 'kpi_net')}`
+                        : ''
+                    } · اضغط للتفاصيل`}
+              </span>
+            </div>
+          )
+        ) : (
           <div
             role="button"
             tabIndex={0}
@@ -4364,10 +4441,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 openDrillModal('net_balance');
               }
             }}
-            className={`p-4 rounded-2xl border shadow-xs hover:shadow-md hover:border-amber-400 active:scale-[0.99] transition-all text-start space-y-1 cursor-pointer group ${
+            className={`p-4 rounded-2xl border shadow-xs hover:shadow-md hover:border-amber-500 active:scale-[0.99] transition-all text-start space-y-1 cursor-pointer group ${
               cycleBalance.barberNetOwedMAD < 0
-                ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-300 dark:border-rose-500/50'
-                : activeTone.softSurfaceClass
+                ? `bg-rose-50 dark:bg-[#2B141A] border-rose-400 dark:border-rose-500/60 ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`
+                : `${activeTone.softSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`
             }`}
           >
             <div className="flex items-center justify-between gap-1">
@@ -4440,10 +4517,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               openDrillModal('credits_all');
             }
           }}
-          className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 hover:border-orange-400 dark:hover:border-orange-500/60 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group"
+          className={`p-4 rounded-2xl border hover:border-orange-500 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group ${activeTone.cardSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}
         >
           <div className="flex items-center justify-between gap-1">
-            <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 block">
+            <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 block">
               مجموع الكريدي (كل التواريخ)
             </span>
             <span className="flex items-center gap-1 shrink-0">
@@ -4681,14 +4758,17 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
       {/* Req #3 (Swapped Down): Daily Per-Barber Master Note & Barber Reply Card */}
       {sessionRole !== 'caisse' && activeBarberId && (
-        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-amber-200 dark:border-amber-500/35 shadow-xs space-y-3 text-xs">
+        <div className={`p-4 rounded-2xl border shadow-xs space-y-3 text-xs ${activeTone.cardSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="font-black text-zinc-900 dark:text-white flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            <div className="font-black text-zinc-900 dark:text-white flex items-center gap-2 flex-wrap">
+              <MessageSquare className="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
               <span>
                 {sessionRole === 'master'
                   ? `ملاحظة يومية للحلاق (${activeBarberMeta.arName} · ${selectedDate})`
                   : `ملاحظة الإدارة اليومية (${selectedDate})`}
+              </span>
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${activeTone.badgeClass}`}>
+                {activeBarberMeta.arName}
               </span>
             </div>
             {currentDailyNote?.masterUpdatedAt && (
@@ -4793,12 +4873,16 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             <form
               onSubmit={(e) => handleSubmitIncome(e, false)}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-xl max-h-[92vh] overflow-y-auto p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border-2 border-emerald-400 dark:border-emerald-500/50 shadow-2xl space-y-4 text-xs"
+              className={`w-full max-w-xl max-h-[92vh] overflow-y-auto p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border-2 border-emerald-400 dark:border-emerald-500/50 shadow-2xl space-y-4 text-xs ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}
             >
-            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
-              <span className="font-black text-sm text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
-                <PlusCircle className="w-4 h-4" />
-                <span>غانحط في المجر — {activeBarberMeta.arName}</span>
+            <div className={`-mx-5 sm:-mx-6 -mt-5 sm:-mt-6 px-5 sm:px-6 py-3.5 rounded-t-2xl flex items-center justify-between gap-2 ${activeTone.headerBandClass}`}>
+              <span className="font-black text-sm text-emerald-800 dark:text-emerald-200 flex items-center gap-2 flex-wrap">
+                <PlusCircle className="w-4 h-4 shrink-0" />
+                <span>غانحط في المجر</span>
+                <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-black border inline-flex items-center gap-1.5 ${activeTone.badgeClass}`}>
+                  <span className={`w-2 h-2 rounded-full ${activeTone.dotClass}`} />
+                  <span>{activeBarberMeta.arName}</span>
+                </span>
               </span>
               <button
                 type="button"
@@ -4806,7 +4890,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                   setOpenForm('none');
                   setDuplicateWarning(null);
                 }}
-                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
+                className="p-1 rounded-lg text-zinc-500 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -4846,46 +4930,18 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="block font-bold text-zinc-800 dark:text-zinc-200">
-                  شحال حط في المجر (MAD) *
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={amountPaidInput}
-                  onChange={(e) => {
-                    setAmountPaidInput(e.target.value);
-                    setDuplicateWarning(null);
-                  }}
-                  placeholder="0"
-                  autoFocus
-                  className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-base font-mono font-black tabular-nums text-zinc-900 dark:text-white outline-none"
-                />
-                {caisseQuickSuggestions.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    <span className="text-[10px] font-bold text-zinc-400">اقتراح سريع:</span>
-                    {caisseQuickSuggestions.map((chip) => (
-                      <button
-                        key={chip}
-                        type="button"
-                        onClick={() => {
-                          setAmountPaidInput(String(chip));
-                          setDuplicateWarning(null);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-black tabular-nums border cursor-pointer transition-colors ${
-                          Number(amountPaidInput) === chip
-                            ? 'bg-emerald-600 text-white border-emerald-600'
-                            : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 border-zinc-200 dark:border-zinc-700 hover:border-emerald-400'
-                        }`}
-                      >
-                        {chip}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <CaisseAmountField
+                label="شحال حط في المجر (MAD) *"
+                value={amountPaidInput}
+                onChange={(next) => {
+                  setAmountPaidInput(next);
+                  setDuplicateWarning(null);
+                }}
+                quickAmounts={CAISSE_QUICK_AMOUNTS}
+                accent="emerald"
+                placeholder="0"
+                autoFocus
+              />
 
               <div>
                 <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
@@ -5077,12 +5133,16 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             <form
               onSubmit={(e) => handleSubmitExpense(e, false)}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border-2 border-rose-400 dark:border-rose-500/50 shadow-2xl space-y-4 text-xs"
+              className={`w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border-2 border-rose-400 dark:border-rose-500/50 shadow-2xl space-y-4 text-xs ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}
             >
-            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
-              <span className="font-black text-sm text-rose-700 dark:text-rose-300 flex items-center gap-2">
-                <MinusCircle className="w-4 h-4" />
-                <span>غانهز من المجر — {activeBarberMeta.arName}</span>
+            <div className={`-mx-5 sm:-mx-6 -mt-5 sm:-mt-6 px-5 sm:px-6 py-3.5 rounded-t-2xl flex items-center justify-between gap-2 ${activeTone.headerBandClass}`}>
+              <span className="font-black text-sm text-rose-800 dark:text-rose-200 flex items-center gap-2 flex-wrap">
+                <MinusCircle className="w-4 h-4 shrink-0" />
+                <span>غانهز من المجر</span>
+                <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-black border inline-flex items-center gap-1.5 ${activeTone.badgeClass}`}>
+                  <span className={`w-2 h-2 rounded-full ${activeTone.dotClass}`} />
+                  <span>{activeBarberMeta.arName}</span>
+                </span>
               </span>
               <button
                 type="button"
@@ -5090,7 +5150,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                   setOpenForm('none');
                   setDuplicateWarning(null);
                 }}
-                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
+                className="p-1 rounded-lg text-zinc-500 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -5143,25 +5203,19 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 </div>
               )}
 
-              <div>
-                <label className="block font-bold text-zinc-800 dark:text-zinc-200 mb-1">
-                  شحال هزيت (MAD) *
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  step="any"
-                  value={expenseAmount}
-                  onChange={(e) => {
-                    setExpenseAmount(e.target.value);
-                    setDuplicateWarning(null);
-                  }}
-                  placeholder="0"
-                  required
-                  autoFocus
-                  className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 focus:border-rose-500 rounded-xl px-3.5 py-2.5 text-base font-mono font-black tabular-nums text-zinc-900 dark:text-white outline-none"
-                />
-              </div>
+              <CaisseAmountField
+                label="شحال هزيت (MAD) *"
+                value={expenseAmount}
+                onChange={(next) => {
+                  setExpenseAmount(next);
+                  setDuplicateWarning(null);
+                }}
+                quickAmounts={CAISSE_QUICK_AMOUNTS}
+                accent="rose"
+                placeholder="0"
+                required
+                autoFocus
+              />
               <div>
                 <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
                   السبب / ملاحظة (اختيارية)
@@ -5687,13 +5741,16 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       )}
 
       {/* Compact Single-Line Expandable Transaction Log */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
+      <div className={`p-4 sm:p-5 rounded-2xl border space-y-3 ${activeTone.cardSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200/70 dark:border-zinc-800 pb-2.5">
           <div>
-            <h4 className="text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
-              <History className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
+            <h4 className="text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2 flex-wrap">
+              <History className="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
               <span>سجل العمليات</span>
-              <span className="text-xs font-mono text-zinc-400 tabular-nums">
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${activeTone.badgeClass}`}>
+                {activeBarberMeta.arName}
+              </span>
+              <span className="text-xs font-mono text-zinc-500 dark:text-zinc-400 tabular-nums">
                 ({visibleEntries.length})
               </span>
             </h4>
@@ -5895,7 +5952,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         (sessionRole === 'master' ||
           (sessionRole === 'barber' && editingEntry.barberId === activeBarberId)) && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop">
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 sb-modal-backdrop">
             <form
               onSubmit={handleSaveEntryEdit}
               className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 p-5 sm:p-6 space-y-4 shadow-2xl text-xs"
@@ -6205,12 +6262,12 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                             openDrillModal('shop_barber_day', barber.id);
                           }
                         }}
-                        className="p-2.5 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-400 text-start transition-colors cursor-pointer space-y-0.5"
+                        className={`p-2.5 rounded-xl border hover:border-amber-500 text-start transition-colors cursor-pointer space-y-1 ${bTone.cardSurfaceClass} ${bTone.topAccentClass} ${bTone.borderLeftClass}`}
                       >
-                        <div className="flex items-center justify-between gap-1.5 font-bold text-zinc-800 dark:text-zinc-200">
+                        <div className="flex items-center justify-between gap-1.5 font-bold text-zinc-900 dark:text-zinc-100">
                           <span className="flex items-center gap-1.5 min-w-0">
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${bTone.dotClass}`} />
-                            <span className="truncate">{barber.arName}</span>
+                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${bTone.dotClass}`} />
+                            <span className="truncate font-black">{barber.arName}</span>
                           </span>
                           {renderBoxEyeButton(boxKey, true)}
                         </div>
@@ -6284,14 +6341,15 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                   return (
                     <div
                       key={row.barberId}
-                      className={`p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5 ${bTone.borderLeftClass}`}
+                      className={`p-3 rounded-xl border space-y-1.5 ${bTone.cardSurfaceClass} ${bTone.topAccentClass} ${bTone.borderLeftClass}`}
                     >
                       <div className="flex items-center justify-between gap-1">
-                        <span className="font-black text-zinc-900 dark:text-white">
-                          {row.arName}
+                        <span className="font-black text-zinc-900 dark:text-white flex items-center gap-1.5">
+                          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${bTone.dotClass}`} />
+                          <span>{row.arName}</span>
                         </span>
                         <span className="flex items-center gap-1">
-                          <span className="text-[10px] font-mono text-zinc-500">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-black border ${bTone.badgeClass}`}>
                             {row.commissionPercent}%
                           </span>
                           {renderBoxEyeButton(boxKey, true)}
@@ -6452,10 +6510,13 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                   return (
                     <div
                       key={row.barberId}
-                      className={`p-3 rounded-xl border bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 space-y-1 ${bTone.borderLeftClass}`}
+                      className={`p-3 rounded-xl border space-y-1 ${bTone.cardSurfaceClass} ${bTone.topAccentClass} ${bTone.borderLeftClass}`}
                     >
                       <div className="flex items-center justify-between gap-1">
-                        <div className="font-black text-zinc-900 dark:text-white">{row.arName}</div>
+                        <div className="font-black text-zinc-900 dark:text-white flex items-center gap-1.5">
+                          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${bTone.dotClass}`} />
+                          <span>{row.arName}</span>
+                        </div>
                         {renderBoxEyeButton(boxKey, true)}
                       </div>
                       <div className="flex justify-between font-mono tabular-nums">
@@ -6573,16 +6634,16 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             }}
           >
             <div
-              className="w-full max-w-2xl max-h-[86vh] flex flex-col rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs"
+              className={`w-full max-w-2xl max-h-[86vh] flex flex-col rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}
               onClick={(e) => e.stopPropagation()}
             >
             {/* Modal Header */}
-            <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 flex items-start justify-between gap-3">
+            <div className={`p-4 flex items-start justify-between gap-3 ${activeTone.headerBandClass}`}>
               <div className="min-w-0 space-y-0.5">
                 <h4 className="text-sm font-black text-zinc-900 dark:text-white">
                   {drillViewData.title}
                 </h4>
-                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-300">
                   {drillViewData.subtitle}
                 </p>
               </div>
@@ -6782,13 +6843,141 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                     </div>
                   );
                 })()
-              ) : drillViewData.list.length === 0 &&
-                (!drillViewData.manualList || drillViewData.manualList.length === 0) ? (
-                <div className="py-10 text-center text-zinc-500 dark:text-zinc-400">
-                  لا توجد عمليات مسجلة في هذا البند بعد.
-                </div>
               ) : (
                 <>
+                  {drillModal.kind === 'net_balance' &&
+                    sessionRole === 'caisse' &&
+                    (activeBarberId === 'hassan' || activeBarberMeta.isOwner ? (
+                      <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-500/35 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono tabular-nums">
+                        <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-stone-200/80 dark:border-zinc-800">
+                          <span className="text-zinc-500 dark:text-zinc-400 block text-[10px]">
+                            مداخيل حسن
+                          </span>
+                          <strong className="text-emerald-700 dark:text-emerald-400">
+                            {drillViewData.canShowAmounts
+                              ? `${Math.round(displayedDayIntakeStats.displayedIncomeMAD).toLocaleString('en-US')} MAD`
+                              : '••• MAD'}
+                          </strong>
+                        </div>
+                        <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-stone-200/80 dark:border-zinc-800">
+                          <span className="text-zinc-500 dark:text-zinc-400 block text-[10px]">
+                            فلوس الصرف (حسن)
+                          </span>
+                          <strong className="text-amber-700 dark:text-amber-300">
+                            {drillViewData.canShowAmounts
+                              ? `${Math.round(displayedDayIntakeStats.displayedFloatMAD).toLocaleString('en-US')} MAD`
+                              : '••• MAD'}
+                          </strong>
+                        </div>
+                        <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-stone-200/80 dark:border-zinc-800">
+                          <span className="text-zinc-500 dark:text-zinc-400 block text-[10px]">
+                            مصاريف حسن فقط
+                          </span>
+                          <strong className="text-rose-700 dark:text-rose-400">
+                            {drillViewData.canShowAmounts
+                              ? `${Math.round(displayedDayIntakeStats.displayedExpensesMAD).toLocaleString('en-US')} MAD`
+                              : '••• MAD'}
+                          </strong>
+                        </div>
+                        <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-emerald-300 dark:border-emerald-500/40">
+                          <span className="text-zinc-500 dark:text-zinc-400 block text-[10px]">
+                            المجر كامل (حسن)
+                          </span>
+                          <strong
+                            dir="ltr"
+                            className={
+                              displayedDayIntakeStats.displayedDrawerCashMAD < 0
+                                ? 'text-rose-700 dark:text-rose-400'
+                                : 'text-emerald-700 dark:text-emerald-400'
+                            }
+                          >
+                            {drillViewData.canShowAmounts
+                              ? `${Math.round(displayedDayIntakeStats.displayedDrawerCashMAD).toLocaleString('en-US')} MAD`
+                              : '••• MAD'}
+                          </strong>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-500/35 grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] font-mono tabular-nums">
+                        <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-stone-200/80 dark:border-zinc-800">
+                          <span className="text-zinc-500 dark:text-zinc-400 block text-[10px]">
+                            إجمالي المداخيل (الدورة)
+                          </span>
+                          <strong className="text-emerald-700 dark:text-emerald-400">
+                            {drillViewData.canShowAmounts
+                              ? `${Math.round(cycleBalance.incomeMAD).toLocaleString('en-US')} MAD`
+                              : '••• MAD'}
+                          </strong>
+                        </div>
+                        <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-stone-200/80 dark:border-zinc-800">
+                          <span className="text-zinc-500 dark:text-zinc-400 block text-[10px]">
+                            حصة الحلاق ({cycleBalance.commissionPercent}%)
+                          </span>
+                          <strong className="text-zinc-900 dark:text-white">
+                            {drillViewData.canShowAmounts
+                              ? `${Math.round(cycleBalance.barberGrossShareMAD).toLocaleString('en-US')} MAD`
+                              : '••• MAD'}
+                          </strong>
+                        </div>
+                        <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-stone-200/80 dark:border-zinc-800">
+                          <span className="text-zinc-500 dark:text-zinc-400 block text-[10px]">
+                            مجموع السحوبات (الدورة)
+                          </span>
+                          <strong className="text-rose-700 dark:text-rose-400">
+                            {drillViewData.canShowAmounts
+                              ? `${Math.round(cycleBalance.expensesMAD).toLocaleString('en-US')} MAD`
+                              : '••• MAD'}
+                          </strong>
+                        </div>
+                        {cycleBalance.carryForwardMAD !== 0 && (
+                          <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-stone-200/80 dark:border-zinc-800">
+                            <span className="text-zinc-500 dark:text-zinc-400 block text-[10px]">
+                              مرحل من الدورة السابقة
+                            </span>
+                            <strong className="text-rose-700 dark:text-rose-300">
+                              {drillViewData.canShowAmounts
+                                ? `${Math.round(cycleBalance.carryForwardMAD).toLocaleString('en-US')} MAD`
+                                : '••• MAD'}
+                            </strong>
+                          </div>
+                        )}
+                        {cycleBalance.barberAdjustmentMAD !== 0 && (
+                          <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-stone-200/80 dark:border-zinc-800">
+                            <span className="text-zinc-500 dark:text-zinc-400 block text-[10px]">
+                              تسوية إدارية
+                            </span>
+                            <strong className="text-indigo-700 dark:text-indigo-300">
+                              {drillViewData.canShowAmounts
+                                ? `${Math.round(cycleBalance.barberAdjustmentMAD).toLocaleString('en-US')} MAD`
+                                : '••• MAD'}
+                            </strong>
+                          </div>
+                        )}
+                        <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-amber-300 dark:border-amber-500/40">
+                          <span className="text-zinc-500 dark:text-zinc-400 block text-[10px]">
+                            شحال بقى ليه في الحساب كامل
+                          </span>
+                          <strong
+                            dir="ltr"
+                            className={
+                              cycleBalance.barberNetOwedMAD < 0
+                                ? 'text-rose-700 dark:text-rose-400'
+                                : 'text-amber-700 dark:text-amber-300'
+                            }
+                          >
+                            {drillViewData.canShowAmounts
+                              ? `${Math.round(cycleBalance.barberNetOwedMAD).toLocaleString('en-US')} MAD`
+                              : '••• MAD'}
+                          </strong>
+                        </div>
+                      </div>
+                    ))}
+                  {drillViewData.list.length === 0 &&
+                    (!drillViewData.manualList || drillViewData.manualList.length === 0) && (
+                      <div className="py-10 text-center text-zinc-500 dark:text-zinc-400">
+                        لا توجد عمليات مسجلة في هذا البند بعد.
+                      </div>
+                    )}
                   {drillViewData.list.map((item) => {
                     const badge = formatEntryTypeBadge(item.type, item.adjustmentDirection);
                     const effCredRem = getEffectiveCaisseCreditRemaining(item);
@@ -6989,7 +7178,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       )}
 
       {drawerBreakdownModalNode}
-      {caisseBarbersCumulativeModalNode}
       {hassanPinModalNode}
 
       {/* Master Admin: Isolated Barber Balance Adjust / Clear Negative Modal */}
@@ -7493,11 +7681,385 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         </ModalPortal>
       )}
 
+      {/* Interactive Day Detail Modal (All "حط" deposits & "هز" withdrawals for barber+date; Master-only CRUD even when "مغلق") */}
+      {dayDetailTarget && dayDetailView && (
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 sb-modal-backdrop"
+            onClick={() => setDayDetailTarget(null)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className={`w-full max-w-2xl max-h-[88vh] flex flex-col rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 ${getBarberIdentityTokens(dayDetailTarget.barberId, dayDetailView.meta.arName).topAccentClass} ${getBarberIdentityTokens(dayDetailTarget.barberId, dayDetailView.meta.arName).borderLeftClass} shadow-2xl overflow-hidden text-xs`}
+            >
+              {/* Modal Header */}
+              <div className={`p-4 flex items-start justify-between gap-3 ${getBarberIdentityTokens(dayDetailTarget.barberId, dayDetailView.meta.arName).headerBandClass}`}>
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`w-6 h-6 rounded-lg border flex items-center justify-center shrink-0 ${getBarberIdentityTokens(dayDetailTarget.barberId, dayDetailView.meta.arName).iconBoxClass}`}>
+                      <Calendar className="w-3.5 h-3.5 shrink-0" />
+                    </span>
+                    <h4 className="text-sm font-black text-zinc-900 dark:text-white">
+                      تفاصيل يوم <span dir="ltr" className="font-mono">{dayDetailView.date}</span>
+                    </h4>
+                    <span className={`px-2 py-0.5 rounded-md border text-[11px] font-black inline-flex items-center gap-1 ${getBarberIdentityTokens(dayDetailTarget.barberId, dayDetailView.meta.arName).badgeClass}`}>
+                      <span className={`w-2 h-2 rounded-full ${getBarberIdentityTokens(dayDetailTarget.barberId, dayDetailView.meta.arName).dotClass}`} />
+                      {dayDetailView.meta.arName}
+                    </span>
+                    {dayDetailView.isClosed ? (
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300 text-[10px] font-black">
+                        مغلق ✓
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/35 text-amber-700 dark:text-amber-300 text-[10px] font-black">
+                        مفتوح
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-zinc-600 dark:text-zinc-300">
+                    {sessionRole === 'master'
+                      ? 'صلاحية المشرف العام: يمكنك إضافة أو تعديل أو حذف أي عملية في هذا اليوم حتى لو كان مغلقاً.'
+                      : 'عرض تفصيلي لعمليات الإيداع (حط) والسحب (هز) المسجلة في هذا اليوم.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDayDetailTarget(null)}
+                  className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-white/70 dark:hover:bg-zinc-800 cursor-pointer shrink-0"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Day Summary Strip */}
+              <div className="px-4 py-3 bg-zinc-50 dark:bg-zinc-950/70 border-b border-zinc-100 dark:border-zinc-800 grid grid-cols-3 gap-2">
+                <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-emerald-200/80 dark:border-emerald-500/30">
+                  <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 block">
+                    مجموع الإيداع (حط)
+                  </span>
+                  <span dir="ltr" className="text-sm font-black font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
+                    +{formatMAD(dayDetailView.dayStats.incomeMAD, 'kpi_income')}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-rose-200/80 dark:border-rose-500/30">
+                  <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 block">
+                    مجموع السحب (هز)
+                  </span>
+                  <span dir="ltr" className="text-sm font-black font-mono tabular-nums text-rose-600 dark:text-rose-400">
+                    -{formatMAD(dayDetailView.dayStats.expensesMAD, 'kpi_expenses')}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                  <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 block">
+                    صافي اليوم ({dayDetailView.dayEntries.length} عملية)
+                  </span>
+                  <span
+                    dir="ltr"
+                    className={`text-sm font-black font-mono tabular-nums ${
+                      dayDetailView.dayStats.incomeMAD - dayDetailView.dayStats.expensesMAD < 0
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-zinc-900 dark:text-white'
+                    }`}
+                  >
+                    {formatMAD(
+                      dayDetailView.dayStats.incomeMAD - dayDetailView.dayStats.expensesMAD,
+                      'kpi_net'
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {/* Scrollable Modal Body */}
+              <div className="p-4 overflow-y-auto space-y-4 flex-1">
+                {/* Master-Admin-Only Inline Add Form for this Specific Day (Even if "مغلق") */}
+                {sessionRole === 'master' && (
+                  <form
+                    onSubmit={handleAddEntryInDayModal}
+                    className="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-500/35 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-black text-zinc-900 dark:text-white flex items-center gap-1.5">
+                        <PlusCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                        <span>إضافة عملية جديدة ليوم {dayDetailView.date}</span>
+                      </span>
+                      <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300">
+                        المشرف العام فقط
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setDayModalAddType('income')}
+                        className={`px-2.5 py-2 rounded-xl border font-black text-[11px] cursor-pointer transition-colors ${
+                          dayModalAddType === 'income'
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                        }`}
+                      >
+                        + حط (مدخول)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDayModalAddType('expense')}
+                        className={`px-2.5 py-2 rounded-xl border font-black text-[11px] cursor-pointer transition-colors ${
+                          dayModalAddType === 'expense'
+                            ? 'bg-rose-600 text-white border-rose-600'
+                            : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                        }`}
+                      >
+                        − هز (سحب / مصروف)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDayModalAddType('credit_repayment')}
+                        className={`px-2.5 py-2 rounded-xl border font-black text-[11px] cursor-pointer transition-colors ${
+                          dayModalAddType === 'credit_repayment'
+                            ? 'bg-teal-600 text-white border-teal-600'
+                            : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                        }`}
+                      >
+                        + خلاص كريدي
+                      </button>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <CaisseAmountField
+                        value={dayModalAddAmount}
+                        onChange={setDayModalAddAmount}
+                        quickAmounts={CAISSE_QUICK_AMOUNTS}
+                        accent={dayModalAddType === 'expense' ? 'rose' : 'emerald'}
+                        placeholder="المبلغ (MAD) *"
+                        required
+                        compact
+                      />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={dayModalAddClientName}
+                          onChange={(e) => setDayModalAddClientName(e.target.value)}
+                          placeholder="اسم الزبون (اختياري)"
+                          className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-zinc-900 dark:text-white"
+                        />
+                        <input
+                          type="text"
+                          value={dayModalAddNote}
+                          onChange={(e) => setDayModalAddNote(e.target.value)}
+                          placeholder="تفاصيل / ملاحظة (اختياري)"
+                          className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-zinc-900 dark:text-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={dayModalAddBusy}
+                        className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-white dark:text-zinc-950 font-black inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>
+                          {dayModalAddBusy
+                            ? 'جاري الحفظ...'
+                            : `حفظ العملية في ${dayDetailView.date}`}
+                        </span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {dayDetailView.dayEntries.length === 0 ? (
+                  <div className="py-10 text-center text-zinc-500 dark:text-zinc-400">
+                    لا توجد عمليات مسجلة لهذا الحلاق في يوم {dayDetailView.date}.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Deposits ("حط") Section */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h5 className="font-black text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                          <PlusCircle className="w-4 h-4" />
+                          <span>الإيداعات في المجر — حط ({dayDetailView.depositEntries.length})</span>
+                        </h5>
+                        <span dir="ltr" className="font-mono font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
+                          +{formatMAD(dayDetailView.dayStats.incomeMAD, 'kpi_income')}
+                        </span>
+                      </div>
+                      {dayDetailView.depositEntries.length === 0 ? (
+                        <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 text-zinc-500 text-center">
+                          لا توجد إيداعات (حط) في هذا اليوم.
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {dayDetailView.depositEntries.map((item) => {
+                            const badge = formatEntryTypeBadge(item.type, item.adjustmentDirection);
+                            const timePart = safeFormatTime(
+                              item.createdAt,
+                              [],
+                              { hour: '2-digit', minute: '2-digit' },
+                              ''
+                            );
+                            const label =
+                              item.serviceNames && item.serviceNames.length > 0
+                                ? item.serviceNames.join(' + ')
+                                : item.clientName || item.note?.trim() || badge.label;
+                            const effCred = getEffectiveCaisseCreditRemaining(item);
+                            return (
+                              <div
+                                key={item.id}
+                                className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2"
+                              >
+                                <div className="min-w-0 flex-1 space-y-0.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${badge.cls}`}>
+                                      {badge.label}
+                                    </span>
+                                    <span className="font-bold text-zinc-900 dark:text-white truncate">
+                                      {label}
+                                    </span>
+                                    {effCred > 0 && (
+                                      <span className="px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-300 text-[10px] font-mono font-bold">
+                                        كريدي {maskNum(effCred)} MAD
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-zinc-500 flex items-center gap-2 flex-wrap">
+                                    {timePart && <span className="font-mono">{timePart}</span>}
+                                    {item.clientName && <span>· {item.clientName}</span>}
+                                    {item.note && <span>· {item.note}</span>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span
+                                    dir="ltr"
+                                    className="font-mono font-black text-sm tabular-nums text-emerald-700 dark:text-emerald-400"
+                                  >
+                                    {badge.sign}
+                                    {formatMAD(item.amountPaidMAD, 'kpi_income')}
+                                  </span>
+                                  {sessionRole === 'master' && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => openEditModalForEntry(item)}
+                                        className="p-1.5 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:border-amber-400 cursor-pointer"
+                                        title="تعديل العملية"
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteEntry(item)}
+                                        className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/35 text-rose-700 dark:text-rose-300 hover:bg-rose-100 cursor-pointer"
+                                        title="حذف العملية"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Withdrawals / Expenses ("هز") Section */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h5 className="font-black text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                          <MinusCircle className="w-4 h-4" />
+                          <span>السحوبات والمصاريف — هز ({dayDetailView.withdrawalEntries.length})</span>
+                        </h5>
+                        <span dir="ltr" className="font-mono font-black text-rose-600 dark:text-rose-400 tabular-nums">
+                          -{formatMAD(dayDetailView.dayStats.expensesMAD, 'kpi_expenses')}
+                        </span>
+                      </div>
+                      {dayDetailView.withdrawalEntries.length === 0 ? (
+                        <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 text-zinc-500 text-center">
+                          لا توجد سحوبات (هز) في هذا اليوم.
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {dayDetailView.withdrawalEntries.map((item) => {
+                            const badge = formatEntryTypeBadge(item.type, item.adjustmentDirection);
+                            const timePart = safeFormatTime(
+                              item.createdAt,
+                              [],
+                              { hour: '2-digit', minute: '2-digit' },
+                              ''
+                            );
+                            const label =
+                              item.note?.trim() || item.clientName || badge.label;
+                            return (
+                              <div
+                                key={item.id}
+                                className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2"
+                              >
+                                <div className="min-w-0 flex-1 space-y-0.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${badge.cls}`}>
+                                      {badge.label}
+                                    </span>
+                                    <span className="font-bold text-zinc-900 dark:text-white truncate">
+                                      {label}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-zinc-500 flex items-center gap-2 flex-wrap">
+                                    {timePart && <span className="font-mono">{timePart}</span>}
+                                    <span>· سجله: {item.createdByName}</span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span
+                                    dir="ltr"
+                                    className="font-mono font-black text-sm tabular-nums text-rose-600 dark:text-rose-400"
+                                  >
+                                    {badge.sign}
+                                    {formatMAD(item.amountPaidMAD, 'kpi_expenses')}
+                                  </span>
+                                  {sessionRole === 'master' && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => openEditModalForEntry(item)}
+                                        className="p-1.5 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:border-amber-400 cursor-pointer"
+                                        title="تعديل العملية"
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteEntry(item)}
+                                        className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/35 text-rose-700 dark:text-rose-300 hover:bg-rose-100 cursor-pointer"
+                                        title="حذف العملية"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+
       {/* Solid Confirmation Modal: Delete Caisse Entry (Master Admin) */}
       {sessionRole === 'master' && confirmDeleteEntry && (
         <ModalPortal>
           <div
-            className="fixed inset-0 z-[110] flex items-center justify-center p-4 sb-modal-backdrop"
+            className="fixed inset-0 z-[120] flex items-center justify-center p-4 sb-modal-backdrop"
             onClick={() => !deleteEntryBusy && setConfirmDeleteEntry(null)}
           >
             <div

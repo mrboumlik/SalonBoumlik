@@ -325,8 +325,10 @@ export const MasterTeamAccessPanel: React.FC<MasterTeamAccessPanelProps> = ({
             return (
               <div
                 key={member.id}
-                className={`p-3.5 rounded-xl border bg-zinc-50/70 dark:bg-zinc-950/70 border-zinc-200 dark:border-zinc-800 space-y-2.5 ${
-                  isCaisse ? 'border-s-4 border-s-slate-500' : tone.borderLeftClass
+                className={`p-3.5 rounded-xl border space-y-2.5 ${
+                  isCaisse
+                    ? 'bg-[#F1F5F9] border-[#CBD5E1] dark:bg-[#151A24] dark:border-[#334155] border-t-[3px] border-t-slate-600 border-s-4 border-s-slate-500'
+                    : `${tone.cardSurfaceClass} ${tone.topAccentClass} ${tone.borderLeftClass}`
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">

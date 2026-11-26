@@ -151,7 +151,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             title={homeAria}
             className="flex items-center gap-2 sm:gap-2.5 group flex-1 md:flex-initial min-w-0 cursor-pointer"
           >
-            <BrandMark className="h-8 sm:h-10 w-auto object-contain flex-shrink-0 group-hover:scale-[1.03] transition-transform" />
+            <BrandMark variant="compact" className="flex-shrink-0 group-hover:scale-[1.02] transition-transform" />
 
             <p
               key={`nav-slogan-${lang}`}

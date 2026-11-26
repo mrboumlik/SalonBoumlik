@@ -47,6 +47,7 @@ import confetti from 'canvas-confetti';
 import QRCode from 'qrcode';
 import { useLanguage } from '../context/LanguageContext';
 import { SALON_INFO } from '../data/barbershopData';
+import { BrandMark } from './BrandMark';
 import { ModalPortal } from './ModalPortal';
 import { createNewBooking, subscribeToBookings, getAllBookings, normalizeMoroccanPhoneDigits } from '../utils/bookingStore';
 import {
@@ -122,8 +123,13 @@ import {
 import { rememberTrackedTicket } from '../utils/clientReminderWatcher';
 import { computeBarberReviewStats, useFirestoreReviews } from '../utils/reviewsStore';
 import { sendDualAlert, showToast } from '../utils/notifications';
-import { registerClientPushSubscription } from '../utils/webPushClient';
+import {
+  detectNotificationEnvironment,
+  requestResilientClientNotifications,
+  ResilientNotificationResult,
+} from '../utils/webPushClient';
 import { NotificationConsentModal } from './NotificationConsentModal';
+import { NotificationStatusBanner } from './NotificationStatusBanner';
 import { ReturningClientLookupModal, RecognizedClientData } from './ReturningClientLookupModal';
 import { ReturningLoyaltyStatusCard } from './ReturningLoyaltyStatusCard';
 import { WeeklyAvailabilityVisualizer } from './WeeklyAvailabilityVisualizer';
@@ -235,6 +241,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showNotifConsentModal, setShowNotifConsentModal] = useState(false);
   const [notifSubscribedForTicket, setNotifSubscribedForTicket] = useState(false);
+  const [ticketNotifResult, setTicketNotifResult] = useState<ResilientNotificationResult | null>(null);
 
   // Returning Client Quick Recognition Flow
   const [clientMode, setClientMode] = useState<'first_time' | 'returning'>('first_time');
@@ -1847,6 +1854,39 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
     setIsSubmitting(true);
     setFieldErrors({});
 
+    // Smooth, non-blocking notification prompt triggered from direct user click gesture:
+    // Never stalls or blocks booking creation or immediate redirect to the ticket screen
+    // (even on Android screen-overlay restrictions, iOS Safari, or denied/dismissed prompts).
+    const initialNotifEnv = detectNotificationEnvironment();
+    setTicketNotifResult({
+      granted: initialNotifEnv.permission === 'granted',
+      subscribed: false,
+      permission: initialNotifEnv.permission,
+      reason: initialNotifEnv.reason,
+      env: initialNotifEnv,
+    });
+    setNotifSubscribedForTicket(initialNotifEnv.permission === 'granted');
+    void requestResilientClientNotifications({
+      clientPhone: clientPhone.trim(),
+      clientName: clientName.trim(),
+      lang,
+      allowPrompt: initialNotifEnv.supported && initialNotifEnv.permission === 'default',
+    })
+      .then((res) => {
+        setTicketNotifResult(res);
+        setNotifSubscribedForTicket(res.granted);
+      })
+      .catch(() => {
+        const fallbackEnv = detectNotificationEnvironment();
+        setTicketNotifResult({
+          granted: fallbackEnv.permission === 'granted',
+          subscribed: false,
+          permission: fallbackEnv.permission,
+          reason: fallbackEnv.permission === 'granted' ? 'granted' : 'overlay_or_blocked',
+          env: fallbackEnv,
+        });
+      });
+
     try {
       const loyaltyTag = isFreeWashEligible
         ? pickLang(lang, {
@@ -1964,20 +2004,18 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
       setInspectedBusySlot(null);
       if (onBookingConfirmed) onBookingConfirmed(newBooking);
 
-      // Explicit consent workflow: avoid unprompted permission calls or immediate notification spam
-      if (typeof window !== 'undefined' && 'Notification' in window) {
-        if (Notification.permission === 'granted') {
-          void registerClientPushSubscription({
-            clientPhone: newBooking.clientPhone,
-            clientName: newBooking.clientName,
-            lang,
-          }).then((res) => setNotifSubscribedForTicket(res.subscribed));
-        } else if (Notification.permission === 'default') {
-          setNotifSubscribedForTicket(false);
-          setShowNotifConsentModal(true);
-        } else {
-          setNotifSubscribedForTicket(false);
-        }
+      // Ensure live notification status reflects current permission without ever blocking ticket view
+      const currentEnv = detectNotificationEnvironment();
+      if (currentEnv.permission === 'granted') {
+        void requestResilientClientNotifications({
+          clientPhone: newBooking.clientPhone,
+          clientName: newBooking.clientName,
+          lang,
+          allowPrompt: false,
+        }).then((res) => {
+          setTicketNotifResult(res);
+          setNotifSubscribedForTicket(res.granted);
+        });
       }
     } catch (err) {
       console.error('Failed to save booking to Firestore:', err);
@@ -5374,7 +5412,29 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
               }}
             >
               {/* Barber Pole Top Line */}
-              <div className="h-1.5 -mx-5 -mt-5 mb-4 bg-gradient-to-r from-red-600 via-white to-blue-600" />
+              <div className="h-1.5 -mx-5 -mt-5 mb-3 bg-gradient-to-r from-red-600 via-white to-blue-600" />
+
+              {/* Official Salon Boumlik Ticket Brand Header */}
+              <div className="flex items-center justify-between gap-2 pb-3 border-b border-zinc-800">
+                <BrandMark variant="compact" forceLightPlate className="flex-shrink-0" />
+                <div className="text-end min-w-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block truncate">
+                    {pickLang(lang, {
+                      ar: 'تذكرة حجز رسمية • تارودانت',
+                      fr: 'Ticket Officiel • Taroudant',
+                      amz: 'ⴰⵜⵉⴽⵉ ⵓⵏⵚⵉⴱ • ⵜⴰⵔⵓⴷⴰⵏⵜ',
+                      en: 'Official Ticket • Taroudant',
+                      es: 'Ticket Oficial • Taroudant',
+                    })}
+                  </span>
+                  <span
+                    className="mt-1 inline-block px-2.5 py-0.5 rounded-lg text-white font-bold text-[11px] font-mono shadow-xs"
+                    style={{ backgroundColor: activeBarberColor }}
+                  >
+                    {createdBooking.ticketNumber.startsWith('#') ? createdBooking.ticketNumber : `#${createdBooking.ticketNumber}`}
+                  </span>
+                </div>
+              </div>
 
               {/* Barber Identity Badge */}
               <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
@@ -5399,11 +5459,8 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                   </div>
                 </div>
 
-                <span 
-                  className="px-2.5 py-1 rounded-lg text-white font-bold text-[10px] font-mono shadow-xs"
-                  style={{ backgroundColor: activeBarberColor }}
-                >
-                  {createdBooking.ticketNumber.startsWith('#') ? createdBooking.ticketNumber : `#${createdBooking.ticketNumber}`}
+                <span className="text-[10px] font-mono font-bold text-zinc-400">
+                  {SALON_INFO.displayPhone}
                 </span>
               </div>
 
@@ -5727,39 +5784,16 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                 </button>
               )}
 
-              {typeof window !== 'undefined' && 'Notification' in window && (
-                notifSubscribedForTicket || Notification.permission === 'granted' ? (
-                  <div className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold flex items-center justify-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                    <span>
-                      {pickLang(lang, {
-                        ar: 'إشعارات متابعة التذكرة مفعلة على هذا الجهاز ✓',
-                        fr: 'Alertes en temps réel activées sur cet appareil ✓',
-                        amz: 'ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵜⵉⴽⵉ ⵔⵥⵎⵏ ✓',
-                        en: 'Live ticket alerts enabled on this device ✓',
-                        es: 'Alertas en tiempo real activadas en este dispositivo ✓',
-                      })}
-                    </span>
-                  </div>
-                ) : Notification.permission === 'default' ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowNotifConsentModal(true)}
-                    className="w-full py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/15 dark:hover:bg-amber-500/25 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <BellRing className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                    <span>
-                      {pickLang(lang, {
-                        ar: 'تفعيل إشعارات تأكيد الموعد ونقاط الولاء',
-                        fr: 'Activer les alertes de confirmation et fidélité',
-                        amz: 'ⵕⵥⵎ ⵉⵏⵖⵎⵉⵙⵏ ⵏ ⵓⵙⵏⵜⵎ ⴷ ⵜⵏⵇⵇⵉⴹⵉⵏ',
-                        en: 'Enable booking & loyalty alerts',
-                        es: 'Activar alertas de cita y fidelidad',
-                      })}
-                    </span>
-                  </button>
-                ) : null
-              )}
+              <NotificationStatusBanner
+                lang={lang}
+                clientPhone={createdBooking.clientPhone}
+                clientName={createdBooking.clientName}
+                notifResult={ticketNotifResult}
+                onResultChange={(res) => {
+                  setTicketNotifResult(res);
+                  setNotifSubscribedForTicket(res.granted);
+                }}
+              />
 
               <button
                 type="button"

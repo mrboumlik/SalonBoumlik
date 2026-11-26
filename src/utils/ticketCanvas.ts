@@ -75,10 +75,12 @@ export async function downloadTicketAsPng(
       color: { dark: '#000000', light: '#FFFFFF' },
     }));
 
-  const [logoImg, qrImg] = await Promise.all([
+  const [officialLogoImg, poleImg, qrImg] = await Promise.all([
+    loadImage(SALON_INFO.media.logoClean),
     loadImage(SALON_INFO.media.logoPole),
     loadImage(qrDataUrl),
   ]);
+  const logoImg = officialLogoImg || poleImg;
 
   const srvItems = booking.cartItemsSummary || [];
   const hasQueueAvoidance =
@@ -183,9 +185,9 @@ export async function downloadTicketAsPng(
   const cardX = 36;
   const cardY = 36;
   const cardW = 900 - 72;
-  const headerY = cardY + 44;
-  const div1Y = headerY + 114;
-  const barberBoxY = div1Y + 26;
+  const headerY = cardY + 42;
+  const div1Y = headerY + 124;
+  const barberBoxY = div1Y + 24;
   const gridY = barberBoxY + 112;
   const cellH = 98;
   const srvY = gridY + cellH * 2 + 40;
@@ -223,46 +225,56 @@ export async function downloadTicketAsPng(
   ctx.stroke();
   ctx.clip();
 
-  // Top Barber-Pole Tricolor Bar
+  // Top Unified Gold Architectural Accent Bar
   const stripeW = cardW / 3;
-  ctx.fillStyle = '#DC2626';
-  ctx.fillRect(cardX, cardY, stripeW, 14);
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(cardX + stripeW, cardY, stripeW, 14);
-  ctx.fillStyle = '#2563EB';
-  ctx.fillRect(cardX + stripeW * 2, cardY, stripeW + 2, 14);
+  ctx.fillStyle = '#B45309';
+  ctx.fillRect(cardX, cardY, stripeW, 12);
+  ctx.fillStyle = '#F59E0B';
+  ctx.fillRect(cardX + stripeW, cardY, stripeW, 12);
+  ctx.fillStyle = '#D97706';
+  ctx.fillRect(cardX + stripeW * 2, cardY, stripeW + 2, 12);
 
-  // Header: Salon Logo & Title
-  const logoSize = 86;
-  const logoX = cardX + 42;
-  drawRoundedRect(ctx, logoX, headerY, logoSize, logoSize, 20);
-  ctx.fillStyle = '#090A0E';
+  // Header: Official Salon Boumlik PNG Brand Plaque + Taroudant Signature
+  const logoBoxX = cardX + 42;
+  const logoBoxW = 210;
+  const logoBoxH = 98;
+  drawRoundedRect(ctx, logoBoxX, headerY, logoBoxW, logoBoxH, 18);
+  ctx.fillStyle = '#FAF9F6';
   ctx.fill();
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.5;
   ctx.strokeStyle = '#D97706';
   ctx.stroke();
 
-  if (logoImg) {
-    ctx.save();
-    drawRoundedRect(ctx, logoX + 4, headerY + 4, logoSize - 8, logoSize - 8, 16);
-    ctx.clip();
-    ctx.drawImage(logoImg, logoX + 4, headerY + 4, logoSize - 8, logoSize - 8);
-    ctx.restore();
+  if (logoImg && logoImg.width > 0 && logoImg.height > 0) {
+    const padX = 12;
+    const padY = 8;
+    const availW = logoBoxW - padX * 2;
+    const availH = logoBoxH - padY * 2;
+    const scale = Math.min(availW / logoImg.width, availH / logoImg.height);
+    const drawW = logoImg.width * scale;
+    const drawH = logoImg.height * scale;
+    const drawX = logoBoxX + (logoBoxW - drawW) / 2;
+    const drawY = headerY + (logoBoxH - drawH) / 2;
+    ctx.drawImage(logoImg, drawX, drawY, drawW, drawH);
   } else {
-    ctx.fillStyle = '#F59E0B';
-    ctx.font = '900 32px sans-serif';
+    ctx.fillStyle = '#0F172A';
+    ctx.font = '900 22px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('SB', logoX + logoSize / 2, headerY + 54);
+    ctx.fillText('SALON BOUMLIK', logoBoxX + logoBoxW / 2, headerY + 56);
   }
 
   ctx.textAlign = 'left';
   ctx.fillStyle = '#FFFFFF';
-  ctx.font = '900 34px sans-serif';
-  ctx.fillText('SALON BOUMLIK', logoX + logoSize + 24, headerY + 38);
+  ctx.font = '900 26px sans-serif';
+  ctx.fillText('SALON BOUMLIK', logoBoxX + logoBoxW + 22, headerY + 38);
 
   ctx.fillStyle = '#FBBF24';
-  ctx.font = '700 18px sans-serif';
-  ctx.fillText('MORE THAN BARBER SHOP • TAROUDANT', logoX + logoSize + 24, headerY + 68);
+  ctx.font = '700 15px sans-serif';
+  ctx.fillText('MORE THAN BARBER SHOP • TAROUDANT', logoBoxX + logoBoxW + 22, headerY + 66);
+
+  ctx.fillStyle = '#A1A1AA';
+  ctx.font = '700 13px sans-serif';
+  ctx.fillText('OFFICIAL APPOINTMENT TICKET', logoBoxX + logoBoxW + 22, headerY + 88);
 
   // Ticket Number Badge (top right)
   const cleanTicket = booking.ticketNumber.startsWith('#')

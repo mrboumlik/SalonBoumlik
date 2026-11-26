@@ -123,6 +123,7 @@ export default defineConfig(() => {
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: [
+          'favicon-64x64.png',
           'icon.svg',
           'apple-touch-icon.png',
           'pwa-192x192.png',
@@ -136,8 +137,8 @@ export default defineConfig(() => {
           short_name: 'Boumlik',
           description:
             'Salon Boumlik - Réservation en ligne, suivi de ticket en temps réel et programme de fidélité à Taroudant.',
-          theme_color: '#08090C',
-          background_color: '#08090C',
+          theme_color: '#FAF9F6',
+          background_color: '#FAF9F6',
           display: 'standalone',
           orientation: 'portrait',
           scope: '/',

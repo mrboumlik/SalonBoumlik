@@ -276,10 +276,12 @@ export async function downloadClientQrPassPng(
   existingQrDataUrl?: string
 ): Promise<void> {
   const qrDataUrl = existingQrDataUrl || (await generateClientProfileQrDataUrl(client));
-  const [logoImg, qrImg] = await Promise.all([
+  const [officialLogoImg, poleImg, qrImg] = await Promise.all([
+    loadCanvasImage(SALON_INFO.media.logoClean),
     loadCanvasImage(SALON_INFO.media.logoPole),
     loadCanvasImage(qrDataUrl),
   ]);
+  const logoImg = officialLogoImg || poleImg;
 
   const width = 540;
   const height = 680;
@@ -302,32 +304,48 @@ export async function downloadClientQrPassPng(
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // Top barber-pole stripe
+  // Top unified gold architectural stripe
   const stripeW = (width - 48) / 3;
-  ctx.fillStyle = '#DC2626';
+  ctx.fillStyle = '#B45309';
   ctx.fillRect(24, 24, stripeW, 7);
-  ctx.fillStyle = '#FFFFFF';
+  ctx.fillStyle = '#F59E0B';
   ctx.fillRect(24 + stripeW, 24, stripeW, 7);
-  ctx.fillStyle = '#2563EB';
+  ctx.fillStyle = '#D97706';
   ctx.fillRect(24 + stripeW * 2, 24, stripeW, 7);
 
-  // Header brand
-  if (logoImg) {
-    ctx.save();
-    drawRoundedBox(ctx, 48, 52, 54, 54, 12);
-    ctx.clip();
-    ctx.drawImage(logoImg, 48, 52, 54, 54);
-    ctx.restore();
+  // Header brand: official Salon Boumlik PNG inside crisp light ivory badge
+  const passLogoW = 114;
+  const passLogoH = 56;
+  drawRoundedBox(ctx, 48, 49, passLogoW, passLogoH, 12);
+  ctx.fillStyle = '#FAF9F6';
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#D97706';
+  ctx.stroke();
+
+  if (logoImg && logoImg.width > 0 && logoImg.height > 0) {
+    const padX = 8;
+    const padY = 5;
+    const scale = Math.min((passLogoW - padX * 2) / logoImg.width, (passLogoH - padY * 2) / logoImg.height);
+    const drawW = logoImg.width * scale;
+    const drawH = logoImg.height * scale;
+    ctx.drawImage(
+      logoImg,
+      48 + (passLogoW - drawW) / 2,
+      49 + (passLogoH - drawH) / 2,
+      drawW,
+      drawH
+    );
   }
 
   ctx.textAlign = 'left';
   ctx.fillStyle = '#FFFFFF';
-  ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
-  ctx.fillText('SALON BOUMLIK', logoImg ? 116 : 48, 76);
+  ctx.font = 'bold 21px system-ui, -apple-system, sans-serif';
+  ctx.fillText('SALON BOUMLIK', 48 + passLogoW + 16, 73);
 
   ctx.fillStyle = '#F59E0B';
-  ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
-  ctx.fillText('CLIENT PROFILE PASS • TAROUDANT', logoImg ? 116 : 48, 99);
+  ctx.font = 'bold 12px system-ui, -apple-system, sans-serif';
+  ctx.fillText('CLIENT PROFILE PASS • TAROUDANT', 48 + passLogoW + 16, 95);
 
   // Divider
   ctx.strokeStyle = '#27272A';

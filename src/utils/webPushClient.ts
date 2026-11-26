@@ -8,10 +8,44 @@ import {
   where,
 } from 'firebase/firestore';
 import { Language } from '../types';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { db } from './firebase';
 import { normalizeMoroccanPhoneDigits } from './bookingStore';
+import {
+  registerServiceWorker,
+  safeReadNotificationPermission,
+  safeRequestNotificationPermission,
+} from './notifications';
 
 const PUSH_SUBSCRIPTIONS_COLLECTION = 'push_subscriptions';
+
+export type NotificationSupportReason =
+  | 'granted'
+  | 'default'
+  | 'denied'
+  | 'overlay_or_blocked'
+  | 'dismissed'
+  | 'ios_homescreen_required'
+  | 'insecure_context'
+  | 'unsupported';
+
+export interface NotificationEnvInfo {
+  supported: boolean;
+  pushSupported: boolean;
+  permission: NotificationPermission | 'unsupported';
+  isIos: boolean;
+  isAndroid: boolean;
+  isStandalonePwa: boolean;
+  isSecureContext: boolean;
+  reason: NotificationSupportReason;
+}
+
+export interface ResilientNotificationResult {
+  granted: boolean;
+  subscribed: boolean;
+  permission: NotificationPermission | 'unsupported';
+  reason: NotificationSupportReason;
+  env: NotificationEnvInfo;
+}
 
 export interface StoredPushSubscription {
   id: string;
@@ -31,6 +65,94 @@ export interface StoredPushSubscription {
 }
 
 let cachedVapidPublicKey: string | null = null;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    let done = false;
+    const id = window.setTimeout(() => {
+      if (!done) {
+        done = true;
+        resolve(fallback);
+      }
+    }, ms);
+    promise
+      .then((val) => {
+        if (!done) {
+          done = true;
+          window.clearTimeout(id);
+          resolve(val);
+        }
+      })
+      .catch(() => {
+        if (!done) {
+          done = true;
+          window.clearTimeout(id);
+          resolve(fallback);
+        }
+      });
+  });
+}
+
+export function detectNotificationEnvironment(): NotificationEnvInfo {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return {
+      supported: false,
+      pushSupported: false,
+      permission: 'unsupported',
+      isIos: false,
+      isAndroid: false,
+      isStandalonePwa: false,
+      isSecureContext: false,
+      reason: 'unsupported',
+    };
+  }
+
+  const ua = navigator.userAgent || '';
+  const isIos =
+    /iPad|iPhone|iPod/i.test(ua) ||
+    (navigator.platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1);
+  const isAndroid = /Android/i.test(ua);
+  let isStandalonePwa = false;
+  try {
+    isStandalonePwa = Boolean(
+      (typeof window.matchMedia === 'function' &&
+        window.matchMedia('(display-mode: standalone)').matches) ||
+        (navigator as { standalone?: boolean }).standalone === true
+    );
+  } catch {
+    isStandalonePwa = false;
+  }
+
+  const isSecureContext = window.isSecureContext !== false;
+  const permission = safeReadNotificationPermission();
+  const supported = permission !== 'unsupported';
+  const pushSupported =
+    supported && 'serviceWorker' in navigator && 'PushManager' in window;
+
+  let reason: NotificationSupportReason;
+  if (!isSecureContext) {
+    reason = 'insecure_context';
+  } else if (!supported) {
+    reason = isIos && !isStandalonePwa ? 'ios_homescreen_required' : 'unsupported';
+  } else if (permission === 'granted') {
+    reason = 'granted';
+  } else if (permission === 'denied') {
+    reason = 'denied';
+  } else {
+    reason = 'default';
+  }
+
+  return {
+    supported,
+    pushSupported,
+    permission,
+    isIos,
+    isAndroid,
+    isStandalonePwa,
+    isSecureContext,
+    reason,
+  };
+}
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -62,18 +184,35 @@ function hashStringDeterministic(input: string): string {
   return (hash >>> 0).toString(36);
 }
 
+function normalizeVapidPublicKey(raw?: string): string | null {
+  const cleaned = String(raw || '')
+    .trim()
+    .replace(/^["']+|["']+$/g, '')
+    .replace(/\s+/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+  if (!cleaned || !/^[A-Za-z0-9\-_]+$/.test(cleaned)) return null;
+  try {
+    return urlBase64ToUint8Array(cleaned).length === 65 ? cleaned : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchVapidPublicKey(): Promise<string | null> {
   if (cachedVapidPublicKey) return cachedVapidPublicKey;
 
   // 1. Check .env client-side VAPID key if provided via Vite (VITE_VAPID_PUBLIC_KEY)
   try {
-    const envPublicKey =
+    const rawEnvPublicKey =
       typeof import.meta !== 'undefined' && import.meta.env
-        ? String(import.meta.env.VITE_VAPID_PUBLIC_KEY || '').trim()
+        ? String(import.meta.env.VITE_VAPID_PUBLIC_KEY || '')
         : '';
-    if (envPublicKey) {
-      cachedVapidPublicKey = envPublicKey;
-      return envPublicKey;
+    const validEnvKey = normalizeVapidPublicKey(rawEnvPublicKey);
+    if (validEnvKey) {
+      cachedVapidPublicKey = validEnvKey;
+      return validEnvKey;
     }
   } catch {
     // fallback to backend endpoint
@@ -81,12 +220,13 @@ export async function fetchVapidPublicKey(): Promise<string | null> {
 
   // 2. Fallback to backend /api/push/vapid-public-key backed by server .env VAPID_PUBLIC_KEY
   try {
-    const res = await fetch('/api/push/vapid-public-key');
-    if (!res.ok) return null;
+    const res = await withTimeout(fetch('/api/push/vapid-public-key'), 2500, null);
+    if (!res || !res.ok) return null;
     const data = (await res.json()) as { publicKey?: string };
-    if (data.publicKey && typeof data.publicKey === 'string') {
-      cachedVapidPublicKey = data.publicKey;
-      return data.publicKey;
+    const validServerKey = normalizeVapidPublicKey(data?.publicKey);
+    if (validServerKey) {
+      cachedVapidPublicKey = validServerKey;
+      return validServerKey;
     }
     return null;
   } catch (err) {
@@ -100,23 +240,22 @@ export async function getBrowserPushStatus(): Promise<{
   permission: NotificationPermission;
   subscribed: boolean;
 }> {
-  if (
-    typeof window === 'undefined' ||
-    !('Notification' in window) ||
-    !('serviceWorker' in navigator) ||
-    !('PushManager' in window)
-  ) {
+  const env = detectNotificationEnvironment();
+  if (!env.supported || env.permission === 'unsupported') {
     return { supported: false, permission: 'default', subscribed: false };
   }
 
-  const permission = Notification.permission;
-  if (permission !== 'granted') {
+  const permission = env.permission;
+  if (permission !== 'granted' || !env.pushSupported) {
     return { supported: true, permission, subscribed: false };
   }
 
   try {
-    const registration = await navigator.serviceWorker.ready;
-    const sub = await registration.pushManager.getSubscription();
+    const registration = await registerServiceWorker(2000);
+    if (!registration || !registration.pushManager) {
+      return { supported: true, permission, subscribed: false };
+    }
+    const sub = await withTimeout(registration.pushManager.getSubscription(), 2000, null);
     return { supported: true, permission, subscribed: Boolean(sub) };
   } catch {
     return { supported: true, permission, subscribed: false };
@@ -128,23 +267,24 @@ async function getOrCreateBrowserPushSubscription(): Promise<{
   p256dh: string;
   auth: string;
 } | null> {
-  if (
-    typeof window === 'undefined' ||
-    !('serviceWorker' in navigator) ||
-    !('PushManager' in window) ||
-    !('Notification' in window) ||
-    Notification.permission !== 'granted'
-  ) {
+  const env = detectNotificationEnvironment();
+  if (!env.pushSupported || env.permission !== 'granted') {
     return null;
   }
 
   try {
-    const registration = await navigator.serviceWorker.ready;
+    const registration = await registerServiceWorker(2500);
+    if (!registration || !registration.pushManager) return null;
+
     const vapidPublicKey = await fetchVapidPublicKey();
     if (!vapidPublicKey) return null;
 
     const appServerKey = urlBase64ToUint8Array(vapidPublicKey);
-    let subscription = await registration.pushManager.getSubscription();
+    let subscription = await withTimeout(
+      registration.pushManager.getSubscription(),
+      2000,
+      null
+    );
 
     // If an existing subscription uses an outdated VAPID key, refresh it cleanly
     if (subscription && subscription.options?.applicationServerKey) {
@@ -160,11 +300,17 @@ async function getOrCreateBrowserPushSubscription(): Promise<{
     }
 
     if (!subscription) {
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: appServerKey.buffer as ArrayBuffer,
-      });
+      subscription = await withTimeout(
+        registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: appServerKey.buffer as ArrayBuffer,
+        }),
+        3500,
+        null
+      );
     }
+
+    if (!subscription) return null;
 
     const json = subscription.toJSON();
     const endpoint = json.endpoint || subscription.endpoint;
@@ -183,32 +329,80 @@ async function getOrCreateBrowserPushSubscription(): Promise<{
 }
 
 /**
- * Registers a client Web Push subscription in Firestore linked to their phone number.
- * MUST be triggered only from an explicit user consent click ("موافق / Allow").
+ * Non-blocking, cross-device resilient notification & Web Push flow.
+ * Never throws or stalls booking creation/ticket display on Android screen overlays,
+ * denied/dismissed prompts, iOS non-PWA Safari, or legacy browsers.
  */
-export async function registerClientPushSubscription(params: {
-  clientPhone: string;
-  clientName: string;
+export async function requestResilientClientNotifications(params: {
+  clientPhone?: string;
+  clientName?: string;
   lang: Language;
-}): Promise<{ granted: boolean; subscribed: boolean }> {
-  if (typeof window === 'undefined' || !('Notification' in window)) {
-    return { granted: false, subscribed: false };
+  allowPrompt?: boolean;
+}): Promise<ResilientNotificationResult> {
+  const initialEnv = detectNotificationEnvironment();
+  if (!initialEnv.supported || !initialEnv.isSecureContext) {
+    return {
+      granted: false,
+      subscribed: false,
+      permission: initialEnv.permission,
+      reason: initialEnv.reason,
+      env: initialEnv,
+    };
   }
 
-  let permission: NotificationPermission = Notification.permission;
-  if (permission !== 'granted') {
-    permission = await Notification.requestPermission();
+  let permission: NotificationPermission | 'unsupported' = initialEnv.permission;
+  let reason: NotificationSupportReason = initialEnv.reason;
+
+  if (permission === 'default' && params.allowPrompt !== false) {
+    const reqStartedAt = Date.now();
+    const res = await safeRequestNotificationPermission(5000);
+    permission = res.permission;
+    const elapsedMs = Date.now() - reqStartedAt;
+
+    if (permission === 'granted') {
+      reason = 'granted';
+    } else if (res.threwOrBlocked || (initialEnv.isAndroid && permission === 'default' && elapsedMs < 450)) {
+      // On Android, floating bubbles / screen overlays immediately dismiss/block with no user interaction
+      reason = 'overlay_or_blocked';
+    } else if (permission === 'denied') {
+      reason = 'denied';
+    } else {
+      reason = 'dismissed';
+    }
+  } else if (permission === 'denied') {
+    reason = 'denied';
+  } else if (permission === 'granted') {
+    reason = 'granted';
   }
+
+  const updatedEnv: NotificationEnvInfo = {
+    ...initialEnv,
+    permission,
+    reason,
+  };
+
   if (permission !== 'granted') {
-    return { granted: false, subscribed: false };
+    return {
+      granted: false,
+      subscribed: false,
+      permission,
+      reason,
+      env: updatedEnv,
+    };
   }
 
   const pushKeys = await getOrCreateBrowserPushSubscription();
-  if (!pushKeys) {
-    return { granted: true, subscribed: false };
+  const normalizedPhone = normalizeMoroccanPhoneDigits(params.clientPhone || '');
+  if (!pushKeys || normalizedPhone.length < 4) {
+    return {
+      granted: true,
+      subscribed: false,
+      permission: 'granted',
+      reason: 'granted',
+      env: updatedEnv,
+    };
   }
 
-  const normalizedPhone = normalizeMoroccanPhoneDigits(params.clientPhone);
   const endpointHash = hashStringDeterministic(pushKeys.endpoint);
   const docId = `sub_c_${normalizedPhone || 'anon'}_${endpointHash}`.slice(0, 120);
   const nowIso = new Date().toISOString().slice(0, 64);
@@ -228,13 +422,42 @@ export async function registerClientPushSubscription(params: {
     updatedAt: nowIso,
   };
 
-  const path = `${PUSH_SUBSCRIPTIONS_COLLECTION}/${docId}`;
   try {
-    await setDoc(doc(db, PUSH_SUBSCRIPTIONS_COLLECTION, docId), record);
-    return { granted: true, subscribed: true };
+    await withTimeout(setDoc(doc(db, PUSH_SUBSCRIPTIONS_COLLECTION, docId), record), 3500, undefined);
+    return {
+      granted: true,
+      subscribed: true,
+      permission: 'granted',
+      reason: 'granted',
+      env: updatedEnv,
+    };
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
+    console.warn('Client push subscription Firestore save note:', error);
+    return {
+      granted: true,
+      subscribed: false,
+      permission: 'granted',
+      reason: 'granted',
+      env: updatedEnv,
+    };
   }
+}
+
+/**
+ * Registers a client Web Push subscription in Firestore linked to their phone number.
+ */
+export async function registerClientPushSubscription(params: {
+  clientPhone: string;
+  clientName: string;
+  lang: Language;
+}): Promise<{ granted: boolean; subscribed: boolean }> {
+  const res = await requestResilientClientNotifications({
+    clientPhone: params.clientPhone,
+    clientName: params.clientName,
+    lang: params.lang,
+    allowPrompt: true,
+  });
+  return { granted: res.granted, subscribed: res.subscribed };
 }
 
 /**
@@ -247,13 +470,15 @@ export async function registerStaffPushSubscription(params: {
   staffName: string;
   lang?: Language;
 }): Promise<{ granted: boolean; subscribed: boolean }> {
-  if (typeof window === 'undefined' || !('Notification' in window)) {
+  const env = detectNotificationEnvironment();
+  if (!env.supported) {
     return { granted: false, subscribed: false };
   }
 
-  let permission: NotificationPermission = Notification.permission;
+  let permission: NotificationPermission | 'unsupported' = env.permission;
   if (permission !== 'granted') {
-    permission = await Notification.requestPermission();
+    const req = await safeRequestNotificationPermission(5000);
+    permission = req.permission;
   }
   if (permission !== 'granted') {
     return { granted: false, subscribed: false };
@@ -283,12 +508,12 @@ export async function registerStaffPushSubscription(params: {
     updatedAt: nowIso,
   };
 
-  const path = `${PUSH_SUBSCRIPTIONS_COLLECTION}/${docId}`;
   try {
-    await setDoc(doc(db, PUSH_SUBSCRIPTIONS_COLLECTION, docId), record);
+    await withTimeout(setDoc(doc(db, PUSH_SUBSCRIPTIONS_COLLECTION, docId), record), 3500, undefined);
     return { granted: true, subscribed: true };
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
+    console.warn('Staff push subscription Firestore save note:', error);
+    return { granted: true, subscribed: false };
   }
 }
 

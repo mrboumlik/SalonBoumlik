@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { BellRing, CheckCircle2, ShieldCheck, X } from 'lucide-react';
 import { Language } from '../types';
-import { registerClientPushSubscription } from '../utils/webPushClient';
+import { requestResilientClientNotifications } from '../utils/webPushClient';
 import { showToast } from '../utils/notifications';
 import { pickLang } from '../utils/i18n';
 import { ModalPortal } from './ModalPortal';
@@ -94,18 +94,18 @@ export const NotificationConsentModal: React.FC<NotificationConsentModalProps> =
       es: `Recibirás avisos en tiempo real para tu ticket ${ticketNumber}.`,
     }),
     toastBlockedTitle: pickLang(lang, {
-      ar: 'تم حظر الإشعارات في المتصفح',
-      fr: 'Notifications bloquées',
-      amz: 'ⵜⵜⵓⴳⴷⴰⵍⵏ ⵉⵏⵖⵎⵉⵙⵏ',
-      en: 'Notifications Blocked',
+      ar: 'الإشعارات مبلوكية / غير مفعّلة',
+      fr: 'Notifications bloquées / désactivées',
+      amz: 'ⵉⵏⵖⵎⵉⵙⵏ ⵜⵜⵓⴳⴷⴰⵍⵏ',
+      en: 'Notifications Blocked / Disabled',
       es: 'Notificaciones bloqueadas',
     }),
     toastBlockedBody: pickLang(lang, {
-      ar: 'يمكنك تفعيل الإشعارات لاحقاً من إعدادات المتصفح لمتابعة تذكرتك.',
-      fr: 'Vous pouvez autoriser les notifications depuis les paramètres du navigateur.',
+      ar: 'تأكد من إغلاق الفقاعات العائمة على أندرويد أو السماح بالإشعارات من إعدادات المتصفح.',
+      fr: 'Fermez les bulles flottantes sur Android ou autorisez les notifications dans les paramètres du navigateur.',
       amz: 'ⵜⵥⴹⴰⵕⴷ ⴰⴷ ⵜⵙⵙⵉⵔⴳⴷ ⵉⵏⵖⵎⵉⵙⵏ ⵙⴳ ⵉⵙⵖⴰⵍⵏ ⵏ ⵓⵎⵙⵙⵓⴳⵓⵔ.',
-      en: 'You can enable notifications later from your browser settings.',
-      es: 'Puedes habilitar las notificaciones más adelante en la configuración del navegador.',
+      en: 'Close screen overlays on Android or enable notifications in your browser settings.',
+      es: 'Cierra superposiciones en Android o habilita notificaciones en tu navegador.',
     }),
   };
 
@@ -113,10 +113,11 @@ export const NotificationConsentModal: React.FC<NotificationConsentModalProps> =
     if (isProcessing) return;
     setIsProcessing(true);
     try {
-      const result = await registerClientPushSubscription({
+      const result = await requestResilientClientNotifications({
         clientPhone,
         clientName,
         lang,
+        allowPrompt: true,
       });
 
       if (result.granted) {

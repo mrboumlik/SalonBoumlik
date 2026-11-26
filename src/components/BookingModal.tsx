@@ -31,6 +31,7 @@ import {
   getDrinkLabel
 } from '../utils/calendar';
 import { useLanguage } from '../context/LanguageContext';
+import { BrandMark } from './BrandMark';
 import { createNewBooking } from '../utils/bookingStore';
 import { pickLang } from '../utils/i18n';
 
@@ -213,16 +214,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
             {/* Ticket Card */}
             <div className="rounded-2xl bg-zinc-900/90 border border-zinc-800 p-5 text-left space-y-4 shadow-xl">
-              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                <div>
-                  <span className="text-[11px] text-zinc-400">Ticket</span>
+              <div className="flex items-center justify-between gap-2 border-b border-zinc-800 pb-3">
+                <BrandMark variant="compact" forceLightPlate className="flex-shrink-0" />
+                <div className="text-right">
                   <div className="text-base font-mono font-bold text-amber-400">
                     #{confirmedBooking.ticketNumber}
                   </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-[11px] text-zinc-400">Contact Salon</span>
-                  <div className="text-xs font-bold text-emerald-400">
+                  <div className="text-[11px] font-bold text-emerald-400">
                     <span dir="ltr" className="inline-block font-mono">06 35 39 25 03</span>
                   </div>
                 </div>

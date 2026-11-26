@@ -283,7 +283,7 @@ export const Hero: React.FC<HeroProps> = ({
             <div className="lg:col-span-7 flex flex-col items-center lg:items-start text-center lg:text-start gap-4 sm:gap-5">
               <div className="flex flex-col items-center lg:items-start gap-2.5">
                 <div onClick={handleBrandLogoClick} className="inline-flex select-none">
-                  <BrandMark className="h-14 sm:h-16 lg:h-20 w-auto object-contain flex-shrink-0" />
+                  <BrandMark variant="hero" className="flex-shrink-0" />
                 </div>
                 <h1 className="sr-only">SALON BOUMLIK</h1>
                 <p className="text-xs sm:text-sm lg:text-base font-semibold text-amber-800 dark:text-amber-300/95 leading-relaxed text-balance max-w-xl">

@@ -121,6 +121,7 @@ import { LoyaltyPointsAdminPanel } from './LoyaltyPointsAdminPanel';
 import { ResourcePlanningSummaryCharts } from './ResourcePlanningSummaryCharts';
 import { AdminCaissePanel } from './AdminCaissePanel';
 import { BarberProfileServicesPanel } from './BarberProfileServicesPanel';
+import { BrandMark } from './BrandMark';
 import { MasterShopPricingPanel } from './MasterShopPricingPanel';
 import { MasterTeamAccessPanel } from './MasterTeamAccessPanel';
 import { MasterClientCreditsPanel } from './MasterClientCreditsPanel';
@@ -2216,16 +2217,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           
           {/* Subtle Per-Barber Identity Accent Line */}
           <div
-            className="h-1 w-full transition-colors"
+            className="h-1.5 w-full transition-colors"
             style={{ backgroundColor: session ? activeSessionTone.accentHex : '#D97706' }}
           />
 
           {/* Header */}
-          <div className="p-4 sm:p-5 lg:px-7 border-b border-stone-200 dark:border-zinc-800 flex items-center justify-between bg-white dark:bg-[#141720]">
+          <div className={`p-4 sm:p-5 lg:px-7 flex items-center justify-between ${session && session.role !== 'caisse' ? activeSessionTone.headerBandClass : 'border-b border-stone-200 dark:border-zinc-800 bg-white dark:bg-[#141720]'}`}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 flex items-center justify-center text-amber-700 dark:text-amber-400 font-black flex-shrink-0">
-              <Scissors className="w-5 h-5" />
-            </div>
+            <BrandMark variant="mark" className="w-10 h-10 flex-shrink-0" />
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white font-display">
@@ -4290,14 +4289,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <button
                         key={b.id}
                         onClick={() => setMasterBarberFilter(b.id)}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition-all flex items-center gap-1.5 cursor-pointer border ${
                           isActive
-                            ? tone.activeTabClass
-                            : 'bg-zinc-50 dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-900 border-zinc-200 dark:border-zinc-800'
+                            ? `${tone.activeTabClass} shadow-xs`
+                            : tone.softButtonClass
                         }`}
                       >
                         <span
-                          className={`w-2 h-2 rounded-full inline-block ${
+                          className={`w-2.5 h-2.5 rounded-full inline-block ${
                             isActive ? 'bg-white dark:bg-current' : tone.dotClass
                           }`}
                         />
@@ -4424,7 +4423,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   return (
                     <div
                       key={booking.id}
-                      className={`rounded-2xl bg-white dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 shadow-xs overflow-hidden transition-all ${barberTone.borderLeftClass}`}
+                      className={`rounded-2xl border shadow-xs overflow-hidden transition-all ${barberTone.cardSurfaceClass} ${barberTone.topAccentClass} ${barberTone.borderLeftClass}`}
                     >
                       {/* Compact Single-Line Booking Header (Expandable on Tap) */}
                       <div className="p-3 sm:px-4 flex flex-wrap items-center justify-between gap-2">

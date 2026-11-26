@@ -290,7 +290,7 @@ export const Footer: React.FC<FooterProps> = ({
             {/* 1. Brand Identity Column */}
             <div className="col-span-2 flex flex-col items-center text-center pb-6 border-b border-stone-200/80 dark:border-zinc-800/80 space-y-3">
               <div onClick={handleBrandLogoClick} className="inline-flex select-none">
-                <BrandMark className="h-12 sm:h-14 w-auto object-contain flex-shrink-0" />
+                <BrandMark variant="footer" className="flex-shrink-0" />
               </div>
 
               <div className="space-y-1 max-w-md">
@@ -693,7 +693,7 @@ export const Footer: React.FC<FooterProps> = ({
             <div className="rounded-2xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-800 p-5 shadow-2xs flex flex-col justify-between gap-4">
               <div className="space-y-3">
                 <div onClick={handleBrandLogoClick} className="inline-flex select-none">
-                  <BrandMark className="h-12 w-auto object-contain flex-shrink-0" />
+                  <BrandMark variant="footer" className="flex-shrink-0" />
                 </div>
 
                 <div className="space-y-1.5">

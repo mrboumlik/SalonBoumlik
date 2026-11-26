@@ -121,7 +121,7 @@ export const PublicInfoModal: React.FC<PublicInfoModalProps> = ({
     <div className="space-y-5">
       <div className="rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-500/20 p-4 sm:p-5 space-y-2.5">
         <div className="flex items-center gap-2.5">
-          <BrandMark variant="pole" className="w-8 h-9 flex-shrink-0" />
+          <BrandMark variant="mark" className="w-10 h-10 flex-shrink-0" />
           <div>
             <h3 className="text-base font-black text-slate-900 dark:text-white">
               {pickLang(lang, {

@@ -3,6 +3,23 @@ import hassanAvatarImg from '../assets/images/regenerated_image_1793764006136.pn
 import anouarAvatarImg from '../assets/images/regenerated_image_1793764011049.jpg';
 import lahcenAvatarImg from '../assets/images/regenerated_image_1793764007431.jpg';
 
+/**
+ * LOCKED OFFICIAL BRAND IDENTITY — Salon Boumlik (Taroudant).
+ * Restored directly from Hassan Ait Boumlik's authentic official logo PNG.
+ * Do NOT replace with generic vector monograms, crossed-scissors placeholders, or unrelated icons.
+ */
+export const OFFICIAL_SALON_BOUMLIK_BRAND_ASSETS = Object.freeze({
+  officialSourcePng: '/assets/aistudio/1793763077345_1f996c13.png',
+  officialLogoTransparentPng: '/assets/salon-boumlik-logo.png',
+  officialLogoCardPng: '/assets/salon-boumlik-logo-dark.png',
+  officialBarberPolePng: '/assets/salon-boumlik-pole.png',
+  faviconPng: '/favicon-64x64.png',
+  pwaIcon192Png: '/pwa-192x192.png',
+  pwaIcon512Png: '/pwa-512x512.png',
+  appleTouchIconPng: '/apple-touch-icon.png',
+  brandIdentityLocked: true as const,
+});
+
 export const SALON_INFO = {
   name: {
     fr: 'Salon Boumlik',
@@ -61,10 +78,11 @@ export const SALON_INFO = {
   },
   
   media: {
-    logo: '/assets/aistudio/IMG-20231231-WA0004_393afdd0.jpg',
-    logoClean: '/assets/salon-boumlik-logo.png',
-    logoDarkClean: '/assets/salon-boumlik-logo-dark.png',
-    logoPole: '/assets/salon-boumlik-pole.png',
+    logo: OFFICIAL_SALON_BOUMLIK_BRAND_ASSETS.officialLogoTransparentPng,
+    logoClean: OFFICIAL_SALON_BOUMLIK_BRAND_ASSETS.officialLogoTransparentPng,
+    logoDarkClean: OFFICIAL_SALON_BOUMLIK_BRAND_ASSETS.officialLogoCardPng,
+    logoPole: OFFICIAL_SALON_BOUMLIK_BRAND_ASSETS.officialBarberPolePng,
+    logoOfficial: OFFICIAL_SALON_BOUMLIK_BRAND_ASSETS.officialSourcePng,
     qrInstagram: '/assets/aistudio/qr-code__2__76e25336.png',
     qrWhatsApp: '/assets/aistudio/qr-code_39463f1a.png',
     qrFacebook: '/assets/aistudio/qr-code__2__3f6acbc4.png',

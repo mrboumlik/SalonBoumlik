@@ -110,18 +110,64 @@ function playFallbackBase64Sound(): void {
   }
 }
 
+function raceWithTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(fallback);
+      }
+    }, ms);
+    promise
+      .then((val) => {
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          resolve(val);
+        }
+      })
+      .catch(() => {
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          resolve(fallback);
+        }
+      });
+  });
+}
+
+export function safeReadNotificationPermission(): NotificationPermission | 'unsupported' {
+  try {
+    if (typeof window === 'undefined' || !('Notification' in window) || typeof Notification === 'undefined') {
+      return 'unsupported';
+    }
+    return Notification.permission;
+  } catch {
+    return 'unsupported';
+  }
+}
+
 /**
- * Register or retrieve the active PWA Service Worker registration
+ * Register or retrieve the active PWA Service Worker registration (never hangs indefinitely)
  */
-export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
-  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+export async function registerServiceWorker(timeoutMs: number = 2500): Promise<ServiceWorkerRegistration | null> {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
     return null;
   }
 
   try {
-    const existing = await navigator.serviceWorker.getRegistration();
+    const existing = await raceWithTimeout(
+      navigator.serviceWorker.getRegistration().then((reg) => reg || null),
+      1500,
+      null
+    );
     if (existing) return existing;
-    return await navigator.serviceWorker.ready;
+    return await raceWithTimeout(
+      navigator.serviceWorker.ready.then((reg) => reg || null),
+      timeoutMs,
+      null
+    );
   } catch (err) {
     console.warn('Service worker registration note:', err);
     return null;
@@ -129,27 +175,66 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 }
 
 /**
+ * Safe cross-browser Notification.requestPermission wrapper (Promise + legacy callback + timeout + overlay guard)
+ */
+export async function safeRequestNotificationPermission(timeoutMs: number = 5000): Promise<{
+  permission: NotificationPermission | 'unsupported';
+  threwOrBlocked: boolean;
+}> {
+  const current = safeReadNotificationPermission();
+  if (current === 'unsupported') {
+    return { permission: 'unsupported', threwOrBlocked: false };
+  }
+  if (current === 'granted' || current === 'denied') {
+    return { permission: current, threwOrBlocked: false };
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (perm: NotificationPermission | 'unsupported', threwOrBlocked: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve({ permission: perm, threwOrBlocked });
+    };
+
+    const timer = window.setTimeout(() => {
+      finish(safeReadNotificationPermission(), true);
+    }, timeoutMs);
+
+    try {
+      let maybePromise: Promise<NotificationPermission> | undefined;
+      if (Notification.requestPermission.length >= 1) {
+        maybePromise = Notification.requestPermission((perm) => {
+          finish(perm || safeReadNotificationPermission(), false);
+        });
+      } else {
+        maybePromise = Notification.requestPermission();
+      }
+
+      if (maybePromise && typeof maybePromise.then === 'function') {
+        maybePromise.then(
+          (perm) => finish(perm || safeReadNotificationPermission(), false),
+          () => finish(safeReadNotificationPermission(), true)
+        );
+      }
+    } catch {
+      finish(safeReadNotificationPermission(), true);
+    }
+  });
+}
+
+/**
  * Request Notification Permission tied explicitly to a user gesture button
  */
 export async function requestWebNotificationPermission(): Promise<NotificationPermission> {
-  if (typeof window === 'undefined' || !('Notification' in window)) {
-    return 'denied';
+  const res = await safeRequestNotificationPermission(5000);
+  if (res.permission === 'granted') {
+    void registerServiceWorker(2500);
+    return 'granted';
   }
-
-  try {
-    if (Notification.permission === 'granted') {
-      return 'granted';
-    }
-
-    const permission = await Notification.requestPermission();
-    if (permission === 'granted') {
-      await registerServiceWorker();
-    }
-    return permission;
-  } catch (err) {
-    console.error('Error requesting notification permission:', err);
-    return 'denied';
-  }
+  if (res.permission === 'denied') return 'denied';
+  return 'default';
 }
 
 /**
@@ -175,29 +260,33 @@ export function sendDualAlert(
   showToast(title, bodyText, type);
 
   // 2. MECHANISM 2: Trusted PWA Service Worker Notification API (prevents duplicate/spam warnings)
-  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+  if (safeReadNotificationPermission() === 'granted') {
     const resolvedTag =
       options?.tag ||
       (typeof options?.data?.ticketNumber === 'string'
         ? `sb-${options.data.ticketNumber}`
         : 'salon-boumlik-alert');
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready
-        .then((reg) => {
-          return reg.showNotification(title, {
-            body: bodyText,
-            icon: '/pwa-192x192.png',
-            badge: '/pwa-192x192.png',
-            tag: resolvedTag,
-            renotify: false,
-            requireInteraction: false,
-            data: options?.data || { url: '/' },
-          } as NotificationOptions);
-        })
-        .catch(() => {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      void registerServiceWorker(2000).then((reg) => {
+        if (reg && typeof reg.showNotification === 'function') {
+          reg
+            .showNotification(title, {
+              body: bodyText,
+              icon: '/pwa-192x192.png',
+              badge: '/pwa-192x192.png',
+              tag: resolvedTag,
+              renotify: false,
+              requireInteraction: false,
+              data: options?.data || { url: '/' },
+            } as NotificationOptions)
+            .catch(() => {
+              fallbackNotification(title, bodyText, resolvedTag);
+            });
+        } else {
           fallbackNotification(title, bodyText, resolvedTag);
-        });
+        }
+      });
     } else {
       fallbackNotification(title, bodyText, resolvedTag);
     }
@@ -206,6 +295,7 @@ export function sendDualAlert(
 
 function fallbackNotification(title: string, bodyText: string, tag?: string) {
   try {
+    if (typeof Notification === 'undefined') return;
     new Notification(title, {
       body: bodyText,
       icon: '/pwa-192x192.png',

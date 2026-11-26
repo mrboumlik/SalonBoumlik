@@ -2904,6 +2904,202 @@ export async function ensureDailyArchivesForPriorDays(
   }
 }
 
+/**
+ * Computes a safe `createdAtOverride` timestamp when Master Admin adds a backdated
+ * transaction onto a closed ("مغلق") or historical day so the entry sits inside that
+ * day's closed window without leaking into today's already-reset open daily drawer.
+ */
+export function computeClosedDayCreatedAtOverride(params: {
+  barberId: CaisseBarberId;
+  date: string;
+  entries?: CaisseEntry[];
+  settlementsMap?: Record<string, CaisseDailySettlement>;
+  rosterMembers?: RosterMemberAccount[];
+  businessTodayStr?: string;
+}): string | undefined {
+  const {
+    barberId,
+    date,
+    entries = entriesCache,
+    settlementsMap = settlementsCache,
+    rosterMembers,
+    businessTodayStr = getSalonBusinessDate(),
+  } = params;
+
+  const daySettlement = findBarberDaySettlement(barberId, date, settlementsMap, rosterMembers);
+  const lastClose = getBarberLastDailyCloseInfo(barberId, settlementsMap, rosterMembers);
+
+  const isDayClosed = Boolean(daySettlement?.intakeClosed);
+  const isCoveredByLaterClose = Boolean(
+    lastClose.closedIso &&
+      date < businessTodayStr &&
+      (!lastClose.closedDate || lastClose.closedDate >= date)
+  );
+
+  if (!isDayClosed && !isCoveredByLaterClose) {
+    return undefined;
+  }
+
+  let targetMs = Date.parse(`${date}T12:00:00.000Z`);
+  if (!Number.isFinite(targetMs)) {
+    targetMs = Date.now() - 86_400_000;
+  }
+
+  const anchorCandidates = [
+    daySettlement?.confirmedAt,
+    daySettlement?.updatedAt,
+    lastClose.closedIso,
+  ].filter((iso): iso is string => Boolean(iso));
+
+  for (const iso of anchorCandidates) {
+    const ms = Date.parse(iso);
+    if (Number.isFinite(ms) && targetMs >= ms) {
+      targetMs = ms - 1000;
+    }
+  }
+
+  const existingSet = new Set(entries.map((e) => e.createdAt));
+  let candidateIso = new Date(targetMs).toISOString().slice(0, 64);
+  let guard = 0;
+  while (existingSet.has(candidateIso) && guard < 100) {
+    targetMs -= 10;
+    candidateIso = new Date(targetMs).toISOString().slice(0, 64);
+    guard += 1;
+  }
+  return candidateIso;
+}
+
+/**
+ * Recomputes and persists `caisse_daily_archives` and any existing `caisse_settlements`
+ * snapshot totals after Master Admin adds, edits, or deletes an entry on a closed/past day,
+ * without altering the `confirmedAt` daily-close anchor timestamp.
+ */
+export async function resyncBarberDayArchiveAndSettlement(params: {
+  barberId: CaisseBarberId;
+  date: string;
+  entries?: CaisseEntry[];
+  settingsMap?: Record<string, CaisseBarberSetting>;
+  settlementsMap?: Record<string, CaisseDailySettlement>;
+  rosterMembers?: RosterMemberAccount[];
+  currentBusinessDate?: string;
+}): Promise<void> {
+  const {
+    barberId,
+    date,
+    entries = entriesCache,
+    settingsMap = settingsCache,
+    settlementsMap = settlementsCache,
+    rosterMembers,
+    currentBusinessDate = getSalonBusinessDate(),
+  } = params;
+
+  const cleanDate = String(date || '').slice(0, 20);
+  if (!cleanDate) return;
+
+  const meta = getCaisseBarberMeta(barberId, rosterMembers);
+  const dayEntries = entries.filter(
+    (e) => matchesCaisseFinancialBarber(e, barberId, rosterMembers) && e.date === cleanDate
+  );
+
+  // 1. Re-sync or clear matching daily archive doc when historical or already archived
+  const archiveId = sanitizeId(`${barberId}_${cleanDate}`, 'arc');
+  const hasExistingArchive = Boolean(archivesCache[archiveId]);
+  if (cleanDate < currentBusinessDate || hasExistingArchive) {
+    try {
+      if (dayEntries.length === 0) {
+        if (hasExistingArchive) {
+          await deleteDoc(doc(db, CAISSE_ARCHIVES_COLLECTION, archiveId));
+          const nextArchives = { ...archivesCache };
+          delete nextArchives[archiveId];
+          archivesCache = nextArchives;
+          notifyArchivesListeners();
+        }
+      } else {
+        let incomeMAD = 0;
+        let repaymentIncomeMAD = 0;
+        let expensesMAD = 0;
+        let floatMAD = 0;
+        let creditsIssuedMAD = 0;
+        for (const e of dayEntries) {
+          if (e.type === 'income') {
+            incomeMAD += Number(e.amountPaidMAD) || 0;
+            creditsIssuedMAD += Number(e.creditAmountMAD) || 0;
+          } else if (e.type === 'credit_repayment') {
+            repaymentIncomeMAD += Number(e.amountPaidMAD) || 0;
+          } else if (e.type === 'expense') {
+            expensesMAD += Number(e.amountPaidMAD) || 0;
+          } else if (e.type === 'float_adjustment') {
+            floatMAD += Number(e.amountPaidMAD) || 0;
+          } else if (e.type === 'float_return') {
+            floatMAD -= Number(e.amountPaidMAD) || 0;
+          }
+        }
+        const nowIso = new Date().toISOString().slice(0, 64);
+        const archivePayload: CaisseDailyArchive = {
+          id: archiveId,
+          barberId,
+          barberName: meta.name,
+          date: cleanDate,
+          incomeMAD: clampAmount(incomeMAD, 1000000),
+          repaymentIncomeMAD: clampAmount(repaymentIncomeMAD, 1000000),
+          expensesMAD: clampAmount(expensesMAD, 1000000),
+          floatMAD: clampAmount(floatMAD, 1000000),
+          creditsIssuedMAD: clampAmount(creditsIssuedMAD, 1000000),
+          entryCount: dayEntries.length,
+          entriesSummary: dayEntries.slice(0, 100).map((e) => ({
+            id: e.id.slice(0, 64),
+            type: e.type,
+            amountPaidMAD: clampAmount(e.amountPaidMAD),
+            creditAmountMAD: clampAmount(e.creditAmountMAD),
+            label: (
+              e.serviceNames?.join(' + ') ||
+              e.note ||
+              e.clientName ||
+              e.type
+            ).slice(0, 80),
+            createdAt: e.createdAt.slice(0, 64),
+          })),
+          archivedAt: nowIso,
+        };
+        await setDoc(doc(db, CAISSE_ARCHIVES_COLLECTION, archiveId), archivePayload);
+        archivesCache = { ...archivesCache, [archiveId]: archivePayload };
+        notifyArchivesListeners();
+      }
+    } catch (err) {
+      console.warn('Daily archive resync note:', err);
+    }
+  }
+
+  // 2. Re-sync existing daily settlement snapshot figures (preserving confirmedAt anchor!)
+  const existingSettle = findBarberDaySettlement(barberId, cleanDate, settlementsMap, rosterMembers);
+  if (existingSettle) {
+    try {
+      const pct = getEffectiveCommissionPercentForDate(barberId, cleanDate, settingsMap);
+      const dayStats = computeBarberDayStats(barberId, cleanDate, entries, pct, rosterMembers);
+      const nowIso = new Date().toISOString().slice(0, 64);
+      const patch = {
+        barberShareMAD: clampAmount(Math.max(0, dayStats.barberNetShareMAD)),
+        shopShareMAD: clampAmount(Math.max(0, dayStats.shopShareMAD)),
+        floatMAD: clampAmount(Math.max(0, dayStats.floatMAD)),
+        expensesMAD: clampAmount(Math.max(0, dayStats.expensesMAD)),
+        grossIntakeClosedMAD: clampAmount(Math.max(0, dayStats.incomeMAD)),
+        updatedAt: nowIso,
+      };
+      await updateDoc(doc(db, CAISSE_SETTLEMENTS_COLLECTION, existingSettle.id), patch);
+      settlementsCache = {
+        ...settlementsCache,
+        [existingSettle.id]: {
+          ...existingSettle,
+          ...patch,
+        },
+      };
+      notifySettlementsListeners();
+    } catch (err) {
+      console.warn('Daily settlement snapshot resync note:', err);
+    }
+  }
+}
+
 // ---------- Cumulative Annual Totals per Barber & Shop ----------
 
 export interface AnnualCaisseBarberSummary {

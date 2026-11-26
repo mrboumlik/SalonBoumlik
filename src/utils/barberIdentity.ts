@@ -7,10 +7,15 @@ export interface BarberIdentityTokens {
   accentHex: string;
   tintHex: string;
   borderLeftClass: string;
+  topAccentClass: string;
   dotClass: string;
   badgeClass: string;
   activeTabClass: string;
   softSurfaceClass: string;
+  cardSurfaceClass: string;
+  headerBandClass: string;
+  iconBoxClass: string;
+  softButtonClass: string;
   ringClass: string;
 }
 
@@ -21,10 +26,15 @@ export interface CalmColorPreset {
   accentHex: string;
   tintHex: string;
   borderLeftClass: string;
+  topAccentClass: string;
   dotClass: string;
   badgeClass: string;
   activeTabClass: string;
   softSurfaceClass: string;
+  cardSurfaceClass: string;
+  headerBandClass: string;
+  iconBoxClass: string;
+  softButtonClass: string;
   ringClass: string;
 }
 
@@ -35,15 +45,24 @@ export const CALM_COLOR_PRESETS: Record<BarberColorKey, CalmColorPreset> = {
     labelFr: 'Ambre doux',
     accentHex: '#D97706',
     tintHex: '#FEF3C7',
-    borderLeftClass: 'border-s-4 border-s-amber-500/80 dark:border-s-amber-400/75',
+    borderLeftClass: 'border-s-4 border-s-amber-500 dark:border-s-amber-400',
+    topAccentClass: 'border-t-[3px] border-t-amber-500 dark:border-t-amber-400',
     dotClass: 'bg-amber-500 dark:bg-amber-400',
     badgeClass:
-      'bg-amber-50 text-amber-900 border-amber-200/90 dark:bg-amber-500/12 dark:text-amber-200 dark:border-amber-500/30',
+      'bg-[#FEF3C7] text-amber-950 border-[#F59E0B] dark:bg-[#2D2212] dark:text-amber-200 dark:border-[#B45309]',
     activeTabClass:
       'bg-amber-600 text-white border-amber-600 dark:bg-amber-500 dark:text-zinc-950 dark:border-amber-400',
     softSurfaceClass:
-      'bg-amber-50/60 border-amber-200/80 dark:bg-amber-950/20 dark:border-amber-500/25',
-    ringClass: 'ring-amber-500/30',
+      'bg-[#FEF3C7] border-[#F59E0B] dark:bg-[#241C10] dark:border-[#B45309]',
+    cardSurfaceClass:
+      'bg-[#FFFBEB] border-[#FCD34D] dark:bg-[#1E1910] dark:border-[#92400E]',
+    headerBandClass:
+      'bg-[#FEF3C7] border-b border-[#FCD34D] dark:bg-[#292012] dark:border-[#92400E]',
+    iconBoxClass:
+      'bg-[#FEF3C7] text-amber-800 border-[#F59E0B] dark:bg-[#2D2212] dark:text-amber-300 dark:border-[#B45309]',
+    softButtonClass:
+      'bg-[#FFFBEB] text-amber-900 border-[#FCD34D] hover:bg-[#FEF3C7] dark:bg-[#1E1910] dark:text-amber-200 dark:border-[#92400E] dark:hover:bg-[#292012]',
+    ringClass: 'ring-amber-500',
   },
   blue: {
     key: 'blue',
@@ -51,15 +70,24 @@ export const CALM_COLOR_PRESETS: Record<BarberColorKey, CalmColorPreset> = {
     labelFr: 'Bleu calme',
     accentHex: '#2563EB',
     tintHex: '#DBEAFE',
-    borderLeftClass: 'border-s-4 border-s-blue-600/80 dark:border-s-blue-400/75',
+    borderLeftClass: 'border-s-4 border-s-blue-600 dark:border-s-blue-400',
+    topAccentClass: 'border-t-[3px] border-t-blue-600 dark:border-t-blue-400',
     dotClass: 'bg-blue-600 dark:bg-blue-400',
     badgeClass:
-      'bg-blue-50 text-blue-900 border-blue-200/90 dark:bg-blue-500/12 dark:text-blue-200 dark:border-blue-500/30',
+      'bg-[#DBEAFE] text-blue-950 border-[#60A5FA] dark:bg-[#172540] dark:text-blue-200 dark:border-[#2563EB]',
     activeTabClass:
       'bg-blue-600 text-white border-blue-600 dark:bg-blue-500 dark:text-white dark:border-blue-400',
     softSurfaceClass:
-      'bg-blue-50/60 border-blue-200/80 dark:bg-blue-950/20 dark:border-blue-500/25',
-    ringClass: 'ring-blue-500/30',
+      'bg-[#DBEAFE] border-[#60A5FA] dark:bg-[#142038] dark:border-[#2563EB]',
+    cardSurfaceClass:
+      'bg-[#EFF6FF] border-[#93C5FD] dark:bg-[#111A2B] dark:border-[#1E40AF]',
+    headerBandClass:
+      'bg-[#DBEAFE] border-b border-[#93C5FD] dark:bg-[#16233B] dark:border-[#1E40AF]',
+    iconBoxClass:
+      'bg-[#DBEAFE] text-blue-800 border-[#60A5FA] dark:bg-[#172540] dark:text-blue-300 dark:border-[#2563EB]',
+    softButtonClass:
+      'bg-[#EFF6FF] text-blue-900 border-[#93C5FD] hover:bg-[#DBEAFE] dark:bg-[#111A2B] dark:text-blue-200 dark:border-[#1E40AF] dark:hover:bg-[#16233B]',
+    ringClass: 'ring-blue-500',
   },
   emerald: {
     key: 'emerald',
@@ -67,15 +95,24 @@ export const CALM_COLOR_PRESETS: Record<BarberColorKey, CalmColorPreset> = {
     labelFr: 'Émeraude doux',
     accentHex: '#059669',
     tintHex: '#D1FAE5',
-    borderLeftClass: 'border-s-4 border-s-emerald-600/80 dark:border-s-emerald-400/75',
+    borderLeftClass: 'border-s-4 border-s-emerald-600 dark:border-s-emerald-400',
+    topAccentClass: 'border-t-[3px] border-t-emerald-600 dark:border-t-emerald-400',
     dotClass: 'bg-emerald-600 dark:bg-emerald-400',
     badgeClass:
-      'bg-emerald-50 text-emerald-900 border-emerald-200/90 dark:bg-emerald-500/12 dark:text-emerald-200 dark:border-emerald-500/30',
+      'bg-[#D1FAE5] text-emerald-950 border-[#34D399] dark:bg-[#143026] dark:text-emerald-200 dark:border-[#059669]',
     activeTabClass:
       'bg-emerald-600 text-white border-emerald-600 dark:bg-emerald-500 dark:text-zinc-950 dark:border-emerald-400',
     softSurfaceClass:
-      'bg-emerald-50/60 border-emerald-200/80 dark:bg-emerald-950/20 dark:border-emerald-500/25',
-    ringClass: 'ring-emerald-500/30',
+      'bg-[#D1FAE5] border-[#34D399] dark:bg-[#122921] dark:border-[#059669]',
+    cardSurfaceClass:
+      'bg-[#ECFDF5] border-[#6EE7B7] dark:bg-[#0F211B] dark:border-[#047857]',
+    headerBandClass:
+      'bg-[#D1FAE5] border-b border-[#6EE7B7] dark:bg-[#132B23] dark:border-[#047857]',
+    iconBoxClass:
+      'bg-[#D1FAE5] text-emerald-800 border-[#34D399] dark:bg-[#143026] dark:text-emerald-300 dark:border-[#059669]',
+    softButtonClass:
+      'bg-[#ECFDF5] text-emerald-900 border-[#6EE7B7] hover:bg-[#D1FAE5] dark:bg-[#0F211B] dark:text-emerald-200 dark:border-[#047857] dark:hover:bg-[#132B23]',
+    ringClass: 'ring-emerald-500',
   },
   violet: {
     key: 'violet',
@@ -83,15 +120,24 @@ export const CALM_COLOR_PRESETS: Record<BarberColorKey, CalmColorPreset> = {
     labelFr: 'Violet doux',
     accentHex: '#7C3AED',
     tintHex: '#EDE9FE',
-    borderLeftClass: 'border-s-4 border-s-violet-600/80 dark:border-s-violet-400/75',
+    borderLeftClass: 'border-s-4 border-s-violet-600 dark:border-s-violet-400',
+    topAccentClass: 'border-t-[3px] border-t-violet-600 dark:border-t-violet-400',
     dotClass: 'bg-violet-600 dark:bg-violet-400',
     badgeClass:
-      'bg-violet-50 text-violet-900 border-violet-200/90 dark:bg-violet-500/12 dark:text-violet-200 dark:border-violet-500/30',
+      'bg-[#EDE9FE] text-violet-950 border-[#A78BFA] dark:bg-[#251D3B] dark:text-violet-200 dark:border-[#7C3AED]',
     activeTabClass:
       'bg-violet-600 text-white border-violet-600 dark:bg-violet-500 dark:text-white dark:border-violet-400',
     softSurfaceClass:
-      'bg-violet-50/60 border-violet-200/80 dark:bg-violet-950/20 dark:border-violet-500/25',
-    ringClass: 'ring-violet-500/30',
+      'bg-[#EDE9FE] border-[#A78BFA] dark:bg-[#211A33] dark:border-[#7C3AED]',
+    cardSurfaceClass:
+      'bg-[#F5F3FF] border-[#C4B5FD] dark:bg-[#1B1629] dark:border-[#5B21B6]',
+    headerBandClass:
+      'bg-[#EDE9FE] border-b border-[#C4B5FD] dark:bg-[#231C36] dark:border-[#5B21B6]',
+    iconBoxClass:
+      'bg-[#EDE9FE] text-violet-800 border-[#A78BFA] dark:bg-[#251D3B] dark:text-violet-300 dark:border-[#7C3AED]',
+    softButtonClass:
+      'bg-[#F5F3FF] text-violet-900 border-[#C4B5FD] hover:bg-[#EDE9FE] dark:bg-[#1B1629] dark:text-violet-200 dark:border-[#5B21B6] dark:hover:bg-[#231C36]',
+    ringClass: 'ring-violet-500',
   },
   teal: {
     key: 'teal',
@@ -99,15 +145,24 @@ export const CALM_COLOR_PRESETS: Record<BarberColorKey, CalmColorPreset> = {
     labelFr: 'Sarcelle calme',
     accentHex: '#0D9488',
     tintHex: '#CCFBF1',
-    borderLeftClass: 'border-s-4 border-s-teal-600/80 dark:border-s-teal-400/75',
+    borderLeftClass: 'border-s-4 border-s-teal-600 dark:border-s-teal-400',
+    topAccentClass: 'border-t-[3px] border-t-teal-600 dark:border-t-teal-400',
     dotClass: 'bg-teal-600 dark:bg-teal-400',
     badgeClass:
-      'bg-teal-50 text-teal-900 border-teal-200/90 dark:bg-teal-500/12 dark:text-teal-200 dark:border-teal-500/30',
+      'bg-[#CCFBF1] text-teal-950 border-[#2DD4BF] dark:bg-[#132E2C] dark:text-teal-200 dark:border-[#0D9488]',
     activeTabClass:
       'bg-teal-600 text-white border-teal-600 dark:bg-teal-500 dark:text-zinc-950 dark:border-teal-400',
     softSurfaceClass:
-      'bg-teal-50/60 border-teal-200/80 dark:bg-teal-950/20 dark:border-teal-500/25',
-    ringClass: 'ring-teal-500/30',
+      'bg-[#CCFBF1] border-[#2DD4BF] dark:bg-[#122927] dark:border-[#0D9488]',
+    cardSurfaceClass:
+      'bg-[#F0FDFA] border-[#5EEAD4] dark:bg-[#0F2120] dark:border-[#0F766E]',
+    headerBandClass:
+      'bg-[#CCFBF1] border-b border-[#5EEAD4] dark:bg-[#132B29] dark:border-[#0F766E]',
+    iconBoxClass:
+      'bg-[#CCFBF1] text-teal-800 border-[#2DD4BF] dark:bg-[#132E2C] dark:text-teal-300 dark:border-[#0D9488]',
+    softButtonClass:
+      'bg-[#F0FDFA] text-teal-900 border-[#5EEAD4] hover:bg-[#CCFBF1] dark:bg-[#0F2120] dark:text-teal-200 dark:border-[#0F766E] dark:hover:bg-[#132B29]',
+    ringClass: 'ring-teal-500',
   },
   indigo: {
     key: 'indigo',
@@ -115,15 +170,24 @@ export const CALM_COLOR_PRESETS: Record<BarberColorKey, CalmColorPreset> = {
     labelFr: 'Indigo doux',
     accentHex: '#4F46E5',
     tintHex: '#E0E7FF',
-    borderLeftClass: 'border-s-4 border-s-indigo-600/80 dark:border-s-indigo-400/75',
+    borderLeftClass: 'border-s-4 border-s-indigo-600 dark:border-s-indigo-400',
+    topAccentClass: 'border-t-[3px] border-t-indigo-600 dark:border-t-indigo-400',
     dotClass: 'bg-indigo-600 dark:bg-indigo-400',
     badgeClass:
-      'bg-indigo-50 text-indigo-900 border-indigo-200/90 dark:bg-indigo-500/12 dark:text-indigo-200 dark:border-indigo-500/30',
+      'bg-[#E0E7FF] text-indigo-950 border-[#818CF8] dark:bg-[#1C1F3E] dark:text-indigo-200 dark:border-[#4F46E5]',
     activeTabClass:
       'bg-indigo-600 text-white border-indigo-600 dark:bg-indigo-500 dark:text-white dark:border-indigo-400',
     softSurfaceClass:
-      'bg-indigo-50/60 border-indigo-200/80 dark:bg-indigo-950/20 dark:border-indigo-500/25',
-    ringClass: 'ring-indigo-500/30',
+      'bg-[#E0E7FF] border-[#818CF8] dark:bg-[#181B36] dark:border-[#4F46E5]',
+    cardSurfaceClass:
+      'bg-[#EEF2FF] border-[#A5B4FC] dark:bg-[#14172B] dark:border-[#3730A3]',
+    headerBandClass:
+      'bg-[#E0E7FF] border-b border-[#A5B4FC] dark:bg-[#1B1F3B] dark:border-[#3730A3]',
+    iconBoxClass:
+      'bg-[#E0E7FF] text-indigo-800 border-[#818CF8] dark:bg-[#1C1F3E] dark:text-indigo-300 dark:border-[#4F46E5]',
+    softButtonClass:
+      'bg-[#EEF2FF] text-indigo-900 border-[#A5B4FC] hover:bg-[#E0E7FF] dark:bg-[#14172B] dark:text-indigo-200 dark:border-[#3730A3] dark:hover:bg-[#1B1F3B]',
+    ringClass: 'ring-indigo-500',
   },
   slate: {
     key: 'slate',
@@ -131,15 +195,24 @@ export const CALM_COLOR_PRESETS: Record<BarberColorKey, CalmColorPreset> = {
     labelFr: 'Ardoise sobre',
     accentHex: '#475569',
     tintHex: '#E2E8F0',
-    borderLeftClass: 'border-s-4 border-s-slate-500/80 dark:border-s-slate-400/75',
+    borderLeftClass: 'border-s-4 border-s-slate-600 dark:border-s-slate-400',
+    topAccentClass: 'border-t-[3px] border-t-slate-600 dark:border-t-slate-400',
     dotClass: 'bg-slate-600 dark:bg-slate-400',
     badgeClass:
-      'bg-slate-100 text-slate-800 border-slate-300/80 dark:bg-slate-500/15 dark:text-slate-200 dark:border-slate-500/30',
+      'bg-[#E2E8F0] text-slate-900 border-[#94A3B8] dark:bg-[#1E2430] dark:text-slate-200 dark:border-[#475569]',
     activeTabClass:
       'bg-slate-700 text-white border-slate-700 dark:bg-slate-500 dark:text-white dark:border-slate-400',
     softSurfaceClass:
-      'bg-slate-50/80 border-slate-200 dark:bg-slate-900/30 dark:border-slate-600/30',
-    ringClass: 'ring-slate-500/30',
+      'bg-[#E2E8F0] border-[#94A3B8] dark:bg-[#1A202B] dark:border-[#475569]',
+    cardSurfaceClass:
+      'bg-[#F1F5F9] border-[#CBD5E1] dark:bg-[#151A24] dark:border-[#334155]',
+    headerBandClass:
+      'bg-[#E2E8F0] border-b border-[#CBD5E1] dark:bg-[#1B222E] dark:border-[#334155]',
+    iconBoxClass:
+      'bg-[#E2E8F0] text-slate-800 border-[#94A3B8] dark:bg-[#1E2430] dark:text-slate-200 dark:border-[#475569]',
+    softButtonClass:
+      'bg-[#F1F5F9] text-slate-800 border-[#CBD5E1] hover:bg-[#E2E8F0] dark:bg-[#151A24] dark:text-slate-200 dark:border-[#334155] dark:hover:bg-[#1B222E]',
+    ringClass: 'ring-slate-500',
   },
   stone: {
     key: 'stone',
@@ -147,15 +220,24 @@ export const CALM_COLOR_PRESETS: Record<BarberColorKey, CalmColorPreset> = {
     labelFr: 'Pierre chaude',
     accentHex: '#78716C',
     tintHex: '#E7E5E4',
-    borderLeftClass: 'border-s-4 border-s-stone-500/80 dark:border-s-stone-400/75',
+    borderLeftClass: 'border-s-4 border-s-stone-600 dark:border-s-stone-400',
+    topAccentClass: 'border-t-[3px] border-t-stone-600 dark:border-t-stone-400',
     dotClass: 'bg-stone-600 dark:bg-stone-400',
     badgeClass:
-      'bg-stone-100 text-stone-800 border-stone-300/80 dark:bg-stone-500/15 dark:text-stone-200 dark:border-stone-500/30',
+      'bg-[#E7E5E4] text-stone-900 border-[#A8A29E] dark:bg-[#262320] dark:text-stone-200 dark:border-[#57534E]',
     activeTabClass:
       'bg-stone-700 text-white border-stone-700 dark:bg-stone-500 dark:text-white dark:border-stone-400',
     softSurfaceClass:
-      'bg-stone-50/80 border-stone-200 dark:bg-stone-900/30 dark:border-stone-600/30',
-    ringClass: 'ring-stone-500/30',
+      'bg-[#E7E5E4] border-[#A8A29E] dark:bg-[#221F1D] dark:border-[#57534E]',
+    cardSurfaceClass:
+      'bg-[#F5F5F4] border-[#D6D3D1] dark:bg-[#1B1917] dark:border-[#44403C]',
+    headerBandClass:
+      'bg-[#E7E5E4] border-b border-[#D6D3D1] dark:bg-[#24211E] dark:border-[#44403C]',
+    iconBoxClass:
+      'bg-[#E7E5E4] text-stone-800 border-[#A8A29E] dark:bg-[#262320] dark:text-stone-200 dark:border-[#57534E]',
+    softButtonClass:
+      'bg-[#F5F5F4] text-stone-800 border-[#D6D3D1] hover:bg-[#E7E5E4] dark:bg-[#1B1917] dark:text-stone-200 dark:border-[#44403C] dark:hover:bg-[#24211E]',
+    ringClass: 'ring-stone-500',
   },
   rose: {
     key: 'rose',
@@ -163,15 +245,24 @@ export const CALM_COLOR_PRESETS: Record<BarberColorKey, CalmColorPreset> = {
     labelFr: 'Bordeaux doux',
     accentHex: '#BE123C',
     tintHex: '#FFE4E6',
-    borderLeftClass: 'border-s-4 border-s-rose-600/75 dark:border-s-rose-400/70',
+    borderLeftClass: 'border-s-4 border-s-rose-600 dark:border-s-rose-400',
+    topAccentClass: 'border-t-[3px] border-t-rose-600 dark:border-t-rose-400',
     dotClass: 'bg-rose-600 dark:bg-rose-400',
     badgeClass:
-      'bg-rose-50 text-rose-900 border-rose-200/90 dark:bg-rose-500/12 dark:text-rose-200 dark:border-rose-500/30',
+      'bg-[#FFE4E6] text-rose-950 border-[#FB7185] dark:bg-[#33161E] dark:text-rose-200 dark:border-[#BE123C]',
     activeTabClass:
       'bg-rose-600 text-white border-rose-600 dark:bg-rose-500 dark:text-white dark:border-rose-400',
     softSurfaceClass:
-      'bg-rose-50/60 border-rose-200/80 dark:bg-rose-950/20 dark:border-rose-500/25',
-    ringClass: 'ring-rose-500/30',
+      'bg-[#FFE4E6] border-[#FB7185] dark:bg-[#2B141A] dark:border-[#BE123C]',
+    cardSurfaceClass:
+      'bg-[#FFF1F2] border-[#FDA4AF] dark:bg-[#241116] dark:border-[#9F1239]',
+    headerBandClass:
+      'bg-[#FFE4E6] border-b border-[#FDA4AF] dark:bg-[#2E151C] dark:border-[#9F1239]',
+    iconBoxClass:
+      'bg-[#FFE4E6] text-rose-800 border-[#FB7185] dark:bg-[#33161E] dark:text-rose-300 dark:border-[#BE123C]',
+    softButtonClass:
+      'bg-[#FFF1F2] text-rose-900 border-[#FDA4AF] hover:bg-[#FFE4E6] dark:bg-[#241116] dark:text-rose-200 dark:border-[#9F1239] dark:hover:bg-[#2E151C]',
+    ringClass: 'ring-rose-500',
   },
 };
 
@@ -269,10 +360,15 @@ export function getBarberIdentityTokens(
     accentHex: preset.accentHex,
     tintHex: preset.tintHex,
     borderLeftClass: preset.borderLeftClass,
+    topAccentClass: preset.topAccentClass,
     dotClass: preset.dotClass,
     badgeClass: preset.badgeClass,
     activeTabClass: preset.activeTabClass,
     softSurfaceClass: preset.softSurfaceClass,
+    cardSurfaceClass: preset.cardSurfaceClass,
+    headerBandClass: preset.headerBandClass,
+    iconBoxClass: preset.iconBoxClass,
+    softButtonClass: preset.softButtonClass,
     ringClass: preset.ringClass,
   };
 }

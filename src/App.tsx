@@ -21,6 +21,7 @@ import { OfflineIndicator } from './components/OfflineIndicator';
 import { FloatingWhatsAppButton } from './components/FloatingWhatsAppButton';
 import { QuickScrollControl } from './components/QuickScrollControl';
 import { SalonQuickSummaryStrip } from './components/SalonQuickSummaryStrip';
+import { SalonBoumlikCrest } from './components/BrandMark';
 import {
   getRememberedPhones,
   useClientAppointmentReminders,
@@ -437,15 +438,9 @@ function SalonBoumlikApp() {
         aria-hidden="true"
         className="fixed inset-0 pointer-events-none z-0 flex items-center justify-center overflow-hidden select-none"
       >
-        <img
-          src={SALON_INFO.media.logoClean}
-          alt=""
-          className="dark:hidden w-[460px] sm:w-[680px] lg:w-[860px] max-w-none opacity-[0.03] lg:opacity-[0.018] pointer-events-none"
-        />
-        <img
-          src={SALON_INFO.media.logoDarkClean}
-          alt=""
-          className="hidden dark:block w-[460px] sm:w-[680px] lg:w-[860px] max-w-none opacity-[0.025] lg:opacity-[0.015] pointer-events-none"
+        <SalonBoumlikCrest
+          decorative
+          className="w-[340px] sm:w-[460px] lg:w-[540px] h-auto opacity-[0.032] dark:opacity-[0.028] pointer-events-none"
         />
       </div>
 

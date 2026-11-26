@@ -1,4 +1,5 @@
 import React from 'react';
+import { SalonBoumlikCrest } from './BrandMark';
 
 interface AppErrorBoundaryState {
   hasError: boolean;
@@ -29,7 +30,8 @@ export class AppErrorBoundary extends React.Component<
           className="min-h-screen bg-[#FAF9F6] text-slate-900 flex items-center justify-center p-6"
         >
           <div className="max-w-md w-full rounded-2xl bg-white border border-stone-200 p-6 text-center space-y-4 shadow-lg">
-            <h1 className="text-xl font-black text-slate-900">SALON BOUMLIK</h1>
+            <SalonBoumlikCrest className="w-12 h-12 mx-auto" />
+            <h1 className="text-xl font-black text-slate-900 font-display tracking-wider">SALON BOUMLIK</h1>
             <p className="text-sm text-stone-700 leading-relaxed">
               حدث خلل مؤقت في المتصفح. اضغط على إعادة التحميل للمتابعة بشكل طبيعي.
             </p>
