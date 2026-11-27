@@ -162,7 +162,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     getSalonBusinessDate()
   );
 
-  // Sync businessTodayStr immediately on server time calibration and every 60s for 03:00 AM rollover
+  // Keep today's server-calibrated Morocco calendar date in sync (never resets daily/monthly balances)
   useEffect(() => {
     const syncDate = () => {
       const nextBizDate = getSalonBusinessDate();
@@ -172,12 +172,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     const interval = setInterval(syncDate, 60000);
     return () => clearInterval(interval);
   }, [trustedTime.serverOffsetMs, trustedTime.isCalibrated]);
-
-  // Idempotent 03:00 AM archival of completed prior days (never resets open barber balances)
-  useEffect(() => {
-    if (entries.length === 0) return;
-    void ensureDailyArchivesForPriorDays(entries, archivesMap, businessTodayStr);
-  }, [entries, archivesMap, businessTodayStr]);
 
   const activeCaisseBarbers = useMemo(
     () => getCaisseBarbersFromRoster(roster),
@@ -226,7 +220,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   );
   const prevBusinessTodayRef = useRef<string>(businessTodayStr);
 
-  // Auto-advance selectedDate when crossing 03:00 AM business-day rollover while viewing today
+  // Keep live view aligned with server-calibrated calendar date (daily drawer & balances stay open until manual settlement)
   useEffect(() => {
     const prevToday = prevBusinessTodayRef.current;
     if (prevToday !== businessTodayStr) {
@@ -662,6 +656,12 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   const [accountantTab, setAccountantTab] = useState<
     'periods' | 'annual' | 'archives' | 'cycles'
   >('periods');
+
+  // Populate read-only historical daily summaries on demand when Master opens the archives tab
+  useEffect(() => {
+    if (sessionRole !== 'master' || accountantTab !== 'archives' || entries.length === 0) return;
+    void ensureDailyArchivesForPriorDays(entries, archivesMap, businessTodayStr);
+  }, [sessionRole, accountantTab, entries, archivesMap, businessTodayStr]);
 
   // Services available for the active barber (filters out hidden services, price-hidden inside Caisse)
   const barberServices = useMemo(
@@ -1586,7 +1586,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         createdAtOverride,
       });
 
-      await resyncBarberDayArchiveAndSettlement({
+      void resyncBarberDayArchiveAndSettlement({
         barberId,
         date,
         settingsMap,
@@ -1743,7 +1743,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       startPostEntryTimer();
 
       showToast(
-        createdEntry.offlinePending
+        createdEntry.offlineCreated
           ? 'تم الحفظ محلياً (بدون إنترنت) ✓'
           : pickLang(lang, {
               ar: 'تم التسجيل في لاكيس ✓',
@@ -1752,10 +1752,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               en: 'Recorded in Caisse ✓',
               es: 'Registrado en Caja ✓',
             }),
-        createdEntry.offlinePending
+        createdEntry.offlineCreated
           ? `${formatMAD(paidNum)} · ستتم المزامنة تلقائياً فور عودة الإنترنت`
           : formatMAD(paidNum),
-        createdEntry.offlinePending ? 'info' : 'success'
+        createdEntry.offlineCreated ? 'info' : 'success'
       );
     } catch (err) {
       console.error('Failed to add Caisse income:', err);
@@ -1822,7 +1822,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setOpenForm('none');
       startPostEntryTimer();
       showToast(
-        createdEntry.offlinePending
+        createdEntry.offlineCreated
           ? 'تم حفظ السحب محلياً (بدون إنترنت) ✓'
           : pickLang(lang, {
               ar: 'تم تسجيل السحب / المصروف ✓',
@@ -1831,10 +1831,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               en: 'Expense recorded ✓',
               es: 'Gasto registrado ✓',
             }),
-        createdEntry.offlinePending
+        createdEntry.offlineCreated
           ? `${formatMAD(amt)} · ستتم المزامنة تلقائياً فور عودة الإنترنت`
           : formatMAD(amt),
-        createdEntry.offlinePending ? 'info' : 'success'
+        createdEntry.offlineCreated ? 'info' : 'success'
       );
     } catch (err) {
       console.error('Failed to add expense:', err);
@@ -1879,7 +1879,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setOpenForm('none');
       if (activeBarberId) startPostEntryTimer();
       showToast(
-        createdEntry.offlinePending
+        createdEntry.offlineCreated
           ? 'تم حفظ الصرف محلياً (بدون إنترنت) ✓'
           : floatMode === 'return'
           ? 'تم تسجيل إرجاع الصرف (حساب حسن) ✓'
@@ -1890,10 +1890,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               en: 'Float added (Hassan) ✓',
               es: 'Fondo de cambio añadido (Hassan) ✓',
             }),
-        createdEntry.offlinePending
+        createdEntry.offlineCreated
           ? `${floatMode === 'return' ? '-' : '+'}${amt} MAD · ستتم المزامنة تلقائياً`
           : `${floatMode === 'return' ? '-' : '+'}${amt} MAD`,
-        createdEntry.offlinePending ? 'info' : 'success'
+        createdEntry.offlineCreated ? 'info' : 'success'
       );
     } catch (err) {
       console.error('Failed to add float:', err);
@@ -1918,7 +1918,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setRepayingEntryId(null);
       setRepayAmountInput('');
       showToast(
-        repayment.offlinePending
+        repayment.offlineCreated
           ? 'تم حفظ خلاص الكريدي محلياً (بدون إنترنت) ✓'
           : pickLang(lang, {
               ar: 'تم تسجيل خلاص الكريدي ✓',
@@ -1927,8 +1927,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               en: 'Credit repayment recorded ✓',
               es: 'Pago de crédito registrado ✓',
             }),
-        repayment.offlinePending ? `${amt} MAD · ستتم المزامنة تلقائياً` : `${amt} MAD`,
-        repayment.offlinePending ? 'info' : 'success'
+        repayment.offlineCreated ? `${amt} MAD · ستتم المزامنة تلقائياً` : `${amt} MAD`,
+        repayment.offlineCreated ? 'info' : 'success'
       );
     } catch (err) {
       console.error('Credit repayment failed:', err);
@@ -2036,7 +2036,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         settlementsMap,
         roster
       );
-      let maxEntryCreatedAt = new Date().toISOString().slice(0, 64);
+      let maxEntryCreatedAt = new Date(getTrustedNowMs()).toISOString().slice(0, 64);
       if (
         isLiveOpenDailyView &&
         activeBarberOpenDailyStats.lastDailyCloseIso &&
@@ -3239,7 +3239,11 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
             className="px-1.5 py-0.5 rounded-md text-[10px] font-bold border border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200 inline-flex items-center gap-1"
           >
             <CloudOff className="w-3 h-3 shrink-0" />
-            <span>معلق</span>
+            <span>
+              {caisseOffline.isOnline && caisseOffline.isSyncing && !caisseOffline.lastSyncError
+                ? 'قيد المزامنة'
+                : 'معلق'}
+            </span>
           </span>
         )}
       </span>
@@ -3402,16 +3406,18 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     </ModalPortal>
   ) : null;
 
-  const offlineAndClockStatusBannerNode =
+  const showSyncBanner =
     !caisseOffline.isOnline ||
-    caisseOffline.pendingCount > 0 ||
-    caisseOffline.isSyncing ||
-    trustedTime.isDrifted ? (
+    caisseOffline.delayedPendingCount > 0 ||
+    Boolean(caisseOffline.lastSyncError);
+
+  const offlineAndClockStatusBannerNode =
+    showSyncBanner || trustedTime.isDrifted ? (
       <div className="space-y-2">
-        {(!caisseOffline.isOnline || caisseOffline.pendingCount > 0 || caisseOffline.isSyncing) && (
+        {showSyncBanner && (
           <div
             className={`p-3.5 rounded-2xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
-              !caisseOffline.isOnline
+              !caisseOffline.isOnline || Boolean(caisseOffline.lastSyncError)
                 ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-500/45 text-amber-900 dark:text-amber-200'
                 : 'bg-sky-50 dark:bg-sky-950/30 border-sky-300 dark:border-sky-500/45 text-sky-900 dark:text-sky-200'
             }`}
@@ -3428,7 +3434,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                     ? 'العمل بدون إنترنت مفعّل — جميع عمليات لاكيس تُحفظ بأمان على الجهاز'
                     : caisseOffline.isSyncing
                     ? `جاري مزامنة ${caisseOffline.pendingCount} عمليات معلقة مع السحابة...`
-                    : `عادت الشبكة — توجد ${caisseOffline.pendingCount} عمليات معلقة بانتظار المزامنة`}
+                    : caisseOffline.lastSyncError
+                    ? `الشبكة ضعيفة أو متقطعة — ${caisseOffline.pendingCount} عمليات محفوظة محلياً وستُرفع تلقائياً`
+                    : `توجد ${caisseOffline.pendingCount} عمليات معلقة بانتظار المزامنة`}
                 </div>
                 {caisseOffline.pendingCount > 0 && (
                   <p className="text-[11px] opacity-90">
@@ -3721,13 +3729,13 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               </div>
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 font-mono tabular-nums">
                 {sessionRole === 'caisse'
-                  ? `يوم العمل (يتجدد 03:00 صباحاً): ${businessTodayStr}`
+                  ? `تاريخ اليوم: ${businessTodayStr} · التصفية يدوياً فقط`
                   : pickLang(lang, {
-                      ar: `يوم العمل (يتجدد 03:00 صباحاً): ${businessTodayStr} · النسبة: ${effectivePct}%`,
-                      fr: `Journée (clôture 03:00) : ${businessTodayStr} · Part : ${effectivePct}%`,
-                      amz: `ⴰⵙⵙ ⵏ ⵜⵡⵓⵔⵉ (03:00): ${businessTodayStr} · ${effectivePct}%`,
-                      en: `Business Day (03:00 AM cutoff): ${businessTodayStr} · Rate: ${effectivePct}%`,
-                      es: `Día laboral (corte 03:00): ${businessTodayStr} · ${effectivePct}%`,
+                      ar: `تاريخ اليوم: ${businessTodayStr} · النسبة: ${effectivePct}% · التصفية يدوياً فقط`,
+                      fr: `Date du jour : ${businessTodayStr} · Part : ${effectivePct}% · Clôture manuelle`,
+                      amz: `ⴰⵙⵙ ⴰⴷ : ${businessTodayStr} · ${effectivePct}%`,
+                      en: `Today: ${businessTodayStr} · Rate: ${effectivePct}% · Manual settlement only`,
+                      es: `Hoy: ${businessTodayStr} · ${effectivePct}% · Cierre manual`,
                     })}
               </p>
             </div>
@@ -6578,7 +6586,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 <span>تقرير المحاسب العام (الإدارة فقط)</span>
               </h4>
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
-                حساب كل نهار لي ديال المحل · الفترات العشرية · نهاية الشهر · التراكمي السنوي · أرشيف 03:00 صباحاً
+                حساب كل نهار لي ديال المحل · الفترات العشرية · نهاية الشهر · التراكمي السنوي · الأرشيف اليومي
               </p>
             </div>
 
@@ -6588,7 +6596,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                   { id: 'periods', label: 'النهار والشهر (10 أيام)', icon: CalendarRange },
                   { id: 'annual', label: 'التراكمي السنوي', icon: BarChart3 },
                   { id: 'cycles', label: 'تصفية الحسابات', icon: CheckCircle2 },
-                  { id: 'archives', label: 'أرشيف 03:00 ص', icon: Archive },
+                  { id: 'archives', label: 'الأرشيف اليومي', icon: Archive },
                 ] as const
               ).map((t) => {
                 const Icon = t.icon;
@@ -6971,7 +6979,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                 <span>
-                  يتم أرشفة سجل كل يوم تلقائياً عند الساعة 03:00 صباحاً دون المساس بالأرصدة التراكمية غير المدفوعة.
+                  يتم حفظ سجل الأيام للمراجعة فقط دون أي تصفير تلقائي في أي ساعة — التصفير يتم حصراً عند الضغط على تصفية الحساب اليومي أو الشهري.
                 </span>
               </div>
               {sortedArchives.length === 0 ? (
