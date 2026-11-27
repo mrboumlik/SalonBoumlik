@@ -46,7 +46,6 @@ import {
   StaffRole,
 } from '../types';
 import {
-  addCaisseEntry,
   BarberCycleBalance,
   closeAllBarbersDailyIntakeThrough,
   closeBarberDayIntake,
@@ -73,7 +72,8 @@ import {
   isFloatEntryType,
   matchesCaisseBarber,
   matchesCaisseFinancialBarber,
-  recordCaisseCreditRepayment,
+  queueCaisseCreditRepaymentInstant,
+  queueCaisseEntryInstant,
   resolveCaisseBarberId,
   resyncBarberDayArchiveAndSettlement,
   saveBarberDailyNoteReply,
@@ -1543,7 +1543,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     setDayModalAddClientName('');
   };
 
-  const handleAddEntryInDayModal = async (e: React.FormEvent) => {
+  const handleAddEntryInDayModal = (e: React.FormEvent) => {
     e.preventDefault();
     if (sessionRole !== 'master' || !dayDetailTarget || dayModalAddBusy) return;
     const amt = Math.round(evaluateAmountExpression(dayModalAddAmount));
@@ -1569,7 +1569,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         businessTodayStr,
       });
 
-      await addCaisseEntry({
+      const createdEntry = queueCaisseEntryInstant({
         barberId,
         barberName: meta.name,
         type: dayModalAddType,
@@ -1599,9 +1599,13 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setDayModalAddNote('');
       setDayModalAddClientName('');
       showToast(
-        `تمت إضافة العملية ليوم ${date} ✓`,
-        `${dayModalAddType === 'expense' ? 'سحب (هز)' : 'إيداع (حط)'}: ${amt} MAD`,
-        'success'
+        createdEntry.offlineCreated
+          ? 'تم الحفظ في الكاش المحلي (بدون إنترنت) ✓'
+          : `تمت إضافة العملية ليوم ${date} ✓`,
+        createdEntry.offlineCreated
+          ? `${amt} MAD · ستتم المزامنة تلقائياً فور عودة الإنترنت`
+          : `${dayModalAddType === 'expense' ? 'سحب (هز)' : 'إيداع (حط)'}: ${amt} MAD`,
+        createdEntry.offlineCreated ? 'info' : 'success'
       );
     } catch (err) {
       console.error('Failed to add entry in day modal:', err);
@@ -1654,8 +1658,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     });
   };
 
-  // Submit Income ("حطيت في المجر") — ZERO blocking checks on services or clientName!
-  const handleSubmitIncome = async (
+  // Submit Income ("حطيت في المجر") — Synchronous instant local commit + immediate modal close
+  const handleSubmitIncome = (
     e?: React.FormEvent,
     bypassDuplicateCheck = false
   ) => {
@@ -1707,9 +1711,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       })
       .filter(Boolean);
 
-    setIncomeSubmitting(true);
     try {
-      const createdEntry = await addCaisseEntry({
+      const createdEntry = queueCaisseEntryInstant({
         barberId: activeBarberId,
         barberName: activeBarberMeta.name,
         type: 'income',
@@ -1730,6 +1733,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         createdByName: staffName,
       });
 
+      // Close modal & clear form immediately in the exact same turn
+      setOpenForm('none');
+      setDuplicateWarning(null);
       setSelectedServiceIds([]);
       setAmountPaidInput('');
       setIncomeNote('');
@@ -1738,13 +1744,12 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setCreditClientName('');
       setCreditClientPhone('');
       setCreditExpectedDate('');
-      setDuplicateWarning(null);
-      setOpenForm('none');
+      setIncomeSubmitting(false);
       startPostEntryTimer();
 
       showToast(
         createdEntry.offlineCreated
-          ? 'تم الحفظ محلياً (بدون إنترنت) ✓'
+          ? 'تم الحفظ في الكاش المحلي (بدون إنترنت) ✓'
           : pickLang(lang, {
               ar: 'تم التسجيل في لاكيس ✓',
               fr: 'Enregistré en Caisse ✓',
@@ -1759,13 +1764,12 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       );
     } catch (err) {
       console.error('Failed to add Caisse income:', err);
-    } finally {
       setIncomeSubmitting(false);
     }
   };
 
-  // Submit Expense ("هزيت الفلوس")
-  const handleSubmitExpense = async (
+  // Submit Expense ("هزيت الفلوس") — Synchronous instant local commit + immediate modal close
+  const handleSubmitExpense = (
     e?: React.FormEvent,
     bypassDuplicateCheck = false
   ) => {
@@ -1800,9 +1804,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       }
     }
 
-    setExpenseSubmitting(true);
     try {
-      const createdEntry = await addCaisseEntry({
+      const createdEntry = queueCaisseEntryInstant({
         barberId: activeBarberId,
         barberName: activeBarberMeta.name,
         type: 'expense',
@@ -1816,14 +1819,16 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         createdByRole: sessionRole,
         createdByName: staffName,
       });
+      // Close modal & reset state immediately
+      setOpenForm('none');
+      setDuplicateWarning(null);
       setExpenseAmount('');
       setExpenseNote('');
-      setDuplicateWarning(null);
-      setOpenForm('none');
+      setExpenseSubmitting(false);
       startPostEntryTimer();
       showToast(
         createdEntry.offlineCreated
-          ? 'تم حفظ السحب محلياً (بدون إنترنت) ✓'
+          ? 'تم حفظ السحب في الكاش المحلي (بدون إنترنت) ✓'
           : pickLang(lang, {
               ar: 'تم تسجيل السحب / المصروف ✓',
               fr: 'Retrait enregistré ✓',
@@ -1838,13 +1843,12 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       );
     } catch (err) {
       console.error('Failed to add expense:', err);
-    } finally {
       setExpenseSubmitting(false);
     }
   };
 
   // Submit Float Adjustment / Return ("الصرف — إضافة أو إرجاع فلوس الفكة في المجر" -> دائماً لحساب حسن الشخصي)
-  const handleSubmitFloat = async (e: React.FormEvent) => {
+  const handleSubmitFloat = (e: React.FormEvent) => {
     e.preventDefault();
     const amt = Math.max(0, evaluateAmountExpression(floatAmount));
     if (amt <= 0) {
@@ -1858,9 +1862,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       floatMode === 'return'
         ? 'إرجاع فلوس الصرف من المجر (حسن)'
         : 'إضافة فلوس الصرف للمجر (حسن)';
-    setFloatSubmitting(true);
     try {
-      const createdEntry = await addCaisseEntry({
+      const createdEntry = queueCaisseEntryInstant({
         barberId: 'hassan',
         barberName: hassanMeta.name,
         type: targetType,
@@ -1874,13 +1877,14 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         createdByRole: sessionRole,
         createdByName: staffName,
       });
+      setOpenForm('none');
       setFloatAmount('');
       setFloatNote('');
-      setOpenForm('none');
+      setFloatSubmitting(false);
       if (activeBarberId) startPostEntryTimer();
       showToast(
         createdEntry.offlineCreated
-          ? 'تم حفظ الصرف محلياً (بدون إنترنت) ✓'
+          ? 'تم حفظ الصرف في الكاش المحلي (بدون إنترنت) ✓'
           : floatMode === 'return'
           ? 'تم تسجيل إرجاع الصرف (حساب حسن) ✓'
           : pickLang(lang, {
@@ -1891,24 +1895,22 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               es: 'Fondo de cambio añadido (Hassan) ✓',
             }),
         createdEntry.offlineCreated
-          ? `${floatMode === 'return' ? '-' : '+'}${amt} MAD · ستتم المزامنة تلقائياً`
+          ? `${floatMode === 'return' ? '-' : '+'}${amt} MAD · ستتم المزامنة تلقائياً فور عودة الإنترنت`
           : `${floatMode === 'return' ? '-' : '+'}${amt} MAD`,
         createdEntry.offlineCreated ? 'info' : 'success'
       );
     } catch (err) {
       console.error('Failed to add float:', err);
-    } finally {
       setFloatSubmitting(false);
     }
   };
 
-  // Atomic Credit Repayment
-  const handleConfirmRepay = async (creditEntry: CaisseEntry) => {
+  // Atomic Credit Repayment (Synchronous instant local commit)
+  const handleConfirmRepay = (creditEntry: CaisseEntry) => {
     const amt = Math.max(0, Number(repayAmountInput) || 0);
     if (amt <= 0) return;
-    setRepayBusy(true);
     try {
-      const repayment = await recordCaisseCreditRepayment({
+      const repayment = queueCaisseCreditRepaymentInstant({
         creditEntry,
         amountRepaidMAD: amt,
         repaidDate: businessTodayStr,
@@ -1917,9 +1919,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       });
       setRepayingEntryId(null);
       setRepayAmountInput('');
+      setRepayBusy(false);
       showToast(
         repayment.offlineCreated
-          ? 'تم حفظ خلاص الكريدي محلياً (بدون إنترنت) ✓'
+          ? 'تم حفظ خلاص الكريدي في الكاش المحلي (بدون إنترنت) ✓'
           : pickLang(lang, {
               ar: 'تم تسجيل خلاص الكريدي ✓',
               fr: 'Remboursement enregistré ✓',
@@ -1927,12 +1930,13 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               en: 'Credit repayment recorded ✓',
               es: 'Pago de crédito registrado ✓',
             }),
-        repayment.offlineCreated ? `${amt} MAD · ستتم المزامنة تلقائياً` : `${amt} MAD`,
+        repayment.offlineCreated
+          ? `${amt} MAD · ستتم المزامنة تلقائياً فور عودة الإنترنت`
+          : `${amt} MAD`,
         repayment.offlineCreated ? 'info' : 'success'
       );
     } catch (err) {
       console.error('Credit repayment failed:', err);
-    } finally {
       setRepayBusy(false);
     }
   };
@@ -2316,9 +2320,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       return;
     }
 
-    setBalanceAdjustBusy(true);
     try {
-      await addCaisseEntry({
+      const createdEntry = queueCaisseEntryInstant({
         barberId: activeBarberId,
         barberName: activeBarberMeta.name,
         type: 'barber_adjustment',
@@ -2336,14 +2339,18 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setBalanceAdjustModalOpen(false);
       setBalanceAdjustAmount('');
       setBalanceAdjustNote('');
+      setBalanceAdjustBusy(false);
       showToast(
-        `تم تعديل رصيد ${activeBarberMeta.arName} بشكل معزول ✓`,
-        `${direction === 'credit' ? '+' : '-'}${amt} MAD (دون المساس بباقي الحلاقين أو المحل)`,
-        'success'
+        createdEntry.offlineCreated
+          ? 'تم حفظ التسوية في الكاش المحلي (بدون إنترنت) ✓'
+          : `تم تعديل رصيد ${activeBarberMeta.arName} بشكل معزول ✓`,
+        createdEntry.offlineCreated
+          ? `${direction === 'credit' ? '+' : '-'}${amt} MAD · ستتم المزامنة تلقائياً فور عودة الإنترنت`
+          : `${direction === 'credit' ? '+' : '-'}${amt} MAD (دون المساس بباقي الحلاقين أو المحل)`,
+        createdEntry.offlineCreated ? 'info' : 'success'
       );
     } catch (err) {
       console.error('Failed to adjust barber balance:', err);
-    } finally {
       setBalanceAdjustBusy(false);
     }
   };
@@ -3447,15 +3454,25 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 )}
               </div>
             </div>
-            {caisseOffline.isOnline && caisseOffline.pendingCount > 0 && (
+            {caisseOffline.pendingCount > 0 && (
               <button
                 type="button"
                 disabled={caisseOffline.isSyncing}
                 onClick={() => void caisseOffline.flushNow()}
-                className="px-3.5 py-2 rounded-xl bg-sky-700 hover:bg-sky-600 text-white font-black text-xs inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60 shrink-0"
+                className={`px-3.5 py-2 rounded-xl text-white font-black text-xs inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60 shrink-0 ${
+                  caisseOffline.isOnline
+                    ? 'bg-sky-700 hover:bg-sky-600'
+                    : 'bg-amber-700 hover:bg-amber-600'
+                }`}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${caisseOffline.isSyncing ? 'animate-spin' : ''}`} />
-                <span>{caisseOffline.isSyncing ? 'جاري المزامنة...' : 'مزامنة الآن'}</span>
+                <span>
+                  {caisseOffline.isSyncing
+                    ? 'جاري المزامنة...'
+                    : caisseOffline.isOnline
+                    ? 'مزامنة الآن'
+                    : 'فحص الاتصال والمزامنة'}
+                </span>
               </button>
             )}
           </div>

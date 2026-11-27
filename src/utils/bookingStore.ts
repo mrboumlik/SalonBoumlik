@@ -1075,32 +1075,55 @@ export async function markBookingCaisseLogged(
   caisseEntryId: string
 ): Promise<AppointmentBooking | null> {
   const path = `${BOOKINGS_COLLECTION}/${id}`;
+  const nowIso = new Date().toISOString().slice(0, 64);
+  const cleanEntryId = String(caisseEntryId || '').trim().slice(0, 128);
+
+  const existingInMemory = memoryCache.find((b) => b.id === id);
+  const optimisticBooking: AppointmentBooking | null = existingInMemory
+    ? {
+        ...existingInMemory,
+        caisseLoggedAt: nowIso,
+        caisseEntryId: cleanEntryId,
+      }
+    : null;
+
+  if (optimisticBooking) {
+    commitBookingsCache(
+      memoryCache.map((b) => (b.id === id ? optimisticBooking : b)),
+      true
+    );
+  }
+
   try {
-    const nowIso = new Date().toISOString().slice(0, 64);
-    const cleanEntryId = String(caisseEntryId || '').trim().slice(0, 128);
     await updateDoc(doc(db, BOOKINGS_COLLECTION, id), {
       caisseLoggedAt: nowIso,
       caisseEntryId: cleanEntryId,
     });
 
-    let existing = memoryCache.find((b) => b.id === id);
-    if (!existing) {
-      const snap = await getDoc(doc(db, BOOKINGS_COLLECTION, id));
-      if (snap.exists()) {
-        existing = snap.data() as AppointmentBooking;
-      }
-    }
-    if (!existing) return null;
+    if (optimisticBooking) return optimisticBooking;
 
-    const updatedBooking: AppointmentBooking = {
-      ...existing,
+    const snap = await getDoc(doc(db, BOOKINGS_COLLECTION, id));
+    if (!snap.exists()) return null;
+    const loaded = {
+      ...(snap.data() as AppointmentBooking),
       caisseLoggedAt: nowIso,
       caisseEntryId: cleanEntryId,
     };
-    commitBookingsCache(memoryCache.map((b) => (b.id === id ? updatedBooking : b)), true);
-    return updatedBooking;
+    commitBookingsCache(
+      memoryCache.map((b) => (b.id === id ? loaded : b)),
+      true
+    );
+    return loaded;
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code || '').toLowerCase()
+        : '';
+    if (code === 'permission-denied') {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+    console.warn(`markBookingCaisseLogged deferred/offline (${path}):`, error);
+    return optimisticBooking;
   }
 }
 

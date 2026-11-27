@@ -135,11 +135,11 @@ import { useBarberRoster, authenticateStaffPin } from '../utils/barberRosterStor
 import { useBarberProfiles, getMergedBarbers } from '../utils/barberProfileStore';
 import { safeStorageGet, safeStorageRemove, safeStorageSet } from '../utils/safeBrowser';
 import {
-  addCaisseEntry,
   getCaisseBarberMeta,
   getEffectiveCaisseCreditRemaining,
   getSalonBusinessDate,
   matchesCaisseBarber,
+  queueCaisseEntryInstant,
   resolveCaisseBarberId,
   useCaisseEntries,
 } from '../utils/caisseStore';
@@ -1430,9 +1430,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       .map((s) => s.name?.[lang] || s.name?.ar || s.name?.fr || s.id)
       .filter(Boolean);
 
+    const bookingSnapshot = caissePromptBooking;
     setCaissePromptBusy(true);
     try {
-      const entry = await addCaisseEntry({
+      const entry = queueCaisseEntryInstant({
         barberId: targetBarberId,
         barberName: barberMeta.name,
         type: 'income',
@@ -1445,49 +1446,69 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         creditRemainingMAD: creditTotal,
         creditStatus:
           creditTotal > 0 ? (paid > 0 ? 'partial' : 'open') : 'none',
-        clientName: caissePromptClientName.trim() || caissePromptBooking.clientName,
-        clientPhone: caissePromptClientPhone.trim() || caissePromptBooking.clientPhone,
+        clientName: caissePromptClientName.trim() || bookingSnapshot.clientName,
+        clientPhone: caissePromptClientPhone.trim() || bookingSnapshot.clientPhone,
         expectedRepaymentDate: caissePromptRepayDate || undefined,
-        sourceBookingId: caissePromptBooking.id,
-        sourceTicketNumber: caissePromptBooking.ticketNumber,
-        note: caissePromptNote.trim() || `${caissePromptBooking.ticketNumber}`,
+        sourceBookingId: bookingSnapshot.id,
+        sourceTicketNumber: bookingSnapshot.ticketNumber,
+        note: caissePromptNote.trim() || `${bookingSnapshot.ticketNumber}`,
         createdByRole: session.role,
         createdByName: session.name,
       });
 
-      await markBookingCaisseLogged(caissePromptBooking.id, entry.id);
+      // Instant modal close without waiting on network
       setCaissePromptBooking(null);
+      setCaissePromptBusy(false);
+
+      void markBookingCaisseLogged(bookingSnapshot.id, entry.id).catch((err) => {
+        console.warn('Background markBookingCaisseLogged warning:', err);
+      });
 
       const barberLabel =
         mergedBarbers.find((m) => m.id === targetBarberId)?.name?.[lang] ||
         barberMeta.arName;
 
       sendDualAlert(
-        pickLang(lang, {
-          ar: 'تم تسجيل مدخول الموعد في لاكيس ✓',
-          fr: 'Revenu du RDV enregistré en Caisse ✓',
-          amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⴽⵛⵓⵎ ⵏ ⵓⵙⵉⵀⴰⵔ ⴳ ⵍⴰⴽⵉⵙ ✓',
-          en: 'Appointment revenue logged in Caisse ✓',
-          es: 'Ingreso de la cita registrado en Caja ✓',
-        }),
+        entry.offlineCreated
+          ? pickLang(lang, {
+              ar: 'تم الحفظ في الكاش المحلي (بدون إنترنت) ✓',
+              fr: 'Enregistré en cache local (hors ligne) ✓',
+              amz: 'ⵉⵜⵜⵓⵃⴹⴰ ⴳ ⵓⴽⴰⵛ ⴰⴷⵖⴰⵔⴰⵏ ✓',
+              en: 'Saved to local cache (offline) ✓',
+              es: 'Guardado en caché local (sin conexión) ✓',
+            })
+          : pickLang(lang, {
+              ar: 'تم تسجيل مدخول الموعد في لاكيس ✓',
+              fr: 'Revenu du RDV enregistré en Caisse ✓',
+              amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⴽⵛⵓⵎ ⵏ ⵓⵙⵉⵀⴰⵔ ⴳ ⵍⴰⴽⵉⵙ ✓',
+              en: 'Appointment revenue logged in Caisse ✓',
+              es: 'Ingreso de la cita registrado en Caja ✓',
+            }),
         {
-          body:
-            creditTotal > 0
-              ? pickLang(lang, {
-                  ar: `${paid} MAD في لاكيس + ${creditTotal} MAD كريدي على ${caissePromptBooking.clientName}.`,
-                  fr: `${paid} MAD en Caisse + ${creditTotal} MAD en crédit pour ${caissePromptBooking.clientName}.`,
-                  amz: `${paid} MAD ⴳ ⵍⴰⴽⵉⵙ + ${creditTotal} MAD ⴰⴽⵔⵉⴷⵉ ⵉ ${caissePromptBooking.clientName}.`,
-                  en: `${paid} MAD in Caisse + ${creditTotal} MAD credit for ${caissePromptBooking.clientName}.`,
-                  es: `${paid} MAD en Caja + ${creditTotal} MAD crédito para ${caissePromptBooking.clientName}.`,
-                })
-              : pickLang(lang, {
-                  ar: `تمت إضافة ${paid} MAD لصندوق ${barberLabel}.`,
-                  fr: `${paid} MAD ajoutés à la Caisse de ${barberLabel}.`,
-                  amz: `ⵉⵜⵜⵓⵔⵏⴰ ${paid} MAD ⵉ ⵍⴰⴽⵉⵙ ⵏ ${barberLabel}.`,
-                  en: `Added ${paid} MAD to ${barberLabel}'s Caisse.`,
-                  es: `${paid} MAD añadidos a la Caja de ${barberLabel}.`,
-                }),
-          type: 'success',
+          body: entry.offlineCreated
+            ? pickLang(lang, {
+                ar: `${paid} MAD · ستتم المزامنة تلقائياً فور عودة الإنترنت.`,
+                fr: `${paid} MAD · Synchronisation automatique dès le retour d’Internet.`,
+                amz: `${paid} MAD · ⴰⴷ ⵉⵜⵜⵓⵎⵢⴰⵡⴰⵏ ⵉⵖ ⵉⴷⵡⵍ ⵍⴰⵏⵜⵉⵔⵏⵉⵜ.`,
+                en: `${paid} MAD · Will sync automatically once internet returns.`,
+                es: `${paid} MAD · Se sincronizará automáticamente al volver Internet.`,
+              })
+            : creditTotal > 0
+            ? pickLang(lang, {
+                ar: `${paid} MAD في لاكيس + ${creditTotal} MAD كريدي على ${bookingSnapshot.clientName}.`,
+                fr: `${paid} MAD en Caisse + ${creditTotal} MAD en crédit pour ${bookingSnapshot.clientName}.`,
+                amz: `${paid} MAD ⴳ ⵍⴰⴽⵉⵙ + ${creditTotal} MAD ⴰⴽⵔⵉⴷⵉ ⵉ ${bookingSnapshot.clientName}.`,
+                en: `${paid} MAD in Caisse + ${creditTotal} MAD credit for ${bookingSnapshot.clientName}.`,
+                es: `${paid} MAD en Caja + ${creditTotal} MAD crédito para ${bookingSnapshot.clientName}.`,
+              })
+            : pickLang(lang, {
+                ar: `تمت إضافة ${paid} MAD لصندوق ${barberLabel}.`,
+                fr: `${paid} MAD ajoutés à la Caisse de ${barberLabel}.`,
+                amz: `ⵉⵜⵜⵓⵔⵏⴰ ${paid} MAD ⵉ ⵍⴰⴽⵉⵙ ⵏ ${barberLabel}.`,
+                en: `Added ${paid} MAD to ${barberLabel}'s Caisse.`,
+                es: `${paid} MAD añadidos a la Caja de ${barberLabel}.`,
+              }),
+          type: entry.offlineCreated ? 'info' : 'success',
           skipSound: true,
         }
       );
