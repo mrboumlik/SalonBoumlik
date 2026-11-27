@@ -151,6 +151,10 @@ export interface CustomerReview {
   };
   barberId?: string;
   barberName?: string;
+  barberIds?: string[];
+  barberNames?: string[];
+  allBarbers?: boolean;
+  isAnonymous?: boolean;
   bookingId?: string;
   createdAt?: string;
   verified?: boolean;
@@ -276,6 +280,19 @@ export interface CaisseEntry {
   createdByName: string;
   createdAt: string;
   updatedAt: string;
+  // Device & Trusted-Time Origin Metadata (optional for legacy backward-compatibility)
+  deviceKind?: 'pc' | 'phone';
+  deviceId?: string;
+  deviceLabel?: string;
+  devicePlatform?: string;
+  deviceBrowser?: string;
+  timeSource?: 'server_api' | 'firestore_server' | 'cached_offset' | 'device_clock';
+  serverClockOffsetMs?: number;
+  deviceClockISO?: string;
+  offlineCreated?: boolean;
+  firestoreServerCreatedAt?: string;
+  /** Client-only UI flag indicating entry is queued locally awaiting internet sync (never stored in Firestore) */
+  offlinePending?: boolean;
 }
 
 export interface CommissionPeriodOverride {

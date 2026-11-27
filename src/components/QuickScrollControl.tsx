@@ -5,12 +5,27 @@ import { pickLang } from '../utils/i18n';
 
 interface QuickScrollControlProps {
   hidden?: boolean;
+  targetRef?: React.RefObject<HTMLElement | null>;
+  positionClassName?: string;
 }
 
-const getScrollInfo = () => {
+const getScrollInfo = (container?: HTMLElement | null) => {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return { scrollY: 0, maxScroll: 0, atTop: true, atBottom: true, scrollable: false };
   }
+
+  if (container) {
+    const scrollY = container.scrollTop || 0;
+    const maxScroll = Math.max(0, (container.scrollHeight || 0) - (container.clientHeight || 0));
+    return {
+      scrollY,
+      maxScroll,
+      atTop: scrollY <= 10,
+      atBottom: maxScroll <= 10 || scrollY >= maxScroll - 10,
+      scrollable: maxScroll > 36,
+    };
+  }
+
   const scrollY =
     window.pageYOffset !== undefined
       ? window.pageYOffset
@@ -31,9 +46,13 @@ const getScrollInfo = () => {
   };
 };
 
-export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden = false }) => {
+export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({
+  hidden = false,
+  targetRef,
+  positionClassName = 'fixed right-1.5 sm:right-3.5 top-1/2 -translate-y-1/2 z-40',
+}) => {
   const { lang } = useLanguage();
-  const [metrics, setMetrics] = useState(getScrollInfo);
+  const [metrics, setMetrics] = useState(() => getScrollInfo(targetRef?.current));
   const [isDragging, setIsDragging] = useState(false);
   const [dragThumbOffset, setDragThumbOffset] = useState(0);
   const dragStateRef = useRef<{
@@ -49,48 +68,72 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
   });
 
   const refreshMetrics = useCallback(() => {
-    setMetrics(getScrollInfo());
-  }, []);
+    setMetrics(getScrollInfo(targetRef?.current));
+  }, [targetRef]);
 
   useEffect(() => {
+    const el = targetRef?.current;
     refreshMetrics();
 
-    window.addEventListener('scroll', refreshMetrics, { passive: true });
+    const scrollTarget: EventTarget = el || window;
+    scrollTarget.addEventListener('scroll', refreshMetrics, { passive: true });
     window.addEventListener('resize', refreshMetrics, { passive: true });
 
     let resizeObserver: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== 'undefined' && document.body) {
+    const observeTarget = el || (typeof document !== 'undefined' ? document.body : null);
+    if (typeof ResizeObserver !== 'undefined' && observeTarget) {
       resizeObserver = new ResizeObserver(() => {
         refreshMetrics();
       });
-      resizeObserver.observe(document.body);
+      resizeObserver.observe(observeTarget);
+      if (el && el.firstElementChild) {
+        resizeObserver.observe(el.firstElementChild);
+      }
+    }
+
+    let mutationObserver: MutationObserver | null = null;
+    if (typeof MutationObserver !== 'undefined' && el) {
+      let rafId = 0;
+      mutationObserver = new MutationObserver(() => {
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(() => {
+          refreshMetrics();
+        });
+      });
+      mutationObserver.observe(el, { childList: true, subtree: true });
     }
 
     return () => {
-      window.removeEventListener('scroll', refreshMetrics);
+      scrollTarget.removeEventListener('scroll', refreshMetrics);
       window.removeEventListener('resize', refreshMetrics);
       if (resizeObserver) {
         resizeObserver.disconnect();
       }
+      if (mutationObserver) {
+        mutationObserver.disconnect();
+      }
     };
-  }, [refreshMetrics]);
+  }, [refreshMetrics, targetRef]);
 
   useEffect(() => {
     if (!isDragging) return;
 
     const handlePointerMove = (e: PointerEvent) => {
       if (!dragStateRef.current.active) return;
+      const el = targetRef?.current;
+      const info = getScrollInfo(el);
+      const maxScroll = Math.max(dragStateRef.current.maxScroll, info.maxScroll);
       const deltaY = e.clientY - dragStateRef.current.startClientY;
-      const { startScrollY, maxScroll } = dragStateRef.current;
+      const { startScrollY } = dragStateRef.current;
 
       const multiplier = Math.max(2.2, maxScroll / 220);
       const nextY = Math.max(0, Math.min(maxScroll, startScrollY + deltaY * multiplier));
 
       setDragThumbOffset(Math.max(-6, Math.min(6, Math.round(deltaY * 0.14))));
 
-      try {
-        window.scrollTo({ top: nextY, behavior: 'instant' as ScrollBehavior });
-      } catch {
+      if (el) {
+        el.scrollTop = nextY;
+      } else {
         window.scrollTo(0, nextY);
       }
     };
@@ -110,11 +153,11 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
       window.removeEventListener('pointerup', stopDragging);
       window.removeEventListener('pointercancel', stopDragging);
     };
-  }, [isDragging]);
+  }, [isDragging, targetRef]);
 
   const handleDragStart = (e: React.PointerEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    const info = getScrollInfo();
+    const info = getScrollInfo(targetRef?.current);
     dragStateRef.current = {
       active: true,
       startClientY: e.clientY,
@@ -126,8 +169,20 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
   };
 
   const scrollStepBy = (direction: -1 | 1) => {
-    const viewHeight = window.innerHeight || 700;
-    const step = Math.max(260, Math.round(viewHeight * 0.68)) * direction;
+    const el = targetRef?.current;
+    const viewHeight = el ? el.clientHeight || 600 : window.innerHeight || 700;
+    const step = Math.max(240, Math.round(viewHeight * 0.68)) * direction;
+
+    if (el) {
+      const nextTop = Math.max(0, Math.min(el.scrollHeight, el.scrollTop + step));
+      try {
+        el.scrollTo({ top: nextTop, behavior: 'smooth' });
+      } catch {
+        el.scrollTop = nextTop;
+      }
+      return;
+    }
+
     try {
       window.scrollBy({ top: step, behavior: 'smooth' });
     } catch {
@@ -136,6 +191,17 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
   };
 
   const scrollToEdge = (edge: 'top' | 'bottom') => {
+    const el = targetRef?.current;
+    if (el) {
+      const target = edge === 'top' ? 0 : el.scrollHeight;
+      try {
+        el.scrollTo({ top: target, behavior: 'smooth' });
+      } catch {
+        el.scrollTop = target;
+      }
+      return;
+    }
+
     const docHeight = Math.max(
       document.body ? document.body.scrollHeight : 0,
       document.documentElement ? document.documentElement.scrollHeight : 0
@@ -200,7 +266,8 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
       dir="ltr"
       role="region"
       aria-label={labels.navAria}
-      className="hidden sm:flex fixed right-2 lg:right-3.5 top-1/2 -translate-y-1/2 z-40 flex-col items-center gap-0.5 p-1 rounded-xl bg-white dark:bg-[#13151B] border border-stone-200 dark:border-zinc-700 shadow-md select-none"
+      style={{ left: 'auto' }}
+      className={`flex flex-col items-center gap-1 p-1 sm:p-1.5 rounded-2xl bg-[#0F172A] dark:bg-[#1E293B] border-2 border-[#F59E0B] shadow-xl select-none ${positionClassName}`}
     >
       <button
         type="button"
@@ -208,13 +275,13 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
         disabled={metrics.atTop}
         aria-label={labels.top}
         title={labels.top}
-        className={`w-7 h-6 rounded-lg flex items-center justify-center transition-colors ${
+        className={`w-8 h-6 sm:w-9 sm:h-6 rounded-lg border flex items-center justify-center transition-colors ${
           metrics.atTop
-            ? 'text-stone-300 dark:text-zinc-600 cursor-not-allowed'
-            : 'text-stone-600 dark:text-zinc-300 hover:bg-stone-100 dark:hover:bg-zinc-800 hover:text-amber-700 dark:hover:text-amber-400 cursor-pointer active:scale-95'
+            ? 'bg-[#0F172A] border-[#334155] text-[#64748B] cursor-not-allowed'
+            : 'bg-[#1E293B] hover:bg-[#334155] border-[#64748B] text-[#FDE68A] hover:text-white cursor-pointer active:scale-95'
         }`}
       >
-        <ChevronsUp className="w-3.5 h-3.5" />
+        <ChevronsUp className="w-3.5 h-3.5" strokeWidth={2.5} />
       </button>
 
       <button
@@ -223,16 +290,16 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
         disabled={metrics.atTop}
         aria-label={labels.up}
         title={labels.up}
-        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors border ${
+        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl border-2 flex items-center justify-center transition-colors ${
           metrics.atTop
-            ? 'bg-stone-50 dark:bg-zinc-900/60 border-stone-200/60 dark:border-zinc-800/60 text-stone-300 dark:text-zinc-600 cursor-not-allowed'
-            : 'bg-stone-50 dark:bg-zinc-900 border-stone-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-100 hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:border-amber-300 dark:hover:border-amber-500/40 hover:text-amber-800 dark:hover:text-amber-300 cursor-pointer active:scale-95'
+            ? 'bg-[#1E293B] border-[#334155] text-[#64748B] cursor-not-allowed'
+            : 'bg-[#2563EB] hover:bg-[#1D4ED8] border-[#93C5FD] text-white cursor-pointer active:scale-95 shadow-sm'
         }`}
       >
-        <ChevronUp className="w-4 h-4" />
+        <ChevronUp className="w-5 h-5" strokeWidth={2.75} />
       </button>
 
-      {/* Center Draggable Handle Button */}
+      {/* Center High-Contrast Draggable Handle Button */}
       <button
         type="button"
         onPointerDown={handleDragStart}
@@ -240,14 +307,15 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
         title={labels.drag}
         style={{
           transform: `translate3d(0, ${dragThumbOffset}px, 0)`,
+          touchAction: 'none',
         }}
-        className={`w-7 h-7 rounded-lg flex flex-col items-center justify-center border touch-none transition-colors ${
+        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center border-2 transition-colors ${
           isDragging
-            ? 'bg-amber-600 border-amber-600 text-white cursor-grabbing shadow-md'
-            : 'bg-stone-100 dark:bg-zinc-800/90 border-stone-300 dark:border-zinc-600 text-stone-600 dark:text-zinc-300 hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-300 cursor-grab'
+            ? 'bg-white border-[#F59E0B] text-[#0F172A] cursor-grabbing shadow-md'
+            : 'bg-[#F59E0B] hover:bg-[#FBBF24] border-[#FEF3C7] text-[#0F172A] cursor-grab shadow-sm'
         }`}
       >
-        <GripHorizontal className="w-3.5 h-3.5" />
+        <GripHorizontal className="w-4 h-4" strokeWidth={2.75} />
       </button>
 
       <button
@@ -256,13 +324,13 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
         disabled={metrics.atBottom}
         aria-label={labels.down}
         title={labels.down}
-        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors border ${
+        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl border-2 flex items-center justify-center transition-colors ${
           metrics.atBottom
-            ? 'bg-stone-50 dark:bg-zinc-900/60 border-stone-200/60 dark:border-zinc-800/60 text-stone-300 dark:text-zinc-600 cursor-not-allowed'
-            : 'bg-amber-600 hover:bg-amber-500 border-amber-600 text-white cursor-pointer active:scale-95 shadow-xs'
+            ? 'bg-[#1E293B] border-[#334155] text-[#64748B] cursor-not-allowed'
+            : 'bg-[#D97706] hover:bg-[#B45309] border-[#FDE68A] text-white cursor-pointer active:scale-95 shadow-sm'
         }`}
       >
-        <ChevronDown className="w-4 h-4" />
+        <ChevronDown className="w-5 h-5" strokeWidth={2.75} />
       </button>
 
       <button
@@ -271,13 +339,13 @@ export const QuickScrollControl: React.FC<QuickScrollControlProps> = ({ hidden =
         disabled={metrics.atBottom}
         aria-label={labels.bottom}
         title={labels.bottom}
-        className={`w-7 h-6 rounded-lg flex items-center justify-center transition-colors ${
+        className={`w-8 h-6 sm:w-9 sm:h-6 rounded-lg border flex items-center justify-center transition-colors ${
           metrics.atBottom
-            ? 'text-stone-300 dark:text-zinc-600 cursor-not-allowed'
-            : 'text-stone-600 dark:text-zinc-300 hover:bg-stone-100 dark:hover:bg-zinc-800 hover:text-amber-700 dark:hover:text-amber-400 cursor-pointer active:scale-95'
+            ? 'bg-[#0F172A] border-[#334155] text-[#64748B] cursor-not-allowed'
+            : 'bg-[#1E293B] hover:bg-[#334155] border-[#64748B] text-[#FDE68A] hover:text-white cursor-pointer active:scale-95'
         }`}
       >
-        <ChevronsDown className="w-3.5 h-3.5" />
+        <ChevronsDown className="w-3.5 h-3.5" strokeWidth={2.5} />
       </button>
     </div>
   );

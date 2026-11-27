@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   collection,
+  deleteDoc,
   doc,
   getDocs,
   getDocsFromServer,
@@ -18,13 +19,21 @@ import {
   scheduleResilientRetry,
 } from './realtimeSync';
 import { asFiniteNum, asIsoString, asStr, safeCompareDesc } from './safeCoerce';
+import { safeStorageGet, safeStorageSet } from './safeBrowser';
+import { getTrustedNowDate } from './trustedTime';
+import { dispatchStaffBackgroundPush } from './webPushClient';
 
 const REVIEWS_COLLECTION = 'reviews';
+export const LOCAL_REVIEWS_CACHE_KEY = 'salon_boumlik_reviews_v3';
 
 export interface FirestoreReviewRecord {
   id: string;
   barberId: string;
   barberName: string;
+  barberIds?: string[];
+  barberNames?: string[];
+  allBarbers?: boolean;
+  isAnonymous?: boolean;
   author: string;
   city?: string;
   serviceName?: string;
@@ -48,6 +57,10 @@ const SEED_REVIEWS: FirestoreReviewRecord[] = [
     id: 'seed-rev-hassan-1',
     barberId: 'hassan',
     barberName: 'Hassan ait boumlik',
+    barberIds: ['hassan'],
+    barberNames: ['Hassan ait boumlik'],
+    allBarbers: false,
+    isAnonymous: false,
     author: 'Yassine El Amrani',
     city: 'Taroudant',
     serviceName: 'Coupe + Taille Barbe',
@@ -62,6 +75,10 @@ const SEED_REVIEWS: FirestoreReviewRecord[] = [
     id: 'seed-rev-anouar-1',
     barberId: 'anouar-arif',
     barberName: 'Anouar arif',
+    barberIds: ['anouar-arif'],
+    barberNames: ['Anouar arif'],
+    allBarbers: false,
+    isAnonymous: false,
     author: 'Mohamed Tazi',
     city: 'Taroudant',
     serviceName: 'Coupe Dégradé',
@@ -76,6 +93,10 @@ const SEED_REVIEWS: FirestoreReviewRecord[] = [
     id: 'seed-rev-lahcen-1',
     barberId: 'lahcen-lhanz',
     barberName: 'Lahcen lhanz',
+    barberIds: ['lahcen-lhanz'],
+    barberNames: ['Lahcen lhanz'],
+    allBarbers: false,
+    isAnonymous: false,
     author: 'Soufiane Bensaïd',
     city: 'Taroudant',
     serviceName: 'Taille & Stylisme Barbe',
@@ -90,6 +111,10 @@ const SEED_REVIEWS: FirestoreReviewRecord[] = [
     id: 'seed-rev-mounir-1',
     barberId: 'mounir-querdeny',
     barberName: 'Mounir querdeny',
+    barberIds: ['mounir-querdeny'],
+    barberNames: ['Mounir querdeny'],
+    allBarbers: false,
+    isAnonymous: false,
     author: 'Karim Oubaha',
     city: 'Taroudant',
     serviceName: 'Soin Protéine + Masque Noir',
@@ -104,6 +129,7 @@ const SEED_REVIEWS: FirestoreReviewRecord[] = [
 
 let cachedReviews: CustomerReview[] = [];
 let hasHydratedReviews = false;
+let hasSeenOrSeededReviews = false;
 let seedInFlight: Promise<void> | null = null;
 const reviewListeners = new Set<(items: CustomerReview[]) => void>();
 let activeUnsubscribe: (() => void) | null = null;
@@ -134,11 +160,28 @@ function commitReviewsCache(next: CustomerReview[], broadcastHint = false): void
 
 function mapDocToCustomerReview(docData: FirestoreReviewRecord): CustomerReview {
   const createdAt = asIsoString(docData.createdAt, '');
+  const barberIds = Array.isArray(docData.barberIds)
+    ? docData.barberIds.filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    : undefined;
+  const barberNames = Array.isArray(docData.barberNames)
+    ? docData.barberNames.filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    : undefined;
+  const rawAuthor = asStr(docData.author, 'Client');
+  const isAnonymous =
+    Boolean(docData.isAnonymous) ||
+    rawAuthor === 'بدون اسم' ||
+    rawAuthor.toLowerCase() === 'anonyme' ||
+    rawAuthor.toLowerCase() === 'anonymous';
+
   return {
     id: asStr(docData.id, ''),
     barberId: asStr(docData.barberId, 'hassan'),
     barberName: asStr(docData.barberName, 'Salon Boumlik'),
-    author: asStr(docData.author, 'Client'),
+    barberIds,
+    barberNames,
+    allBarbers: Boolean(docData.allBarbers) || docData.barberId === 'all',
+    isAnonymous,
+    author: rawAuthor,
     city: asStr(docData.city, 'Taroudant') || 'Taroudant',
     serviceName: asStr(docData.serviceName, 'Coupe & Soin') || 'Coupe & Soin',
     rating: Math.max(1, Math.min(5, asFiniteNum(docData.rating, 5))),
@@ -150,8 +193,22 @@ function mapDocToCustomerReview(docData: FirestoreReviewRecord): CustomerReview 
   };
 }
 
+function removeReviewFromLocalStorageCache(reviewId: string): void {
+  try {
+    const raw = safeStorageGet(LOCAL_REVIEWS_CACHE_KEY, 'local');
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+    const filtered = parsed.filter((r: CustomerReview) => r && r.id !== reviewId);
+    safeStorageSet(LOCAL_REVIEWS_CACHE_KEY, JSON.stringify(filtered), 'local');
+  } catch {
+    // ignore storage errors
+  }
+}
+
 async function seedInitialReviewsIfEmpty() {
-  if (seedInFlight) return seedInFlight;
+  if (seedInFlight || hasSeenOrSeededReviews) return seedInFlight;
+  hasSeenOrSeededReviews = true;
   seedInFlight = (async () => {
     try {
       await Promise.all(
@@ -183,7 +240,13 @@ function ensureReviewsListener() {
           } catch {
             snap = await getDocs(collection(db, REVIEWS_COLLECTION));
           }
-          if (snap.empty) return;
+          if (snap.empty) {
+            if (hasSeenOrSeededReviews) {
+              commitReviewsCache([]);
+            }
+            return;
+          }
+          hasSeenOrSeededReviews = true;
           const next: CustomerReview[] = snap.docs.map((docSnap) => {
             const raw = docSnap.data() as FirestoreReviewRecord;
             return mapDocToCustomerReview({
@@ -205,9 +268,14 @@ function ensureReviewsListener() {
     (snapshot) => {
       resetResilientRetry('reviews');
       if (snapshot.empty) {
-        void seedInitialReviewsIfEmpty();
+        if (!hasSeenOrSeededReviews) {
+          void seedInitialReviewsIfEmpty();
+        } else {
+          commitReviewsCache([]);
+        }
         return;
       }
+      hasSeenOrSeededReviews = true;
 
       const next: CustomerReview[] = snapshot.docs.map((docSnap) => {
         const raw = docSnap.data() as FirestoreReviewRecord;
@@ -283,8 +351,91 @@ export function useFirestoreReviews(): {
   return { reviews, isLoading };
 }
 
+function resolveBarberSelection(input: {
+  barberId?: string;
+  barberIds?: string[];
+  allBarbers?: boolean;
+}): {
+  primaryId: string;
+  primaryName: string;
+  resolvedIds: string[];
+  resolvedNames: string[];
+  isAllBarbers: boolean;
+} {
+  const activeRoster = getActiveRosterBarbers();
+  const pool =
+    activeRoster.length > 0
+      ? activeRoster.map((m) => ({
+          id: m.id,
+          name: m.nameFr || m.nameAr || m.id,
+        }))
+      : TEAM_MEMBERS.map((b) => ({
+          id: b.id,
+          name: b.name.fr || b.name.ar || b.id,
+        }));
+
+  const rawRequested = Array.isArray(input.barberIds) && input.barberIds.length > 0
+    ? input.barberIds
+    : input.barberId
+    ? [input.barberId]
+    : [];
+
+  const isAllExplicit = Boolean(input.allBarbers) || rawRequested.includes('all');
+
+  const uniqueRequestedIds = Array.from(
+    new Set(
+      rawRequested
+        .map((id) => String(id || '').trim())
+        .filter((id) => id.length > 0 && id !== 'all')
+    )
+  ).slice(0, 12);
+
+  let resolvedPairs = uniqueRequestedIds
+    .map((id) => pool.find((p) => p.id === id) || TEAM_MEMBERS.find((b) => b.id === id))
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .map((item) => ({
+      id: item.id,
+      name:
+        typeof item.name === 'string'
+          ? item.name
+          : item.name.fr || item.name.ar || item.id,
+    }));
+
+  if (isAllExplicit) {
+    resolvedPairs = pool;
+  }
+
+  if (resolvedPairs.length === 0 && pool.length > 0) {
+    resolvedPairs = [pool[0]];
+  }
+
+  const isAllBarbers =
+    isAllExplicit ||
+    (pool.length > 1 &&
+      pool.every((p) => resolvedPairs.some((sel) => sel.id === p.id)));
+
+  const resolvedIds = resolvedPairs.map((p) => p.id.slice(0, 64)).slice(0, 12);
+  const resolvedNames = resolvedPairs.map((p) => p.name.slice(0, 100)).slice(0, 12);
+
+  const primaryId = isAllBarbers ? 'all' : (resolvedIds[0] || 'hassan').slice(0, 64);
+  const primaryName = isAllBarbers
+    ? 'جميع الحلاقين · Salon Boumlik'
+    : (resolvedNames.join(' · ') || 'Salon Boumlik').slice(0, 100);
+
+  return {
+    primaryId,
+    primaryName,
+    resolvedIds,
+    resolvedNames,
+    isAllBarbers,
+  };
+}
+
 export async function submitBarberReview(input: {
-  barberId: string;
+  barberId?: string;
+  barberIds?: string[];
+  allBarbers?: boolean;
+  isAnonymous?: boolean;
   author: string;
   city?: string;
   serviceName?: string;
@@ -293,22 +444,33 @@ export async function submitBarberReview(input: {
   dateLabel?: string;
   bookingId?: string;
 }): Promise<CustomerReview> {
-  const rosterMember = getActiveRosterBarbers().find((m) => m.id === input.barberId);
-  const staticBarber = TEAM_MEMBERS.find((b) => b.id === input.barberId) || TEAM_MEMBERS[0];
-  const resolvedBarberId = rosterMember?.id || staticBarber.id;
-  const resolvedBarberName =
-    rosterMember?.nameFr || rosterMember?.nameAr || staticBarber.name.fr || staticBarber.name.ar;
+  const selection = resolveBarberSelection({
+    barberId: input.barberId,
+    barberIds: input.barberIds,
+    allBarbers: input.allBarbers,
+  });
+
+  const cleanAuthorInput = input.author.trim();
+  const isAnonymous = Boolean(input.isAnonymous) || cleanAuthorInput.length === 0;
+  const resolvedAuthor = (isAnonymous ? 'بدون اسم' : cleanAuthorInput).slice(0, 120);
+
   const id = `rev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const cleanId = id.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 128);
-  const createdAt = new Date().toISOString().slice(0, 64);
+  const createdAt = getTrustedNowDate().toISOString().slice(0, 64);
+  const safeRating = Math.max(1, Math.min(5, Math.round(Number(input.rating) || 5)));
+  const cleanComment = input.comment.trim().slice(0, 600);
 
   const payload: FirestoreReviewRecord = {
     id: cleanId,
-    barberId: resolvedBarberId.slice(0, 64),
-    barberName: resolvedBarberName.slice(0, 100),
-    author: input.author.trim().slice(0, 120),
-    rating: Math.max(1, Math.min(5, Math.round(Number(input.rating) || 5))),
-    comment: input.comment.trim().slice(0, 600),
+    barberId: selection.primaryId,
+    barberName: selection.primaryName,
+    barberIds: selection.resolvedIds,
+    barberNames: selection.resolvedNames,
+    allBarbers: selection.isAllBarbers,
+    isAnonymous,
+    author: resolvedAuthor,
+    rating: safeRating,
+    comment: cleanComment,
     verified: true,
     createdAt,
   };
@@ -329,23 +491,70 @@ export async function submitBarberReview(input: {
   const path = `${REVIEWS_COLLECTION}/${cleanId}`;
   try {
     await setDoc(doc(db, REVIEWS_COLLECTION, cleanId), payload);
+    hasSeenOrSeededReviews = true;
     const mapped = mapDocToCustomerReview(payload);
     commitReviewsCache([mapped, ...cachedReviews.filter((r) => r.id !== mapped.id)], true);
+
+    const previewText =
+      cleanComment.length > 90 ? `${cleanComment.slice(0, 90)}…` : cleanComment;
+    const barberSummary = selection.isAllBarbers
+      ? 'جميع الحلاقين'
+      : selection.resolvedNames.join('، ');
+    void dispatchStaffBackgroundPush({
+      masterOnly: true,
+      eventType: 'new_review',
+      title: `⭐ تقييم وتعليق جديد (${safeRating}/5) • صالون بومليك`,
+      body: `${resolvedAuthor} (${barberSummary}): "${previewText}"`,
+      url: '/#admin',
+      tag: `sb-admin-review-${cleanId}`,
+    });
+
     return mapped;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
   }
 }
 
+export async function deleteBarberReview(reviewId: string): Promise<void> {
+  const cleanId = String(reviewId || '').trim();
+  if (!cleanId) return;
+  const path = `${REVIEWS_COLLECTION}/${cleanId}`;
+  try {
+    await deleteDoc(doc(db, REVIEWS_COLLECTION, cleanId));
+    hasSeenOrSeededReviews = true;
+    removeReviewFromLocalStorageCache(cleanId);
+    commitReviewsCache(
+      cachedReviews.filter((r) => r.id !== cleanId),
+      true
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
 function extractSearchableReviewText(rev: CustomerReview): string {
   const parts: string[] = [];
   if (rev.barberName) parts.push(rev.barberName);
+  if (Array.isArray(rev.barberNames)) parts.push(...rev.barberNames);
   if (typeof rev.comment === 'string') {
     parts.push(rev.comment);
   } else if (rev.comment) {
     parts.push(rev.comment.fr || '', rev.comment.ar || '', rev.comment.en || '');
   }
   return parts.join(' ').toLowerCase();
+}
+
+export function reviewMatchesBarber(rev: CustomerReview, barberId: string): boolean {
+  if (rev.allBarbers || rev.barberId === 'all') {
+    return true;
+  }
+  if (Array.isArray(rev.barberIds) && rev.barberIds.length > 0) {
+    return rev.barberIds.includes(barberId);
+  }
+  if (rev.barberId) {
+    return rev.barberId === barberId;
+  }
+  return false;
 }
 
 export function computeBarberReviewStats(
@@ -361,8 +570,13 @@ export function computeBarberReviewStats(
   const sourcePool = firestoreReviews.length > 0 ? firestoreReviews : INITIAL_REVIEWS;
 
   const matched = sourcePool.filter((rev) => {
-    if (rev.barberId) {
-      return rev.barberId === barberId;
+    if (
+      rev.allBarbers ||
+      rev.barberId === 'all' ||
+      (Array.isArray(rev.barberIds) && rev.barberIds.length > 0) ||
+      rev.barberId
+    ) {
+      return reviewMatchesBarber(rev, barberId);
     }
     const text = extractSearchableReviewText(rev);
     return (

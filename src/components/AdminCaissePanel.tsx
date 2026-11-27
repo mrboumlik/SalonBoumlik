@@ -3,12 +3,15 @@ import {
   AlertTriangle,
   Archive,
   BarChart3,
+  Calculator,
   Calendar,
   CalendarRange,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Clock,
+  CloudOff,
   Coins,
   CreditCard,
   Edit3,
@@ -19,15 +22,18 @@ import {
   MessageCircle,
   MessageSquare,
   MinusCircle,
+  Monitor,
   Plus,
   PlusCircle,
   RefreshCw,
   Scissors,
   Sliders,
+  Smartphone,
   Timer,
   Trash2,
   User,
   Wallet,
+  WifiOff,
   X,
 } from 'lucide-react';
 import {
@@ -78,9 +84,16 @@ import {
   useCaisseArchives,
   useCaisseCycles,
   useCaisseEntries,
+  useCaisseOfflineStatus,
   useCaisseSettlements,
   useCaisseSettings,
 } from '../utils/caisseStore';
+import {
+  formatClockOffsetHumanAr,
+  formatMoroccoClockTime,
+  getTrustedNowMs,
+  useTrustedTimeStatus,
+} from '../utils/trustedTime';
 import {
   getBarberSelectableServices,
   useBarberProfiles,
@@ -111,6 +124,7 @@ import {
   CaisseAmountField,
   evaluateAmountExpression,
 } from './CaisseAmountField';
+import { CaisseCalculatorModal } from './CaisseCalculatorModal';
 
 interface AdminCaissePanelProps {
   sessionRole: StaffRole;
@@ -141,19 +155,23 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   const creditDisputes = useCreditDisputes();
   const manualCredits = useManualClientCredits();
   const creditSettlementRequests = useCreditSettlementRequests();
+  const caisseOffline = useCaisseOfflineStatus();
+  const trustedTime = useTrustedTimeStatus();
 
   const [businessTodayStr, setBusinessTodayStr] = useState<string>(() =>
     getSalonBusinessDate()
   );
 
-  // Tick every 60s to detect 03:00 AM business-day rollover cleanly
+  // Sync businessTodayStr immediately on server time calibration and every 60s for 03:00 AM rollover
   useEffect(() => {
-    const interval = setInterval(() => {
+    const syncDate = () => {
       const nextBizDate = getSalonBusinessDate();
       setBusinessTodayStr((prev) => (prev !== nextBizDate ? nextBizDate : prev));
-    }, 60000);
+    };
+    syncDate();
+    const interval = setInterval(syncDate, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [trustedTime.serverOffsetMs, trustedTime.isCalibrated]);
 
   // Idempotent 03:00 AM archival of completed prior days (never resets open barber balances)
   useEffect(() => {
@@ -267,6 +285,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   // Drawer Breakdown Modal Scope ('open_daily' = live open shift since last تصفية الحساب اليومي)
   const [drawerModalOpen, setDrawerModalOpen] = useState<boolean>(false);
   const [drawerModalScope, setDrawerModalScope] = useState<'open_daily' | 'day'>('open_daily');
+  const [calculatorOpen, setCalculatorOpen] = useState<boolean>(false);
 
   // Privacy Masking & Hassan PIN Reveal Gate:
   // - Strictly active ONLY inside the dedicated Caisse account (`sessionRole === 'caisse'`).
@@ -292,6 +311,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     setDrawerModalScope('open_daily');
     setBalanceAdjustModalOpen(false);
     setNegativePayoutPrompt(null);
+    setCalculatorOpen(false);
   }, [sessionRole]);
 
   useEffect(() => {
@@ -489,6 +509,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setRevealedCards({});
       setBalanceAdjustModalOpen(false);
       setNegativePayoutPrompt(null);
+      setCalculatorOpen(false);
       if (sessionRole === 'barber') {
         onAutoExitBarberSession?.();
       } else {
@@ -610,6 +631,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   const [dayModalAddNote, setDayModalAddNote] = useState<string>('');
   const [dayModalAddClientName, setDayModalAddClientName] = useState<string>('');
   const [dayModalAddBusy, setDayModalAddBusy] = useState<boolean>(false);
+
+  // Transaction Device / Account Origin Inspector Modal
+  const [inspectOriginEntry, setInspectOriginEntry] = useState<CaisseEntry | null>(null);
 
   // Master-Only Isolated Barber Balance Adjust / Clear Negative Modal
   const [balanceAdjustModalOpen, setBalanceAdjustModalOpen] = useState<boolean>(false);
@@ -1614,7 +1638,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   ): CaisseEntry | undefined => {
     const roundedAmt = Math.round(amt);
     if (roundedAmt <= 0 || !activeBarberId) return undefined;
-    const nowMs = Date.now();
+    const nowMs = getTrustedNowMs();
     const tenMinutesMs = 10 * 60 * 1000;
     return entries.find((entry) => {
       if (!matchesCaisseBarber(entry.barberId, entry.barberName, activeBarberId, roster)) return false;
@@ -1685,7 +1709,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
     setIncomeSubmitting(true);
     try {
-      await addCaisseEntry({
+      const createdEntry = await addCaisseEntry({
         barberId: activeBarberId,
         barberName: activeBarberMeta.name,
         type: 'income',
@@ -1719,15 +1743,19 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       startPostEntryTimer();
 
       showToast(
-        pickLang(lang, {
-          ar: 'تم التسجيل في لاكيس ✓',
-          fr: 'Enregistré en Caisse ✓',
-          amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⴳ ⵍⴰⴽⵉⵙ ✓',
-          en: 'Recorded in Caisse ✓',
-          es: 'Registrado en Caja ✓',
-        }),
-        formatMAD(paidNum),
-        'success'
+        createdEntry.offlinePending
+          ? 'تم الحفظ محلياً (بدون إنترنت) ✓'
+          : pickLang(lang, {
+              ar: 'تم التسجيل في لاكيس ✓',
+              fr: 'Enregistré en Caisse ✓',
+              amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⴳ ⵍⴰⴽⵉⵙ ✓',
+              en: 'Recorded in Caisse ✓',
+              es: 'Registrado en Caja ✓',
+            }),
+        createdEntry.offlinePending
+          ? `${formatMAD(paidNum)} · ستتم المزامنة تلقائياً فور عودة الإنترنت`
+          : formatMAD(paidNum),
+        createdEntry.offlinePending ? 'info' : 'success'
       );
     } catch (err) {
       console.error('Failed to add Caisse income:', err);
@@ -1774,7 +1802,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
     setExpenseSubmitting(true);
     try {
-      await addCaisseEntry({
+      const createdEntry = await addCaisseEntry({
         barberId: activeBarberId,
         barberName: activeBarberMeta.name,
         type: 'expense',
@@ -1794,15 +1822,19 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setOpenForm('none');
       startPostEntryTimer();
       showToast(
-        pickLang(lang, {
-          ar: 'تم تسجيل السحب / المصروف ✓',
-          fr: 'Retrait enregistré ✓',
-          amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⵙⵙⵓⴼⵖ ✓',
-          en: 'Expense recorded ✓',
-          es: 'Gasto registrado ✓',
-        }),
-        formatMAD(amt),
-        'success'
+        createdEntry.offlinePending
+          ? 'تم حفظ السحب محلياً (بدون إنترنت) ✓'
+          : pickLang(lang, {
+              ar: 'تم تسجيل السحب / المصروف ✓',
+              fr: 'Retrait enregistré ✓',
+              amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⵙⵙⵓⴼⵖ ✓',
+              en: 'Expense recorded ✓',
+              es: 'Gasto registrado ✓',
+            }),
+        createdEntry.offlinePending
+          ? `${formatMAD(amt)} · ستتم المزامنة تلقائياً فور عودة الإنترنت`
+          : formatMAD(amt),
+        createdEntry.offlinePending ? 'info' : 'success'
       );
     } catch (err) {
       console.error('Failed to add expense:', err);
@@ -1828,7 +1860,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         : 'إضافة فلوس الصرف للمجر (حسن)';
     setFloatSubmitting(true);
     try {
-      await addCaisseEntry({
+      const createdEntry = await addCaisseEntry({
         barberId: 'hassan',
         barberName: hassanMeta.name,
         type: targetType,
@@ -1847,7 +1879,9 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setOpenForm('none');
       if (activeBarberId) startPostEntryTimer();
       showToast(
-        floatMode === 'return'
+        createdEntry.offlinePending
+          ? 'تم حفظ الصرف محلياً (بدون إنترنت) ✓'
+          : floatMode === 'return'
           ? 'تم تسجيل إرجاع الصرف (حساب حسن) ✓'
           : pickLang(lang, {
               ar: 'تمت إضافة فلوس الصرف (حساب حسن) ✓',
@@ -1856,8 +1890,10 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               en: 'Float added (Hassan) ✓',
               es: 'Fondo de cambio añadido (Hassan) ✓',
             }),
-        `${floatMode === 'return' ? '-' : '+'}${amt} MAD`,
-        'success'
+        createdEntry.offlinePending
+          ? `${floatMode === 'return' ? '-' : '+'}${amt} MAD · ستتم المزامنة تلقائياً`
+          : `${floatMode === 'return' ? '-' : '+'}${amt} MAD`,
+        createdEntry.offlinePending ? 'info' : 'success'
       );
     } catch (err) {
       console.error('Failed to add float:', err);
@@ -1872,7 +1908,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     if (amt <= 0) return;
     setRepayBusy(true);
     try {
-      await recordCaisseCreditRepayment({
+      const repayment = await recordCaisseCreditRepayment({
         creditEntry,
         amountRepaidMAD: amt,
         repaidDate: businessTodayStr,
@@ -1882,15 +1918,17 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setRepayingEntryId(null);
       setRepayAmountInput('');
       showToast(
-        pickLang(lang, {
-          ar: 'تم تسجيل خلاص الكريدي ✓',
-          fr: 'Remboursement enregistré ✓',
-          amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⴼⵔⵓ ⵏ ⵓⴽⵔⵉⴷⵉ ✓',
-          en: 'Credit repayment recorded ✓',
-          es: 'Pago de crédito registrado ✓',
-        }),
-        `${amt} MAD`,
-        'success'
+        repayment.offlinePending
+          ? 'تم حفظ خلاص الكريدي محلياً (بدون إنترنت) ✓'
+          : pickLang(lang, {
+              ar: 'تم تسجيل خلاص الكريدي ✓',
+              fr: 'Remboursement enregistré ✓',
+              amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⴼⵔⵓ ⵏ ⵓⴽⵔⵉⴷⵉ ✓',
+              en: 'Credit repayment recorded ✓',
+              es: 'Pago de crédito registrado ✓',
+            }),
+        repayment.offlinePending ? `${amt} MAD · ستتم المزامنة تلقائياً` : `${amt} MAD`,
+        repayment.offlinePending ? 'info' : 'success'
       );
     } catch (err) {
       console.error('Credit repayment failed:', err);
@@ -3131,6 +3169,312 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     </ModalPortal>
   ) : null;
 
+  const caisseCalculatorModalNode =
+    sessionRole === 'caisse' ? (
+      <CaisseCalculatorModal
+        isOpen={calculatorOpen}
+        onClose={() => setCalculatorOpen(false)}
+        barberLabel={activeBarberId ? activeBarberMeta.arName : 'لاكيس الصالون'}
+        onApplyToIncome={
+          activeBarberId
+            ? (amountStr) => {
+                setCalculatorOpen(false);
+                setAmountPaidInput(amountStr);
+                openQuickIncomeForm(false);
+              }
+            : undefined
+        }
+        onApplyToExpense={
+          activeBarberId
+            ? (amountStr) => {
+                setCalculatorOpen(false);
+                setExpenseAmount(amountStr);
+                setDuplicateWarning(null);
+                setOpenForm('expense');
+              }
+            : undefined
+        }
+      />
+    ) : null;
+
+  const renderEntryOriginBadge = (entry: CaisseEntry) => {
+    const isPc = entry.deviceKind === 'pc';
+    const isPhone = entry.deviceKind === 'phone';
+    const badgeCls = isPc
+      ? 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-500/15 dark:text-indigo-200 dark:border-indigo-500/35'
+      : isPhone
+      ? 'bg-teal-50 text-teal-800 border-teal-200 hover:bg-teal-100 dark:bg-teal-500/15 dark:text-teal-200 dark:border-teal-500/35'
+      : 'bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700';
+    return (
+      <span className="inline-flex items-center gap-1 shrink-0">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setInspectOriginEntry(entry);
+          }}
+          title="اضغط لعرض تفاصيل الجهاز والحساب المسجّل للعملية"
+          className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold border inline-flex items-center gap-1 cursor-pointer transition-colors ${badgeCls}`}
+        >
+          {isPc ? (
+            <>
+              <Monitor className="w-3 h-3 shrink-0" />
+              <span>بيسي (PC)</span>
+            </>
+          ) : isPhone ? (
+            <>
+              <Smartphone className="w-3 h-3 shrink-0" />
+              <span>تيليفون</span>
+            </>
+          ) : (
+            <>
+              <Clock className="w-3 h-3 shrink-0" />
+              <span>قديم</span>
+            </>
+          )}
+        </button>
+        {entry.offlinePending && (
+          <span
+            title="محفوظ محلياً — في انتظار المزامنة مع السحابة"
+            className="px-1.5 py-0.5 rounded-md text-[10px] font-bold border border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200 inline-flex items-center gap-1"
+          >
+            <CloudOff className="w-3 h-3 shrink-0" />
+            <span>معلق</span>
+          </span>
+        )}
+      </span>
+    );
+  };
+
+  const inspectOriginModalNode = inspectOriginEntry ? (
+    <ModalPortal>
+      <div
+        className="fixed inset-0 z-[125] flex items-center justify-center p-4 sb-modal-backdrop"
+        onClick={() => setInspectOriginEntry(null)}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-md rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-2xl overflow-hidden text-xs"
+        >
+          <div className="p-4 border-b border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
+                  inspectOriginEntry.deviceKind === 'pc'
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-500/15 dark:border-indigo-500/35 dark:text-indigo-300'
+                    : inspectOriginEntry.deviceKind === 'phone'
+                    ? 'bg-teal-50 border-teal-200 text-teal-700 dark:bg-teal-500/15 dark:border-teal-500/35 dark:text-teal-300'
+                    : 'bg-zinc-100 border-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300'
+                }`}
+              >
+                {inspectOriginEntry.deviceKind === 'pc' ? (
+                  <Monitor className="w-4 h-4" />
+                ) : inspectOriginEntry.deviceKind === 'phone' ? (
+                  <Smartphone className="w-4 h-4" />
+                ) : (
+                  <Clock className="w-4 h-4" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-black text-zinc-900 dark:text-white truncate">
+                  تفاصيل الجهاز ومصدر العملية
+                </h4>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  {inspectOriginEntry.deviceKind === 'pc'
+                    ? 'تم التسجيل من حاسوب (PC)'
+                    : inspectOriginEntry.deviceKind === 'phone'
+                    ? 'تم التسجيل من هاتف محمول (Phone)'
+                    : 'عملية مسجلة قبل تحديث تتبع الأجهزة'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setInspectOriginEntry(null)}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="p-4 space-y-2.5">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-2.5 rounded-xl bg-stone-50 dark:bg-zinc-900/90 border border-stone-200 dark:border-zinc-800">
+                <span className="text-[10px] text-zinc-500 block mb-0.5">نوع الجهاز</span>
+                <strong className="text-zinc-900 dark:text-white inline-flex items-center gap-1">
+                  {inspectOriginEntry.deviceKind === 'pc'
+                    ? 'بيسي (PC)'
+                    : inspectOriginEntry.deviceKind === 'phone'
+                    ? 'تيليفون (Phone)'
+                    : 'غير محدد'}
+                </strong>
+              </div>
+              <div className="p-2.5 rounded-xl bg-stone-50 dark:bg-zinc-900/90 border border-stone-200 dark:border-zinc-800">
+                <span className="text-[10px] text-zinc-500 block mb-0.5">معرّف الجهاز</span>
+                <strong dir="ltr" className="font-mono text-zinc-900 dark:text-white">
+                  {inspectOriginEntry.deviceId || '—'}
+                </strong>
+              </div>
+              <div className="p-2.5 rounded-xl bg-stone-50 dark:bg-zinc-900/90 border border-stone-200 dark:border-zinc-800">
+                <span className="text-[10px] text-zinc-500 block mb-0.5">النظام والمتصفح</span>
+                <strong dir="ltr" className="text-zinc-900 dark:text-white">
+                  {inspectOriginEntry.devicePlatform || inspectOriginEntry.deviceBrowser
+                    ? `${inspectOriginEntry.devicePlatform || ''} ${
+                        inspectOriginEntry.deviceBrowser
+                          ? `· ${inspectOriginEntry.deviceBrowser}`
+                          : ''
+                      }`.trim()
+                    : 'غير مسجل'}
+                </strong>
+              </div>
+              <div className="p-2.5 rounded-xl bg-stone-50 dark:bg-zinc-900/90 border border-stone-200 dark:border-zinc-800">
+                <span className="text-[10px] text-zinc-500 block mb-0.5">حالة المزامنة</span>
+                {inspectOriginEntry.offlinePending ? (
+                  <strong className="text-amber-700 dark:text-amber-300 inline-flex items-center gap-1">
+                    <CloudOff className="w-3.5 h-3.5" />
+                    <span>محفوظ محلياً (معلق)</span>
+                  </strong>
+                ) : (
+                  <strong className="text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>
+                      {inspectOriginEntry.offlineCreated
+                        ? 'مزامن (سُجّل بدون إنترنت)'
+                        : 'مزامن مع السحابة ✓'}
+                    </span>
+                  </strong>
+                )}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-stone-50 dark:bg-zinc-900/90 border border-stone-200 dark:border-zinc-800 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-zinc-500">الحساب المسجِّل:</span>
+                <strong className="text-zinc-900 dark:text-white">
+                  {inspectOriginEntry.createdByRole === 'caisse'
+                    ? 'لاكيس الصالون'
+                    : inspectOriginEntry.createdByRole === 'master'
+                    ? 'المشرف العام'
+                    : 'حساب الحلاق'}{' '}
+                  ({inspectOriginEntry.createdByName})
+                </strong>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-zinc-500">الحلاق المعني:</span>
+                <strong className="text-zinc-900 dark:text-white">
+                  {getCaisseBarberMeta(inspectOriginEntry.barberId, roster).arName}
+                </strong>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-zinc-500">يوم العمل المسجّل:</span>
+                <strong dir="ltr" className="font-mono text-zinc-900 dark:text-white">
+                  {inspectOriginEntry.date}
+                </strong>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-zinc-500">توقيت الخادم المعتمد:</span>
+                <strong dir="ltr" className="font-mono text-zinc-900 dark:text-white">
+                  {formatMoroccoClockTime(
+                    inspectOriginEntry.firestoreServerCreatedAt || inspectOriginEntry.createdAt
+                  )}
+                </strong>
+              </div>
+              {inspectOriginEntry.deviceClockISO && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-zinc-500">ساعة الجهاز لحظتها:</span>
+                  <span dir="ltr" className="font-mono text-zinc-600 dark:text-zinc-300">
+                    {inspectOriginEntry.deviceClockISO.slice(0, 19).replace('T', ' ')}
+                  </span>
+                </div>
+              )}
+              {typeof inspectOriginEntry.serverClockOffsetMs === 'number' &&
+                Math.abs(inspectOriginEntry.serverClockOffsetMs) > 120000 && (
+                  <div className="mt-1 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-500/35 text-[11px] font-bold text-amber-800 dark:text-amber-200">
+                    ساعة الجهاز كانت متقدمة/متأخرة بحوالي{' '}
+                    {formatClockOffsetHumanAr(inspectOriginEntry.serverClockOffsetMs)} — تم تصحيح التاريخ
+                    والساعة تلقائياً بتوقيت الخادم الموثوق.
+                  </div>
+                )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </ModalPortal>
+  ) : null;
+
+  const offlineAndClockStatusBannerNode =
+    !caisseOffline.isOnline ||
+    caisseOffline.pendingCount > 0 ||
+    caisseOffline.isSyncing ||
+    trustedTime.isDrifted ? (
+      <div className="space-y-2">
+        {(!caisseOffline.isOnline || caisseOffline.pendingCount > 0 || caisseOffline.isSyncing) && (
+          <div
+            className={`p-3.5 rounded-2xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
+              !caisseOffline.isOnline
+                ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-500/45 text-amber-900 dark:text-amber-200'
+                : 'bg-sky-50 dark:bg-sky-950/30 border-sky-300 dark:border-sky-500/45 text-sky-900 dark:text-sky-200'
+            }`}
+          >
+            <div className="flex items-start gap-2.5 min-w-0">
+              {!caisseOffline.isOnline ? (
+                <WifiOff className="w-4 h-4 shrink-0 mt-0.5 text-amber-700 dark:text-amber-300" />
+              ) : (
+                <CloudOff className="w-4 h-4 shrink-0 mt-0.5 text-sky-700 dark:text-sky-300" />
+              )}
+              <div className="space-y-0.5">
+                <div className="font-black">
+                  {!caisseOffline.isOnline
+                    ? 'العمل بدون إنترنت مفعّل — جميع عمليات لاكيس تُحفظ بأمان على الجهاز'
+                    : caisseOffline.isSyncing
+                    ? `جاري مزامنة ${caisseOffline.pendingCount} عمليات معلقة مع السحابة...`
+                    : `عادت الشبكة — توجد ${caisseOffline.pendingCount} عمليات معلقة بانتظار المزامنة`}
+                </div>
+                {caisseOffline.pendingCount > 0 && (
+                  <p className="text-[11px] opacity-90">
+                    عدد العمليات المعلقة حالياً:{' '}
+                    <strong className="font-mono">{caisseOffline.pendingCount}</strong> (ستتم
+                    مزامنتها تلقائياً بتوقيت الخادم فور توفر الاتصال)
+                  </p>
+                )}
+              </div>
+            </div>
+            {caisseOffline.isOnline && caisseOffline.pendingCount > 0 && (
+              <button
+                type="button"
+                disabled={caisseOffline.isSyncing}
+                onClick={() => void caisseOffline.flushNow()}
+                className="px-3.5 py-2 rounded-xl bg-sky-700 hover:bg-sky-600 text-white font-black text-xs inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60 shrink-0"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${caisseOffline.isSyncing ? 'animate-spin' : ''}`} />
+                <span>{caisseOffline.isSyncing ? 'جاري المزامنة...' : 'مزامنة الآن'}</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {trustedTime.isDrifted && (
+          <div className="px-3.5 py-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/35 text-indigo-900 dark:text-indigo-200 text-xs flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+              <span>
+                <strong>حماية التوقيت التلقائية:</strong> ساعة هذا الجهاز مختلفة بحوالي{' '}
+                <strong>{formatClockOffsetHumanAr(trustedTime.serverOffsetMs)}</strong> — يعتمد
+                التطبيق الآن توقيت الخادم الموثوق ({businessTodayStr}) لجميع العمليات.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => void trustedTime.refreshServerTime()}
+              className="px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-900 border border-indigo-200 dark:border-indigo-700 font-bold text-[11px] cursor-pointer"
+            >
+              تحديث التوقيت
+            </button>
+          </div>
+        )}
+      </div>
+    ) : null;
+
   if ((sessionRole === 'caisse' || sessionRole === 'master') && !activeBarberId) {
     const gridBarbers = sessionRole === 'master' ? allCaisseBarbers : activeCaisseBarbers;
     const selectorDrawerSummary = liveOpenDailyDrawerSummary;
@@ -3143,6 +3487,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       selectorDrawerSummary.netTotalMAD < 0 || overdrawnMainRows.length > 0;
     return (
       <div className="space-y-4 pb-28">
+        {offlineAndClockStatusBannerNode}
         <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border border-stone-200 dark:border-zinc-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center text-emerald-700 dark:text-emerald-300 shrink-0">
@@ -3202,6 +3547,19 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>الصرف (حسن)</span>
+                </button>
+              )}
+
+              {sessionRole === 'caisse' && (
+                <button
+                  type="button"
+                  onClick={() => setCalculatorOpen(true)}
+                  title="فتح الحاسبة السريعة"
+                  aria-label="فتح الحاسبة"
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-white border border-slate-700 dark:border-zinc-600 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                >
+                  <Calculator className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>الحاسبة</span>
                 </button>
               )}
 
@@ -3304,6 +3662,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         {drawerBreakdownModalNode}
         {hassanPinModalNode}
         {floatModalNode}
+        {caisseCalculatorModalNode}
+        {inspectOriginModalNode}
       </div>
     );
   }
@@ -3317,6 +3677,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
   return (
     <div className="space-y-5 pb-28">
+      {offlineAndClockStatusBannerNode}
       {/* Top Header + Barber Switcher (Master / Caisse) + Date Picker */}
       <div
         className={`p-5 sm:p-6 rounded-2xl border shadow-sm space-y-4 ${activeTone.cardSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}
@@ -3406,6 +3767,19 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 </span>
                 {renderBoxEyeButton('drawer_total_chip', true)}
               </div>
+            )}
+
+            {sessionRole === 'caisse' && (
+              <button
+                type="button"
+                onClick={() => setCalculatorOpen(true)}
+                title="فتح الحاسبة السريعة"
+                aria-label="فتح الحاسبة"
+                className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-white border border-slate-700 dark:border-zinc-600 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+              >
+                <Calculator className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>الحاسبة</span>
+              </button>
             )}
 
             {canToggleCaissePrivacy && (
@@ -5815,17 +6189,25 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               return (
                 <div key={entry.id} className="py-2 first:pt-0 last:pb-0">
                   {/* Single-Line Compact Row */}
-                  <button
-                    type="button"
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => toggleEntryExpanded(entry.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleEntryExpanded(entry.id);
+                      }
+                    }}
                     className="w-full min-h-[42px] px-2.5 py-2 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800/50 flex items-center justify-between gap-2 text-start transition-colors cursor-pointer"
                   >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
                       <span
                         className={`px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${badge.cls}`}
                       >
                         {badge.label}
                       </span>
+                      {renderEntryOriginBadge(entry)}
                       <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
                         {primaryLabel}
                       </span>
@@ -5857,7 +6239,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                         <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
                       )}
                     </div>
-                  </button>
+                  </div>
 
                   {/* Expanded Row Details */}
                   {isExpanded && (
@@ -6711,10 +7093,11 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
                       <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 space-y-3">
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200/70 dark:border-zinc-800 pb-2.5">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${badge.cls}`}>
                               {badge.label}
                             </span>
+                            {renderEntryOriginBadge(selectedDrillEntry)}
                             <span className="font-bold text-zinc-900 dark:text-white">
                               {entryMeta.arName}
                             </span>
@@ -7014,9 +7397,16 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                             : 'bg-zinc-50 dark:bg-zinc-900/80 border-zinc-200 dark:border-zinc-800 hover:border-amber-400'
                         }`}
                       >
-                        <button
-                          type="button"
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={() => setSelectedDrillEntry(item)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSelectedDrillEntry(item);
+                            }
+                          }}
                           className="flex-1 min-w-0 flex items-center justify-between gap-2 text-start cursor-pointer"
                         >
                           <div className="min-w-0 space-y-0.5">
@@ -7024,6 +7414,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                               <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${badge.cls}`}>
                                 {badge.label}
                               </span>
+                              {renderEntryOriginBadge(item)}
                               <span className="font-bold text-zinc-900 dark:text-white truncate">
                                 {label}
                               </span>
@@ -7066,7 +7457,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                             </span>
                             <Eye className="w-3.5 h-3.5 text-zinc-400" />
                           </div>
-                        </button>
+                        </div>
 
                         {waUrl && (
                           <a
@@ -7915,6 +8306,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${badge.cls}`}>
                                       {badge.label}
                                     </span>
+                                    {renderEntryOriginBadge(item)}
                                     <span className="font-bold text-zinc-900 dark:text-white truncate">
                                       {label}
                                     </span>
@@ -8003,6 +8395,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${badge.cls}`}>
                                       {badge.label}
                                     </span>
+                                    {renderEntryOriginBadge(item)}
                                     <span className="font-bold text-zinc-900 dark:text-white truncate">
                                       {label}
                                     </span>
@@ -8157,6 +8550,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
           </div>
         </ModalPortal>
       )}
+      {caisseCalculatorModalNode}
+      {inspectOriginModalNode}
     </div>
   );
 };

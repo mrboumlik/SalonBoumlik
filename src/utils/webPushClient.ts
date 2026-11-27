@@ -612,11 +612,12 @@ export async function dispatchClientBackgroundPush(params: {
  */
 export async function dispatchStaffBackgroundPush(params: {
   barberId?: string;
+  masterOnly?: boolean;
   title: string;
   body: string;
   url?: string;
   tag?: string;
-  eventType: 'new_booking' | 'cih_receipt_uploaded' | 'waitlist_joined';
+  eventType: 'new_booking' | 'cih_receipt_uploaded' | 'waitlist_joined' | 'new_review';
   ticketNumber?: string;
 }): Promise<void> {
   try {
@@ -629,13 +630,17 @@ export async function dispatchStaffBackgroundPush(params: {
 
     const allStaffSubs = snap.docs.map((d) => d.data() as StoredPushSubscription);
     const targetBarber = params.barberId || 'all';
-    const matchingSubs = allStaffSubs.filter(
-      (sub) =>
+    const matchingSubs = allStaffSubs.filter((sub) => {
+      if (params.masterOnly) {
+        return sub.role === 'master';
+      }
+      return (
         sub.role === 'master' ||
         sub.barberId === 'all' ||
         targetBarber === 'all' ||
         sub.barberId === targetBarber
-    );
+      );
+    });
 
     await sendToPushRelay(matchingSubs, {
       title: params.title,

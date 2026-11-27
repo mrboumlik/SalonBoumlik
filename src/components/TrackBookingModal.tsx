@@ -303,7 +303,11 @@ export const TrackBookingModal: React.FC<TrackBookingModalProps> = ({
     const matches = findBookingsUniversal(q, source);
     setFoundBookings(matches);
     if (matches.length > 0) {
-      rememberTrackedTicket(matches[0].ticketNumber, matches[0].clientPhone);
+      rememberTrackedTicket(
+        matches[0].ticketNumber,
+        matches[0].clientPhone,
+        matches[0].clientName
+      );
     }
   };
 

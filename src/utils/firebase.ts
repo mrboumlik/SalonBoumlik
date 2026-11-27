@@ -11,6 +11,8 @@ import {
 import {
   getFirestore,
   initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   doc,
   getDocFromServer,
   type Firestore,
@@ -21,7 +23,7 @@ import firebaseConfig from '../../firebase-applet-config.json';
 export const app = initializeApp(firebaseConfig);
 
 function initDb(): Firestore {
-  const settings =
+  const baseSettings =
     typeof window !== 'undefined'
       ? {
           experimentalForceLongPolling: true,
@@ -31,8 +33,25 @@ function initDb(): Firestore {
           ignoreUndefinedProperties: true,
         };
 
+  if (typeof window !== 'undefined' && typeof indexedDB !== 'undefined') {
+    try {
+      return initializeFirestore(
+        app,
+        {
+          ...baseSettings,
+          localCache: persistentLocalCache({
+            tabManager: persistentMultipleTabManager(),
+          }),
+        },
+        firebaseConfig.firestoreDatabaseId
+      );
+    } catch {
+      // Fall back below if IndexedDB or multi-tab persistence is blocked
+    }
+  }
+
   try {
-    return initializeFirestore(app, settings, firebaseConfig.firestoreDatabaseId);
+    return initializeFirestore(app, baseSettings, firebaseConfig.firestoreDatabaseId);
   } catch {
     // Fallback if Firestore instance was already started
     return getFirestore(app, firebaseConfig.firestoreDatabaseId);

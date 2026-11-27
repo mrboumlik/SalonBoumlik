@@ -1990,7 +1990,11 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
         ).catch((consumeErr) => console.warn('Discount consumption sync note:', consumeErr));
       }
 
-      rememberTrackedTicket(newBooking.ticketNumber, newBooking.clientPhone);
+      rememberTrackedTicket(
+        newBooking.ticketNumber,
+        newBooking.clientPhone,
+        newBooking.clientName
+      );
       setCreatedBooking(newBooking);
       setNotes('');
       setCihReceiptName('');

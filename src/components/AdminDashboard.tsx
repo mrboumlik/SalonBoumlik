@@ -59,7 +59,8 @@ import {
   Tag,
   KeyRound,
   Eye,
-  MoreHorizontal
+  MoreHorizontal,
+  MessageSquare
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { 
@@ -125,6 +126,7 @@ import { BrandMark } from './BrandMark';
 import { MasterShopPricingPanel } from './MasterShopPricingPanel';
 import { MasterTeamAccessPanel } from './MasterTeamAccessPanel';
 import { MasterClientCreditsPanel } from './MasterClientCreditsPanel';
+import { MasterReviewsModerationPanel } from './MasterReviewsModerationPanel';
 import { BookingSection } from './BookingSection';
 import { useShopPricingConfig, resolveEffectiveServicePrices } from '../utils/shopPricingStore';
 import { calculateCartPricing } from '../utils/pricingEngine';
@@ -136,10 +138,16 @@ import {
   addCaisseEntry,
   getCaisseBarberMeta,
   getEffectiveCaisseCreditRemaining,
+  getSalonBusinessDate,
   matchesCaisseBarber,
   resolveCaisseBarberId,
   useCaisseEntries,
 } from '../utils/caisseStore';
+import {
+  formatMoroccoCalendarDate,
+  getTrustedNowDate,
+  useTrustedTimeStatus,
+} from '../utils/trustedTime';
 import {
   computeOutstandingCreditsForPhone,
   getEffectiveManualCreditRemaining,
@@ -161,6 +169,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { pickLang } from '../utils/i18n';
 import { safeCompareAsc, safeCompareDesc } from '../utils/safeCoerce';
 import { ModalPortal } from './ModalPortal';
+import { QuickScrollControl } from './QuickScrollControl';
 
 interface AdminDashboardProps {
   isOpen: boolean;
@@ -259,6 +268,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const hasLoadedInitialSnapshotRef = useRef<boolean>(false);
   const knownWaitlistIdsRef = useRef<Set<string>>(new Set());
   const hasLoadedWaitlistRef = useRef<boolean>(false);
+  const knownReviewIdsRef = useRef<Set<string>>(new Set());
+  const hasLoadedReviewsRef = useRef<boolean>(false);
+  const [unseenReviewsCount, setUnseenReviewsCount] = useState(0);
   const notificationsEnabledRef = useRef<boolean>(notificationsEnabled);
 
   useEffect(() => {
@@ -276,6 +288,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     | 'loyalty'
     | 'analytics'
     | 'waitlist'
+    | 'reviews'
     | 'caisse'
     | 'profile'
     | 'pricing'
@@ -315,7 +328,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const crmClientsMap = useCrmClients();
   const waitlistEntries = useWaitlist();
   const shiftRequests = useShiftRequests();
-  const { reviews: firestoreReviews } = useFirestoreReviews();
+  const { reviews: firestoreReviews, isLoading: isReviewsLoading } = useFirestoreReviews();
   const caisseEntries = useCaisseEntries();
   const manualCredits = useManualClientCredits();
   const creditDisputes = useCreditDisputes();
@@ -503,13 +516,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     salonSettings.additionalPhones,
   ]);
 
-  const [nowClock, setNowClock] = useState<Date>(() => new Date());
+  const trustedTimeMeta = useTrustedTimeStatus();
+  const [nowClock, setNowClock] = useState<Date>(() => getTrustedNowDate());
   useEffect(() => {
-    const interval = setInterval(() => setNowClock(new Date()), 30000);
+    setNowClock(getTrustedNowDate());
+    const interval = setInterval(() => setNowClock(getTrustedNowDate()), 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [trustedTimeMeta.serverOffsetMs, trustedTimeMeta.isCalibrated]);
 
-  const todayStr = `${nowClock.getFullYear()}-${String(nowClock.getMonth() + 1).padStart(2, '0')}-${String(nowClock.getDate()).padStart(2, '0')}` || getLocalTodayDateStr();
+  const todayStr = formatMoroccoCalendarDate(nowClock) || getLocalTodayDateStr();
   const nowMinutes = nowClock.getHours() * 60 + nowClock.getMinutes();
 
   const walkInShopPricing = resolveEffectiveServicePrices({
@@ -676,6 +691,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       knownCihReceiptMapRef.current = {};
       hasLoadedWaitlistRef.current = false;
       knownWaitlistIdsRef.current = new Set();
+      hasLoadedReviewsRef.current = false;
+      knownReviewIdsRef.current = new Set();
+      setUnseenReviewsCount(0);
       return;
     }
 
@@ -750,6 +768,81 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         });
     }
   }, [waitlistEntries, session]);
+
+  // Real-time Master Admin New Review / Comment Alert Listener
+  useEffect(() => {
+    if (!session || session.role !== 'master' || isReviewsLoading) return;
+    if (!hasLoadedReviewsRef.current) {
+      hasLoadedReviewsRef.current = true;
+      knownReviewIdsRef.current = new Set(firestoreReviews.map((r) => r.id));
+      return;
+    }
+
+    const prevKnown = knownReviewIdsRef.current;
+    const newReviews = firestoreReviews.filter(
+      (r) => !prevKnown.has(r.id) && !r.id.startsWith('seed-rev-')
+    );
+    firestoreReviews.forEach((r) => prevKnown.add(r.id));
+
+    if (newReviews.length > 0) {
+      if (workspaceSection !== 'reviews') {
+        setUnseenReviewsCount((prev) => prev + newReviews.length);
+      }
+      if (notificationsEnabledRef.current) {
+        const curLang = langRef.current;
+        newReviews.forEach((r) => {
+          const authorText =
+            r.isAnonymous || r.author === 'بدون اسم'
+              ? pickLang(curLang, {
+                  ar: 'زبون (بدون اسم)',
+                  fr: 'Client (Sans nom)',
+                  amz: 'ⴰⵎⵣⴷⴰⵖ (ⵡⴰⵔ ⵉⵙⵎ)',
+                  en: 'Client (Anonymous)',
+                  es: 'Cliente (Anónimo)',
+                })
+              : r.author;
+          const commentStr =
+            typeof r.comment === 'string'
+              ? r.comment
+              : r.comment?.ar || r.comment?.fr || '';
+          const shortComment =
+            commentStr.length > 90 ? `${commentStr.slice(0, 90)}…` : commentStr;
+          const barberLabel =
+            r.allBarbers || r.barberId === 'all'
+              ? pickLang(curLang, {
+                  ar: 'جميع الحلاقين',
+                  fr: 'Tous les barbiers',
+                  amz: 'ⴰⴽⴽⵯ ⵉⵎⴽⵔⴰⴹⵏ',
+                  en: 'All Barbers',
+                  es: 'Todos los barberos',
+                })
+              : r.barberName || 'Salon Boumlik';
+
+          sendDualAlert(
+            pickLang(curLang, {
+              ar: `⭐ تقييم وتعليق جديد (${r.rating}/5) • صالون بومليك`,
+              fr: `⭐ Nouvel avis client (${r.rating}/5) • Salon Boumlik`,
+              amz: `⭐ ⵜⴰⵏⵏⴰⵢⵜ ⵜⴰⵎⴰⵢⵏⵓⵜ (${r.rating}/5) • Salon Boumlik`,
+              en: `⭐ New Client Review (${r.rating}/5) • Salon Boumlik`,
+              es: `⭐ Nueva reseña (${r.rating}/5) • Salon Boumlik`,
+            }),
+            {
+              body: `${authorText} (${barberLabel}): "${shortComment}"`,
+              type: 'info',
+              tag: `sb-admin-review-${r.id}`,
+              data: { url: '/#admin' },
+            }
+          );
+        });
+      }
+    }
+  }, [firestoreReviews, isReviewsLoading, session, workspaceSection]);
+
+  useEffect(() => {
+    if (workspaceSection === 'reviews' && unseenReviewsCount > 0) {
+      setUnseenReviewsCount(0);
+    }
+  }, [workspaceSection, unseenReviewsCount]);
 
   // Handler to open scanner with instant browser native permission request (navigator.mediaDevices.getUserMedia)
   const handleOpenScanner = async () => {
@@ -1343,7 +1436,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         barberId: targetBarberId,
         barberName: barberMeta.name,
         type: 'income',
-        date: todayStr,
+        date: getSalonBusinessDate(),
         serviceIds,
         serviceNames,
         expectedAmountMAD: expected,
@@ -2723,6 +2816,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </span>
                           )}
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWorkspaceSection('reviews');
+                            setUnseenReviewsCount(0);
+                          }}
+                          className={`min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer border ${
+                            workspaceSection === 'reviews'
+                              ? 'bg-rose-600 text-white border-rose-600'
+                              : 'bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>آراء وتعليقات الزبناء ({firestoreReviews.length})</span>
+                          {unseenReviewsCount > 0 && (
+                            <span className="px-1.5 rounded-full bg-rose-600 text-white text-[10px] font-mono">
+                              +{unseenReviewsCount}
+                            </span>
+                          )}
+                        </button>
                       </>
                     )}
 
@@ -3116,6 +3229,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       amz: '📋 ⴰⴹⴼⴰⵕ ⵏ ⵜⵍⴳⴰⵎⵜ ⵏ ⵓⵔⴰⵊⵓ',
                       en: '📋 Manage clients registered on the smart waitlist',
                       es: '📋 Seguimiento de la lista de espera inteligente',
+                    })}
+                  {workspaceSection === 'reviews' &&
+                    pickLang(lang, {
+                      ar: '⭐ مراقبة وإدارة تعليقات الزبناء وحذف أي تعليق غير مناسب فوراً',
+                      fr: '⭐ Modération des avis clients et suppression immédiate des commentaires inappropriés',
+                      amz: '⭐ ⴰⵙⵡⵓⴷⴷⵓ ⵏ ⵜⵏⵏⴰⵢⵉⵏ ⵏ ⵉⵎⵣⴷⴰⵖⵏ',
+                      en: '⭐ Monitor client reviews and remove inappropriate comments immediately',
+                      es: '⭐ Modera reseñas y elimina comentarios inapropiados al instante',
                     })}
                   {workspaceSection === 'caisse' &&
                     pickLang(lang, {
@@ -3518,6 +3639,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 role={session.role}
                 ownBarberId={session.barberId}
               />
+            )}
+
+            {workspaceSection === 'reviews' && session.role === 'master' && (
+              <MasterReviewsModerationPanel reviews={firestoreReviews} />
             )}
 
             {workspaceSection === 'caisse' && (
@@ -5837,46 +5962,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-        {/* Compact Quick Scroll Up / Scroll Down Buttons ("بطونات صغار") inside Admin & Caisse Modal */}
+        {/* Right-Side High-Contrast Quick Scroll Controls (All viewports: Acer Win7 / Supermium & Mobile) */}
         {session && (
-          <div className="absolute bottom-3 end-3 z-30 flex flex-col gap-1">
-            <button
-              type="button"
-              onClick={() => {
-                const el = adminScrollContainerRef.current;
-                if (!el) return;
-                const nextTop = Math.max(0, el.scrollTop - 420);
-                try {
-                  el.scrollTo({ top: nextTop, behavior: 'smooth' });
-                } catch {
-                  el.scrollTop = nextTop;
-                }
-              }}
-              aria-label="التمرير للأعلى"
-              title="للأعلى"
-              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-100 hover:bg-amber-50 dark:hover:bg-zinc-800 shadow-md flex items-center justify-center cursor-pointer transition-colors"
-            >
-              <ChevronUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const el = adminScrollContainerRef.current;
-                if (!el) return;
-                const nextTop = el.scrollTop + 420;
-                try {
-                  el.scrollTo({ top: nextTop, behavior: 'smooth' });
-                } catch {
-                  el.scrollTop = nextTop;
-                }
-              }}
-              aria-label="التمرير للأسفل"
-              title="للأسفل"
-              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-100 hover:bg-amber-50 dark:hover:bg-zinc-800 shadow-md flex items-center justify-center cursor-pointer transition-colors"
-            >
-              <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            </button>
-          </div>
+          <QuickScrollControl
+            targetRef={adminScrollContainerRef}
+            positionClassName="fixed right-1.5 sm:right-3.5 top-1/2 -translate-y-1/2 z-[75]"
+          />
         )}
 
       </div>

@@ -577,6 +577,22 @@
           "minLength": 1,
           "maxLength": 100
         },
+        "barberIds": {
+          "type": "array",
+          "description": "Optional list of barber IDs selected for this review (1, 2, 3, or all barbers)"
+        },
+        "barberNames": {
+          "type": "array",
+          "description": "Optional list of barber names selected for this review"
+        },
+        "allBarbers": {
+          "type": "boolean",
+          "description": "True when the review applies to all salon barbers"
+        },
+        "isAnonymous": {
+          "type": "boolean",
+          "description": "True when the reviewer chose to post anonymously without a name"
+        },
         "author": {
           "type": "string",
           "minLength": 1,
@@ -818,6 +834,45 @@
           "type": "string",
           "format": "date-time",
           "maxLength": 64
+        },
+        "deviceKind": {
+          "type": "string",
+          "enum": ["pc", "phone"],
+          "description": "Origin device category (PC vs Phone)"
+        },
+        "deviceId": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "deviceLabel": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "devicePlatform": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "deviceBrowser": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "timeSource": {
+          "type": "string",
+          "enum": ["server_api", "firestore_server", "cached_offset", "device_clock"]
+        },
+        "serverClockOffsetMs": {
+          "type": "number"
+        },
+        "deviceClockISO": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "offlineCreated": {
+          "type": "boolean"
+        },
+        "firestoreServerCreatedAt": {
+          "type": "string",
+          "format": "date-time"
         }
       },
       "required": [

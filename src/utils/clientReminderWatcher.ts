@@ -9,6 +9,7 @@ import { safeStorageGet, safeStorageSet } from './safeBrowser';
 
 const TRACKED_TICKETS_KEY = 'salon_boumlik_tracked_tickets_v1';
 const TRACKED_PHONES_KEY = 'salon_boumlik_tracked_phones_v1';
+const TRACKED_CLIENT_NAME_KEY = 'salon_boumlik_tracked_client_name_v1';
 const NOTIFIED_EVENTS_KEY = 'salon_boumlik_notified_events_v1';
 
 function readStringArray(key: string): string[] {
@@ -31,7 +32,25 @@ function writeStringArray(key: string, items: string[], maxItems = 40): void {
   }
 }
 
-export function rememberTrackedTicket(ticketNumber: string, clientPhone?: string): void {
+export function rememberClientName(clientName?: string): void {
+  const clean = String(clientName || '').trim();
+  if (clean.length >= 2 && clean.toLowerCase() !== 'client') {
+    safeStorageSet(TRACKED_CLIENT_NAME_KEY, clean.slice(0, 120), 'local');
+  }
+}
+
+export function getRememberedClientName(): string {
+  const stored = safeStorageGet(TRACKED_CLIENT_NAME_KEY, 'local');
+  if (!stored) return '';
+  const clean = stored.trim();
+  return clean.toLowerCase() === 'client' ? '' : clean;
+}
+
+export function rememberTrackedTicket(
+  ticketNumber: string,
+  clientPhone?: string,
+  clientName?: string
+): void {
   const cleanTicket = ticketNumber.trim().toUpperCase();
   if (cleanTicket.length >= 3) {
     const existing = readStringArray(TRACKED_TICKETS_KEY);
@@ -39,6 +58,9 @@ export function rememberTrackedTicket(ticketNumber: string, clientPhone?: string
   }
   if (clientPhone) {
     rememberTrackedPhone(clientPhone);
+  }
+  if (clientName) {
+    rememberClientName(clientName);
   }
 }
 

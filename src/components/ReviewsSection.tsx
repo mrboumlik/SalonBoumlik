@@ -1,24 +1,85 @@
-import React, { useState, useRef } from 'react';
-import { 
-  Star, 
-  MessageSquarePlus, 
-  CheckCircle2, 
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Star,
+  MessageSquarePlus,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   X,
   QrCode,
-  ExternalLink
+  ExternalLink,
+  Users,
+  Check,
+  UserX,
+  Sparkles,
+  AlertCircle,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { INITIAL_REVIEWS, SERVICES, SALON_INFO } from '../data/barbershopData';
-import { CustomerReview } from '../types';
+import { AppointmentBooking, CustomerReview } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { useSalonProfileSettings } from '../utils/salonSettingsStore';
 import { getMergedBarbers, useBarberProfiles } from '../utils/barberProfileStore';
 import { useBarberRoster } from '../utils/barberRosterStore';
 import { submitBarberReview, useFirestoreReviews } from '../utils/reviewsStore';
+import {
+  getAllBookings,
+  normalizeMoroccanPhoneDigits,
+  subscribeToBookings,
+} from '../utils/bookingStore';
+import {
+  getRememberedClientName,
+  getRememberedPhones,
+  getRememberedTickets,
+} from '../utils/clientReminderWatcher';
 import { pickLang } from '../utils/i18n';
-import { safeStorageGet } from '../utils/safeBrowser';
+import { ModalPortal } from './ModalPortal';
+
+function findBookingClientNameFromDevice(bookingsList: AppointmentBooking[]): {
+  name: string;
+  ticketNumber?: string;
+} {
+  const rememberedTickets = getRememberedTickets().map((t) =>
+    t.trim().toUpperCase().replace(/^#/, '')
+  );
+  const rememberedPhones = getRememberedPhones();
+
+  if (bookingsList.length > 0 && (rememberedTickets.length > 0 || rememberedPhones.length > 0)) {
+    const matching = bookingsList.filter((b) => {
+      const bName = String(b.clientName || '').trim();
+      if (!bName || bName.toLowerCase() === 'client') return false;
+      const cleanTicket = String(b.ticketNumber || '')
+        .trim()
+        .toUpperCase()
+        .replace(/^#/, '');
+      const cleanPhone = normalizeMoroccanPhoneDigits(b.clientPhone || '');
+      const ticketMatch = cleanTicket.length >= 3 && rememberedTickets.includes(cleanTicket);
+      const phoneMatch = cleanPhone.length >= 6 && rememberedPhones.includes(cleanPhone);
+      return ticketMatch || phoneMatch;
+    });
+
+    if (matching.length > 0) {
+      const activePriority = matching.find(
+        (b) =>
+          b.status === 'confirmed' ||
+          b.status === 'pending' ||
+          b.status === 'flexible_pending' ||
+          b.status === 'rescheduled'
+      );
+      const chosen = activePriority || matching[0];
+      return {
+        name: chosen.clientName.trim(),
+        ticketNumber: chosen.ticketNumber,
+      };
+    }
+  }
+
+  const storedName = getRememberedClientName();
+  if (storedName) {
+    return { name: storedName };
+  }
+  return { name: '' };
+}
 
 export const ReviewsSection: React.FC = () => {
   const { lang, isRtl } = useLanguage();
@@ -29,60 +90,141 @@ export const ReviewsSection: React.FC = () => {
     () => getMergedBarbers(barberProfiles, barberRoster),
     [barberProfiles, barberRoster]
   );
-  const { reviews: firestoreReviews } = useFirestoreReviews();
+  const { reviews: firestoreReviews, isLoading: isReviewsLoading } = useFirestoreReviews();
   const carouselRef = useRef<HTMLDivElement>(null);
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
 
-  const [localCustomReviews, setLocalCustomReviews] = useState<CustomerReview[]>(() => {
-    try {
-      const stored = safeStorageGet('salon_boumlik_reviews_v3', 'local');
-      if (stored) {
-        const parsed = JSON.parse(stored) as CustomerReview[];
-        return Array.isArray(parsed)
-          ? parsed.filter((r) => !INITIAL_REVIEWS.some((initR) => initR.id === r.id))
-          : [];
-      }
-    } catch {
-      // fallback
-    }
-    return [];
-  });
+  const [offlineFallbackReviews, setOfflineFallbackReviews] = useState<CustomerReview[]>([]);
 
   const reviews: CustomerReview[] = React.useMemo(() => {
-    if (firestoreReviews.length > 0) {
-      const ids = new Set(firestoreReviews.map((r) => r.id));
-      const uniqueLocal = localCustomReviews.filter((r) => !ids.has(r.id));
-      return [...firestoreReviews, ...uniqueLocal];
+    if (!isReviewsLoading) {
+      if (firestoreReviews.length > 0) {
+        const syncedIds = new Set(firestoreReviews.map((r) => r.id));
+        const pendingLocal = offlineFallbackReviews.filter((r) => !syncedIds.has(r.id));
+        return [...pendingLocal, ...firestoreReviews];
+      }
+      return offlineFallbackReviews;
     }
-    return [...localCustomReviews, ...INITIAL_REVIEWS];
-  }, [firestoreReviews, localCustomReviews]);
+    return [...offlineFallbackReviews, ...INITIAL_REVIEWS];
+  }, [firestoreReviews, isReviewsLoading, offlineFallbackReviews]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [filterRating, setFilterRating] = useState<number | 'all'>('all');
 
-  // Form states
-  const [selectedBarberId, setSelectedBarberId] = useState<string>(mergedBarbers[0]?.id || 'hassan');
+  // Form states (multi-barber + optional anonymous + booking auto-fill)
+  const [selectedBarberIds, setSelectedBarberIds] = useState<string[]>(() => [
+    mergedBarbers[0]?.id || 'hassan',
+  ]);
   const [author, setAuthor] = useState('');
+  const [isAnonymous, setIsAnonymous] = useState(false);
+  const [autoFilledFromBooking, setAutoFilledFromBooking] = useState<{
+    name: string;
+    ticketNumber?: string;
+  } | null>(null);
+  const userEditedAuthorRef = useRef(false);
   const [city, setCity] = useState('');
-  const [serviceName, setServiceName] = useState('');
+  const [serviceName] = useState('');
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState(false);
 
+  // Keep selectedBarberIds valid whenever roster updates
+  useEffect(() => {
+    if (mergedBarbers.length === 0) return;
+    setSelectedBarberIds((prev) => {
+      const validIds = new Set(mergedBarbers.map((b) => b.id));
+      const kept = prev.filter((id) => validIds.has(id));
+      return kept.length > 0 ? kept : [mergedBarbers[0].id];
+    });
+  }, [mergedBarbers]);
+
+  // Auto-fill client name from active/existing booking stored on device when modal opens
+  useEffect(() => {
+    if (!isModalOpen) {
+      userEditedAuthorRef.current = false;
+      setSubmitError(null);
+      return;
+    }
+
+    const applyAutoFill = (bookingsList: AppointmentBooking[]) => {
+      if (userEditedAuthorRef.current || isAnonymous) return;
+      const found = findBookingClientNameFromDevice(bookingsList);
+      if (found.name) {
+        setAutoFilledFromBooking(found);
+        setAuthor((prev) => (prev.trim() ? prev : found.name));
+      }
+    };
+
+    applyAutoFill(getAllBookings());
+
+    const hasHints =
+      getRememberedTickets().length > 0 || getRememberedPhones().length > 0;
+    if (!hasHints) return;
+
+    const unsub = subscribeToBookings((live) => {
+      applyAutoFill(live);
+    });
+    return () => {
+      unsub();
+    };
+  }, [isModalOpen, isAnonymous]);
+
+  const isAllBarbersSelected =
+    mergedBarbers.length > 0 &&
+    mergedBarbers.every((b) => selectedBarberIds.includes(b.id));
+
+  const handleToggleAllBarbers = () => {
+    if (mergedBarbers.length === 0) return;
+    if (isAllBarbersSelected) {
+      setSelectedBarberIds([mergedBarbers[0].id]);
+    } else {
+      setSelectedBarberIds(mergedBarbers.map((b) => b.id));
+    }
+  };
+
+  const handleToggleBarberId = (barberId: string) => {
+    setSelectedBarberIds((prev) => {
+      if (prev.includes(barberId)) {
+        if (prev.length <= 1) return prev;
+        return prev.filter((id) => id !== barberId);
+      }
+      return [...prev, barberId];
+    });
+  };
+
+  const handleToggleAnonymous = () => {
+    setIsAnonymous((prev) => {
+      const next = !prev;
+      userEditedAuthorRef.current = true;
+      if (next) {
+        setAuthor('');
+      } else if (autoFilledFromBooking?.name) {
+        setAuthor(autoFilledFromBooking.name);
+      }
+      return next;
+    });
+  };
+
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!author.trim() || !comment.trim() || isSubmitting) return;
+    if (!comment.trim() || isSubmitting) return;
 
+    setSubmitError(null);
     setIsSubmitting(true);
+
+    const postAsAnonymous = isAnonymous || !author.trim();
 
     try {
       const saved = await submitBarberReview({
-        barberId: selectedBarberId,
-        author: author.trim(),
+        barberIds: selectedBarberIds,
+        allBarbers: isAllBarbersSelected,
+        isAnonymous: postAsAnonymous,
+        author: postAsAnonymous ? 'بدون اسم' : author.trim(),
         city: city.trim() || 'Taroudant',
-        serviceName: serviceName || (SERVICES[0].name[lang] || SERVICES[0].name.fr),
+        serviceName: serviceName || SERVICES[0].name[lang] || SERVICES[0].name.fr,
         rating,
         comment: comment.trim(),
         dateLabel:
@@ -95,7 +237,10 @@ export const ReviewsSection: React.FC = () => {
           }[lang] || 'Just now',
       });
 
-      setLocalCustomReviews((prev) => [saved, ...prev.filter((r) => r.id !== saved.id)]);
+      setOfflineFallbackReviews((prev) => [
+        saved,
+        ...prev.filter((r) => r.id !== saved.id),
+      ]);
       setSuccessMessage(true);
 
       try {
@@ -113,11 +258,23 @@ export const ReviewsSection: React.FC = () => {
         setSuccessMessage(false);
         setIsModalOpen(false);
         setAuthor('');
+        setIsAnonymous(false);
+        setAutoFilledFromBooking(null);
+        userEditedAuthorRef.current = false;
         setComment('');
         setCity('');
       }, 1500);
     } catch (err) {
       console.error('Failed to submit review to Firestore:', err);
+      setSubmitError(
+        pickLang(lang, {
+          ar: 'تعذر إرسال التقييم حالياً، يرجى المحاولة مرة أخرى.',
+          fr: 'Impossible de publier votre avis pour le moment. Veuillez réessayer.',
+          amz: 'ⵓⵔ ⵉⵣⵎⵉⵔ ⴰⴷ ⵢⴰⵣⵏ ⵜⴰⵏⵏⴰⵢⵜ ⵖⵉⵍⴰⴷ. ⴰⵔⵎ ⵜⵉⴽⴽⵍⵜ ⵢⴰⴹⵏ.',
+          en: 'Unable to publish your review right now. Please try again.',
+          es: 'No se pudo publicar tu reseña ahora. Inténtalo de nuevo.',
+        })
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -203,10 +360,38 @@ export const ReviewsSection: React.FC = () => {
     }[lang] || 'Écrire un avis',
   };
 
+  const resolveReviewBarberDisplay = (rev: CustomerReview): string => {
+    if (rev.allBarbers || rev.barberId === 'all') {
+      return pickLang(lang, {
+        ar: 'جميع الحلاقين',
+        fr: 'Tous les barbiers',
+        amz: 'ⴰⴽⴽⵯ ⵉⵎⴽⵔⴰⴹⵏ',
+        en: 'All Barbers',
+        es: 'Todos los barberos',
+      });
+    }
+    if (Array.isArray(rev.barberIds) && rev.barberIds.length > 1) {
+      const names = rev.barberIds.map((id, idx) => {
+        const found = mergedBarbers.find((b) => b.id === id);
+        if (found) return (found.name[lang] || found.name.fr).split(' ')[0];
+        const fallback = rev.barberNames?.[idx] || id;
+        return fallback.split(' ')[0];
+      });
+      return names.join(' · ');
+    }
+    if (rev.barberId) {
+      const found = mergedBarbers.find((b) => b.id === rev.barberId);
+      if (found) return (found.name[lang] || found.name.fr).split(' ')[0];
+    }
+    return rev.barberName ? rev.barberName.split(' ')[0] : '';
+  };
+
   return (
-    <section id="reviews" className="py-16 sm:py-24 bg-slate-50 dark:bg-black text-slate-900 dark:text-white relative border-t border-slate-200 dark:border-zinc-900 transition-colors">
+    <section
+      id="reviews"
+      className="py-16 sm:py-24 bg-slate-50 dark:bg-black text-slate-900 dark:text-white relative border-t border-slate-200 dark:border-zinc-900 transition-colors"
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-12">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-bold text-red-600 dark:text-red-400 mb-3 shadow-2xs">
@@ -226,10 +411,8 @@ export const ReviewsSection: React.FC = () => {
         {/* Realistic Google Reviews Widget Showcase Card */}
         <div className="max-w-4xl mx-auto mb-12 p-6 sm:p-8 rounded-2xl bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 shadow-xl dark:shadow-2xl">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-6 border-b border-slate-200 dark:border-zinc-800">
-            
             {/* Google Rating Big Metric */}
             <div className="flex items-center gap-4 text-left rtl:text-right">
-              {/* Google G logo circle */}
               <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 dark:border-transparent p-2.5 flex items-center justify-center flex-shrink-0 shadow-md">
                 <svg viewBox="0 0 24 24" className="w-full h-full">
                   <path
@@ -253,10 +436,15 @@ export const ReviewsSection: React.FC = () => {
 
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white font-mono">5.0</span>
+                  <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white font-mono">
+                    5.0
+                  </span>
                   <div className="flex text-amber-500 dark:text-amber-400">
                     {[...Array(5)].map((_, i) => (
-                      <Star key={i} className="w-5 h-5 fill-amber-500 dark:fill-amber-400" />
+                      <Star
+                        key={i}
+                        className="w-5 h-5 fill-amber-500 dark:fill-amber-400"
+                      />
                     ))}
                   </div>
                 </div>
@@ -285,6 +473,7 @@ export const ReviewsSection: React.FC = () => {
               </a>
 
               <button
+                type="button"
                 onClick={() => setIsQrModalOpen(true)}
                 className="py-2.5 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-slate-300 dark:border-zinc-700 text-slate-900 dark:text-white font-semibold text-xs flex items-center gap-2 transition-colors cursor-pointer"
               >
@@ -293,6 +482,7 @@ export const ReviewsSection: React.FC = () => {
               </button>
 
               <button
+                type="button"
                 onClick={() => setIsModalOpen(true)}
                 className="py-2.5 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-slate-300 dark:border-zinc-700 text-slate-800 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
               >
@@ -300,7 +490,6 @@ export const ReviewsSection: React.FC = () => {
                 <span>{ui.btnLocal}</span>
               </button>
             </div>
-
           </div>
 
           {/* Rating filter pills */}
@@ -316,6 +505,7 @@ export const ReviewsSection: React.FC = () => {
             </span>
             <div className="flex items-center gap-1.5 overflow-x-auto">
               <button
+                type="button"
                 onClick={() => setFilterRating('all')}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                   filterRating === 'all'
@@ -334,6 +524,7 @@ export const ReviewsSection: React.FC = () => {
               </button>
               {[5, 4].map((r) => (
                 <button
+                  type="button"
                   key={r}
                   onClick={() => setFilterRating(r)}
                   className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
@@ -350,7 +541,7 @@ export const ReviewsSection: React.FC = () => {
           </div>
         </div>
 
-        {/* Mobile Carousel Controls (Prev / Next & Counter) */}
+        {/* Mobile Carousel Controls */}
         {displayedCarouselReviews.length > 1 && (
           <div className="flex md:hidden items-center justify-between gap-3 max-w-6xl mx-auto mb-3 px-1">
             <span className="text-xs font-bold text-slate-600 dark:text-zinc-400">
@@ -393,10 +584,30 @@ export const ReviewsSection: React.FC = () => {
           className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-3.5 md:gap-4 max-w-6xl mx-auto overflow-x-auto md:overflow-visible snap-x snap-mandatory scroll-smooth pb-3 md:pb-0 -mx-4 px-4 md:mx-auto md:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {displayedCarouselReviews.map((rev, idx) => {
-            const authorName = rev.author;
-            const cityName = typeof rev.city === 'object' ? (rev.city as any)[lang] || rev.city.fr : rev.city;
-            const commentText = typeof rev.comment === 'object' ? (rev.comment as any)[lang] || rev.comment.fr : rev.comment;
-            const serviceStr = typeof rev.serviceName === 'object' ? (rev.serviceName as any)[lang] || rev.serviceName.fr : rev.serviceName;
+            const isAnonReview =
+              Boolean(rev.isAnonymous) || rev.author.trim() === 'بدون اسم';
+            const authorName = isAnonReview
+              ? pickLang(lang, {
+                  ar: 'زبون (بدون اسم)',
+                  fr: 'Client (Sans nom)',
+                  amz: 'ⴰⵎⵣⴷⴰⵖ (ⵡⴰⵔ ⵉⵙⵎ)',
+                  en: 'Client (Anonymous)',
+                  es: 'Cliente (Anónimo)',
+                })
+              : rev.author;
+            const cityName =
+              typeof rev.city === 'object'
+                ? (rev.city as Record<string, string>)[lang] || rev.city.fr
+                : rev.city;
+            const commentText =
+              typeof rev.comment === 'object'
+                ? (rev.comment as Record<string, string>)[lang] || rev.comment.fr
+                : rev.comment;
+            const serviceStr =
+              typeof rev.serviceName === 'object'
+                ? (rev.serviceName as Record<string, string>)[lang] || rev.serviceName.fr
+                : rev.serviceName;
+            const barberDisplay = resolveReviewBarberDisplay(rev);
 
             return (
               <div
@@ -410,17 +621,28 @@ export const ReviewsSection: React.FC = () => {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center justify-center font-bold text-xs text-slate-900 dark:text-white flex-shrink-0">
-                        {authorName.charAt(0)}
+                        {isAnonReview ? (
+                          <UserX className="w-3.5 h-3.5 text-slate-500 dark:text-zinc-400" />
+                        ) : (
+                          authorName.charAt(0)
+                        )}
                       </div>
                       <div className="min-w-0">
-                        <h4 className="font-bold text-slate-900 dark:text-white text-xs truncate">{authorName}</h4>
-                        <span className="text-[10px] text-slate-500 dark:text-zinc-400 truncate block">{cityName}</span>
+                        <h4 className="font-bold text-slate-900 dark:text-white text-xs truncate">
+                          {authorName}
+                        </h4>
+                        <span className="text-[10px] text-slate-500 dark:text-zinc-400 truncate block">
+                          {cityName}
+                        </span>
                       </div>
                     </div>
 
                     <div className="flex text-amber-500 dark:text-amber-400 flex-shrink-0">
                       {[...Array(rev.rating)].map((_, i) => (
-                        <Star key={i} className="w-3 h-3 fill-amber-500 dark:fill-amber-400" />
+                        <Star
+                          key={i}
+                          className="w-3 h-3 fill-amber-500 dark:fill-amber-400"
+                        />
                       ))}
                     </div>
                   </div>
@@ -432,9 +654,10 @@ export const ReviewsSection: React.FC = () => {
                 </div>
 
                 {/* Service Tag & Verification */}
-                <div className="pt-2 border-t border-slate-200 dark:border-zinc-900 flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400">
-                  <span className="text-slate-700 dark:text-zinc-300 font-medium truncate max-w-[165px]">
-                    {rev.barberName ? `${rev.barberName.split(' ')[0]} · ` : ''}{serviceStr}
+                <div className="pt-2 border-t border-slate-200 dark:border-zinc-900 flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-zinc-400">
+                  <span className="text-slate-700 dark:text-zinc-300 font-medium truncate">
+                    {barberDisplay ? `${barberDisplay} · ` : ''}
+                    {serviceStr}
                   </span>
                   <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400 text-[10px] font-semibold flex-shrink-0">
                     <CheckCircle2 className="w-3 h-3" />
@@ -456,7 +679,10 @@ export const ReviewsSection: React.FC = () => {
 
         {/* Mobile Carousel Pagination Dots */}
         {displayedCarouselReviews.length > 1 && (
-          <div className="flex md:hidden items-center justify-center gap-1.5 mt-3" aria-label="Carousel pagination">
+          <div
+            className="flex md:hidden items-center justify-center gap-1.5 mt-3"
+            aria-label="Carousel pagination"
+          >
             {displayedCarouselReviews.map((rev, idx) => (
               <button
                 key={rev.id}
@@ -472,298 +698,478 @@ export const ReviewsSection: React.FC = () => {
             ))}
           </div>
         )}
-
       </div>
 
       {/* QR CODE MODAL - High Quality Google Review Code */}
       {isQrModalOpen && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto flex items-center justify-center p-4 sb-modal-backdrop">
-          <div className="relative w-full max-w-sm bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-5 text-center shadow-2xl">
-            
-            <button
-              onClick={() => setIsQrModalOpen(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 dark:border-transparent p-2 mx-auto shadow-md">
-              <svg viewBox="0 0 24 24" className="w-full h-full">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-              </svg>
-            </div>
-
-            <div>
-              <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                {pickLang(lang, {
-                  ar: 'امسح رمز التقييم على Google',
-                  fr: 'Scannez le QR Code Google',
-                  amz: 'ⵙⴽⴰⵏⵉ QR Code Google',
-                  en: 'Scan the Google Review QR Code',
-                  es: 'Escanea el QR de Google',
-                })}
-              </h3>
-              <p className="text-xs text-slate-600 dark:text-zinc-400 mt-1">
-                {pickLang(lang, {
-                  ar: 'وجه كاميرا هاتفك مباشرة نحو الرمز لإعطاء رأيك في ثوانٍ',
-                  fr: 'Ouvrez votre appareil photo pour noter Salon Boumlik en un instant',
-                  amz: 'ⵕⵥⵎ ⵜⴰⴽⴰⵎⵉⵔⴰ ⵏⵏⴽ ⴰⴼⴰⴷ ⴰⴷ ⵜⴼⴽⴷ ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ',
-                  en: 'Point your phone camera at the code to rate Salon Boumlik in seconds',
-                  es: 'Apunta tu cámara para valorar a Salon Boumlik al instante',
-                })}
-              </p>
-            </div>
-
-            {/* Official QR Code Image with Google logo in center */}
-            <div className="p-3 bg-white border border-slate-200 dark:border-transparent rounded-2xl mx-auto w-56 h-56 shadow-xl flex items-center justify-center">
-              <img
-                src={SALON_INFO.media.qrGoogleReview}
-                alt="Google Review QR Code"
-                className="w-full h-full object-contain"
-              />
-            </div>
-
-            <div className="pt-2">
-              <a
-                href={GOOGLE_REVIEW_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-lg"
+        <ModalPortal>
+          <div
+            dir={isRtl ? 'rtl' : 'ltr'}
+            className="fixed inset-0 z-[95] overflow-y-auto flex items-center justify-center p-4 pb-24 sm:pb-6 sb-modal-backdrop"
+          >
+            <div className="relative w-full max-w-sm bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-5 text-center shadow-2xl">
+              <button
+                type="button"
+                onClick={() => setIsQrModalOpen(false)}
+                className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
               >
-                <span>
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 dark:border-transparent p-2 mx-auto shadow-md">
+                <svg viewBox="0 0 24 24" className="w-full h-full">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">
                   {pickLang(lang, {
-                    ar: 'أو افتح الرابط المباشر',
-                    fr: 'Ou Ouvrir le Lien Direct',
-                    amz: 'ⵏⵖ ⵕⵥⵎ ⴰⵙⵖⵏ ⵓⵙⵔⵉⴷ',
-                    en: 'Or Open Direct Link',
-                    es: 'O abrir enlace directo',
+                    ar: 'امسح رمز التقييم على Google',
+                    fr: 'Scannez le QR Code Google',
+                    amz: 'ⵙⴽⴰⵏⵉ QR Code Google',
+                    en: 'Scan the Google Review QR Code',
+                    es: 'Escanea el QR de Google',
                   })}
-                </span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* LEAVE A REVIEW MODAL */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto flex items-center justify-center p-4 sb-modal-backdrop">
-          <div className="relative w-full max-w-md bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-2xl p-6 sm:p-8 space-y-5 shadow-2xl">
-            
-            <button
-              onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div>
-              <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                {pickLang(lang, {
-                  ar: 'شاركنا رأيك في صالون بومليك',
-                  fr: 'Donnez Votre Avis',
-                  amz: 'ⴼⴽ ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ ⵖⴼ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ',
-                  en: 'Share Your Review',
-                  es: 'Deja tu reseña',
-                })}
-              </h3>
-              <p className="text-xs text-slate-600 dark:text-zinc-400 mt-0.5">
-                {pickLang(lang, {
-                  ar: 'رأيك يهمنا لمواصلة تقديم أفضل خدمة رجالية بتارودانت',
-                  fr: 'Votre retour nous aide à perfectionner notre expérience.',
-                  amz: 'ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ ⵜⴰⵡⵙ ⴰⵖ ⵉ ⵓⵙⴱⵓⵖⵍⵓ ⵏ ⵜⵏⴰⴼⵓⵜ.',
-                  en: 'Your feedback helps us keep delivering the best service in Taroudant.',
-                  es: 'Tu opinión nos ayuda a mejorar nuestro servicio.',
-                })}
-              </p>
-            </div>
-
-            {successMessage ? (
-              <div className="p-6 text-center text-emerald-600 dark:text-emerald-400 space-y-2">
-                <CheckCircle2 className="w-10 h-10 mx-auto" />
-                <p className="font-bold text-sm">
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-zinc-400 mt-1">
                   {pickLang(lang, {
-                    ar: 'شكراً جزيلاً على تقييمك!',
-                    fr: 'Merci pour votre confiance !',
-                    amz: 'ⵜⴰⵏⵎⵎⵉⵔⵜ ⵉ ⵜⵏⵏⴰⵢⵜ ⵏⵏⴽ!',
-                    en: 'Thank you for your review!',
-                    es: '¡Muchas gracias por tu reseña!',
+                    ar: 'وجه كاميرا هاتفك مباشرة نحو الرمز لإعطاء رأيك في ثوانٍ',
+                    fr: 'Ouvrez votre appareil photo pour noter Salon Boumlik en un instant',
+                    amz: 'ⵕⵥⵎ ⵜⴰⴽⴰⵎⵉⵔⴰ ⵏⵏⴽ ⴰⴼⴰⴷ ⴰⴷ ⵜⴼⴽⴷ ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ',
+                    en: 'Point your phone camera at the code to rate Salon Boumlik in seconds',
+                    es: 'Apunta tu cámara para valorar a Salon Boumlik al instante',
                   })}
                 </p>
               </div>
-            ) : (
-              <form onSubmit={handleSubmitReview} className="space-y-4 text-xs">
-                <div>
-                  <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1.5">
-                    {pickLang(lang, {
-                      ar: 'الحلاق المعني بالتقييم:',
-                      fr: 'Barbier concerné :',
-                      amz: 'ⴰⵎⴽⵔⴰⴹ:',
-                      en: 'Barber:',
-                      es: 'Barbero:',
-                    })}
-                  </label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {mergedBarbers.map((b) => {
-                      const active = selectedBarberId === b.id;
-                      return (
-                        <button
-                          key={b.id}
-                          type="button"
-                          onClick={() => setSelectedBarberId(b.id)}
-                          className={`px-2.5 py-2 rounded-xl border text-left rtl:text-right font-bold flex items-center gap-2 transition-colors cursor-pointer ${
-                            active
-                              ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-500 text-amber-800 dark:text-amber-300'
-                              : 'bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-700'
-                          }`}
-                        >
-                          <img
-                            src={b.avatar}
-                            alt={b.name[lang] || b.name.fr}
-                            className="w-6 h-6 rounded-full object-cover flex-shrink-0"
-                          />
-                          <span className="truncate text-[11px]">{b.name[lang] || b.name.fr}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
 
-                <div>
-                  <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
-                    {pickLang(lang, {
-                      ar: 'الاسم الكامل:',
-                      fr: 'Votre nom :',
-                      amz: 'ⵉⵙⵎ ⵏⵏⴽ :',
-                      en: 'Full Name:',
-                      es: 'Tu nombre:',
-                    })}
-                  </label>
-                  <input
-                    type="text"
-                    value={author}
-                    onChange={(e) => setAuthor(e.target.value)}
-                    required
-                    placeholder="Omar Ait"
-                    className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 rounded-xl p-2.5 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-red-500"
-                  />
-                </div>
+              <div className="p-3 bg-white border border-slate-200 dark:border-transparent rounded-2xl mx-auto w-56 h-56 shadow-xl flex items-center justify-center">
+                <img
+                  src={SALON_INFO.media.qrGoogleReview}
+                  alt="Google Review QR Code"
+                  className="w-full h-full object-contain"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
+              <div className="pt-2">
+                <a
+                  href={GOOGLE_REVIEW_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-lg"
+                >
+                  <span>
                     {pickLang(lang, {
-                      ar: 'المدينة / الحي:',
-                      fr: 'Ville / Quartier :',
-                      amz: 'ⵜⴰⵎⴷⵉⵏⵜ / ⴰⵙⵓⵏ :',
-                      en: 'City / Area:',
-                      es: 'Ciudad / Zona:',
+                      ar: 'أو افتح الرابط المباشر',
+                      fr: 'Ou Ouvrir le Lien Direct',
+                      amz: 'ⵏⵖ ⵕⵥⵎ ⴰⵙⵖⵏ ⵓⵙⵔⵉⴷ',
+                      en: 'Or Open Direct Link',
+                      es: 'O abrir enlace directo',
                     })}
-                  </label>
-                  <input
-                    type="text"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    placeholder="Taroudant"
-                    className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 rounded-xl p-2.5 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-red-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
-                    {pickLang(lang, {
-                      ar: 'تقييمك بالنجوم:',
-                      fr: 'Votre note :',
-                      amz: 'ⵜⴰⵏⵏⴰⵢⵜ ⵙ ⵉⵜⵔⴰⵏ :',
-                      en: 'Star Rating:',
-                      es: 'Tu puntuación:',
-                    })}
-                  </label>
-                  <div className="flex gap-1 text-amber-500 dark:text-amber-400 py-1">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        type="button"
-                        onClick={() => setRating(star)}
-                        className="p-1 text-2xl hover:scale-110 transition-transform cursor-pointer"
-                      >
-                        <Star
-                          className={`w-6 h-6 ${
-                            star <= rating ? 'fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400' : 'text-slate-300 dark:text-zinc-600'
-                          }`}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
-                    {pickLang(lang, {
-                      ar: 'تعليقك وتجربتك:',
-                      fr: 'Votre commentaire :',
-                      amz: 'ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ :',
-                      en: 'Your comment:',
-                      es: 'Tu comentario:',
-                    })}
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    required
-                    placeholder={pickLang(lang, {
-                      ar: 'اكتب رأيك بصراحة...',
-                      fr: 'Partagez votre ressenti...',
-                      amz: 'ⴰⵔⴰ ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ...',
-                      en: 'Share your experience...',
-                      es: 'Comparte tu experiencia...',
-                    })}
-                    className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 rounded-xl p-2.5 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-red-500"
-                  />
-                </div>
-
-                <div className="pt-2 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white cursor-pointer"
-                  >
-                    {pickLang(lang, {
-                      ar: 'إلغاء',
-                      fr: 'Annuler',
-                      amz: 'ⵙⵔ',
-                      en: 'Cancel',
-                      es: 'Cancelar',
-                    })}
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold transition-colors cursor-pointer"
-                  >
-                    {isSubmitting
-                      ? '...'
-                      : pickLang(lang, {
-                          ar: 'نشر التقييم',
-                          fr: 'Publier',
-                          amz: 'ⵙⵙⵉⴼⴹ',
-                          en: 'Submit',
-                          es: 'Publicar',
-                        })}
-                  </button>
-                </div>
-              </form>
-            )}
-
+                  </span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
+      {/* LEAVE A REVIEW MODAL - Solid, Mobile Bottom-Bar Safe, Multi-Barber & Anonymous Ready */}
+      {isModalOpen && (
+        <ModalPortal>
+          <div
+            dir={isRtl ? 'rtl' : 'ltr'}
+            className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-2.5 pb-24 sm:p-6 sb-modal-backdrop"
+          >
+            <div className="relative w-full max-w-md max-h-[calc(100dvh-7.5rem)] sm:max-h-[90vh] bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+              {/* Fixed Modal Header */}
+              <div className="px-5 pt-4 pb-3 border-b border-slate-200 dark:border-zinc-800 flex items-start justify-between gap-3 shrink-0 bg-white dark:bg-zinc-950">
+                <div className="min-w-0">
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                    {pickLang(lang, {
+                      ar: 'شاركنا رأيك في صالون بومليك',
+                      fr: 'Donnez Votre Avis',
+                      amz: 'ⴼⴽ ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ ⵖⴼ ⵙⴰⵍⵓⵏ ⴱⵓⵎⵍⵉⴽ',
+                      en: 'Share Your Review',
+                      es: 'Deja tu reseña',
+                    })}
+                  </h3>
+                  <p className="text-[11px] sm:text-xs text-slate-600 dark:text-zinc-400 mt-0.5">
+                    {pickLang(lang, {
+                      ar: 'رأيك يهمنا لمواصلة تقديم أفضل خدمة رجالية بتارودانت',
+                      fr: 'Votre retour nous aide à perfectionner notre expérience.',
+                      amz: 'ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ ⵜⴰⵡⵙ ⴰⵖ ⵉ ⵓⵙⴱⵓⵖⵍⵓ ⵏ ⵜⵏⴰⴼⵓⵜ.',
+                      en: 'Your feedback helps us keep delivering the best service in Taroudant.',
+                      es: 'Tu opinión nos ayuda a mejorar nuestro servicio.',
+                    })}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  aria-label="Close"
+                  className="p-1.5 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {successMessage ? (
+                <div className="p-8 text-center text-emerald-600 dark:text-emerald-400 space-y-2.5">
+                  <CheckCircle2 className="w-11 h-11 mx-auto" />
+                  <p className="font-bold text-sm">
+                    {pickLang(lang, {
+                      ar: 'شكراً جزيلاً على تقييمك!',
+                      fr: 'Merci pour votre confiance !',
+                      amz: 'ⵜⴰⵏⵎⵎⵉⵔⵜ ⵉ ⵜⵏⵏⴰⵢⵜ ⵏⵏⴽ!',
+                      en: 'Thank you for your review!',
+                      es: '¡Muchas gracias por tu reseña!',
+                    })}
+                  </p>
+                </div>
+              ) : (
+                <form
+                  onSubmit={handleSubmitReview}
+                  className="flex flex-col flex-1 min-h-0"
+                >
+                  {/* Scrollable Form Fields */}
+                  <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4 text-xs">
+                    {/* Multi-Barber Selection (1, 2, 3, or All Barbers) */}
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <label className="text-slate-700 dark:text-zinc-300 font-bold">
+                          {pickLang(lang, {
+                            ar: 'الحلاق المعني بالتقييم:',
+                            fr: 'Barbier(s) concerné(s) :',
+                            amz: 'ⴰⵎⴽⵔⴰⴹ / ⵉⵎⴽⵔⴰⴹⵏ :',
+                            en: 'Barber(s) Concerned:',
+                            es: 'Barbero(s):',
+                          })}
+                        </label>
+                        <span className="px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-500/40 text-[10px] font-bold text-amber-800 dark:text-amber-300">
+                          {isAllBarbersSelected
+                            ? pickLang(lang, {
+                                ar: 'الكل محدد',
+                                fr: 'Tous sélectionnés',
+                                amz: 'ⴰⴽⴽⵯ ⵉⵜⵜⵓⵙⵜⵢ',
+                                en: 'All Selected',
+                                es: 'Todos',
+                              })
+                            : pickLang(lang, {
+                                ar: `${selectedBarberIds.length} من ${mergedBarbers.length}`,
+                                fr: `${selectedBarberIds.length} / ${mergedBarbers.length}`,
+                                amz: `${selectedBarberIds.length} / ${mergedBarbers.length}`,
+                                en: `${selectedBarberIds.length} of ${mergedBarbers.length}`,
+                                es: `${selectedBarberIds.length} de ${mergedBarbers.length}`,
+                              })}
+                        </span>
+                      </div>
+
+                      {/* All Barbers ("الكل / كاملين") Button */}
+                      <button
+                        type="button"
+                        onClick={handleToggleAllBarbers}
+                        className={`w-full mb-2 px-3 py-2 rounded-xl border font-black text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                          isAllBarbersSelected
+                            ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-800 dark:text-emerald-300'
+                            : 'bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-700'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Users className="w-4 h-4 shrink-0" />
+                          <span>
+                            {pickLang(lang, {
+                              ar: 'الكل / كاملين (جميع الحلاقين)',
+                              fr: 'Tous les barbiers (Salon complet)',
+                              amz: 'ⴰⴽⴽⵯ ⵉⵎⴽⵔⴰⴹⵏ',
+                              en: 'All Barbers (Entire Team)',
+                              es: 'Todos los barberos',
+                            })}
+                          </span>
+                        </span>
+                        <span
+                          className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${
+                            isAllBarbersSelected
+                              ? 'bg-emerald-600 border-emerald-600 text-white'
+                              : 'bg-white dark:bg-zinc-950 border-slate-300 dark:border-zinc-700'
+                          }`}
+                        >
+                          {isAllBarbersSelected && <Check className="w-3.5 h-3.5" />}
+                        </span>
+                      </button>
+
+                      {/* Individual Barber Multi-Select Grid (1, 2, 3, or All) */}
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {mergedBarbers.map((b) => {
+                          const active = selectedBarberIds.includes(b.id);
+                          return (
+                            <button
+                              key={b.id}
+                              type="button"
+                              onClick={() => handleToggleBarberId(b.id)}
+                              className={`px-2.5 py-2 rounded-xl border text-left rtl:text-right font-bold flex items-center justify-between gap-1.5 transition-colors cursor-pointer ${
+                                active
+                                  ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-500 text-amber-900 dark:text-amber-200 shadow-2xs'
+                                  : 'bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-700'
+                              }`}
+                            >
+                              <span className="flex items-center gap-2 min-w-0">
+                                <img
+                                  src={b.avatar}
+                                  alt={b.name[lang] || b.name.fr}
+                                  className="w-6 h-6 rounded-full object-cover flex-shrink-0"
+                                />
+                                <span className="truncate text-[11px]">
+                                  {b.name[lang] || b.name.fr}
+                                </span>
+                              </span>
+                              <span
+                                className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                                  active
+                                    ? 'bg-amber-500 border-amber-500 text-white'
+                                    : 'bg-white dark:bg-zinc-950 border-slate-300 dark:border-zinc-700'
+                                }`}
+                              >
+                                {active && <Check className="w-3 h-3" />}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-zinc-400 mt-1">
+                        {pickLang(lang, {
+                          ar: 'يمكنك اختيار حلاق واحد، حلاقين، ثلاثة، أو الجميع.',
+                          fr: 'Sélectionnez 1, 2, 3 barbiers ou toute l’équipe.',
+                          amz: 'ⵜⵣⵎⵔⴷ ⴰⴷ ⵜⵙⵜⵉⴷ ⵢⴰⵏ, ⵙⵉⵏ, ⴽⵕⴰⴹ ⵏⵖ ⴰⴽⴽⵯ.',
+                          en: 'You can select 1, 2, 3, or all barbers.',
+                          es: 'Puedes elegir 1, 2, 3 o todos los barberos.',
+                        })}
+                      </p>
+                    </div>
+
+                    {/* Client Name (Optional + Auto-filled from booking + Anonymous Toggle) */}
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <label className="text-slate-700 dark:text-zinc-300 font-bold">
+                          {pickLang(lang, {
+                            ar: 'الاسم الكامل (اختياري):',
+                            fr: 'Votre nom (optionnel) :',
+                            amz: 'ⵉⵙⵎ ⵏⵏⴽ (ⵉⵖ ⵜⵔⵉⴷ) :',
+                            en: 'Full Name (optional):',
+                            es: 'Tu nombre (opcional):',
+                          })}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleToggleAnonymous}
+                          className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                            isAnonymous
+                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 border-slate-900 dark:border-zinc-100'
+                              : 'bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-800'
+                          }`}
+                        >
+                          <UserX className="w-3.5 h-3.5" />
+                          <span>
+                            {pickLang(lang, {
+                              ar: 'بدون اسم',
+                              fr: 'Sans nom',
+                              amz: 'ⵡⴰⵔ ⵉⵙⵎ',
+                              en: 'Anonymous',
+                              es: 'Sin nombre',
+                            })}
+                          </span>
+                          {isAnonymous && <Check className="w-3 h-3" />}
+                        </button>
+                      </div>
+
+                      <input
+                        type="text"
+                        value={author}
+                        disabled={isAnonymous}
+                        onChange={(e) => {
+                          userEditedAuthorRef.current = true;
+                          setAuthor(e.target.value);
+                        }}
+                        placeholder={
+                          isAnonymous
+                            ? pickLang(lang, {
+                                ar: 'سيتم النشر بدون اسم',
+                                fr: 'Publication anonyme activée',
+                                amz: 'ⴰⴷ ⵉⵜⵜⵓⴼⵙⵔ ⵡⴰⵔ ⵉⵙⵎ',
+                                en: 'Will be posted without a name',
+                                es: 'Se publicará sin nombre',
+                              })
+                            : pickLang(lang, {
+                                ar: 'اكتب اسمك أو اتركه فارغاً للنشر بدون اسم',
+                                fr: 'Votre nom (ou laissez vide pour anonyme)',
+                                amz: 'ⵉⵙⵎ ⵏⵏⴽ (ⵏⵖ ⴰⴷ ⵜⵜⵓⴼⵙⵔ ⵡⴰⵔ ⵉⵙⵎ)',
+                                en: 'Your name (or leave blank for anonymous)',
+                                es: 'Tu nombre (o déjalo vacío para anónimo)',
+                              })
+                        }
+                        className={`w-full border rounded-xl p-2.5 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none ${
+                          isAnonymous
+                            ? 'bg-slate-100 dark:bg-zinc-900/60 border-slate-200 dark:border-zinc-800 text-slate-500 dark:text-zinc-400 cursor-not-allowed'
+                            : 'bg-slate-50 dark:bg-zinc-900 border-slate-300 dark:border-zinc-800 focus:border-red-500'
+                        }`}
+                      />
+
+                      {!isAnonymous && autoFilledFromBooking && author.trim() === autoFilledFromBooking.name && (
+                        <p className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+                          <Sparkles className="w-3 h-3 shrink-0" />
+                          <span>
+                            {pickLang(lang, {
+                              ar: 'تم ملء اسمك تلقائياً من حجزك — يمكنك تغييره أو النشر بدون اسم.',
+                              fr: 'Nom pré-rempli depuis votre réservation — modifiable ou anonyme.',
+                              amz: 'ⵉⵜⵜⵓⵙⴽⵔ ⵉⵙⵎ ⵏⵏⴽ ⵙⴳ ⵓⵙⵉⵀⴰⵔ ⵏⵏⴽ.',
+                              en: 'Auto-filled from your booking — editable or post anonymously.',
+                              es: 'Nombre completado desde tu reserva — editable o anónimo.',
+                            })}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+
+                    {/* City / Area */}
+                    <div>
+                      <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
+                        {pickLang(lang, {
+                          ar: 'المدينة / الحي:',
+                          fr: 'Ville / Quartier :',
+                          amz: 'ⵜⴰⵎⴷⵉⵏⵜ / ⴰⵙⵓⵏ :',
+                          en: 'City / Area:',
+                          es: 'Ciudad / Zona:',
+                        })}
+                      </label>
+                      <input
+                        type="text"
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        placeholder="Taroudant"
+                        className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 rounded-xl p-2.5 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-red-500"
+                      />
+                    </div>
+
+                    {/* Star Rating */}
+                    <div>
+                      <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
+                        {pickLang(lang, {
+                          ar: 'تقييمك بالنجوم:',
+                          fr: 'Votre note :',
+                          amz: 'ⵜⴰⵏⵏⴰⵢⵜ ⵙ ⵉⵜⵔⴰⵏ :',
+                          en: 'Star Rating:',
+                          es: 'Tu puntuación:',
+                        })}
+                      </label>
+                      <div className="flex gap-1 text-amber-500 dark:text-amber-400 py-1">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            type="button"
+                            onClick={() => setRating(star)}
+                            className="p-1 text-2xl hover:scale-110 transition-transform cursor-pointer"
+                          >
+                            <Star
+                              className={`w-6 h-6 ${
+                                star <= rating
+                                  ? 'fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400'
+                                  : 'text-slate-300 dark:text-zinc-600'
+                              }`}
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Comment Textarea */}
+                    <div>
+                      <label className="block text-slate-700 dark:text-zinc-300 font-semibold mb-1">
+                        {pickLang(lang, {
+                          ar: 'تعليقك وتجربتك:',
+                          fr: 'Votre commentaire :',
+                          amz: 'ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ :',
+                          en: 'Your comment:',
+                          es: 'Tu comentario:',
+                        })}
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={comment}
+                        onChange={(e) => setComment(e.target.value)}
+                        required
+                        placeholder={pickLang(lang, {
+                          ar: 'اكتب رأيك بصراحة...',
+                          fr: 'Partagez votre ressenti...',
+                          amz: 'ⴰⵔⴰ ⵜⴰⵏⵏⴰⵢⵜ ⵏⵏⴽ...',
+                          en: 'Share your experience...',
+                          es: 'Comparte tu experiencia...',
+                        })}
+                        className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 rounded-xl p-2.5 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-red-500"
+                      />
+                    </div>
+
+                    {submitError && (
+                      <div className="p-2.5 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-500/40 text-red-700 dark:text-red-300 text-[11px] font-semibold flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{submitError}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Sticky Visible Action Footer Above Mobile Bottom Bar */}
+                  <div className="px-5 py-3 border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shrink-0 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsModalOpen(false)}
+                      className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white font-semibold cursor-pointer"
+                    >
+                      {pickLang(lang, {
+                        ar: 'إلغاء',
+                        fr: 'Annuler',
+                        amz: 'ⵙⵔ',
+                        en: 'Cancel',
+                        es: 'Cancelar',
+                      })}
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmitting || !comment.trim()}
+                      className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-black transition-colors cursor-pointer shadow-sm"
+                    >
+                      {isSubmitting
+                        ? '...'
+                        : pickLang(lang, {
+                            ar: 'نشر التقييم',
+                            fr: 'Publier',
+                            amz: 'ⵙⵙⵉⴼⴹ',
+                            en: 'Submit',
+                            es: 'Publicar',
+                          })}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </ModalPortal>
+      )}
     </section>
   );
 };

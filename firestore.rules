@@ -218,13 +218,26 @@ service cloud.firestore {
         'rating', 'comment', 'verified', 'createdAt'
       ])
       && data.keys().hasOnly([
-        'id', 'barberId', 'barberName', 'author', 'city',
+        'id', 'barberId', 'barberName', 'barberIds', 'barberNames',
+        'allBarbers', 'isAnonymous', 'author', 'city',
         'serviceName', 'rating', 'comment', 'dateLabel',
         'bookingId', 'verified', 'createdAt'
       ])
       && isValidId(data.id)
       && data.barberId is string && data.barberId.size() >= 1 && data.barberId.size() <= 64
       && data.barberName is string && data.barberName.size() >= 1 && data.barberName.size() <= 100
+      && (!('barberIds' in data) || (
+        data.barberIds is list
+        && data.barberIds.size() <= 12
+        && (data.barberIds.size() == 0 || (data.barberIds[0] is string && data.barberIds[0].size() >= 1 && data.barberIds[0].size() <= 64))
+      ))
+      && (!('barberNames' in data) || (
+        data.barberNames is list
+        && data.barberNames.size() <= 12
+        && (data.barberNames.size() == 0 || (data.barberNames[0] is string && data.barberNames[0].size() >= 1 && data.barberNames[0].size() <= 100))
+      ))
+      && (!('allBarbers' in data) || data.allBarbers is bool)
+      && (!('isAnonymous' in data) || data.isAnonymous is bool)
       && data.author is string && data.author.size() >= 1 && data.author.size() <= 120
       && (!('city' in data) || (data.city is string && data.city.size() <= 80))
       && (!('serviceName' in data) || (data.serviceName is string && data.serviceName.size() <= 120))
@@ -275,7 +288,10 @@ service cloud.firestore {
         'creditStatus', 'clientName', 'clientPhone', 'expectedRepaymentDate',
         'repaidDate', 'repaidAmountMAD', 'parentCreditEntryId',
         'sourceBookingId', 'sourceTicketNumber', 'note',
-        'createdByRole', 'createdByName', 'createdAt', 'updatedAt'
+        'createdByRole', 'createdByName', 'createdAt', 'updatedAt',
+        'deviceKind', 'deviceId', 'deviceLabel', 'devicePlatform', 'deviceBrowser',
+        'timeSource', 'serverClockOffsetMs', 'deviceClockISO', 'offlineCreated',
+        'firestoreServerCreatedAt'
       ])
       && isValidId(data.id)
       && isValidBarberSlug(data.barberId)
@@ -302,7 +318,17 @@ service cloud.firestore {
       && data.createdByRole in ['master', 'barber', 'caisse']
       && data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 100
       && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64
-      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
+      && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64
+      && (!('deviceKind' in data) || data.deviceKind in ['pc', 'phone'])
+      && (!('deviceId' in data) || (data.deviceId is string && data.deviceId.size() <= 32))
+      && (!('deviceLabel' in data) || (data.deviceLabel is string && data.deviceLabel.size() <= 80))
+      && (!('devicePlatform' in data) || (data.devicePlatform is string && data.devicePlatform.size() <= 64))
+      && (!('deviceBrowser' in data) || (data.deviceBrowser is string && data.deviceBrowser.size() <= 64))
+      && (!('timeSource' in data) || data.timeSource in ['server_api', 'firestore_server', 'cached_offset', 'device_clock'])
+      && (!('serverClockOffsetMs' in data) || (data.serverClockOffsetMs is number && data.serverClockOffsetMs >= -3153600000000 && data.serverClockOffsetMs <= 3153600000000))
+      && (!('deviceClockISO' in data) || (data.deviceClockISO is string && data.deviceClockISO.size() <= 64))
+      && (!('offlineCreated' in data) || data.offlineCreated is bool)
+      && (!('firestoreServerCreatedAt' in data) || data.firestoreServerCreatedAt is timestamp || (data.firestoreServerCreatedAt is string && data.firestoreServerCreatedAt.size() <= 64));
     }
 
     function isValidCaisseSetting(data) {

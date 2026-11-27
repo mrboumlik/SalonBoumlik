@@ -156,6 +156,17 @@ function computeBarberSatisfactionMetrics(
   const firstAr = barber.name.ar.split(' ')[0];
 
   const matchingReviews = reviews.filter((rev) => {
+    if (
+      rev.allBarbers ||
+      rev.barberId === 'all' ||
+      (Array.isArray(rev.barberIds) && rev.barberIds.length > 0)
+    ) {
+      return (
+        Boolean(rev.allBarbers) ||
+        rev.barberId === 'all' ||
+        (Array.isArray(rev.barberIds) && rev.barberIds.includes(barber.id))
+      );
+    }
     if (rev.barberId) {
       return rev.barberId === barber.id;
     }

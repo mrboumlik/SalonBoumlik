@@ -223,6 +223,19 @@ async function startServer() {
     });
   }
 
+  // Authoritative server clock endpoint to protect business dates & timestamps against drifted device clocks
+  app.get('/api/time', (_req, res) => {
+    const nowMs = Date.now();
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.json({
+      nowMs,
+      iso: new Date(nowMs).toISOString(),
+      timeZone: 'Africa/Casablanca',
+    });
+  });
+
   // Expose VAPID Public Key for browser PushManager.subscribe()
   app.get('/api/push/vapid-public-key', (_req, res) => {
     res.json({ publicKey: vapidKeys.publicKey });

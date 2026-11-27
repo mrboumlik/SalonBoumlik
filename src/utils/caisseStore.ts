@@ -4,9 +4,11 @@ import {
   deleteDoc,
   deleteField,
   doc,
+  getDocFromServer,
   getDocs,
   getDocsFromServer,
   onSnapshot,
+  serverTimestamp,
   setDoc,
   updateDoc,
   writeBatch,
@@ -27,13 +29,16 @@ import {
   StaffRole,
 } from '../types';
 import { getBarberIdentityTokens } from './barberIdentity';
+import { getCurrentDeviceOrigin } from './deviceOrigin';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import { showToast } from './notifications';
 import {
   emitRealtimeSyncHint,
   registerRealtimeRefreshHandler,
   resetResilientRetry,
   scheduleResilientRetry,
 } from './realtimeSync';
+import { safeStorageGet, safeStorageSet } from './safeBrowser';
 import {
   asDateString,
   asFiniteNum,
@@ -42,6 +47,13 @@ import {
   asStrArray,
   safeCompareDesc,
 } from './safeCoerce';
+import {
+  formatMoroccoCalendarDate,
+  getTrustedNowDate,
+  getTrustedNowMs,
+  getTrustedTimeMeta,
+  syncTrustedServerTime,
+} from './trustedTime';
 
 const CAISSE_ENTRIES_COLLECTION = 'caisse_entries';
 const CAISSE_SETTINGS_COLLECTION = 'caisse_settings';
@@ -49,18 +61,17 @@ const CAISSE_SETTLEMENTS_COLLECTION = 'caisse_settlements';
 const CAISSE_CYCLES_COLLECTION = 'caisse_cycles';
 const CAISSE_ARCHIVES_COLLECTION = 'caisse_daily_archives';
 const BARBER_DAILY_NOTES_COLLECTION = 'barber_daily_notes';
+const CAISSE_OFFLINE_QUEUE_KEY = 'salon_boumlik_caisse_offline_queue_v1';
 
 /**
- * Business day rolls over at 03:00 AM local time so late-night entries
- * between 00:00 and 02:59 still belong to the salon's previous evening shift.
+ * Business day rolls over at 03:00 AM Morocco time (`Africa/Casablanca`) so late-night
+ * entries between 00:00 and 02:59 still belong to the salon's previous evening shift.
+ * Uses server-calibrated time to protect against corrupted local device clocks.
  */
-export function getSalonBusinessDate(dateObj: Date = new Date()): string {
-  const shifted = new Date(dateObj.getTime());
-  shifted.setHours(shifted.getHours() - 3);
-  const yyyy = shifted.getFullYear();
-  const mm = String(shifted.getMonth() + 1).padStart(2, '0');
-  const dd = String(shifted.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+export function getSalonBusinessDate(dateObj?: Date): string {
+  const baseDate = dateObj ?? getTrustedNowDate();
+  const shifted = new Date(baseDate.getTime() - 3 * 60 * 60 * 1000);
+  return formatMoroccoCalendarDate(shifted);
 }
 
 export interface CaisseBarberInfo {
@@ -244,7 +255,8 @@ export function matchesCaisseFinancialBarber(
 
 function getNextMonotonicIsoForBarber(
   barberId: CaisseBarberId,
-  rosterMembers?: RosterMemberAccount[]
+  rosterMembers?: RosterMemberAccount[],
+  targetTimeMs?: number
 ): string {
   let maxAnchorMs = 0;
   Object.values(settlementsCache).forEach((s) => {
@@ -264,7 +276,10 @@ function getNextMonotonicIsoForBarber(
       if (Number.isFinite(ms) && ms > maxAnchorMs) maxAnchorMs = ms;
     }
   });
-  const nowMs = Date.now();
+  const nowMs =
+    typeof targetTimeMs === 'number' && Number.isFinite(targetTimeMs)
+      ? targetTimeMs
+      : getTrustedNowMs();
   const safeMs = nowMs <= maxAnchorMs ? maxAnchorMs + 1 : nowMs;
   return new Date(safeMs).toISOString().slice(0, 64);
 }
@@ -296,7 +311,14 @@ export function getEffectiveCaisseCreditRemaining(
 function coerceCaisseEntryDoc(rawInput: unknown, docId: string): CaisseEntry {
   const raw = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, unknown>;
   const id = asStr(raw.id, docId) || docId;
-  const createdAt = asIsoString(raw.createdAt, '') || asIsoString(raw.updatedAt, '');
+  const firestoreServerCreatedAt =
+    raw.firestoreServerCreatedAt !== undefined && raw.firestoreServerCreatedAt !== null
+      ? asIsoString(raw.firestoreServerCreatedAt, '') || undefined
+      : undefined;
+  const createdAt =
+    asIsoString(raw.createdAt, '') ||
+    firestoreServerCreatedAt ||
+    asIsoString(raw.updatedAt, '');
   const updatedAt = asIsoString(raw.updatedAt, createdAt);
   const date = asDateString(raw.date, '') || (createdAt ? createdAt.slice(0, 10) : getSalonBusinessDate());
   return {
@@ -331,6 +353,25 @@ function coerceCaisseEntryDoc(rawInput: unknown, docId: string): CaisseEntry {
     createdByName: asStr(raw.createdByName, 'Staff'),
     createdAt,
     updatedAt,
+    deviceKind: raw.deviceKind === 'phone' || raw.deviceKind === 'pc' ? raw.deviceKind : undefined,
+    deviceId: raw.deviceId !== undefined ? asStr(raw.deviceId, '') || undefined : undefined,
+    deviceLabel: raw.deviceLabel !== undefined ? asStr(raw.deviceLabel, '') || undefined : undefined,
+    devicePlatform: raw.devicePlatform !== undefined ? asStr(raw.devicePlatform, '') || undefined : undefined,
+    deviceBrowser: raw.deviceBrowser !== undefined ? asStr(raw.deviceBrowser, '') || undefined : undefined,
+    timeSource:
+      raw.timeSource === 'server_api' ||
+      raw.timeSource === 'firestore_server' ||
+      raw.timeSource === 'cached_offset' ||
+      raw.timeSource === 'device_clock'
+        ? raw.timeSource
+        : undefined,
+    serverClockOffsetMs:
+      typeof raw.serverClockOffsetMs === 'number' && Number.isFinite(raw.serverClockOffsetMs)
+        ? raw.serverClockOffsetMs
+        : undefined,
+    deviceClockISO: raw.deviceClockISO !== undefined ? asIsoString(raw.deviceClockISO, '') || undefined : undefined,
+    offlineCreated: typeof raw.offlineCreated === 'boolean' ? raw.offlineCreated : undefined,
+    firestoreServerCreatedAt,
   };
 }
 
@@ -460,13 +501,213 @@ async function getCollectionDocsFast<T>(colName: string) {
   }
 }
 
+// ---------- Offline Caisse Queue + Auto-Reconciliation ----------
+
+type PendingOfflineQueueItem =
+  | {
+      kind: 'create';
+      id: string;
+      payload: CaisseEntry;
+      hasExplicitDateOverride: boolean;
+      hasExplicitCreatedAtOverride: boolean;
+      queuedAtPerfMs: number;
+      queuedAtTrustedMs: number;
+      wasCalibratedAtCreation: boolean;
+      attempts: number;
+      lastError?: string;
+    }
+  | {
+      kind: 'repayment';
+      id: string;
+      creditEntryId: string;
+      prevRemainingMAD: number;
+      prevRepaidTotalMAD: number;
+      amountAppliedMAD: number;
+      repaymentPayload: CaisseEntry;
+      queuedAtPerfMs: number;
+      queuedAtTrustedMs: number;
+      wasCalibratedAtCreation: boolean;
+      attempts: number;
+      lastError?: string;
+    };
+
+export interface CaisseOfflineStatus {
+  isOnline: boolean;
+  pendingCount: number;
+  pendingEntryIds: string[];
+  isSyncing: boolean;
+  lastSyncError: string | null;
+  flushNow: () => Promise<number>;
+}
+
+const SESSION_BOOT_EPOCH = Math.random().toString(36).slice(2, 8);
+const sessionPerfAnchorIds = new Set<string>();
+let offlineQueue: PendingOfflineQueueItem[] = [];
+let isFlushingOfflineQueue = false;
+let lastOfflineSyncError: string | null = null;
+let offlineHooksBound = false;
+const offlineStatusListeners = new Set<() => void>();
+
+function loadOfflineQueue(): PendingOfflineQueueItem[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = safeStorageGet(CAISSE_OFFLINE_QUEUE_KEY, 'local');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is PendingOfflineQueueItem =>
+        Boolean(item && typeof item === 'object' && typeof item.id === 'string' && (item.kind === 'create' || item.kind === 'repayment'))
+    );
+  } catch {
+    return [];
+  }
+}
+
+offlineQueue = loadOfflineQueue();
+
+function saveOfflineQueue(next: PendingOfflineQueueItem[]): void {
+  offlineQueue = next;
+  try {
+    safeStorageSet(CAISSE_OFFLINE_QUEUE_KEY, JSON.stringify(next), 'local');
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function getCurrentOfflineStatusSnapshot(): Omit<CaisseOfflineStatus, 'flushNow'> {
+  return {
+    isOnline: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
+    pendingCount: offlineQueue.length,
+    pendingEntryIds: offlineQueue.map((q) => q.id),
+    isSyncing: isFlushingOfflineQueue,
+    lastSyncError: lastOfflineSyncError,
+  };
+}
+
+function notifyOfflineStatusListeners(): void {
+  offlineStatusListeners.forEach((cb) => {
+    try {
+      cb();
+    } catch {
+      // Ignore
+    }
+  });
+}
+
+function isLikelyNetworkOfflineError(error: unknown): boolean {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  const msg =
+    error instanceof Error
+      ? `${error.name} ${error.message}`.toLowerCase()
+      : String(error || '').toLowerCase();
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code || '').toLowerCase()
+      : '';
+  if (code === 'permission-denied' || code === 'invalid-argument' || msg.includes('permission_denied')) {
+    return false;
+  }
+  return (
+    code === 'unavailable' ||
+    code === 'deadline-exceeded' ||
+    code === 'aborted' ||
+    msg.includes('offline') ||
+    msg.includes('network') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('unavailable') ||
+    msg.includes('timeout') ||
+    msg.includes('transport') ||
+    msg.includes('connection')
+  );
+}
+
+function stripClientOnlyEntryFields(entry: CaisseEntry): Record<string, unknown> {
+  const clean: Record<string, unknown> = { ...entry };
+  delete clean.offlinePending;
+  delete clean.firestoreServerCreatedAt;
+  Object.keys(clean).forEach((k) => {
+    if (clean[k] === undefined) delete clean[k];
+  });
+  return clean;
+}
+
+function buildFirestoreCreateDocPayload(entry: CaisseEntry): Record<string, unknown> {
+  const clean = stripClientOnlyEntryFields(entry);
+  clean.firestoreServerCreatedAt = serverTimestamp();
+  return clean;
+}
+
+async function raceWithTimeout<T>(promise: Promise<T>, timeoutMs = 6500): Promise<T> {
+  let timerId: number | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        if (typeof window !== 'undefined') {
+          timerId = window.setTimeout(() => {
+            reject(new Error('firestore_write_timeout'));
+          }, timeoutMs);
+        }
+      }),
+    ]);
+  } finally {
+    if (timerId !== undefined && typeof window !== 'undefined') {
+      window.clearTimeout(timerId);
+    }
+  }
+}
+
 // ---------- In-memory caches + shared Firestore subscriptions ----------
 
-let entriesCache: CaisseEntry[] = [];
+let lastFirestoreEntries: CaisseEntry[] = [];
+let entriesCache: CaisseEntry[] = mergeEntriesWithOfflineQueue([]);
 let hasEntriesHydrated = false;
 const entryListeners = new Set<(entries: CaisseEntry[]) => void>();
 let entriesUnsub: (() => void) | null = null;
 let entriesRefreshUnsub: (() => void) | null = null;
+
+function mergeEntriesWithOfflineQueue(baseEntries: CaisseEntry[]): CaisseEntry[] {
+  const baseById = new Map<string, CaisseEntry>();
+  baseEntries.forEach((e) => {
+    baseById.set(e.id, e);
+  });
+
+  const pendingOverlays: CaisseEntry[] = [];
+
+  for (const item of offlineQueue) {
+    if (item.kind === 'create') {
+      if (!baseById.has(item.id)) {
+        pendingOverlays.push({ ...item.payload, offlinePending: true });
+      }
+    } else if (item.kind === 'repayment') {
+      if (!baseById.has(item.id)) {
+        pendingOverlays.push({ ...item.repaymentPayload, offlinePending: true });
+      }
+      const existingParent = baseById.get(item.creditEntryId);
+      if (existingParent) {
+        const nextRemaining = clampAmount(
+          Math.max(0, existingParent.creditRemainingMAD - item.amountAppliedMAD)
+        );
+        baseById.set(item.creditEntryId, {
+          ...existingParent,
+          creditRemainingMAD: nextRemaining,
+          creditStatus: nextRemaining <= 0 ? 'paid' : 'partial',
+          repaidDate: item.repaymentPayload.repaidDate || existingParent.repaidDate,
+          repaidAmountMAD: clampAmount((existingParent.repaidAmountMAD || 0) + item.amountAppliedMAD),
+          updatedAt: item.repaymentPayload.updatedAt,
+        });
+      }
+    }
+  }
+
+  return sortCaisseEntriesDesc([...pendingOverlays, ...Array.from(baseById.values())]);
+}
+
+function rebuildEntriesCacheFromBase(baseEntries: CaisseEntry[]): void {
+  lastFirestoreEntries = baseEntries;
+  entriesCache = mergeEntriesWithOfflineQueue(baseEntries);
+}
 
 function notifyEntriesListeners() {
   entryListeners.forEach((cb) => {
@@ -488,11 +729,10 @@ function ensureEntriesListener() {
         ensureEntriesListener();
         try {
           const snap = await getCollectionDocsFast(CAISSE_ENTRIES_COLLECTION);
-          entriesCache = sortCaisseEntriesDesc(
-            snap.docs.map((d) => coerceCaisseEntryDoc(d.data(), d.id))
-          );
+          rebuildEntriesCacheFromBase(snap.docs.map((d) => coerceCaisseEntryDoc(d.data(), d.id)));
           hasEntriesHydrated = true;
           notifyEntriesListeners();
+          void flushOfflineCaisseQueue();
         } catch (err) {
           console.warn('Caisse entries wake refresh warning:', err);
         }
@@ -505,11 +745,12 @@ function ensureEntriesListener() {
     collection(db, CAISSE_ENTRIES_COLLECTION),
     (snapshot) => {
       resetResilientRetry('caisse_entries');
-      entriesCache = sortCaisseEntriesDesc(
-        snapshot.docs.map((d) => coerceCaisseEntryDoc(d.data(), d.id))
-      );
+      rebuildEntriesCacheFromBase(snapshot.docs.map((d) => coerceCaisseEntryDoc(d.data(), d.id)));
       hasEntriesHydrated = true;
       notifyEntriesListeners();
+      if (offlineQueue.length > 0 && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+        void flushOfflineCaisseQueue();
+      }
     },
     (error) => {
       if (entriesUnsub) {
@@ -530,10 +771,260 @@ function ensureEntriesListener() {
   );
 }
 
+function resolveQueuedEventTimeMs(
+  item: {
+    id: string;
+    queuedAtPerfMs: number;
+    queuedAtTrustedMs: number;
+    wasCalibratedAtCreation: boolean;
+  },
+  freshServerNowMs: number
+): number {
+  if (
+    sessionPerfAnchorIds.has(item.id) &&
+    typeof performance !== 'undefined' &&
+    Number.isFinite(item.queuedAtPerfMs)
+  ) {
+    const elapsedMs = Math.max(0, performance.now() - item.queuedAtPerfMs);
+    return Math.round(freshServerNowMs - elapsedMs);
+  }
+  if (item.wasCalibratedAtCreation && Number.isFinite(item.queuedAtTrustedMs)) {
+    return item.queuedAtTrustedMs;
+  }
+  return freshServerNowMs;
+}
+
+export async function flushOfflineCaisseQueue(): Promise<number> {
+  if (isFlushingOfflineQueue || offlineQueue.length === 0) return 0;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return 0;
+
+  isFlushingOfflineQueue = true;
+  lastOfflineSyncError = null;
+  notifyOfflineStatusListeners();
+
+  let syncedCount = 0;
+
+  try {
+    const calibrated = await syncTrustedServerTime(true);
+    if (!calibrated && typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return 0;
+    }
+    const freshServerNowMs = getTrustedNowMs();
+    const freshTimeMeta = getTrustedTimeMeta();
+
+    const remaining: PendingOfflineQueueItem[] = [];
+    let abortedNetwork = false;
+
+    for (let i = 0; i < offlineQueue.length; i += 1) {
+      const item = offlineQueue[i];
+      if (abortedNetwork) {
+        remaining.push(item);
+        continue;
+      }
+
+      try {
+        if (item.kind === 'create') {
+          const docRef = doc(db, CAISSE_ENTRIES_COLLECTION, item.id);
+          // Check server first so an earlier write that landed right before timeout is never overwritten with mismatched createdAt
+          const existingSnap = await raceWithTimeout(getDocFromServer(docRef), 5000);
+          if (existingSnap.exists()) {
+            syncedCount += 1;
+            continue;
+          }
+
+          const eventMs = resolveQueuedEventTimeMs(item, freshServerNowMs);
+          const reconciledIso = item.hasExplicitCreatedAtOverride
+            ? item.payload.createdAt
+            : getNextMonotonicIsoForBarber(item.payload.barberId, undefined, eventMs);
+          const reconciledDate = item.hasExplicitDateOverride
+            ? item.payload.date
+            : getSalonBusinessDate(new Date(eventMs));
+
+          const finalizedEntry: CaisseEntry = {
+            ...item.payload,
+            date: reconciledDate,
+            createdAt: reconciledIso,
+            updatedAt: reconciledIso,
+            timeSource: freshTimeMeta.timeSource,
+            serverClockOffsetMs: freshTimeMeta.serverOffsetMs,
+            offlineCreated: true,
+          };
+
+          await raceWithTimeout(
+            setDoc(docRef, buildFirestoreCreateDocPayload(finalizedEntry)),
+            7000
+          );
+
+          rebuildEntriesCacheFromBase([
+            finalizedEntry,
+            ...lastFirestoreEntries.filter((e) => e.id !== item.id),
+          ]);
+          syncedCount += 1;
+        } else if (item.kind === 'repayment') {
+          const repayRef = doc(db, CAISSE_ENTRIES_COLLECTION, item.id);
+          const existingSnap = await raceWithTimeout(getDocFromServer(repayRef), 5000);
+          if (existingSnap.exists()) {
+            syncedCount += 1;
+            continue;
+          }
+
+          const eventMs = resolveQueuedEventTimeMs(item, freshServerNowMs);
+          const reconciledIso = getNextMonotonicIsoForBarber(
+            item.repaymentPayload.barberId,
+            undefined,
+            eventMs
+          );
+          const reconciledDate = getSalonBusinessDate(new Date(eventMs));
+          const nextRemaining = clampAmount(item.prevRemainingMAD - item.amountAppliedMAD);
+          const nextStatus: CaisseCreditStatus = nextRemaining <= 0 ? 'paid' : 'partial';
+
+          const finalizedRepayment: CaisseEntry = {
+            ...item.repaymentPayload,
+            date: reconciledDate,
+            repaidDate: reconciledDate,
+            createdAt: reconciledIso,
+            updatedAt: reconciledIso,
+            timeSource: freshTimeMeta.timeSource,
+            serverClockOffsetMs: freshTimeMeta.serverOffsetMs,
+            offlineCreated: true,
+          };
+
+          const batch = writeBatch(db);
+          batch.update(doc(db, CAISSE_ENTRIES_COLLECTION, item.creditEntryId), {
+            creditRemainingMAD: nextRemaining,
+            creditStatus: nextStatus,
+            repaidDate: reconciledDate,
+            repaidAmountMAD: clampAmount(item.prevRepaidTotalMAD + item.amountAppliedMAD),
+            updatedAt: reconciledIso,
+          });
+          batch.set(repayRef, buildFirestoreCreateDocPayload(finalizedRepayment));
+          await raceWithTimeout(batch.commit(), 7000);
+
+          rebuildEntriesCacheFromBase([
+            finalizedRepayment,
+            ...lastFirestoreEntries.map((entry) =>
+              entry.id === item.creditEntryId
+                ? {
+                    ...entry,
+                    creditRemainingMAD: nextRemaining,
+                    creditStatus: nextStatus,
+                    repaidDate: reconciledDate,
+                    repaidAmountMAD: clampAmount(item.prevRepaidTotalMAD + item.amountAppliedMAD),
+                    updatedAt: reconciledIso,
+                  }
+                : entry
+            ),
+          ]);
+          syncedCount += 1;
+        }
+      } catch (err) {
+        if (isLikelyNetworkOfflineError(err)) {
+          abortedNetwork = true;
+          lastOfflineSyncError = 'في انتظار عودة الإنترنت للمزامنة...';
+          remaining.push({
+            ...item,
+            attempts: item.attempts + 1,
+            lastError: err instanceof Error ? err.message : String(err),
+          });
+        } else {
+          lastOfflineSyncError = err instanceof Error ? err.message : String(err);
+          remaining.push({
+            ...item,
+            attempts: item.attempts + 1,
+            lastError: lastOfflineSyncError,
+          });
+        }
+      }
+    }
+
+    saveOfflineQueue(remaining);
+    rebuildEntriesCacheFromBase(lastFirestoreEntries);
+    notifyEntriesListeners();
+
+    if (syncedCount > 0) {
+      emitRealtimeSyncHint('caisse');
+      emitRealtimeSyncHint('credits');
+      showToast(
+        `تمت مزامنة ${syncedCount} ${syncedCount === 1 ? 'عملية معلقة' : 'عمليات معلقة'} مع السحابة ✓`,
+        'تم حفظ جميع التواريخ والمبالغ بتوقيت الخادم الموثوق.',
+        'success'
+      );
+    }
+
+    return syncedCount;
+  } finally {
+    isFlushingOfflineQueue = false;
+    notifyOfflineStatusListeners();
+  }
+}
+
+function bindOfflineCaisseHooks(): void {
+  if (offlineHooksBound || typeof window === 'undefined') return;
+  offlineHooksBound = true;
+
+  const handleOnline = () => {
+    notifyOfflineStatusListeners();
+    void flushOfflineCaisseQueue();
+  };
+  const handleOffline = () => {
+    notifyOfflineStatusListeners();
+  };
+  const handleWake = () => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    if (offlineQueue.length > 0) {
+      void flushOfflineCaisseQueue();
+    }
+  };
+
+  try {
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('focus', handleWake);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') handleWake();
+      });
+    }
+    window.setInterval(() => {
+      if (offlineQueue.length > 0 && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+        void flushOfflineCaisseQueue();
+      }
+    }, 15000);
+  } catch {
+    // Ignore restricted environment hook failures
+  }
+}
+
+if (typeof window !== 'undefined') {
+  bindOfflineCaisseHooks();
+}
+
+export function useCaisseOfflineStatus(): CaisseOfflineStatus {
+  const [status, setStatus] = useState<Omit<CaisseOfflineStatus, 'flushNow'>>(() =>
+    getCurrentOfflineStatusSnapshot()
+  );
+
+  useEffect(() => {
+    bindOfflineCaisseHooks();
+    const syncState = () => setStatus(getCurrentOfflineStatusSnapshot());
+    syncState();
+    offlineStatusListeners.add(syncState);
+    return () => {
+      offlineStatusListeners.delete(syncState);
+    };
+  }, []);
+
+  return {
+    ...status,
+    flushNow: flushOfflineCaisseQueue,
+  };
+}
+
 export function subscribeToCaisseEntries(cb: (entries: CaisseEntry[]) => void): () => void {
+  bindOfflineCaisseHooks();
   entryListeners.add(cb);
   ensureEntriesListener();
-  if (hasEntriesHydrated) cb(entriesCache);
+  if (hasEntriesHydrated || offlineQueue.length > 0) cb(entriesCache);
   return () => {
     entryListeners.delete(cb);
     if (entryListeners.size === 0) {
@@ -1186,11 +1677,32 @@ export async function addCaisseEntry(input: CreateCaisseEntryInput): Promise<Cai
   const effectiveBarberId: CaisseBarberId = isFloatEntryType(input.type)
     ? 'hassan'
     : input.barberId;
-  const nowIso = (input.createdAtOverride && input.createdAtOverride.trim())
-    ? input.createdAtOverride.trim().slice(0, 64)
-    : getNextMonotonicIsoForBarber(effectiveBarberId);
+
+  const browserOnline = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+  if (browserOnline && !getTrustedTimeMeta().isCalibrated) {
+    await syncTrustedServerTime(false);
+  }
+
+  const timeMeta = getTrustedTimeMeta();
+  const trustedNowMs = getTrustedNowMs();
+  const deviceOrigin = getCurrentDeviceOrigin();
+  const deviceClockISO = new Date().toISOString().slice(0, 64);
+
+  const hasExplicitCreatedAtOverride = Boolean(
+    input.createdAtOverride && input.createdAtOverride.trim()
+  );
+  const currentTrustedBizDate = getSalonBusinessDate(new Date(trustedNowMs));
+  const rawInputDate = String(input.date || '').trim().slice(0, 20);
+  const hasExplicitHistoricalDate = Boolean(
+    rawInputDate && rawInputDate !== currentTrustedBizDate && hasExplicitCreatedAtOverride
+  );
+
+  const nowIso = hasExplicitCreatedAtOverride
+    ? input.createdAtOverride!.trim().slice(0, 64)
+    : getNextMonotonicIsoForBarber(effectiveBarberId, undefined, trustedNowMs);
+
   const rand = Math.random().toString(36).slice(2, 7);
-  const id = sanitizeId(`ce_${Date.now()}_${rand}`, 'ce');
+  const id = sanitizeId(`ce_${trustedNowMs}_${SESSION_BOOT_EPOCH}_${rand}`, 'ce');
   const meta = getCaisseBarberMeta(effectiveBarberId);
 
   const expected = clampAmount(input.expectedAmountMAD);
@@ -1216,7 +1728,7 @@ export async function addCaisseEntry(input: CreateCaisseEntryInput): Promise<Cai
       .trim()
       .slice(0, 100),
     type: input.type,
-    date: String(input.date || getSalonBusinessDate()).slice(0, 20),
+    date: rawInputDate || currentTrustedBizDate,
     expectedAmountMAD: expected,
     amountPaidMAD: paid,
     creditAmountMAD: creditTotal,
@@ -1226,6 +1738,15 @@ export async function addCaisseEntry(input: CreateCaisseEntryInput): Promise<Cai
     createdByName: String(input.createdByName || meta.name).trim().slice(0, 100),
     createdAt: nowIso,
     updatedAt: nowIso,
+    deviceKind: deviceOrigin.deviceKind,
+    deviceId: deviceOrigin.deviceId,
+    deviceLabel: deviceOrigin.deviceLabel,
+    devicePlatform: deviceOrigin.devicePlatform,
+    deviceBrowser: deviceOrigin.deviceBrowser,
+    timeSource: timeMeta.timeSource,
+    serverClockOffsetMs: timeMeta.serverOffsetMs,
+    deviceClockISO,
+    offlineCreated: !browserOnline,
   };
 
   if (input.type === 'barber_adjustment') {
@@ -1266,18 +1787,57 @@ export async function addCaisseEntry(input: CreateCaisseEntryInput): Promise<Cai
     payload.note = input.note.trim().slice(0, 400);
   }
 
+  const enqueueLocally = (): CaisseEntry => {
+    const perfNow = typeof performance !== 'undefined' ? performance.now() : trustedNowMs;
+    sessionPerfAnchorIds.add(id);
+    const queuedEntry: CaisseEntry = {
+      ...payload,
+      offlineCreated: true,
+      offlinePending: true,
+    };
+    const nextQueue: PendingOfflineQueueItem[] = [
+      ...offlineQueue.filter((q) => q.id !== id),
+      {
+        kind: 'create',
+        id,
+        payload: { ...payload, offlineCreated: true },
+        hasExplicitDateOverride: hasExplicitHistoricalDate || Boolean(hasExplicitCreatedAtOverride),
+        hasExplicitCreatedAtOverride,
+        queuedAtPerfMs: perfNow,
+        queuedAtTrustedMs: trustedNowMs,
+        wasCalibratedAtCreation: timeMeta.isCalibrated,
+        attempts: 0,
+      },
+    ];
+    saveOfflineQueue(nextQueue);
+    rebuildEntriesCacheFromBase(lastFirestoreEntries);
+    notifyEntriesListeners();
+    notifyOfflineStatusListeners();
+    return queuedEntry;
+  };
+
+  if (!browserOnline) {
+    return enqueueLocally();
+  }
+
   const path = `${CAISSE_ENTRIES_COLLECTION}/${id}`;
   try {
-    await setDoc(doc(db, CAISSE_ENTRIES_COLLECTION, id), payload);
-    entriesCache = sortCaisseEntriesDesc([
+    await raceWithTimeout(
+      setDoc(doc(db, CAISSE_ENTRIES_COLLECTION, id), buildFirestoreCreateDocPayload(payload)),
+      6500
+    );
+    rebuildEntriesCacheFromBase([
       payload,
-      ...entriesCache.filter((item) => item.id !== id),
+      ...lastFirestoreEntries.filter((item) => item.id !== id),
     ]);
     notifyEntriesListeners();
     emitRealtimeSyncHint('caisse');
     if (creditRemaining > 0) emitRealtimeSyncHint('credits');
     return payload;
   } catch (error) {
+    if (isLikelyNetworkOfflineError(error)) {
+      return enqueueLocally();
+    }
     handleFirestoreError(error, OperationType.CREATE, path);
   }
 }
@@ -1310,7 +1870,7 @@ export async function updateCaisseEntry(
   const path = `${CAISSE_ENTRIES_COLLECTION}/${entryId}`;
   try {
     const updatePayload: Record<string, unknown> = {
-      updatedAt: new Date().toISOString().slice(0, 64),
+      updatedAt: new Date(getTrustedNowMs()).toISOString().slice(0, 64),
     };
 
     const resolvedPatchType = patch.type;
@@ -1388,8 +1948,8 @@ export async function updateCaisseEntry(
     }
 
     await updateDoc(doc(db, CAISSE_ENTRIES_COLLECTION, entryId), updatePayload);
-    entriesCache = sortCaisseEntriesDesc(
-      entriesCache.map((item) => {
+    rebuildEntriesCacheFromBase(
+      lastFirestoreEntries.map((item) => {
         if (item.id !== entryId) return item;
         const merged: CaisseEntry = {
           ...item,
@@ -1444,9 +2004,18 @@ export async function updateCaisseEntry(
 
 export async function deleteCaisseEntry(entryId: string): Promise<void> {
   const path = `${CAISSE_ENTRIES_COLLECTION}/${entryId}`;
+  // If queued locally and not yet synced, remove directly from offline queue cleanly
+  const queuedMatch = offlineQueue.find((q) => q.id === entryId);
+  if (queuedMatch) {
+    saveOfflineQueue(offlineQueue.filter((q) => q.id !== entryId));
+    rebuildEntriesCacheFromBase(lastFirestoreEntries.filter((item) => item.id !== entryId));
+    notifyEntriesListeners();
+    notifyOfflineStatusListeners();
+    return;
+  }
   try {
     await deleteDoc(doc(db, CAISSE_ENTRIES_COLLECTION, entryId));
-    entriesCache = entriesCache.filter((item) => item.id !== entryId);
+    rebuildEntriesCacheFromBase(lastFirestoreEntries.filter((item) => item.id !== entryId));
     notifyEntriesListeners();
     emitRealtimeSyncHint('caisse');
     emitRealtimeSyncHint('credits');
@@ -1477,10 +2046,21 @@ export async function recordCaisseCreditRepayment(params: {
     throw new Error('المبلغ المؤدى يجب أن يكون أكبر من 0 درهم.');
   }
 
-  const nowIso = getNextMonotonicIsoForBarber(creditEntry.barberId);
+  const browserOnline = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+  if (browserOnline && !getTrustedTimeMeta().isCalibrated) {
+    await syncTrustedServerTime(false);
+  }
+
+  const timeMeta = getTrustedTimeMeta();
+  const trustedNowMs = getTrustedNowMs();
+  const deviceOrigin = getCurrentDeviceOrigin();
+  const deviceClockISO = new Date().toISOString().slice(0, 64);
+
+  const nowIso = getNextMonotonicIsoForBarber(creditEntry.barberId, undefined, trustedNowMs);
   const nextRemaining = clampAmount(creditEntry.creditRemainingMAD - applied);
   const nextStatus: CaisseCreditStatus = nextRemaining <= 0 ? 'paid' : 'partial';
   const prevRepaidTotal = clampAmount(creditEntry.repaidAmountMAD || 0);
+  const repaidDateClean = String(repaidDate || getSalonBusinessDate(new Date(trustedNowMs))).slice(0, 20);
 
   const serviceDesc =
     creditEntry.serviceNames && creditEntry.serviceNames.length > 0
@@ -1488,7 +2068,7 @@ export async function recordCaisseCreditRepayment(params: {
       : 'سداد دين خدمة';
 
   const repaymentId = sanitizeId(
-    `ce_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    `ce_${trustedNowMs}_${SESSION_BOOT_EPOCH}_${Math.random().toString(36).slice(2, 7)}`,
     'ce'
   );
   const meta = getCaisseBarberMeta(creditEntry.barberId);
@@ -1497,14 +2077,14 @@ export async function recordCaisseCreditRepayment(params: {
     barberId: creditEntry.barberId,
     barberName: (creditEntry.barberName || meta.name).trim().slice(0, 100),
     type: 'credit_repayment',
-    date: String(repaidDate || getSalonBusinessDate()).slice(0, 20),
+    date: repaidDateClean,
     expectedAmountMAD: applied,
     amountPaidMAD: applied,
     creditAmountMAD: 0,
     creditRemainingMAD: 0,
     creditStatus: 'none',
     parentCreditEntryId: creditEntry.id,
-    repaidDate: String(repaidDate || getSalonBusinessDate()).slice(0, 20),
+    repaidDate: repaidDateClean,
     repaidAmountMAD: applied,
     note: (
       note?.trim() ||
@@ -1514,6 +2094,15 @@ export async function recordCaisseCreditRepayment(params: {
     createdByName: String(actorName || meta.name).trim().slice(0, 100),
     createdAt: nowIso,
     updatedAt: nowIso,
+    deviceKind: deviceOrigin.deviceKind,
+    deviceId: deviceOrigin.deviceId,
+    deviceLabel: deviceOrigin.deviceLabel,
+    devicePlatform: deviceOrigin.devicePlatform,
+    deviceBrowser: deviceOrigin.deviceBrowser,
+    timeSource: timeMeta.timeSource,
+    serverClockOffsetMs: timeMeta.serverOffsetMs,
+    deviceClockISO,
+    offlineCreated: !browserOnline,
   };
 
   if (creditEntry.serviceIds && creditEntry.serviceIds.length > 0) {
@@ -1529,21 +2118,50 @@ export async function recordCaisseCreditRepayment(params: {
     repaymentPayload.clientPhone = creditEntry.clientPhone.trim().slice(0, 40);
   }
 
+  const enqueueRepaymentLocally = (): CaisseEntry => {
+    const perfNow = typeof performance !== 'undefined' ? performance.now() : trustedNowMs;
+    sessionPerfAnchorIds.add(repaymentId);
+    const queuedItem: PendingOfflineQueueItem = {
+      kind: 'repayment',
+      id: repaymentId,
+      creditEntryId: creditEntry.id,
+      prevRemainingMAD: clampAmount(creditEntry.creditRemainingMAD),
+      prevRepaidTotalMAD: prevRepaidTotal,
+      amountAppliedMAD: applied,
+      repaymentPayload: { ...repaymentPayload, offlineCreated: true },
+      queuedAtPerfMs: perfNow,
+      queuedAtTrustedMs: trustedNowMs,
+      wasCalibratedAtCreation: timeMeta.isCalibrated,
+      attempts: 0,
+    };
+    saveOfflineQueue([...offlineQueue.filter((q) => q.id !== repaymentId), queuedItem]);
+    rebuildEntriesCacheFromBase(lastFirestoreEntries);
+    notifyEntriesListeners();
+    notifyOfflineStatusListeners();
+    return { ...repaymentPayload, offlineCreated: true, offlinePending: true };
+  };
+
+  if (!browserOnline) {
+    return enqueueRepaymentLocally();
+  }
+
   try {
     const batch = writeBatch(db);
     batch.update(doc(db, CAISSE_ENTRIES_COLLECTION, creditEntry.id), {
       creditRemainingMAD: nextRemaining,
       creditStatus: nextStatus,
-      repaidDate: String(repaidDate || getSalonBusinessDate()).slice(0, 20),
+      repaidDate: repaidDateClean,
       repaidAmountMAD: clampAmount(prevRepaidTotal + applied),
       updatedAt: nowIso,
     });
-    batch.set(doc(db, CAISSE_ENTRIES_COLLECTION, repaymentId), repaymentPayload);
-    await batch.commit();
-    const repaidDateClean = String(repaidDate || getSalonBusinessDate()).slice(0, 20);
-    entriesCache = sortCaisseEntriesDesc([
+    batch.set(
+      doc(db, CAISSE_ENTRIES_COLLECTION, repaymentId),
+      buildFirestoreCreateDocPayload(repaymentPayload)
+    );
+    await raceWithTimeout(batch.commit(), 6500);
+    rebuildEntriesCacheFromBase([
       repaymentPayload,
-      ...entriesCache.map((item) =>
+      ...lastFirestoreEntries.map((item) =>
         item.id === creditEntry.id
           ? {
               ...item,
@@ -1561,6 +2179,9 @@ export async function recordCaisseCreditRepayment(params: {
     emitRealtimeSyncHint('credits');
     return repaymentPayload;
   } catch (error) {
+    if (isLikelyNetworkOfflineError(error)) {
+      return enqueueRepaymentLocally();
+    }
     handleFirestoreError(error, OperationType.WRITE, `${CAISSE_ENTRIES_COLLECTION}/${creditEntry.id}`);
   }
 }
@@ -1604,7 +2225,7 @@ export async function updateBarberCommissionPercent(
     barberId,
     commissionPercent: pct,
     updatedBy: String(updatedBy || 'Hassan ait boumlik').trim().slice(0, 100),
-    updatedAt: new Date().toISOString().slice(0, 64),
+    updatedAt: new Date(getTrustedNowMs()).toISOString().slice(0, 64),
   };
   if (cleanOverrides.length > 0) {
     setting.periodOverrides = cleanOverrides;
@@ -1641,7 +2262,7 @@ export async function saveDailySettlement(params: {
   confirmedAtOverride?: string;
 }): Promise<CaisseDailySettlement> {
   const id = sanitizeId(`${params.barberId}_${params.date}`, 'cs');
-  const nowIso = new Date().toISOString().slice(0, 64);
+  const nowIso = new Date(getTrustedNowMs()).toISOString().slice(0, 64);
   const confirmedAtIso =
     params.confirmedAtOverride && params.confirmedAtOverride > nowIso
       ? params.confirmedAtOverride.slice(0, 64)
@@ -1815,7 +2436,7 @@ export async function closeAllBarbersDailyIntakeThrough(params: {
     confirmedBy,
   } = params;
 
-  const nowIso = new Date().toISOString().slice(0, 64);
+  const nowIso = new Date(getTrustedNowMs()).toISOString().slice(0, 64);
   const payloads: CaisseDailySettlement[] = [];
 
   for (const barber of barbers) {
@@ -2630,7 +3251,7 @@ export async function confirmBarberCyclePayout(params: {
     carryForwardBalanceMAD,
     note,
   } = params;
-  let settledThroughIso = new Date().toISOString().slice(0, 64);
+  let settledThroughIso = new Date(getTrustedNowMs()).toISOString().slice(0, 64);
   if (cycleBalance.lastSettledIso && settledThroughIso <= cycleBalance.lastSettledIso) {
     const prevMs = Date.parse(cycleBalance.lastSettledIso);
     if (Number.isFinite(prevMs)) {
@@ -2645,9 +3266,9 @@ export async function confirmBarberCyclePayout(params: {
         : e.createdAt.slice(0, 64);
     }
   }
-  const nowIso = new Date().toISOString().slice(0, 64);
+  const nowIso = new Date(getTrustedNowMs()).toISOString().slice(0, 64);
   const meta = getCaisseBarberMeta(cycleBalance.barberId);
-  const id = sanitizeId(`${cycleBalance.barberId}_cyc_${Date.now()}`, 'cyc');
+  const id = sanitizeId(`${cycleBalance.barberId}_cyc_${getTrustedNowMs()}`, 'cyc');
 
   let finalBarberSharePaidMAD = Math.max(
     -10000000,
@@ -2839,7 +3460,7 @@ export async function ensureDailyArchivesForPriorDays(
   archivalInFlight = true;
   let createdCount = 0;
   try {
-    const nowIso = new Date().toISOString().slice(0, 64);
+    const nowIso = new Date(getTrustedNowMs()).toISOString().slice(0, 64);
     const pairs = Array.from(grouped.entries()).slice(0, 20);
     for (const [key, dayEntries] of pairs) {
       const sample = dayEntries[0];
@@ -2942,7 +3563,7 @@ export function computeClosedDayCreatedAtOverride(params: {
 
   let targetMs = Date.parse(`${date}T12:00:00.000Z`);
   if (!Number.isFinite(targetMs)) {
-    targetMs = Date.now() - 86_400_000;
+    targetMs = getTrustedNowMs() - 86_400_000;
   }
 
   const anchorCandidates = [
@@ -3034,7 +3655,7 @@ export async function resyncBarberDayArchiveAndSettlement(params: {
             floatMAD -= Number(e.amountPaidMAD) || 0;
           }
         }
-        const nowIso = new Date().toISOString().slice(0, 64);
+        const nowIso = new Date(getTrustedNowMs()).toISOString().slice(0, 64);
         const archivePayload: CaisseDailyArchive = {
           id: archiveId,
           barberId,
@@ -3076,7 +3697,7 @@ export async function resyncBarberDayArchiveAndSettlement(params: {
     try {
       const pct = getEffectiveCommissionPercentForDate(barberId, cleanDate, settingsMap);
       const dayStats = computeBarberDayStats(barberId, cleanDate, entries, pct, rosterMembers);
-      const nowIso = new Date().toISOString().slice(0, 64);
+      const nowIso = new Date(getTrustedNowMs()).toISOString().slice(0, 64);
       const patch = {
         barberShareMAD: clampAmount(Math.max(0, dayStats.barberNetShareMAD)),
         shopShareMAD: clampAmount(Math.max(0, dayStats.shopShareMAD)),
