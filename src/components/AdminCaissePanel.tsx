@@ -74,6 +74,7 @@ import {
   matchesCaisseFinancialBarber,
   queueCaisseCreditRepaymentInstant,
   queueCaisseEntryInstant,
+  queueHassanFloatWithExpenseOffsetInstant,
   resolveCaisseBarberId,
   resyncBarberDayArchiveAndSettlement,
   saveBarberDailyNoteReply,
@@ -306,6 +307,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     setBalanceAdjustModalOpen(false);
     setNegativePayoutPrompt(null);
     setCalculatorOpen(false);
+    setDailySettlePickerOpen(false);
   }, [sessionRole]);
 
   useEffect(() => {
@@ -543,6 +545,22 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
   const [expandedEntryIds, setExpandedEntryIds] = useState<Record<string, boolean>>({});
   const [txScopeFilter, setTxScopeFilter] = useState<'open_daily' | 'day' | 'cycle' | 'all'>('open_daily');
 
+  // Open Credits list: collapsed by default inside لاكيس الصالون when حسن ايت بومليك is selected (expands on click)
+  const isHassanSelectedInCaisse =
+    sessionRole === 'caisse' &&
+    Boolean(activeBarberId) &&
+    (activeBarberId === 'hassan' || Boolean(activeBarberMeta?.isOwner));
+  const [openCreditsExpanded, setOpenCreditsExpanded] = useState<boolean>(
+    () => !isHassanSelectedInCaisse
+  );
+  const [txLogExpanded, setTxLogExpanded] = useState<boolean>(
+    () => !isHassanSelectedInCaisse
+  );
+  useEffect(() => {
+    setOpenCreditsExpanded(!isHassanSelectedInCaisse);
+    setTxLogExpanded(!isHassanSelectedInCaisse);
+  }, [isHassanSelectedInCaisse, activeBarberId]);
+
   // Repayment inline state + Pay/Clear settlement request state
   const [repayingEntryId, setRepayingEntryId] = useState<string | null>(null);
   const [repayAmountInput, setRepayAmountInput] = useState<string>('');
@@ -577,6 +595,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
 
   // Master Daily Intake Close & Multi-Scope Cycle/Period Settlement
   const [dailyIntakeCloseBusy, setDailyIntakeCloseBusy] = useState<boolean>(false);
+  const [dailySettlePickerOpen, setDailySettlePickerOpen] = useState<boolean>(false);
+  const [dailySettleSelectedIds, setDailySettleSelectedIds] = useState<string[]>(['hassan']);
   const [payoutConfirmOpen, setPayoutConfirmOpen] = useState<boolean>(false);
   const [payoutTargetMode, setPayoutTargetMode] = useState<'single' | 'all_barbers'>('single');
   const [payoutScope, setPayoutScope] = useState<'full_open' | 'month' | 'custom_range'>('full_open');
@@ -877,6 +897,83 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     roster,
     effectivePct,
   ]);
+
+  const hassanFloatModalSummary = useMemo(() => {
+    if (isLiveOpenDailyView) {
+      const hassanOpen = computeBarberOpenDailyStats({
+        barberId: 'hassan',
+        entries,
+        settingsMap,
+        settlementsMap,
+        cycles,
+        rosterMembers: roster,
+        referenceDate: businessTodayStr,
+      });
+      const floatEntries = hassanOpen.openEntries.filter((e) => isFloatEntryType(e.type));
+      return {
+        scopeLabel: 'الدورة اليومية المفتوحة',
+        floatInMAD: hassanOpen.floatInMAD,
+        floatOutMAD: hassanOpen.floatOutMAD,
+        floatMAD: hassanOpen.floatMAD,
+        entries: floatEntries,
+      };
+    }
+
+    const hassanSettlement = findBarberDaySettlement('hassan', selectedDate, settlementsMap, roster);
+    const closedIso = hassanSettlement?.intakeClosed
+      ? hassanSettlement.confirmedAt || hassanSettlement.updatedAt
+      : null;
+    const floatEntries = entries.filter(
+      (e) =>
+        matchesCaisseFinancialBarber(e, 'hassan', roster) &&
+        e.date === selectedDate &&
+        isFloatEntryType(e.type) &&
+        (!closedIso || e.createdAt > closedIso)
+    );
+    let floatInMAD = 0;
+    let floatOutMAD = 0;
+    floatEntries.forEach((e) => {
+      const amt = Number(e.amountPaidMAD) || 0;
+      if (e.type === 'float_adjustment') {
+        floatInMAD += amt;
+      } else if (e.type === 'float_return') {
+        floatOutMAD += amt;
+      }
+    });
+    return {
+      scopeLabel: selectedDate,
+      floatInMAD: Math.round(floatInMAD),
+      floatOutMAD: Math.round(floatOutMAD),
+      floatMAD: Math.round(floatInMAD - floatOutMAD),
+      entries: floatEntries,
+    };
+  }, [
+    isLiveOpenDailyView,
+    entries,
+    settingsMap,
+    settlementsMap,
+    cycles,
+    roster,
+    businessTodayStr,
+    selectedDate,
+  ]);
+
+  const dailySettleBarberRows = useMemo(
+    () =>
+      activeCaisseBarbers.map((barber) => {
+        const openStats = computeBarberOpenDailyStats({
+          barberId: barber.id,
+          entries,
+          settingsMap,
+          settlementsMap,
+          cycles,
+          rosterMembers: roster,
+          referenceDate: businessTodayStr,
+        });
+        return { barber, openStats };
+      }),
+    [activeCaisseBarbers, entries, settingsMap, settlementsMap, cycles, roster, businessTodayStr]
+  );
 
   const cycleBalance = useMemo(
     () =>
@@ -1805,20 +1902,59 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     }
 
     try {
-      const createdEntry = queueCaisseEntryInstant({
-        barberId: activeBarberId,
-        barberName: activeBarberMeta.name,
-        type: 'expense',
-        date: selectedDate,
-        expectedAmountMAD: amt,
-        amountPaidMAD: amt,
-        creditAmountMAD: 0,
-        creditRemainingMAD: 0,
-        creditStatus: 'none',
-        note: expenseNote.trim() || 'هزيت الفلوس من لاكيس',
-        createdByRole: sessionRole,
-        createdByName: staffName,
-      });
+      const availableChange = isHassanSelectedInCaisse
+        ? Math.max(0, Math.round(displayedDayIntakeStats.displayedFloatMAD))
+        : 0;
+      const floatReturnAmt = isHassanSelectedInCaisse
+        ? Math.min(Math.round(amt), availableChange)
+        : 0;
+      const drawerExpenseAmt = Math.max(0, Math.round(amt) - floatReturnAmt);
+      const rawNote = expenseNote.trim();
+      const hassanMeta = getCaisseBarberMeta('hassan', roster);
+
+      let anyOfflineCreated = false;
+
+      if (floatReturnAmt > 0) {
+        const floatEntry = queueCaisseEntryInstant({
+          barberId: 'hassan',
+          barberName: hassanMeta.name,
+          type: 'float_return',
+          date: selectedDate,
+          expectedAmountMAD: floatReturnAmt,
+          amountPaidMAD: floatReturnAmt,
+          creditAmountMAD: 0,
+          creditRemainingMAD: 0,
+          creditStatus: 'none',
+          note: rawNote ? `${rawNote} (رجع الصرف)` : 'رجع الصرف من المجر',
+          createdByRole: sessionRole,
+          createdByName: staffName,
+        });
+        if (floatEntry.offlineCreated) anyOfflineCreated = true;
+      }
+
+      if (drawerExpenseAmt > 0) {
+        const expenseEntry = queueCaisseEntryInstant({
+          barberId: activeBarberId,
+          barberName: activeBarberMeta.name,
+          type: 'expense',
+          date: selectedDate,
+          expectedAmountMAD: drawerExpenseAmt,
+          amountPaidMAD: drawerExpenseAmt,
+          creditAmountMAD: 0,
+          creditRemainingMAD: 0,
+          creditStatus: 'none',
+          note:
+            floatReturnAmt > 0
+              ? rawNote
+                ? `${rawNote} (هزيت من المجر)`
+                : 'هزيت الفلوس من لاكيس'
+              : rawNote || 'هزيت الفلوس من لاكيس',
+          createdByRole: sessionRole,
+          createdByName: staffName,
+        });
+        if (expenseEntry.offlineCreated) anyOfflineCreated = true;
+      }
+
       // Close modal & reset state immediately
       setOpenForm('none');
       setDuplicateWarning(null);
@@ -1826,21 +1962,42 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       setExpenseNote('');
       setExpenseSubmitting(false);
       startPostEntryTimer();
-      showToast(
-        createdEntry.offlineCreated
-          ? 'تم حفظ السحب في الكاش المحلي (بدون إنترنت) ✓'
-          : pickLang(lang, {
-              ar: 'تم تسجيل السحب / المصروف ✓',
-              fr: 'Retrait enregistré ✓',
-              amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⵙⵙⵓⴼⵖ ✓',
-              en: 'Expense recorded ✓',
-              es: 'Gasto registrado ✓',
-            }),
-        createdEntry.offlineCreated
-          ? `${formatMAD(amt)} · ستتم المزامنة تلقائياً فور عودة الإنترنت`
-          : formatMAD(amt),
-        createdEntry.offlineCreated ? 'info' : 'success'
-      );
+
+      if (floatReturnAmt > 0 && drawerExpenseAmt === 0) {
+        showToast(
+          anyOfflineCreated
+            ? 'تم حفظ رجع الصرف في الكاش المحلي (بدون إنترنت) ✓'
+            : 'تم خصم المبلغ من الصرف (رجع الصرف) ✓',
+          anyOfflineCreated
+            ? `${formatMAD(floatReturnAmt, 'drawer_float')} · ستتم المزامنة تلقائياً فور عودة الإنترنت`
+            : `${formatMAD(floatReturnAmt, 'drawer_float')} · دون إضافته في "شحال هز"`,
+          anyOfflineCreated ? 'info' : 'success'
+        );
+      } else if (floatReturnAmt > 0 && drawerExpenseAmt > 0) {
+        showToast(
+          anyOfflineCreated
+            ? 'تم حفظ رجع الصرف والسحب في الكاش المحلي (بدون إنترنت) ✓'
+            : 'تم خصم الصرف وتسجيل الباقي في هزيت من المجر ✓',
+          `رجع الصرف: ${formatMAD(floatReturnAmt, 'drawer_float')} · هزيت: ${formatMAD(drawerExpenseAmt)}`,
+          anyOfflineCreated ? 'info' : 'success'
+        );
+      } else {
+        showToast(
+          anyOfflineCreated
+            ? 'تم حفظ السحب في الكاش المحلي (بدون إنترنت) ✓'
+            : pickLang(lang, {
+                ar: 'تم تسجيل السحب / المصروف ✓',
+                fr: 'Retrait enregistré ✓',
+                amz: 'ⵉⵜⵜⵓⵣⵎⵎⴻⵎ ⵓⵙⵙⵓⴼⵖ ✓',
+                en: 'Expense recorded ✓',
+                es: 'Gasto registrado ✓',
+              }),
+          anyOfflineCreated
+            ? `${formatMAD(amt)} · ستتم المزامنة تلقائياً فور عودة الإنترنت`
+            : formatMAD(amt),
+          anyOfflineCreated ? 'info' : 'success'
+        );
+      }
     } catch (err) {
       console.error('Failed to add expense:', err);
       setExpenseSubmitting(false);
@@ -1856,6 +2013,7 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       return;
     }
     const hassanMeta = getCaisseBarberMeta('hassan', roster);
+    const targetDate = isLiveOpenDailyView ? businessTodayStr : selectedDate;
     const targetType: CaisseEntryType =
       floatMode === 'return' ? 'float_return' : 'float_adjustment';
     const defaultNote =
@@ -1863,11 +2021,84 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         ? 'إرجاع فلوس الصرف من المجر (حسن)'
         : 'إضافة فلوس الصرف للمجر (حسن)';
     try {
+      if (isHassanSelectedInCaisse && floatMode === 'add') {
+        const closedIso =
+          !isLiveOpenDailyView && selectedDaySettlement?.intakeClosed
+            ? selectedDaySettlement.confirmedAt || selectedDaySettlement.updatedAt
+            : null;
+        const openExpenseEntries = isLiveOpenDailyView
+          ? activeBarberOpenDailyStats.openEntries.filter(
+              (entry) => entry.type === 'expense' && (Number(entry.amountPaidMAD) || 0) > 0
+            )
+          : entries.filter(
+              (entry) =>
+                matchesCaisseFinancialBarber(entry, activeBarberId, roster) &&
+                entry.date === selectedDate &&
+                entry.type === 'expense' &&
+                (Number(entry.amountPaidMAD) || 0) > 0 &&
+                (!closedIso || entry.createdAt > closedIso)
+            );
+
+        const result = queueHassanFloatWithExpenseOffsetInstant({
+          addedAmountMAD: Math.round(amt),
+          date: targetDate,
+          openExpenseEntries,
+          actorRole: sessionRole,
+          actorName: staffName,
+          note: floatNote.trim() || undefined,
+        });
+
+        setOpenForm('none');
+        setFloatAmount('');
+        setFloatNote('');
+        setFloatSubmitting(false);
+        if (activeBarberId) startPostEntryTimer();
+
+        if (result.offsetAppliedMAD > 0 && result.remainingFloatMAD > 0) {
+          showToast(
+            result.offlineCreated
+              ? 'تم حفظ تصفية «شحال هز» والباقي في الكاش المحلي (بدون إنترنت) ✓'
+              : 'تمت تصفية «شحال هز» وإضافة الباقي في الصرف ✓',
+            result.offlineCreated
+              ? `تصفية شحال هز: ${result.offsetAppliedMAD} MAD · الصرف الباقي: +${result.remainingFloatMAD} MAD · ستتم المزامنة تلقائياً فور عودة الإنترنت`
+              : `تصفية شحال هز: ${result.offsetAppliedMAD} MAD · الصرف الباقي: +${result.remainingFloatMAD} MAD`,
+            result.offlineCreated ? 'info' : 'success'
+          );
+        } else if (result.offsetAppliedMAD > 0 && result.remainingFloatMAD === 0) {
+          showToast(
+            result.offlineCreated
+              ? 'تم حفظ تصفية «شحال هز» في الكاش المحلي (بدون إنترنت) ✓'
+              : 'تمت تصفية «شحال هز» من مبلغ الصرف ✓',
+            result.offlineCreated
+              ? `خُصم ${result.offsetAppliedMAD} MAD من شحال هز · ستتم المزامنة تلقائياً فور عودة الإنترنت`
+              : `خُصم ${result.offsetAppliedMAD} MAD من شحال هز`,
+            result.offlineCreated ? 'info' : 'success'
+          );
+        } else {
+          showToast(
+            result.offlineCreated
+              ? 'تم حفظ الصرف في الكاش المحلي (بدون إنترنت) ✓'
+              : pickLang(lang, {
+                  ar: 'تمت إضافة فلوس الصرف (حساب حسن) ✓',
+                  fr: 'Fond de caisse ajouté (Hassan) ✓',
+                  amz: 'ⵜⵜⵓⵔⵏⴰⵏ ⵉⴷⵔⵉⵎⵏ ⵏ ⵓⵙⵏⴼⵍ ✓',
+                  en: 'Float added (Hassan) ✓',
+                  es: 'Fondo de cambio añadido (Hassan) ✓',
+                }),
+            result.offlineCreated
+              ? `+${result.remainingFloatMAD} MAD · ستتم المزامنة تلقائياً فور عودة الإنترنت`
+              : `+${result.remainingFloatMAD} MAD`,
+            result.offlineCreated ? 'info' : 'success'
+          );
+        }
+        return;
+      }
+
       const createdEntry = queueCaisseEntryInstant({
         barberId: 'hassan',
         barberName: hassanMeta.name,
         type: targetType,
-        date: isLiveOpenDailyView ? businessTodayStr : selectedDate,
+        date: targetDate,
         expectedAmountMAD: amt,
         amountPaidMAD: amt,
         creditAmountMAD: 0,
@@ -2110,6 +2341,60 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       );
     } catch (err) {
       console.error('Failed to close all barbers daily intake:', err);
+    } finally {
+      setDailyIntakeCloseBusy(false);
+    }
+  };
+
+  // Caisse (Hassan selected): Open barber selection modal & settle chosen barbers' daily accounts manually
+  const openDailySettlePickerModal = () => {
+    setDailySettleSelectedIds(['hassan']);
+    setDailySettlePickerOpen(true);
+  };
+
+  const toggleDailySettleBarberId = (barberId: string) => {
+    setDailySettleSelectedIds((prev) =>
+      prev.includes(barberId) ? prev.filter((id) => id !== barberId) : [...prev, barberId]
+    );
+  };
+
+  const handleConfirmSelectedBarbersDailySettle = async () => {
+    if (!isHassanSelectedInCaisse && sessionRole !== 'master') return;
+    const selectedBarbers = activeCaisseBarbers.filter((b) =>
+      dailySettleSelectedIds.includes(b.id)
+    );
+    if (selectedBarbers.length === 0) {
+      showToast('اختر حلاقاً واحداً على الأقل للتصفية اليومية', '', 'warning');
+      return;
+    }
+    setDailyIntakeCloseBusy(true);
+    try {
+      const targetCloseDate = isLiveOpenDailyView ? businessTodayStr : selectedDate;
+      const closedCount = await closeAllBarbersDailyIntakeThrough({
+        barbers: selectedBarbers,
+        throughDate: targetCloseDate,
+        entries,
+        settingsMap,
+        settlementsMap,
+        cycles,
+        rosterMembers: roster,
+        manualCredits,
+        confirmedBy: staffName,
+      });
+      setDailySettlePickerOpen(false);
+      const selectedNames = selectedBarbers.map((b) => b.arName).join('، ');
+      showToast(
+        closedCount > 0
+          ? `تمت تصفية الحساب اليومي (${closedCount}) ✓`
+          : `الحساب اليومي مصفّر ومغلق بالفعل ✓`,
+        closedCount > 0
+          ? `${selectedNames} · تم تصفير المجر اليومي إلى 0 MAD`
+          : selectedNames,
+        'success'
+      );
+    } catch (err) {
+      console.error('Failed to close selected barbers daily intake:', err);
+      showToast('تعذر إتمام التصفية اليومية، يرجى المحاولة مرة أخرى', '', 'warning');
     } finally {
       setDailyIntakeCloseBusy(false);
     }
@@ -2728,117 +3013,6 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
     };
   };
 
-  const floatModalNode = openForm === 'float' ? (
-    <ModalPortal>
-      <div
-        className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 sb-modal-backdrop"
-        onClick={() => setOpenForm('none')}
-      >
-        <form
-          onSubmit={handleSubmitFloat}
-          onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border-2 border-amber-400 dark:border-amber-500/50 shadow-2xl space-y-4 text-xs"
-        >
-          <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
-            <span className="font-black text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2">
-              <Coins className="w-4 h-4" />
-              <span>الصرف (فلوس الفكة في المجر) — حساب حسن ايت بومليك الشخصي</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setOpenForm('none')}
-              className="p-1 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="px-3 py-2 rounded-xl bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-500/35 text-[11px] font-bold text-amber-900 dark:text-amber-200 leading-relaxed">
-            يُضاف/يُرجع من المجر ويُحتسب ضمن الرصيد الشخصي لحسن ايت بومليك دون دخوله في المداخيل أو نسبة الحلاقة.
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setFloatMode('add')}
-              className={`py-2 px-3 rounded-xl border font-black text-xs cursor-pointer transition-colors ${
-                floatMode === 'add'
-                  ? 'bg-amber-600 text-white border-amber-600'
-                  : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
-              }`}
-            >
-              + إضافة صرف للمجر
-            </button>
-            <button
-              type="button"
-              onClick={() => setFloatMode('return')}
-              className={`py-2 px-3 rounded-xl border font-black text-xs cursor-pointer transition-colors ${
-                floatMode === 'return'
-                  ? 'bg-rose-600 text-white border-rose-600'
-                  : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
-              }`}
-            >
-              − إرجاع / سحب صرف
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            <CaisseAmountField
-              label="المبلغ (MAD) *"
-              value={floatAmount}
-              onChange={setFloatAmount}
-              quickAmounts={[50, 100, 200, 500]}
-              accent="amber"
-              placeholder="0"
-              required
-              autoFocus
-              unitOnChips
-            />
-            <div>
-              <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                ملاحظة (اختيارية)
-              </label>
-              <input
-                type="text"
-                value={floatNote}
-                onChange={(e) => setFloatNote(e.target.value)}
-                placeholder={
-                  floatMode === 'return' ? 'إرجاع الصرف بعد انتهاء العمل' : 'فلوس الفكة / الصرف لليوم'
-                }
-                className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-white"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setOpenForm('none')}
-              className="px-4 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-xs cursor-pointer"
-            >
-              إلغاء
-            </button>
-            <button
-              type="submit"
-              disabled={floatSubmitting}
-              className={`px-5 py-2 rounded-xl text-white font-black text-xs cursor-pointer ${
-                floatMode === 'return'
-                  ? 'bg-rose-600 hover:bg-rose-500'
-                  : 'bg-amber-600 hover:bg-amber-500'
-              }`}
-            >
-              {floatSubmitting
-                ? 'جاري الحفظ...'
-                : floatMode === 'return'
-                ? 'تأكيد إرجاع الصرف ✓'
-                : 'حفظ إضافة الصرف ✓'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </ModalPortal>
-  ) : null;
-
   const drawerBreakdownModalNode =
     (sessionRole === 'master' || sessionRole === 'caisse') && drawerModalOpen ? (
       <ModalPortal>
@@ -3256,6 +3430,430 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       </span>
     );
   };
+
+  const floatModalNode = openForm === 'float' ? (
+    <ModalPortal>
+      <div
+        className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 sb-modal-backdrop"
+        onClick={() => setOpenForm('none')}
+      >
+        <form
+          onSubmit={handleSubmitFloat}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-xl max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border-2 border-amber-400 dark:border-amber-500/50 shadow-2xl space-y-4 text-xs"
+        >
+          <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
+            <span className="font-black text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2">
+              <Coins className="w-4 h-4 shrink-0" />
+              <span>الصرف (فلوس الفكة في المجر) — حساب حسن ايت بومليك الشخصي</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setOpenForm('none')}
+              className="p-1 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="px-3 py-2 rounded-xl bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-500/35 text-[11px] font-bold text-amber-900 dark:text-amber-200 leading-relaxed">
+            يُضاف/يُرجع من المجر ويُحتسب ضمن الرصيد الشخصي لحسن ايت بومليك دون دخوله في المداخيل أو نسبة الحلاقة.
+          </div>
+
+          {/* Summary Strip: Net Held & Total Added/Returned */}
+          <div className="p-3.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-500/35 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="font-black text-amber-950 dark:text-amber-200 text-xs">
+                  المجموع ديال فلوس الصرف في المجر
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-900 border border-amber-200 dark:border-amber-500/30 text-[10px] font-bold text-amber-800 dark:text-amber-300">
+                  {hassanFloatModalSummary.scopeLabel}
+                </span>
+                {renderBoxEyeButton('drawer_float', true)}
+              </div>
+              <strong
+                dir="ltr"
+                className="font-mono font-black text-base sm:text-lg text-amber-800 dark:text-amber-300 tabular-nums"
+              >
+                {formatMAD(hassanFloatModalSummary.floatMAD, 'drawer_float')}
+              </strong>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 pt-1.5 border-t border-amber-200/70 dark:border-amber-500/25 text-[11px]">
+              <div className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900/80 border border-emerald-200/80 dark:border-emerald-500/25">
+                <span className="block text-[10px] font-bold text-zinc-500 dark:text-zinc-400">
+                  اللي حطيت (+)
+                </span>
+                <strong dir="ltr" className="font-mono font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
+                  +{formatMAD(hassanFloatModalSummary.floatInMAD, 'drawer_float')}
+                </strong>
+              </div>
+              <div className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900/80 border border-rose-200/80 dark:border-rose-500/25">
+                <span className="block text-[10px] font-bold text-zinc-500 dark:text-zinc-400">
+                  اللي رجعت (−)
+                </span>
+                <strong dir="ltr" className="font-mono font-black text-rose-700 dark:text-rose-400 tabular-nums">
+                  −{formatMAD(hassanFloatModalSummary.floatOutMAD, 'drawer_float')}
+                </strong>
+              </div>
+              <div className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800">
+                <span className="block text-[10px] font-bold text-zinc-500 dark:text-zinc-400">
+                  عدد العمليات
+                </span>
+                <strong dir="ltr" className="font-mono font-black text-zinc-900 dark:text-white tabular-nums">
+                  {hassanFloatModalSummary.entries.length}
+                </strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setFloatMode('add')}
+              className={`py-2 px-3 rounded-xl border font-black text-xs cursor-pointer transition-colors ${
+                floatMode === 'add'
+                  ? 'bg-amber-600 text-white border-amber-600'
+                  : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+              }`}
+            >
+              + إضافة صرف للمجر
+            </button>
+            <button
+              type="button"
+              onClick={() => setFloatMode('return')}
+              className={`py-2 px-3 rounded-xl border font-black text-xs cursor-pointer transition-colors ${
+                floatMode === 'return'
+                  ? 'bg-rose-600 text-white border-rose-600'
+                  : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800'
+              }`}
+            >
+              − إرجاع / سحب صرف
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            <CaisseAmountField
+              label="المبلغ (MAD) *"
+              value={floatAmount}
+              onChange={setFloatAmount}
+              quickAmounts={[50, 100, 200, 500]}
+              accent="amber"
+              placeholder="0"
+              required
+              autoFocus
+              unitOnChips
+            />
+            <div>
+              <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                ملاحظة (اختيارية)
+              </label>
+              <input
+                type="text"
+                value={floatNote}
+                onChange={(e) => setFloatNote(e.target.value)}
+                placeholder={
+                  floatMode === 'return' ? 'إرجاع الصرف بعد انتهاء العمل' : 'فلوس الفكة / الصرف لليوم'
+                }
+                className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-white"
+              />
+            </div>
+
+            {isHassanSelectedInCaisse &&
+              floatMode === 'add' &&
+              Math.round(displayedDayIntakeStats.displayedExpensesMAD) > 0 && (() => {
+                const openExp = Math.max(
+                  0,
+                  Math.round(displayedDayIntakeStats.displayedExpensesMAD)
+                );
+                const typedAmt = Math.max(0, Math.round(evaluateAmountExpression(floatAmount)));
+                const offsetPreview = Math.min(typedAmt, openExp);
+                const remainingPreview = Math.max(0, typedAmt - offsetPreview);
+                return (
+                  <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/25 border border-rose-200 dark:border-rose-500/35 text-[11px] font-bold text-rose-900 dark:text-rose-200 space-y-1">
+                    <div>
+                      ملاحظة: كاين سحب مفتوح فـ «شحال هز» بقيمة{' '}
+                      <span dir="ltr" className="font-mono font-black">
+                        {formatMAD(openExp, 'kpi_expenses')}
+                      </span>
+                      ؛ غادي يتصفّى هو الأول والباقي يتزاد في «الصرف».
+                    </div>
+                    {typedAmt > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-rose-200/70 dark:border-rose-500/25 text-[10px]">
+                        <span className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-900 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30 font-mono font-black">
+                          تصفية شحال هز: {offsetPreview} MAD
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-900 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30 font-mono font-black">
+                          الصرف الباقي: {remainingPreview} MAD
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setOpenForm('none')}
+              className="px-4 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-xs cursor-pointer"
+            >
+              إلغاء
+            </button>
+            <button
+              type="submit"
+              disabled={floatSubmitting}
+              className={`px-5 py-2 rounded-xl text-white font-black text-xs cursor-pointer ${
+                floatMode === 'return'
+                  ? 'bg-rose-600 hover:bg-rose-500'
+                  : 'bg-amber-600 hover:bg-amber-500'
+              }`}
+            >
+              {floatSubmitting
+                ? 'جاري الحفظ...'
+                : floatMode === 'return'
+                ? 'تأكيد إرجاع الصرف ✓'
+                : 'حفظ إضافة الصرف ✓'}
+            </button>
+          </div>
+
+          {/* Change Transactions List Inside Modal */}
+          <div className="pt-3.5 border-t border-zinc-200 dark:border-zinc-800 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-black text-zinc-900 dark:text-white text-xs flex items-center gap-1.5">
+                <History className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>العمليات ({hassanFloatModalSummary.entries.length})</span>
+              </span>
+              <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400">
+                {hassanFloatModalSummary.scopeLabel}
+              </span>
+            </div>
+
+            {hassanFloatModalSummary.entries.length === 0 ? (
+              <div className="py-5 px-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-center text-[11px] font-bold text-zinc-500 dark:text-zinc-400">
+                لا توجد عمليات صرف مسجلة في هذه الدورة بعد.
+              </div>
+            ) : (
+              <div className="max-h-56 overflow-y-auto space-y-1.5 pe-0.5">
+                {hassanFloatModalSummary.entries.map((entry) => {
+                  const badge = formatEntryTypeBadge(entry.type, entry.adjustmentDirection);
+                  const isReturn = entry.type === 'float_return';
+                  const timePart = safeFormatTime(
+                    entry.createdAt,
+                    [],
+                    { hour: '2-digit', minute: '2-digit' },
+                    ''
+                  );
+                  const noteLabel =
+                    entry.note?.trim() ||
+                    (isReturn ? 'إرجاع فلوس الصرف من المجر' : 'إضافة فلوس الصرف للمجر');
+
+                  return (
+                    <div
+                      key={entry.id}
+                      className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/75 border border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold border shrink-0 ${badge.cls}`}
+                          >
+                            {badge.label}
+                          </span>
+                          {renderEntryOriginBadge(entry)}
+                          <span className="font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                            {noteLabel}
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400 flex items-center gap-2 flex-wrap">
+                          <span>
+                            {entry.date}
+                            {timePart ? ` · ${timePart}` : ''}
+                          </span>
+                          {entry.createdByName && (
+                            <span className="font-sans">· {entry.createdByName}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <span
+                        dir="ltr"
+                        className={`font-mono font-black text-xs sm:text-sm tabular-nums shrink-0 ${
+                          isReturn
+                            ? 'text-rose-700 dark:text-rose-400'
+                            : 'text-emerald-700 dark:text-emerald-400'
+                        }`}
+                      >
+                        {isReturn ? '−' : '+'}
+                        {formatMAD(entry.amountPaidMAD, 'drawer_float')}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </form>
+      </div>
+    </ModalPortal>
+  ) : null;
+
+  const dailySettlePickerModalNode =
+    isHassanSelectedInCaisse && dailySettlePickerOpen ? (
+      <ModalPortal>
+        <div
+          className="fixed inset-0 z-[105] flex items-center justify-center p-3 sm:p-5 sb-modal-backdrop"
+          onClick={() => {
+            if (!dailyIntakeCloseBusy) setDailySettlePickerOpen(false);
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#141720] border-2 border-zinc-900 dark:border-amber-500/50 shadow-2xl space-y-4 text-xs"
+          >
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-zinc-900 dark:bg-amber-500/20 text-white dark:text-amber-300 flex items-center justify-center shrink-0">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="font-black text-sm text-zinc-900 dark:text-white truncate">
+                    تصفية الحساب اليومي — اختيار الحلاقين
+                  </h4>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    اختر الحلاق أو الحلاقين المراد تصفية حسابهم اليومي يدوياً
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={dailyIntakeCloseBusy}
+                onClick={() => setDailySettlePickerOpen(false)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setDailySettleSelectedIds(activeCaisseBarbers.map((b) => b.id))}
+                className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-500/15 dark:hover:bg-emerald-500/25 border border-emerald-200 dark:border-emerald-500/35 text-emerald-800 dark:text-emerald-200 font-black text-[11px] cursor-pointer transition-colors"
+              >
+                تحديد الكل ({activeCaisseBarbers.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setDailySettleSelectedIds(['hassan'])}
+                className="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/15 dark:hover:bg-amber-500/25 border border-amber-200 dark:border-amber-500/35 text-amber-800 dark:text-amber-200 font-black text-[11px] cursor-pointer transition-colors"
+              >
+                حسن فقط
+              </button>
+              <button
+                type="button"
+                onClick={() => setDailySettleSelectedIds([])}
+                className="px-2.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-[11px] cursor-pointer transition-colors"
+              >
+                إلغاء التحديد
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {dailySettleBarberRows.map(({ barber, openStats }) => {
+                const isSelected = dailySettleSelectedIds.includes(barber.id);
+                const bTone = getBarberIdentityTokens(barber.id, barber.arName);
+                const hasOpen = openStats.entryCount > 0;
+                const boxKey = `shop_barber_day_${barber.id}`;
+
+                return (
+                  <button
+                    key={barber.id}
+                    type="button"
+                    onClick={() => toggleDailySettleBarberId(barber.id)}
+                    aria-pressed={isSelected}
+                    className={`w-full p-3 rounded-xl border text-start flex items-center justify-between gap-2.5 cursor-pointer transition-all ${
+                      isSelected
+                        ? 'bg-emerald-50/75 dark:bg-emerald-950/30 border-emerald-500 dark:border-emerald-500/60 shadow-2xs'
+                        : 'bg-zinc-50 dark:bg-zinc-900/70 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-600'
+                    } ${bTone.borderLeftClass}`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span
+                        className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected
+                            ? 'bg-emerald-600 border-emerald-600 text-white'
+                            : 'bg-white dark:bg-zinc-950 border-zinc-300 dark:border-zinc-700 text-transparent'
+                        }`}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </span>
+                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${bTone.dotClass}`} />
+                      <div className="min-w-0">
+                        <div className="font-black text-zinc-900 dark:text-white text-xs sm:text-sm truncate">
+                          {barber.arName}
+                        </div>
+                        <div className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400">
+                          {hasOpen
+                            ? `${openStats.entryCount} عملية مفتوحة`
+                            : 'مصفّى بالفعل ✓ (0 عمليات مفتوحة)'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-end shrink-0">
+                      <span
+                        dir="ltr"
+                        className={`font-mono font-black text-xs tabular-nums block ${
+                          hasOpen
+                            ? 'text-zinc-900 dark:text-white'
+                            : 'text-emerald-700 dark:text-emerald-400'
+                        }`}
+                      >
+                        {formatMAD(openStats.drawerCashMAD, boxKey)}
+                      </span>
+                      <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                        {hasOpen ? 'في المجر' : 'مصفّى'}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="px-3 py-2 rounded-xl bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-500/35 text-[11px] font-bold text-amber-900 dark:text-amber-200 leading-relaxed">
+              تصفير يدوي للحساب اليومي للحلاقين المختارين إلى 0 MAD مع حفظ جميع الأرصدة الشهرية والتراكمية والسجل التاريخي دون تغيير.
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={dailyIntakeCloseBusy}
+                onClick={() => setDailySettlePickerOpen(false)}
+                className="px-4 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-xs cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={dailyIntakeCloseBusy || dailySettleSelectedIds.length === 0}
+                onClick={handleConfirmSelectedBarbersDailySettle}
+                className="px-5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-white dark:text-zinc-950 font-black text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  {dailyIntakeCloseBusy
+                    ? 'جاري التصفية...'
+                    : `تأكيد تصفية الحساب اليومي (${dailySettleSelectedIds.length})`}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </ModalPortal>
+    ) : null;
 
   const inspectOriginModalNode = inspectOriginEntry ? (
     <ModalPortal>
@@ -4343,6 +4941,34 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
         )}
       </div>
 
+      {/* Hassan-Selected Daily Settlement Action Button inside لاكيس الصالون */}
+      {isHassanSelectedInCaisse && (
+        <div className="p-2.5 sm:p-3 rounded-2xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2.5 shadow-xs">
+          <div className="flex items-center gap-2 text-xs min-w-0">
+            <span className="w-7 h-7 rounded-xl bg-zinc-900 dark:bg-amber-500/20 text-white dark:text-amber-300 flex items-center justify-center shrink-0">
+              <Lock className="w-3.5 h-3.5" />
+            </span>
+            <div className="min-w-0">
+              <span className="font-black text-zinc-900 dark:text-white block">
+                تصفية الحساب اليومي
+              </span>
+              <span className="text-[10px] text-zinc-500 dark:text-zinc-400 block truncate">
+                اختر الحلاقين لتصفية حسابهم اليومي يدوياً إلى 0 MAD
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={dailyIntakeCloseBusy}
+            onClick={openDailySettlePickerModal}
+            className="min-h-[40px] w-full sm:w-auto px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-white dark:text-zinc-950 font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-2xs shrink-0 disabled:opacity-60"
+          >
+            <Lock className="w-3.5 h-3.5 shrink-0" />
+            <span>{dailyIntakeCloseBusy ? 'جاري التصفية...' : 'تصفية الحساب اليومي'}</span>
+          </button>
+        </div>
+      )}
+
       {/* 1-Minute Post-Entry Auto-Return / Barber Auto-Exit Countdown Banner (Positioned below action buttons, above cards) */}
       {autoTimerSecondsLeft !== null && (
         <div
@@ -4594,58 +5220,149 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       {/* Interactive Darija KPI Cards + Quick '+' Actions Inside Each Card */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         {/* 1. شحال حط (الدورة اليومية المفتوحة / التاريخ المحدد) */}
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => openDrillModal('income_day')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              openDrillModal('income_day');
-            }
-          }}
-          className={`p-4 rounded-2xl border hover:border-emerald-500 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group ${activeTone.cardSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}
-        >
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 block">
-              {isLiveOpenDailyView
-                ? isViewingOwnAccount
-                  ? 'شحال حطيت (الدورة اليومية)'
-                  : `شحال حط ${activeBarberMeta.arName} (الدورة اليومية)`
-                : isViewingOwnAccount
-                ? `شحال حطيت (${selectedDate})`
-                : `شحال حط ${activeBarberMeta.arName} (${selectedDate})`}
-            </span>
-            <span className="flex items-center gap-1 shrink-0">
-              {displayedDayIntakeStats.isIntakeClosed && (
-                <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[9px] font-black">
-                  مصفّى ✓
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openQuickIncomeForm(false);
-                }}
-                title="إضافة سريعة (غانحط في المجر)"
-                aria-label="إضافة سريعة في المجر"
-                className="w-6 h-6 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-              {renderBoxEyeButton('kpi_income', true)}
+        <div className={isHassanSelectedInCaisse ? 'flex flex-col gap-2' : 'contents'}>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => openDrillModal('income_day')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openDrillModal('income_day');
+              }
+            }}
+            className={`p-4 rounded-2xl border hover:border-emerald-500 hover:shadow-md active:scale-[0.99] transition-all text-start shadow-xs space-y-1 cursor-pointer group ${activeTone.cardSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}
+          >
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 block">
+                {isLiveOpenDailyView
+                  ? isViewingOwnAccount
+                    ? 'شحال حطيت (الدورة اليومية)'
+                    : `شحال حط ${activeBarberMeta.arName} (الدورة اليومية)`
+                  : isViewingOwnAccount
+                  ? `شحال حطيت (${selectedDate})`
+                  : `شحال حط ${activeBarberMeta.arName} (${selectedDate})`}
+              </span>
+              <span className="flex items-center gap-1 shrink-0">
+                {displayedDayIntakeStats.isIntakeClosed && (
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[9px] font-black">
+                    مصفّى ✓
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openQuickIncomeForm(false);
+                  }}
+                  title="إضافة سريعة (غانحط في المجر)"
+                  aria-label="إضافة سريعة في المجر"
+                  className="w-6 h-6 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/35 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-600 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                {renderBoxEyeButton('kpi_income', true)}
+              </span>
+            </div>
+            <div className="text-xl sm:text-2xl font-black font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
+              {maskNum(displayedDayIntakeStats.displayedIncomeMAD, 'kpi_income')}{' '}
+              <span className="text-xs font-bold">MAD</span>
+            </div>
+            <span className="text-[10px] text-zinc-600 dark:text-zinc-400 block font-mono tabular-nums">
+              {displayedDayIntakeStats.hasAnyDailyClose
+                ? `بعد آخر تصفية (${displayedDayIntakeStats.lastDailyCloseDate}) · ${displayedDayIntakeStats.postCloseEntryCount} عملية مفتوحة`
+                : `${displayedDayIntakeStats.postCloseEntryCount} عملية مفتوحة · اضغط للتفاصيل`}
             </span>
           </div>
-          <div className="text-xl sm:text-2xl font-black font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
-            {maskNum(displayedDayIntakeStats.displayedIncomeMAD, 'kpi_income')}{' '}
-            <span className="text-xs font-bold">MAD</span>
-          </div>
-          <span className="text-[10px] text-zinc-600 dark:text-zinc-400 block font-mono tabular-nums">
-            {displayedDayIntakeStats.hasAnyDailyClose
-              ? `بعد آخر تصفية (${displayedDayIntakeStats.lastDailyCloseDate}) · ${displayedDayIntakeStats.postCloseEntryCount} عملية مفتوحة`
-              : `${displayedDayIntakeStats.postCloseEntryCount} عملية مفتوحة · اضغط للتفاصيل`}
-          </span>
+
+          {isHassanSelectedInCaisse && (() => {
+            const formulaVisible = isBoxVisible('kpi_income');
+            const incomeVal = Math.round(displayedDayIntakeStats.displayedIncomeMAD);
+            const floatVal = Math.round(displayedDayIntakeStats.displayedFloatMAD);
+            const expenseVal = Math.round(displayedDayIntakeStats.displayedExpensesMAD);
+            const totalVal = incomeVal + floatVal - expenseVal;
+            const halfIncomeVal = incomeVal / 2;
+            const fmtNum = (n: number) =>
+              formulaVisible ? n.toLocaleString('en-US') : '•••';
+            const fmtHalf = (n: number) => {
+              if (!formulaVisible) return '•••';
+              return Number.isInteger(n)
+                ? n.toLocaleString('en-US')
+                : Number(n.toFixed(2)).toLocaleString('en-US', { maximumFractionDigits: 2 });
+            };
+            const floatStr =
+              formulaVisible && floatVal < 0 ? `(${fmtNum(floatVal)})` : fmtNum(floatVal);
+
+            return (
+              <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-zinc-900/95 border border-stone-200 dark:border-zinc-800 shadow-2xs space-y-1.5">
+                <div className="flex flex-wrap items-center gap-1 text-[10px] font-black">
+                  <span className="text-emerald-700 dark:text-emerald-400">حط</span>
+                  <span className="text-zinc-400">+</span>
+                  <span className="text-amber-700 dark:text-amber-300">الصرف</span>
+                  <span className="text-zinc-400">−</span>
+                  <span className="text-rose-700 dark:text-rose-400">هز</span>
+                  <span className="text-zinc-400">=</span>
+                  <span className="text-sky-700 dark:text-sky-300">المجموع</span>
+                  <span className="text-zinc-300 dark:text-zinc-700 mx-0.5">|</span>
+                  <span className="text-emerald-700 dark:text-emerald-400">المداخيل</span>
+                  <span className="text-zinc-400">÷ 2 =</span>
+                  <span className="text-violet-700 dark:text-violet-300">النصف</span>
+                </div>
+
+                <div
+                  dir="ltr"
+                  className="flex items-center flex-wrap gap-1 font-mono font-black text-xs sm:text-[13px] tabular-nums"
+                >
+                  <span
+                    title="حط"
+                    className="px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/35"
+                  >
+                    {fmtNum(incomeVal)}
+                  </span>
+                  <span className="text-zinc-500 dark:text-zinc-400">+</span>
+                  <span
+                    title="الصرف"
+                    className="px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-500/35"
+                  >
+                    {floatStr}
+                  </span>
+                  <span className="text-zinc-500 dark:text-zinc-400">−</span>
+                  <span
+                    title="هز"
+                    className="px-1.5 py-0.5 rounded-md bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-500/35"
+                  >
+                    {fmtNum(expenseVal)}
+                  </span>
+                  <span className="text-zinc-500 dark:text-zinc-400">=</span>
+                  <span
+                    title="المجموع"
+                    className="px-1.5 py-0.5 rounded-md bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-500/35"
+                  >
+                    {fmtNum(totalVal)}
+                  </span>
+                </div>
+
+                <div
+                  dir="ltr"
+                  className="flex items-center flex-wrap gap-1 font-mono font-black text-xs sm:text-[13px] tabular-nums pt-0.5 border-t border-zinc-100 dark:border-zinc-800"
+                >
+                  <span
+                    title="المداخيل فقط (حط)"
+                    className="px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/35"
+                  >
+                    {fmtNum(incomeVal)}
+                  </span>
+                  <span className="text-zinc-500 dark:text-zinc-400">÷ 2 =</span>
+                  <span
+                    title="النصف من المداخيل فقط (÷ 2)"
+                    className="px-2 py-0.5 rounded-md bg-violet-100 dark:bg-violet-500/20 text-violet-800 dark:text-violet-300 border border-violet-200 dark:border-violet-500/35"
+                  >
+                    {fmtHalf(halfIncomeVal)} MAD
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* 2. شحال هز (الدورة اليومية المفتوحة -> يتصفر إلى 0 بعد التصفية اليومية، مع بقاء التراكمي الشهري محفوظاً) */}
@@ -5615,6 +6332,35 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 required
                 autoFocus
               />
+              {isHassanSelectedInCaisse &&
+                Math.round(displayedDayIntakeStats.displayedFloatMAD) > 0 &&
+                (() => {
+                  const availFloat = Math.max(
+                    0,
+                    Math.round(displayedDayIntakeStats.displayedFloatMAD)
+                  );
+                  const typedAmt = Math.max(0, Math.round(evaluateAmountExpression(expenseAmount)));
+                  const fromFloat = Math.min(typedAmt, availFloat);
+                  const fromDrawer = Math.max(0, typedAmt - fromFloat);
+                  const showFloatNums = isBoxVisible('drawer_float');
+                  return (
+                    <div className="p-2.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-500/40 text-[11px] font-bold text-amber-950 dark:text-amber-200 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span>الصرف المتاح حالياً في المجر:</span>
+                        <strong dir="ltr" className="font-mono font-black tabular-nums">
+                          {formatMAD(availFloat, 'drawer_float')}
+                        </strong>
+                      </div>
+                      {typedAmt > 0 && (
+                        <div className="text-[10px] font-semibold text-amber-900 dark:text-amber-300 leading-relaxed">
+                          {fromDrawer === 0
+                            ? `سيُخصم المبلغ كاملاً (${showFloatNums ? `${fromFloat} MAD` : '••• MAD'}) من الصرف (رجع الصرف) ولن يُسجّل في "شحال هز".`
+                            : `سيُخصم ${showFloatNums ? `${fromFloat} MAD` : '••• MAD'} من الصرف (رجع الصرف) ويُسجّل الباقي ${showFloatNums ? `${fromDrawer} MAD` : '••• MAD'} في "هزيت من المجر".`}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               <div>
                 <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
                   السبب / ملاحظة (اختيارية)
@@ -5655,23 +6401,55 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
       )}
 
       {floatModalNode}
+      {dailySettlePickerModalNode}
 
-      {/* Open Credits Section (Persists Across ALL Dates Until Repaid; Combines Caisse + Manual Client Credits) */}
+      {/* Open Credits Section (Persists Across ALL Dates Until Repaid; Collapsed by Default for Hassan in Caisse) */}
       {(openCreditsList.length > 0 ||
         openManualCreditsForBarber.length > 0 ||
         openBarberDisputes.length > 0) && (
-        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-orange-200 dark:border-orange-500/35 space-y-3">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs sm:text-sm font-black text-orange-800 dark:text-orange-300 flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-orange-500" />
-              <span>الكريدي المفتوح (مستمر عبر كل الأيام حتى الأداء)</span>
-            </h4>
-            <span className="text-xs font-mono font-black text-orange-700 dark:text-orange-300 tabular-nums">
-              {formatMAD(cycleBalance.openCreditsAllTimeMAD, 'kpi_credits')}
-            </span>
-          </div>
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900/90 border border-orange-200 dark:border-orange-500/35 space-y-3">
+          <button
+            type="button"
+            onClick={() => setOpenCreditsExpanded((prev) => !prev)}
+            aria-expanded={openCreditsExpanded}
+            className="w-full flex flex-wrap items-center justify-between gap-2 text-start cursor-pointer group rounded-xl p-1 -m-1 hover:bg-orange-50/70 dark:hover:bg-orange-950/25 transition-colors"
+          >
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <CreditCard className="w-4 h-4 text-orange-500 shrink-0" />
+              <span className="text-xs sm:text-sm font-black text-orange-800 dark:text-orange-300">
+                الكريدي المفتوح (مستمر عبر كل الأيام حتى الأداء)
+              </span>
+              {combinedOpenCreditsCount > 0 && (
+                <span className="px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-200 border border-orange-200 dark:border-orange-500/35 text-[10px] font-black tabular-nums">
+                  {combinedOpenCreditsCount}{' '}
+                  {combinedOpenCreditsCount === 1 ? 'ملف' : 'ملفات'}
+                </span>
+              )}
+              {openBarberDisputes.length > 0 && (
+                <span className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-500/40 text-[10px] font-black tabular-nums">
+                  {openBarberDisputes.length} اعتراض
+                </span>
+              )}
+            </div>
 
-          {openBarberDisputes.length > 0 && (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs sm:text-sm font-mono font-black text-orange-700 dark:text-orange-300 tabular-nums">
+                {formatMAD(cycleBalance.openCreditsAllTimeMAD, 'kpi_credits')}
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-500/15 border border-orange-200 dark:border-orange-500/35 text-[11px] font-bold text-orange-800 dark:text-orange-200 group-hover:bg-orange-100 dark:group-hover:bg-orange-500/25 transition-colors">
+                <span>{openCreditsExpanded ? 'إخفاء' : 'عرض التفاصيل'}</span>
+                {openCreditsExpanded ? (
+                  <ChevronUp className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                )}
+              </span>
+            </div>
+          </button>
+
+          {openCreditsExpanded && (
+            <div className="space-y-3 pt-1">
+              {openBarberDisputes.length > 0 && (
             <div className="p-3 rounded-xl bg-amber-50/90 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-500/40 space-y-2 text-xs">
               <div className="font-black text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
@@ -6136,68 +6914,93 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
               );
             })}
           </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Compact Single-Line Expandable Transaction Log */}
-      <div className={`p-4 sm:p-5 rounded-2xl border space-y-3 ${activeTone.cardSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200/70 dark:border-zinc-800 pb-2.5">
-          <div>
-            <h4 className="text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2 flex-wrap">
-              <History className="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
-              <span>سجل العمليات</span>
-              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${activeTone.badgeClass}`}>
-                {activeBarberMeta.arName}
-              </span>
-              <span className="text-xs font-mono text-zinc-500 dark:text-zinc-400 tabular-nums">
-                ({visibleEntries.length})
-              </span>
-            </h4>
-            {sessionRole === 'barber' && (
-              <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5">
-                الأرشيف الشخصي يعرض آخر شهرين فقط (من {twoMonthsCutoffDate}) — الكريدي المفتوح يبقى ظاهراً دائماً حتى الأداء.
-              </p>
+      {/* Compact Single-Line Expandable Transaction Log (Collapsed by Default for Hassan in Caisse) */}
+      <div className={`p-3.5 sm:p-4 rounded-2xl border space-y-3 ${activeTone.cardSurfaceClass} ${activeTone.topAccentClass} ${activeTone.borderLeftClass}`}>
+        <button
+          type="button"
+          onClick={() => setTxLogExpanded((prev) => !prev)}
+          aria-expanded={txLogExpanded}
+          className={`w-full flex flex-wrap items-center justify-between gap-2 text-start cursor-pointer group rounded-xl p-1 -m-1 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/40 transition-colors ${
+            txLogExpanded ? 'pb-2.5 border-b border-zinc-200/70 dark:border-zinc-800 rounded-b-none' : ''
+          }`}
+        >
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <History className="w-4 h-4 text-zinc-700 dark:text-zinc-300 shrink-0" />
+            <span className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white">
+              سجل العمليات
+            </span>
+            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${activeTone.badgeClass}`}>
+              {activeBarberMeta.arName}
+            </span>
+            <span className="text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400 tabular-nums">
+              ({visibleEntries.length})
+            </span>
+          </div>
+
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-[11px] font-bold text-zinc-700 dark:text-zinc-200 group-hover:bg-zinc-200/80 dark:group-hover:bg-zinc-700/80 transition-colors shrink-0">
+            <span>{txLogExpanded ? 'إخفاء' : 'عرض السجل'}</span>
+            {txLogExpanded ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
             )}
-          </div>
+          </span>
+        </button>
 
-          <div className="flex flex-wrap items-center gap-1 bg-zinc-100 dark:bg-zinc-950 p-1 rounded-xl text-[11px] font-bold">
-            {(
-              (sessionRole === 'caisse'
-                ? [
-                    { id: 'open_daily', label: `الدورة اليومية (${activeBarberOpenDailyStats.entryCount})` },
-                    { id: 'day', label: selectedDate === businessTodayStr ? `تاريخ اليوم (${selectedDate})` : selectedDate },
-                    { id: 'all', label: 'الأحدث' },
-                  ]
-                : [
-                    { id: 'open_daily', label: `الدورة اليومية (${activeBarberOpenDailyStats.entryCount})` },
-                    { id: 'day', label: selectedDate === businessTodayStr ? `تاريخ اليوم (${selectedDate})` : selectedDate },
-                    { id: 'cycle', label: 'الشهرية المفتوحة' },
-                    { id: 'all', label: 'الأحدث' },
-                  ]) as ReadonlyArray<{ id: 'open_daily' | 'day' | 'cycle' | 'all'; label: string }>
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setTxScopeFilter(tab.id)}
-                className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                  (sessionRole === 'caisse' && txScopeFilter === 'cycle' ? 'open_daily' : txScopeFilter) ===
-                  tab.id
-                    ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-xs'
-                    : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        {txLogExpanded && (
+          <div className="space-y-3 pt-1">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {sessionRole === 'barber' ? (
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                  الأرشيف الشخصي يعرض آخر شهرين فقط (من {twoMonthsCutoffDate}) — الكريدي المفتوح يبقى ظاهراً دائماً حتى الأداء.
+                </p>
+              ) : (
+                <span />
+              )}
 
-        {visibleEntries.length === 0 ? (
-          <div className="py-8 text-center text-xs text-zinc-500 dark:text-zinc-400">
-            لا توجد عمليات مسجلة في هذا العرض بعد.
-          </div>
-        ) : (
-          <div className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
+              <div className="flex flex-wrap items-center gap-1 bg-zinc-100 dark:bg-zinc-950 p-1 rounded-xl text-[11px] font-bold">
+                {(
+                  (sessionRole === 'caisse'
+                    ? [
+                        { id: 'open_daily', label: `الدورة اليومية (${activeBarberOpenDailyStats.entryCount})` },
+                        { id: 'day', label: selectedDate === businessTodayStr ? `تاريخ اليوم (${selectedDate})` : selectedDate },
+                        { id: 'all', label: 'الأحدث' },
+                      ]
+                    : [
+                        { id: 'open_daily', label: `الدورة اليومية (${activeBarberOpenDailyStats.entryCount})` },
+                        { id: 'day', label: selectedDate === businessTodayStr ? `تاريخ اليوم (${selectedDate})` : selectedDate },
+                        { id: 'cycle', label: 'الشهرية المفتوحة' },
+                        { id: 'all', label: 'الأحدث' },
+                      ]) as ReadonlyArray<{ id: 'open_daily' | 'day' | 'cycle' | 'all'; label: string }>
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setTxScopeFilter(tab.id)}
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                      (sessionRole === 'caisse' && txScopeFilter === 'cycle' ? 'open_daily' : txScopeFilter) ===
+                      tab.id
+                        ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-xs'
+                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {visibleEntries.length === 0 ? (
+              <div className="py-8 text-center text-xs text-zinc-500 dark:text-zinc-400">
+                لا توجد عمليات مسجلة في هذا العرض بعد.
+              </div>
+            ) : (
+              <div className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
             {visibleEntries.map((entry) => {
               const badge = formatEntryTypeBadge(entry.type, entry.adjustmentDirection);
               const isExpanded = Boolean(expandedEntryIds[entry.id]);
@@ -6350,6 +7153,8 @@ export const AdminCaissePanel: React.FC<AdminCaissePanelProps> = ({
                 </div>
               );
             })}
+              </div>
+            )}
           </div>
         )}
       </div>

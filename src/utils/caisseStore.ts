@@ -505,6 +505,15 @@ async function getCollectionDocsFast<T>(colName: string) {
 
 // ---------- Offline Caisse Queue + Auto-Reconciliation ----------
 
+type PendingExpenseOffsetMutation = {
+  entryId: string;
+  action: 'delete' | 'update';
+  nextAmountPaidMAD: number;
+  nextExpectedAmountMAD: number;
+  nextNote?: string;
+  updatedAt: string;
+};
+
 type PendingOfflineQueueItem =
   | {
       kind: 'create';
@@ -528,6 +537,21 @@ type PendingOfflineQueueItem =
       prevRepaidTotalMAD: number;
       amountAppliedMAD: number;
       repaymentPayload: CaisseEntry;
+      queuedAtPerfMs: number;
+      queuedAtTrustedMs: number;
+      queuedAtEpochMs?: number;
+      wasCalibratedAtCreation: boolean;
+      wasCreatedOffline?: boolean;
+      attempts: number;
+      lastError?: string;
+    }
+  | {
+      kind: 'float_offset';
+      id: string;
+      expenseMutations: PendingExpenseOffsetMutation[];
+      floatPayload?: CaisseEntry;
+      hasExplicitDateOverride: boolean;
+      hasExplicitCreatedAtOverride: boolean;
       queuedAtPerfMs: number;
       queuedAtTrustedMs: number;
       queuedAtEpochMs?: number;
@@ -573,7 +597,14 @@ function loadOfflineQueue(): PendingOfflineQueueItem[] {
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
       (item): item is PendingOfflineQueueItem =>
-        Boolean(item && typeof item === 'object' && typeof item.id === 'string' && (item.kind === 'create' || item.kind === 'repayment'))
+        Boolean(
+          item &&
+            typeof item === 'object' &&
+            typeof item.id === 'string' &&
+            (item.kind === 'create' ||
+              item.kind === 'repayment' ||
+              item.kind === 'float_offset')
+        )
     );
   } catch {
     return [];
@@ -874,6 +905,25 @@ function mergeEntriesWithOfflineQueue(baseEntries: CaisseEntry[]): CaisseEntry[]
           updatedAt: item.repaymentPayload.updatedAt,
         });
       }
+    } else if (item.kind === 'float_offset') {
+      for (const mut of item.expenseMutations) {
+        const existingExp = baseById.get(mut.entryId);
+        if (!existingExp) continue;
+        if (mut.action === 'delete') {
+          baseById.delete(mut.entryId);
+        } else {
+          baseById.set(mut.entryId, {
+            ...existingExp,
+            amountPaidMAD: mut.nextAmountPaidMAD,
+            expectedAmountMAD: mut.nextExpectedAmountMAD,
+            ...(mut.nextNote !== undefined ? { note: mut.nextNote } : {}),
+            updatedAt: mut.updatedAt,
+          });
+        }
+      }
+      if (item.floatPayload && !baseById.has(item.floatPayload.id)) {
+        pendingOverlays.push({ ...item.floatPayload, offlinePending: true });
+      }
     }
   }
 
@@ -995,6 +1045,15 @@ export async function flushOfflineCaisseQueue(forceConnectivityCheck = false): P
           ...item,
           wasCreatedOffline: true,
           payload: { ...item.payload, offlineCreated: true },
+        };
+      }
+      if (item.kind === 'float_offset') {
+        return {
+          ...item,
+          wasCreatedOffline: true,
+          ...(item.floatPayload
+            ? { floatPayload: { ...item.floatPayload, offlineCreated: true } }
+            : {}),
         };
       }
       return {
@@ -1186,6 +1245,114 @@ export async function flushOfflineCaisseQueue(forceConnectivityCheck = false): P
           syncedCount += 1;
           if (waitedOfflineOrDelayed) offlineToastSyncedCount += 1;
           syncedCreditsHint = true;
+        } else if (item.kind === 'float_offset') {
+          if (item.floatPayload && shouldCheckExistingOnServer) {
+            const floatRef = doc(db, CAISSE_ENTRIES_COLLECTION, item.floatPayload.id);
+            const existingFloatSnap = await raceWithTimeout(getDocFromServer(floatRef), 4500);
+            if (existingFloatSnap.exists()) {
+              markWebConnectivityOnline();
+              syncedCount += 1;
+              if (waitedOfflineOrDelayed) offlineToastSyncedCount += 1;
+              continue;
+            }
+          }
+
+          const keepOriginalOnlineCalibratedTimes =
+            !waitedOfflineOrDelayed &&
+            item.wasCalibratedAtCreation &&
+            !item.hasExplicitCreatedAtOverride;
+
+          const eventMs = resolveQueuedEventTimeMs(item, freshServerNowMs);
+          let finalizedFloat: CaisseEntry | undefined = undefined;
+          if (item.floatPayload) {
+            const reconciledIso =
+              keepOriginalOnlineCalibratedTimes || item.hasExplicitCreatedAtOverride
+                ? item.floatPayload.createdAt
+                : getNextMonotonicIsoForBarber(item.floatPayload.barberId, undefined, eventMs);
+            const reconciledDate =
+              keepOriginalOnlineCalibratedTimes || item.hasExplicitDateOverride
+                ? item.floatPayload.date
+                : getSalonBusinessDate(new Date(eventMs));
+            finalizedFloat = {
+              ...item.floatPayload,
+              date: reconciledDate,
+              createdAt: reconciledIso,
+              updatedAt: reconciledIso,
+              timeSource: freshTimeMeta.timeSource,
+              serverClockOffsetMs: freshTimeMeta.serverOffsetMs,
+              offlineCreated: Boolean(
+                item.wasCreatedOffline || item.floatPayload.offlineCreated || item.attempts > 0
+              ),
+            };
+          }
+
+          const batch = writeBatch(db);
+          let batchOpsCount = 0;
+          const deletedIds = new Set<string>();
+          const updatedMap = new Map<string, PendingExpenseOffsetMutation>();
+
+          for (const mut of item.expenseMutations) {
+            const expRef = doc(db, CAISSE_ENTRIES_COLLECTION, mut.entryId);
+            const expSnap = await raceWithTimeout(getDocFromServer(expRef), 4500);
+            if (!expSnap.exists()) {
+              if (mut.action === 'delete') deletedIds.add(mut.entryId);
+              continue;
+            }
+            if (mut.action === 'delete') {
+              batch.delete(expRef);
+              deletedIds.add(mut.entryId);
+              batchOpsCount += 1;
+            } else {
+              const updateFields: Record<string, unknown> = {
+                amountPaidMAD: mut.nextAmountPaidMAD,
+                expectedAmountMAD: mut.nextExpectedAmountMAD,
+                updatedAt: mut.updatedAt,
+              };
+              if (mut.nextNote !== undefined) {
+                updateFields.note = mut.nextNote;
+              }
+              batch.update(expRef, updateFields);
+              updatedMap.set(mut.entryId, mut);
+              batchOpsCount += 1;
+            }
+          }
+
+          if (finalizedFloat) {
+            batch.set(
+              doc(db, CAISSE_ENTRIES_COLLECTION, finalizedFloat.id),
+              buildFirestoreCreateDocPayload(finalizedFloat)
+            );
+            batchOpsCount += 1;
+          }
+
+          if (batchOpsCount > 0) {
+            await raceWithTimeout(batch.commit(), 5500);
+          }
+
+          markWebConnectivityOnline();
+          const nextBase = lastFirestoreEntries
+            .filter(
+              (entry) =>
+                !deletedIds.has(entry.id) &&
+                (!finalizedFloat || entry.id !== finalizedFloat.id)
+            )
+            .map((entry) => {
+              const mut = updatedMap.get(entry.id);
+              if (!mut) return entry;
+              return {
+                ...entry,
+                amountPaidMAD: mut.nextAmountPaidMAD,
+                expectedAmountMAD: mut.nextExpectedAmountMAD,
+                ...(mut.nextNote !== undefined ? { note: mut.nextNote } : {}),
+                updatedAt: mut.updatedAt,
+              };
+            });
+          if (finalizedFloat) {
+            nextBase.unshift(finalizedFloat);
+          }
+          rebuildEntriesCacheFromBase(nextBase);
+          syncedCount += 1;
+          if (waitedOfflineOrDelayed) offlineToastSyncedCount += 1;
         }
       } catch (err) {
         if (isLikelyNetworkOfflineError(err)) {
@@ -2313,9 +2480,23 @@ export async function updateCaisseEntry(
 export async function deleteCaisseEntry(entryId: string): Promise<void> {
   const path = `${CAISSE_ENTRIES_COLLECTION}/${entryId}`;
   // If queued locally and not yet synced, remove directly from offline queue cleanly
-  const queuedMatch = offlineQueue.find((q) => q.id === entryId);
+  const queuedMatch = offlineQueue.find(
+    (q) => q.id === entryId || (q.kind === 'float_offset' && q.floatPayload?.id === entryId)
+  );
   if (queuedMatch) {
-    saveOfflineQueue(offlineQueue.filter((q) => q.id !== entryId));
+    const nextQueue = offlineQueue
+      .map((q) => {
+        if (q.kind === 'float_offset' && q.floatPayload?.id === entryId) {
+          if (q.expenseMutations.length > 0) {
+            const { floatPayload: _removed, ...rest } = q;
+            return rest as PendingOfflineQueueItem;
+          }
+          return null;
+        }
+        return q.id === entryId ? null : q;
+      })
+      .filter((q): q is PendingOfflineQueueItem => q !== null);
+    saveOfflineQueue(nextQueue);
     rebuildEntriesCacheFromBase(lastFirestoreEntries.filter((item) => item.id !== entryId));
     notifyEntriesListeners();
     notifyOfflineStatusListeners();
@@ -2467,6 +2648,212 @@ export async function recordCaisseCreditRepayment(params: {
   note?: string;
 }): Promise<CaisseEntry> {
   return queueCaisseCreditRepaymentInstant(params);
+}
+
+/**
+ * Adds Hassan's change float ("الصرف") while offsetting any open withdrawal ("شحال هز") first.
+ * E.g. open withdrawal = 5 MAD, added float = 50 MAD -> settles 5 MAD withdrawal to 0 MAD
+ * and adds 45 MAD as remaining change float atomically (offline-first + instant local cache).
+ */
+export function queueHassanFloatWithExpenseOffsetInstant(params: {
+  addedAmountMAD: number;
+  date: string;
+  openExpenseEntries: CaisseEntry[];
+  actorRole: StaffRole;
+  actorName: string;
+  note?: string;
+}): {
+  addedAmountMAD: number;
+  offsetAppliedMAD: number;
+  remainingFloatMAD: number;
+  floatEntry: CaisseEntry | null;
+  offlineCreated: boolean;
+} {
+  const added = Math.max(0, Math.round(Number(params.addedAmountMAD) || 0));
+  if (added <= 0) {
+    throw new Error('مبلغ الصرف يجب أن يكون أكبر من 0 درهم.');
+  }
+
+  const connectionAvailable = isWebConnectionAvailableSync();
+  const timeMeta = getTrustedTimeMeta();
+  if (connectionAvailable && !timeMeta.isCalibrated) {
+    void syncTrustedServerTime(false);
+  }
+
+  const trustedNowMs = getTrustedNowMs();
+  const deviceOrigin = getCurrentDeviceOrigin();
+  const deviceClockISO = new Date().toISOString().slice(0, 64);
+  const currentTrustedBizDate = getSalonBusinessDate(new Date(trustedNowMs));
+  const rawInputDate = String(params.date || '').trim().slice(0, 20) || currentTrustedBizDate;
+  const nowIso = getNextMonotonicIsoForBarber('hassan', undefined, trustedNowMs);
+  const meta = getCaisseBarberMeta('hassan');
+
+  const sortedExpenses = [...params.openExpenseEntries]
+    .filter((e) => e.type === 'expense' && clampAmount(e.amountPaidMAD) > 0)
+    .sort((a, b) => asIsoString(a.createdAt, '').localeCompare(asIsoString(b.createdAt, '')));
+
+  let remainingToOffset = added;
+  let offsetAppliedMAD = 0;
+  let updatedQueue: PendingOfflineQueueItem[] = [...offlineQueue];
+  const expenseMutations: PendingExpenseOffsetMutation[] = [];
+
+  for (const exp of sortedExpenses) {
+    if (remainingToOffset <= 0) break;
+    const expAmt = clampAmount(exp.amountPaidMAD);
+    if (expAmt <= 0) continue;
+
+    const deduct = Math.min(remainingToOffset, expAmt);
+    const nextAmt = clampAmount(expAmt - deduct);
+    remainingToOffset -= deduct;
+    offsetAppliedMAD += deduct;
+
+    const pendingCreateIdx = updatedQueue.findIndex(
+      (q) => q.kind === 'create' && q.id === exp.id
+    );
+    if (pendingCreateIdx >= 0) {
+      const existingQ = updatedQueue[pendingCreateIdx];
+      if (existingQ.kind === 'create') {
+        if (nextAmt <= 0) {
+          updatedQueue.splice(pendingCreateIdx, 1);
+        } else {
+          const updatedNote = (
+            existingQ.payload.note?.trim()
+              ? `${existingQ.payload.note.trim()} · خُصم ${deduct} MAD من الصرف`
+              : `هزيت الفلوس من لاكيس · خُصم ${deduct} MAD من الصرف`
+          ).slice(0, 400);
+          updatedQueue[pendingCreateIdx] = {
+            ...existingQ,
+            payload: {
+              ...existingQ.payload,
+              amountPaidMAD: nextAmt,
+              expectedAmountMAD: nextAmt,
+              note: updatedNote,
+              updatedAt: nowIso,
+            },
+          };
+        }
+      }
+      continue;
+    }
+
+    const nextNote =
+      nextAmt > 0
+        ? (
+            exp.note?.trim()
+              ? `${exp.note.trim()} · خُصم ${deduct} MAD من الصرف`
+              : `هزيت الفلوس من لاكيس · خُصم ${deduct} MAD من الصرف`
+          ).slice(0, 400)
+        : undefined;
+
+    expenseMutations.push({
+      entryId: exp.id,
+      action: nextAmt <= 0 ? 'delete' : 'update',
+      nextAmountPaidMAD: nextAmt,
+      nextExpectedAmountMAD: nextAmt,
+      ...(nextNote ? { nextNote } : {}),
+      updatedAt: nowIso,
+    });
+  }
+
+  const remainingFloatMAD = Math.max(0, added - offsetAppliedMAD);
+  let floatPayload: CaisseEntry | undefined = undefined;
+  let floatEntryResult: CaisseEntry | null = null;
+
+  if (remainingFloatMAD > 0) {
+    const floatId = sanitizeId(
+      `ce_${trustedNowMs}_${SESSION_BOOT_EPOCH}_${Math.random().toString(36).slice(2, 7)}`,
+      'ce'
+    );
+    const userNote = params.note?.trim() || '';
+    const noteText =
+      offsetAppliedMAD > 0
+        ? userNote
+          ? `${userNote} (تمت تصفية ${offsetAppliedMAD} MAD من شحال هز والباقي ${remainingFloatMAD} MAD)`.slice(0, 400)
+          : `إضافة فلوس الصرف للمجر (حسن) · تمت تصفية ${offsetAppliedMAD} MAD من شحال هز والباقي ${remainingFloatMAD} MAD`.slice(0, 400)
+        : (userNote || 'إضافة فلوس الصرف للمجر (حسن)').slice(0, 400);
+
+    floatPayload = {
+      id: floatId,
+      barberId: 'hassan',
+      barberName: meta.name.trim().slice(0, 100),
+      type: 'float_adjustment',
+      date: rawInputDate,
+      expectedAmountMAD: remainingFloatMAD,
+      amountPaidMAD: remainingFloatMAD,
+      creditAmountMAD: 0,
+      creditRemainingMAD: 0,
+      creditStatus: 'none',
+      note: noteText,
+      createdByRole: params.actorRole,
+      createdByName: String(params.actorName || meta.name).trim().slice(0, 100),
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      deviceKind: deviceOrigin.deviceKind,
+      deviceId: deviceOrigin.deviceId,
+      deviceLabel: deviceOrigin.deviceLabel,
+      devicePlatform: deviceOrigin.devicePlatform,
+      deviceBrowser: deviceOrigin.deviceBrowser,
+      timeSource: timeMeta.timeSource,
+      serverClockOffsetMs: timeMeta.serverOffsetMs,
+      deviceClockISO,
+      offlineCreated: !connectionAvailable,
+    };
+
+    floatEntryResult = {
+      ...floatPayload,
+      offlineCreated: !connectionAvailable,
+      offlinePending: true,
+    };
+  }
+
+  if (expenseMutations.length > 0 || floatPayload) {
+    const perfNow = typeof performance !== 'undefined' ? performance.now() : trustedNowMs;
+    const queuedAtEpochMs = Date.now();
+    const opId = floatPayload
+      ? floatPayload.id
+      : sanitizeId(
+          `ce_fo_${trustedNowMs}_${SESSION_BOOT_EPOCH}_${Math.random().toString(36).slice(2, 7)}`,
+          'ce'
+        );
+    sessionPerfAnchorIds.add(opId);
+
+    updatedQueue = [
+      ...updatedQueue.filter((q) => q.id !== opId),
+      {
+        kind: 'float_offset',
+        id: opId,
+        expenseMutations,
+        ...(floatPayload ? { floatPayload } : {}),
+        hasExplicitDateOverride: false,
+        hasExplicitCreatedAtOverride: false,
+        queuedAtPerfMs: perfNow,
+        queuedAtTrustedMs: trustedNowMs,
+        queuedAtEpochMs,
+        wasCalibratedAtCreation: timeMeta.isCalibrated,
+        wasCreatedOffline: !connectionAvailable,
+        attempts: 0,
+      },
+    ];
+  }
+
+  saveOfflineQueue(updatedQueue);
+  rebuildEntriesCacheFromBase(lastFirestoreEntries, false);
+  hasEntriesHydrated = true;
+  notifyEntriesListeners();
+  notifyOfflineStatusListeners();
+
+  if (connectionAvailable && updatedQueue.length > 0) {
+    scheduleDelayedPendingBannerCheck();
+    void flushOfflineCaisseQueue(false);
+  }
+
+  return {
+    addedAmountMAD: added,
+    offsetAppliedMAD,
+    remainingFloatMAD,
+    floatEntry: floatEntryResult,
+    offlineCreated: !connectionAvailable,
+  };
 }
 
 function sanitizePeriodOverrides(

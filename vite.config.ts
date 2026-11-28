@@ -123,6 +123,7 @@ export default defineConfig(() => {
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: [
+          'favicon.ico',
           'favicon-64x64.png',
           'icon.svg',
           'apple-touch-icon.png',
@@ -133,8 +134,8 @@ export default defineConfig(() => {
         ],
         manifest: {
           id: '/',
-          name: 'Salon Boumlik — Taroudant',
-          short_name: 'Boumlik',
+          name: 'Salon Boumlik',
+          short_name: 'Salon Boumlik',
           description:
             'Salon Boumlik - Réservation en ligne, suivi de ticket en temps réel et programme de fidélité à Taroudant.',
           theme_color: '#FAF9F6',
